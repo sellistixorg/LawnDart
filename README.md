@@ -119,4 +119,4 @@ issue. Details: [SECURITY.md](SECURITY.md).
 
 ## License
 
-[MIT](LICENSE) © 2026 Sellistix
+[MIT](LICENSE) © 2026 Sellistix LLC
