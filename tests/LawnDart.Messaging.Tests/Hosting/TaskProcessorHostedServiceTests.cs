@@ -8,6 +8,12 @@ namespace LawnDart.Messaging.Tests.Hosting;
 
 public class TaskProcessorHostedServiceTests
 {
+    /// <summary>
+    /// Upper bound for waiting on a background poll. Generous on purpose: it is a failure deadline,
+    /// not an expected duration, so a loaded CI runner does not turn into a false negative.
+    /// </summary>
+    private static readonly TimeSpan PollTimeout = TimeSpan.FromSeconds(30);
+
     private static TaskProcessorHostedService<TProcessor> BuildService<TProcessor>(
         TProcessor processor,
         TaskProcessorOptions? options = null,
@@ -44,8 +50,9 @@ public class TaskProcessorHostedServiceTests
         using var cts = new CancellationTokenSource();
         await service.StartAsync(cts.Token);
 
-        // Give the first poll time to execute.
-        await Task.Delay(200);
+        // Wait for both commands to be dispatched. Dispatch happens after the poll returns, so this
+        // also proves the poll ran; StartAsync only launches the background task, it does not await it.
+        await dispatcher.WaitForDispatchAsync(2, PollTimeout);
 
         Assert.Equal(1, processor.CallCount);
         Assert.Equal(2, dispatcher.Dispatched.Count);
@@ -59,13 +66,17 @@ public class TaskProcessorHostedServiceTests
     public async Task Poll_NoCommandsEmitted_DispatcherNotCalled()
     {
         var dispatcher = new CapturingCommandDispatcher();
-        var service = BuildService(new EmptyTaskProcessor(),
+        var processor = new EmptyTaskProcessor();
+        var service = BuildService(processor,
             new TaskProcessorOptions { PollingInterval = TimeSpan.FromHours(1) },
             dispatcher);
 
         using var cts = new CancellationTokenSource();
         await service.StartAsync(cts.Token);
-        await Task.Delay(200);
+
+        // Wait for the poll before asserting the dispatcher was not called, otherwise the assertion
+        // could pass simply because nothing had happened yet.
+        await processor.FirstPollCompleted.WaitAsync(PollTimeout);
 
         Assert.Empty(dispatcher.Dispatched);
 
@@ -83,7 +94,7 @@ public class TaskProcessorHostedServiceTests
 
         using var cts = new CancellationTokenSource();
         await service.StartAsync(cts.Token);
-        await Task.Delay(200);
+        await processor.FirstPollCompleted.WaitAsync(PollTimeout);
 
         Assert.Equal(1, processor.CallCount);
 

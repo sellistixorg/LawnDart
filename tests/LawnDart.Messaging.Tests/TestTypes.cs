@@ -72,10 +72,21 @@ internal sealed class InventoryEventProcessor : IEventProcessor<OrderPlacedEvent
 /// <summary>
 /// Emits a <see cref="CancelOverdueOrderCommand"/> on each poll when there are overdue orders.
 /// </summary>
+/// <remarks>
+/// Polls run on the hosted service's background task, so <see cref="CallCount"/> is written from a
+/// different thread than the one asserting on it. <see cref="FirstPollCompleted"/> lets a test wait
+/// for a poll to actually happen instead of sleeping and hoping.
+/// </remarks>
 internal sealed class OverdueOrderTaskProcessor : ITaskProcessor
 {
     private readonly List<string> _overdueOrderIds;
-    public int CallCount { get; private set; }
+    private readonly TaskCompletionSource _firstPoll = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private int _callCount;
+
+    public int CallCount => Volatile.Read(ref _callCount);
+
+    /// <summary>Completes once <see cref="ProcessTasksAsync"/> has run at least once.</summary>
+    public Task FirstPollCompleted => _firstPoll.Task;
 
     public OverdueOrderTaskProcessor(params string[] overdueOrderIds)
     {
@@ -84,9 +95,14 @@ internal sealed class OverdueOrderTaskProcessor : ITaskProcessor
 
     public Task<IEnumerable<ICommand>> ProcessTasksAsync(CancellationToken cancellationToken = default)
     {
-        CallCount++;
-        return Task.FromResult<IEnumerable<ICommand>>(
-            _overdueOrderIds.Select(id => (ICommand)new CancelOverdueOrderCommand(Guid.NewGuid(), id)));
+        Interlocked.Increment(ref _callCount);
+
+        var commands = _overdueOrderIds
+            .Select(id => (ICommand)new CancelOverdueOrderCommand(Guid.NewGuid(), id))
+            .ToList();
+
+        _firstPoll.TrySetResult();
+        return Task.FromResult<IEnumerable<ICommand>>(commands);
     }
 }
 
@@ -95,8 +111,20 @@ internal sealed class OverdueOrderTaskProcessor : ITaskProcessor
 /// </summary>
 internal sealed class EmptyTaskProcessor : ITaskProcessor
 {
+    private readonly TaskCompletionSource _firstPoll = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private int _callCount;
+
+    public int CallCount => Volatile.Read(ref _callCount);
+
+    /// <summary>Completes once <see cref="ProcessTasksAsync"/> has run at least once.</summary>
+    public Task FirstPollCompleted => _firstPoll.Task;
+
     public Task<IEnumerable<ICommand>> ProcessTasksAsync(CancellationToken cancellationToken = default)
-        => Task.FromResult<IEnumerable<ICommand>>([]);
+    {
+        Interlocked.Increment(ref _callCount);
+        _firstPoll.TrySetResult();
+        return Task.FromResult<IEnumerable<ICommand>>([]);
+    }
 }
 
 // ── Command dispatcher ────────────────────────────────────────────────────────
@@ -104,13 +132,45 @@ internal sealed class EmptyTaskProcessor : ITaskProcessor
 /// <summary>
 /// Captures all dispatched commands for assertion in tests.
 /// </summary>
+/// <remarks>
+/// Dispatches may arrive on a hosted service's background task, so the backing list is guarded and
+/// <see cref="Dispatched"/> returns a snapshot. Use <see cref="WaitForDispatchAsync"/> to wait for an
+/// expected number of commands rather than sleeping.
+/// </remarks>
 internal sealed class CapturingCommandDispatcher : ICommandDispatcher
 {
-    public List<ICommand> Dispatched { get; } = [];
+    private readonly List<ICommand> _dispatched = [];
+    private readonly SemaphoreSlim _dispatchSignal = new(0);
+
+    public IReadOnlyList<ICommand> Dispatched
+    {
+        get { lock (_dispatched) { return [.. _dispatched]; } }
+    }
 
     public Task DispatchAsync(ICommand command, MessageContext context, CancellationToken cancellationToken = default)
     {
-        Dispatched.Add(command);
+        lock (_dispatched) { _dispatched.Add(command); }
+        _dispatchSignal.Release();
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Waits until <paramref name="count"/> commands have been dispatched, or throws on timeout.
+    /// </summary>
+    public async Task WaitForDispatchAsync(int count, TimeSpan timeout)
+    {
+        using var cts = new CancellationTokenSource(timeout);
+        for (var i = 0; i < count; i++)
+        {
+            try
+            {
+                await _dispatchSignal.WaitAsync(cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                throw new TimeoutException(
+                    $"Expected {count} dispatched command(s) within {timeout}, but only {Dispatched.Count} arrived.");
+            }
+        }
     }
 }
