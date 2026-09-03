@@ -1,0 +1,169 @@
+# Generate API YAML from Release DLLs and build the DocFX site.
+# Generated api/*.yml is not committed (see .gitignore).
+
+name: Documentation
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'docs/**'
+      - 'index.md'
+      - 'toc.yml'
+      - 'docfx.json'
+      - 'filterConfig.yml'
+      - '.github/workflows/docs.yml'
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: documentation
+  cancel-in-progress: false
+
+jobs:
+  build-docs:
+    name: Build DocFX site
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+
+    - name: Restore dependencies
+      run: dotnet restore LawnDart.sln
+
+    - name: Build solution (XML docs)
+      run: dotnet build LawnDart.sln --no-restore --configuration Release
+
+    - name: Validate DocFX metadata DLL inputs
+      run: |
+        python3 - <<'PY'
+        import json
+        import pathlib
+        import sys
+
+        with open("docfx.json", "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+
+        missing = []
+        listed = []
+        for metadata in cfg.get("metadata", []):
+            for src in metadata.get("src", []):
+                for rel_path in src.get("files", []) or []:
+                    listed.append(rel_path)
+                    if not pathlib.Path(rel_path).exists():
+                        missing.append(rel_path)
+
+        if missing:
+            print("Missing DocFX metadata inputs:")
+            for item in missing:
+                print(f" - {item}")
+            sys.exit(1)
+
+        if listed:
+            print(f"All {len(listed)} DocFX metadata DLL inputs exist.")
+        else:
+            print("No API DLL inputs listed yet (scaffold).")
+        PY
+
+    - name: Validate internal markdown and TOC links
+      run: |
+        python3 - <<'PY'
+        import pathlib
+        import re
+        import sys
+
+        md_files = [pathlib.Path("index.md"), pathlib.Path("api/index.md")]
+        md_files += list(pathlib.Path("docs").rglob("*.md"))
+
+        toc_files = [pathlib.Path("toc.yml")]
+        toc_files += list(pathlib.Path("docs").rglob("toc.yml"))
+
+        link_pattern = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
+        href_pattern = re.compile(r"^\s*href:\s*([^\s#]+)")
+
+        def is_external(target: str) -> bool:
+            return (
+                target.startswith("http://")
+                or target.startswith("https://")
+                or target.startswith("mailto:")
+                or target.startswith("xref:")
+                or target.startswith("#")
+            )
+
+        errors = []
+
+        for md in md_files:
+            if not md.exists():
+                continue
+            text = md.read_text(encoding="utf-8")
+            for match in link_pattern.finditer(text):
+                raw = match.group(1).strip()
+                target = raw.split("#", 1)[0].strip()
+                if not target or is_external(target):
+                    continue
+                if target.startswith("~/"):
+                    resolved = pathlib.Path(target[2:]).resolve()
+                else:
+                    resolved = (md.parent / target).resolve()
+                if not resolved.exists():
+                    errors.append(f"{md}: missing link target '{target}'")
+
+        for toc in toc_files:
+            if not toc.exists():
+                continue
+            for line in toc.read_text(encoding="utf-8").splitlines():
+                m = href_pattern.match(line)
+                if not m:
+                    continue
+                target = m.group(1).strip()
+                if not target or is_external(target):
+                    continue
+                if target.startswith("~/"):
+                    resolved = pathlib.Path(target[2:]).resolve()
+                else:
+                    resolved = (toc.parent / target).resolve()
+                if not resolved.exists():
+                    errors.append(f"{toc}: missing href target '{target}'")
+
+        if errors:
+            print("Broken internal documentation links detected:")
+            for err in errors:
+                print(f" - {err}")
+            sys.exit(1)
+
+        print("Internal markdown and TOC links validated.")
+        PY
+
+    - name: Restore local tools
+      run: dotnet tool restore
+
+    - name: Generate API metadata
+      run: |
+        listed=$(python3 - <<'PY'
+        import json
+        cfg = json.load(open("docfx.json", encoding="utf-8"))
+        files = []
+        for metadata in cfg.get("metadata", []):
+            for src in metadata.get("src", []):
+                files.extend(src.get("files") or [])
+        print("yes" if files else "")
+        PY
+        )
+        if [ -n "$listed" ]; then
+          dotnet docfx metadata docfx.json
+        else
+          echo "No API DLL inputs yet; skipping metadata."
+        fi
+
+    - name: Build DocFX site
+      run: dotnet docfx build docfx.json

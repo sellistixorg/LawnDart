@@ -1,0 +1,64 @@
+{
+  "metadata": [
+    {
+      "src": [
+        {
+          "src": ".",
+          "files": [
+            "src/LawnDart/bin/Release/net10.0/LawnDart.dll",
+            "src/LawnDart.EventSourcing/bin/Release/net10.0/LawnDart.EventSourcing.dll",
+            "src/LawnDart.Messaging/bin/Release/net10.0/LawnDart.Messaging.dll",
+            "src/LawnDart.Messaging.InMemory/bin/Release/net10.0/LawnDart.Messaging.InMemory.dll",
+            "src/LawnDart.EventSourcing.SqlServer/bin/Release/net10.0/LawnDart.EventSourcing.SqlServer.dll",
+            "src/LawnDart.Projections.Lightweight/bin/Release/net10.0/LawnDart.Projections.Lightweight.dll",
+            "src/LawnDart.AspNetCore/bin/Release/net10.0/LawnDart.AspNetCore.dll",
+            "src/LawnDart.Authorization.AspNetCore/bin/Release/net10.0/LawnDart.Authorization.AspNetCore.dll",
+            "src/LawnDart.Testing/bin/Release/net10.0/LawnDart.Testing.dll"
+          ]
+        }
+      ],
+      "dest": "api",
+      "namespaceLayout": "flattened",
+      "filter": "filterConfig.yml"
+    }
+  ],
+  "build": {
+    "content": [
+      {
+        "files": ["api/**.yml", "api/index.md", "api/toc.yml"]
+      },
+      {
+        "files": [
+          "index.md",
+          "toc.yml",
+          "docs/**.md",
+          "docs/**/toc.yml"
+        ]
+      }
+    ],
+    "resource": [
+      {
+        "files": [
+          "src/**/*.cs",
+          "tests/**/*.cs",
+          "demos/**/*.cs"
+        ]
+      }
+    ],
+    "dest": "_site",
+    "globalMetadata": {
+      "_appName": "LawnDart",
+      "_appTitle": "LawnDart Documentation",
+      "_enableSearch": true,
+      "_disableContribution": false,
+      "_gitContribute": {
+        "repo": "https://github.com/sellistix/LawnDart",
+        "branch": "main"
+      }
+    },
+    "template": ["default", "modern"],
+    "sitemap": {
+      "baseUrl": "https://sellistix.github.io/LawnDart"
+    }
+  }
+}

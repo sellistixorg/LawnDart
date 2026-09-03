@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "InMemory": {
+      "commandName": "Project",
+      "commandLineArgs": ""
+    },
+    "SqlServer": {
+      "commandName": "Project",
+      "commandLineArgs": "--sql",
+      "environmentVariables": {
+        "ConnectionStrings__Academy": "Server=localhost;Database=LawnDartAcademy;Trusted_Connection=True;TrustServerCertificate=True"
+      }
+    }
+  }
+}

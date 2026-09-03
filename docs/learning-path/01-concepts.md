@@ -1,0 +1,43 @@
+# Step 1 — Core concepts
+
+**Next:** [Step 2 — First aggregate](02-first-aggregate.md)
+
+## The nine common patterns
+
+Every message-driven system shuffles three kinds of thing: **commands** (intent),
+**events** (facts), and **state** (present view). Those combine into nine
+patterns — the command–event–state matrix.
+
+| Input → Output | Command | Event | State |
+|---|---|---|---|
+| **Command** | Delegation | Aggregate Root | Downstream Activity |
+| **Event** | Reaction | Event Processing | Projection |
+| **State** | Task Processing | Event Generator | State Transformation |
+
+You do not need all nine on day one. Most apps start with aggregate + projection.
+
+## What each pattern does
+
+**Aggregate Root (Command → Event)** — A command is checked, then events are
+appended. State is rebuilt by replaying those events.
+
+**Projection (Event → State)** — Events reduce into a query-friendly view.
+
+**Reaction (Event → Command)** — An event in one slice becomes a command in
+another (choreography).
+
+**Task Processing (State → Command)** — A poller emits commands from read-model
+conditions (timeouts, SLAs).
+
+**DCB** — When a rule spans identities, load by tags and append atomically.
+See [DCB_PATTERNS.md](../DCB_PATTERNS.md).
+
+## Mental model
+
+```
+Command → Aggregate / DCB → Events → Event store
+                                    ↓
+                         Projector → View store → Query
+```
+
+[Glossary](../GLOSSARY.md) · [Overview](../OVERVIEW.md)

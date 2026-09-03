@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>LawnDart.Demo.Academy.WebApi</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\LawnDart\LawnDart.csproj" />
+    <ProjectReference Include="..\..\src\LawnDart.EventSourcing\LawnDart.EventSourcing.csproj" />
+    <ProjectReference Include="..\..\src\LawnDart.EventSourcing.SqlServer\LawnDart.EventSourcing.SqlServer.csproj" />
+    <ProjectReference Include="..\..\src\LawnDart.AspNetCore\LawnDart.AspNetCore.csproj" />
+    <ProjectReference Include="..\..\src\LawnDart.Authorization.AspNetCore\LawnDart.Authorization.AspNetCore.csproj" />
+    <ProjectReference Include="..\..\src\LawnDart.Projections.Lightweight\LawnDart.Projections.Lightweight.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Microsoft.OpenApi" />
+    <PackageReference Include="Scalar.AspNetCore" />
+  </ItemGroup>
+
+</Project>

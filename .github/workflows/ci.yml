@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build, test, docs
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+
+    - name: Restore dependencies
+      run: dotnet restore LawnDart.sln
+
+    - name: Build
+      run: dotnet build LawnDart.sln --no-restore --configuration Release
+
+    - name: Test (unit)
+      run: |
+        projects=$(dotnet sln LawnDart.sln list)
+        if echo "$projects" | grep -q 'Tests'; then
+          dotnet test LawnDart.sln --no-build --configuration Release --verbosity normal --filter "Category!=Integration"
+        else
+          echo "No test projects yet; skipping tests."
+        fi
+
+    - name: Restore local tools
+      run: dotnet tool restore
+
+    - name: DocFX metadata
+      run: |
+        if [ -n "$(python3 - <<'PY'
+        import json
+        cfg = json.load(open("docfx.json", encoding="utf-8"))
+        files = []
+        for metadata in cfg.get("metadata", []):
+            for src in metadata.get("src", []):
+                files.extend(src.get("files") or [])
+        print("yes" if files else "")
+        PY
+        )" ]; then
+          dotnet docfx metadata docfx.json
+        else
+          echo "No API DLL inputs yet; skipping metadata."
+        fi
+
+    - name: DocFX build
+      run: dotnet docfx build docfx.json

@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <PackageId>LawnDart.Testing</PackageId>
+    <Description>Given/when/then and messaging harnesses for LawnDart. InMemory only.</Description>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LawnDart\LawnDart.csproj" />
+    <ProjectReference Include="..\LawnDart.EventSourcing\LawnDart.EventSourcing.csproj" />
+    <ProjectReference Include="..\LawnDart.Messaging.InMemory\LawnDart.Messaging.InMemory.csproj" />
+  </ItemGroup>
+
+</Project>

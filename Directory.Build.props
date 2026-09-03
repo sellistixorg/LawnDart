@@ -1,0 +1,21 @@
+<Project>
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <NoWarn>$(NoWarn);1591</NoWarn>
+    <Authors>Sellistix</Authors>
+    <Company>Sellistix</Company>
+    <Product>LawnDart</Product>
+    <Copyright>Copyright (c) 2026 Sellistix</Copyright>
+    <Version>0.1.0-alpha</Version>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/sellistix/LawnDart</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/sellistix/LawnDart</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>eventsourcing;cqrs;ddd;messaging;patterns;lawndart</PackageTags>
+    <GenerateDocumentationFile Condition="'$(IsPackable)' != 'false'">true</GenerateDocumentationFile>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+</Project>

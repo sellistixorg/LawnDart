@@ -1,0 +1,18 @@
+- name: Learning Path
+  href: README.md
+- name: 1. Concepts
+  href: 01-concepts.md
+- name: 2. First aggregate
+  href: 02-first-aggregate.md
+- name: 3. Testing your aggregate
+  href: 03-testing-your-aggregate.md
+- name: 4. Reading state
+  href: 04-reading-state.md
+- name: 5. DCB patterns
+  href: 05-dcb-patterns.md
+- name: 6. Reactions
+  href: 06-reactions.md
+- name: 7. Testing EDA
+  href: 07-testing-eda.md
+- name: 8. Production
+  href: 08-production.md

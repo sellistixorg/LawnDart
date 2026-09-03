@@ -1,0 +1,43 @@
+- name: Start Here
+  href: START_HERE.md
+- name: Overview
+  href: OVERVIEW.md
+- name: Quickstart
+  href: QUICKSTART.md
+- name: Eventhesis
+  href: EVENTHESIS.md
+- name: DI Grammar
+  href: DI_GRAMMAR.md
+- name: Extension methods
+  href: EXTENSION_METHOD_INDEX.md
+- name: Glossary
+  href: GLOSSARY.md
+- name: Backend selection
+  href: BACKEND_SELECTION.md
+- name: Stream IDs
+  href: STREAM_IDS.md
+- name: Tagging
+  href: TAGGING.md
+- name: DCB
+  href: DCB_PATTERNS.md
+- name: Lightweight projections
+  href: LIGHTWEIGHT_PROJECTIONS.md
+- name: EDA
+  href: EDA-Patterns.md
+- name: Outbox
+  href: OUTBOX_PATTERN.md
+- name: HTTP commands
+  href: HTTP_COMMANDS.md
+- name: Authorization
+  href: AUTHORIZATION.md
+- name: BDD testing
+  href: testing/BDD_TESTING.md
+- name: Learning Path
+  href: learning-path/
+  homepage: learning-path/README.md
+- name: Packages
+  href: packages/
+  homepage: packages/core.md
+- name: Diagrams
+  href: diagrams/
+  homepage: diagrams/command-path.md

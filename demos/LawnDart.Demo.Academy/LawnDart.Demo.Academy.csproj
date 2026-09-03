@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>LawnDart.Demo.Academy</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\LawnDart\LawnDart.csproj" />
+    <ProjectReference Include="..\..\src\LawnDart.EventSourcing\LawnDart.EventSourcing.csproj" />
+    <ProjectReference Include="..\..\src\LawnDart.EventSourcing.SqlServer\LawnDart.EventSourcing.SqlServer.csproj" />
+    <ProjectReference Include="..\..\src\LawnDart.Messaging\LawnDart.Messaging.csproj" />
+    <ProjectReference Include="..\..\src\LawnDart.Messaging.InMemory\LawnDart.Messaging.InMemory.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MemoryPack" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" />
+  </ItemGroup>
+
+</Project>

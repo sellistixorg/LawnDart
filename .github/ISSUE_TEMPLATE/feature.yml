@@ -1,0 +1,27 @@
+name: Feature request
+description: Propose an enhancement to the OSS happy path
+title: "[feat] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is hard or missing today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+    validations:
+      required: true
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Fits the v1 happy path?
+      options:
+        - "Yes — InMemory / SQL / Lightweight / HTTP / Testing"
+        - "No — commercial overlay (defer)"
+    validations:
+      required: true

@@ -1,0 +1,9 @@
+<Project>
+  <!-- Imported after each csproj, so PackageId is already set. -->
+  <PropertyGroup>
+    <PackageReadmeFile Condition="'$(PackageId)' != '' and Exists('$(MSBuildProjectDirectory)\README.md')">README.md</PackageReadmeFile>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(PackageId)' != '' and Exists('$(MSBuildProjectDirectory)\README.md')">
+    <None Include="$(MSBuildProjectDirectory)\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+</Project>
