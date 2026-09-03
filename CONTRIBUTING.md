@@ -30,7 +30,7 @@ are always welcome without prior discussion.
 ### First build
 
 ```bash
-git clone https://github.com/sellistix/LawnDart.git
+git clone https://github.com/sellistixorg/LawnDart.git
 cd LawnDart
 
 dotnet restore

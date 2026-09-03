@@ -11,11 +11,16 @@
     <Copyright>Copyright (c) 2026 Sellistix</Copyright>
     <Version>0.1.0-alpha</Version>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageProjectUrl>https://github.com/sellistix/LawnDart</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/sellistix/LawnDart</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/sellistixorg/LawnDart</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/sellistixorg/LawnDart</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageTags>eventsourcing;cqrs;ddd;messaging;patterns;lawndart</PackageTags>
+    <PackageIcon Condition="'$(IsPackable)' != 'false'">nuget-icon.png</PackageIcon>
     <GenerateDocumentationFile Condition="'$(IsPackable)' != 'false'">true</GenerateDocumentationFile>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
+
+  <ItemGroup Condition="'$(IsPackable)' != 'false'">
+    <None Include="$(MSBuildThisFileDirectory)assets\nuget-icon.png" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
 </Project>

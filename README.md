@@ -1,4 +1,10 @@
-# LawnDart
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="assets/banner-light.png">
+    <img src="assets/banner-light.png" alt="LawnDart" width="820">
+  </picture>
+</h1>
 
 In-process .NET library for event-sourced **commands**, **events**, and **state**.
 
@@ -44,7 +50,7 @@ repository and use project references, or pack to a local feed.
 ## Install (this repository)
 
 ```bash
-git clone https://github.com/sellistix/LawnDart.git
+git clone https://github.com/sellistixorg/LawnDart.git
 cd LawnDart
 dotnet restore
 dotnet build
