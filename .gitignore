@@ -9,10 +9,12 @@
 *.sln.docstates
 
 # Build results
-[Dd]ebug/
-[Dd]ebugPublic/
-[Rr]elease/
-[Rr]eleases/
+#
+# The legacy [Dd]ebug/ and [Rr]elease/ patterns are deliberately omitted. They match a
+# directory of that name at any depth, which silently excluded the nine source files in
+# src/LawnDart.Projections.Lightweight/Debug/ and broke CI while local builds stayed green.
+# .NET SDK projects write all output under bin/ and obj/, both ignored below, so those
+# patterns protect nothing here. Do not re-add them.
 x64/
 x86/
 [Ww][Ii][Nn]32/
