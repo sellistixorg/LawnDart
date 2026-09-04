@@ -10,15 +10,16 @@ In-process .NET library for event-sourced **commands**, **events**, and **state*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4)](https://dotnet.microsoft.com/download/dotnet/10.0)
-[![Version](https://img.shields.io/badge/version-0.1.0--alpha-orange)](CHANGELOG.md)
+[![Version](https://img.shields.io/github/v/tag/sellistixorg/LawnDart?include_prereleases&sort=semver&label=version)](CHANGELOG.md)
 
 LawnDart is a standalone command–event–state runtime: aggregates and Dynamic
 Consistency Boundaries, an event store (InMemory or SQL Server), lightweight
 projections, messaging, ASP.NET Core command mapping, and a given/when/then
 test harness.
 
-Packages are not published to nuget.org yet (`0.1.0-alpha`). Clone this
-repository and use project references, or pack to a local feed.
+Packages are not published to nuget.org yet. Clone this repository and use
+project references, or pack to a local feed. Package versions are derived
+from git tags (see [Releasing](CONTRIBUTING.md#releasing)).
 
 ## Requirements
 
@@ -100,7 +101,10 @@ Backend choice: [docs/BACKEND_SELECTION.md](docs/BACKEND_SELECTION.md).
 
 ## Status
 
-Pre-1.0. Public API may change. See [CHANGELOG.md](CHANGELOG.md).
+Versioning follows [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html). The
+project is pre-1.0: a **minor** bump may contain breaking changes to the public
+API. Only tagged releases are supported; untagged builds are development
+artifacts. See [CHANGELOG.md](CHANGELOG.md).
 
 ## Modelling companion
 

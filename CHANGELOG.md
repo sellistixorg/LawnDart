@@ -10,6 +10,12 @@ changes to the public API.
 
 ## [Unreleased]
 
+### Changed
+
+- Package versions are derived from git tags via MinVer. A tag of the form
+  `v0.1.0-alpha.1` now produces packages at that version; untagged commits
+  produce a deterministic prerelease suffix.
+
 ## [0.1.0-alpha] — 2026-08-20
 
 ### Added

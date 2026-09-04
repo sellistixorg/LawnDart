@@ -1,0 +1,72 @@
+# Tag-triggered pack + GitHub Release. NuGet.org push is opt-in:
+# create a nuget.org Trusted Publishing policy for this workflow file
+# (release.yml), add a NUGET_USER repo secret (nuget.org profile name,
+# not email), then set the NUGET_PUBLISH repo variable to true.
+#
+# Version comes from the tag via MinVer. Tag v0.1.0-alpha.1 to ship 0.1.0-alpha.1.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    name: Pack and publish
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        fetch-depth: 0
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      with:
+        dotnet-version: '10.0.x'
+
+    - name: Restore dependencies
+      run: dotnet restore LawnDart.sln
+
+    - name: Build
+      run: dotnet build LawnDart.sln --no-restore --configuration Release
+
+    - name: Test (unit)
+      run: dotnet test LawnDart.sln --no-build --configuration Release --verbosity normal --filter "Category!=Integration"
+
+    - name: Pack
+      run: dotnet pack LawnDart.sln --no-build --configuration Release -o artifacts/nupkg
+
+    - name: Upload packages
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: nupkgs
+        path: artifacts/nupkg/*
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+      with:
+        generate_release_notes: true
+        files: artifacts/nupkg/*
+
+    - name: NuGet login (OIDC)
+      if: vars.NUGET_PUBLISH == 'true'
+      id: login
+      uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
+      with:
+        user: ${{ secrets.NUGET_USER }}
+
+    - name: Publish to nuget.org
+      if: vars.NUGET_PUBLISH == 'true'
+      run: >
+        dotnet nuget push artifacts/nupkg/*.nupkg
+        --api-key ${{ steps.login.outputs.NUGET_API_KEY }}
+        --source https://api.nuget.org/v3/index.json
+        --skip-duplicate

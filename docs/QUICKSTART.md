@@ -4,7 +4,7 @@ Zero infrastructure. .NET 10 SDK only.
 
 ## 1. Add project references
 
-Packages are not on nuget.org yet (`0.1.0-alpha`). Clone this repository and
+Packages are not on nuget.org yet. Clone this repository and
 reference the projects you need:
 
 ```xml

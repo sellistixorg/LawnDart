@@ -139,6 +139,31 @@ When adding a new source package:
 4. Add a corresponding test project under `tests/LawnDart.<Name>.Tests/`.
 5. Update `CHANGELOG.md` and the package map in `README.md`.
 
+## Releasing
+
+Package versions are derived from git tags by [MinVer](https://github.com/adamralph/minver).
+Do not set `<Version>` in the project files.
+
+All nine packages version in lockstep. To cut a release:
+
+1. Move `CHANGELOG.md` entries from `## [Unreleased]` into a dated heading
+   matching the tag (without the `v` prefix).
+2. Commit that changelog edit.
+3. Tag and push:
+
+```bash
+git tag -a v0.1.0-alpha.1 -m "0.1.0-alpha.1"
+git push origin v0.1.0-alpha.1
+```
+
+The [Release](.github/workflows/release.yml) workflow packs every packable
+project, attaches the nupkgs to a GitHub Release, and — once
+`NUGET_PUBLISH` is set to `true` and nuget.org Trusted Publishing is
+configured for `release.yml` — pushes to nuget.org.
+
+Untagged commits produce a prerelease such as `0.2.0-alpha.0.3` (minor bump
+plus commit height). Those must not be published.
+
 ## Getting help
 
 - Start with [docs/START_HERE.md](docs/START_HERE.md) and the
