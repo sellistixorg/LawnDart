@@ -50,7 +50,7 @@
     "globalMetadata": {
       "_appName": "LawnDart",
       "_appTitle": "LawnDart Documentation",
-      "_appLogoPath": "assets/logo-512.png",
+      "_appLogoPath": "assets/docs-logo.png",
       "_appFaviconPath": "assets/favicon-32.png",
       "_enableSearch": true,
       "_disableContribution": false,
@@ -59,7 +59,7 @@
         "branch": "main"
       }
     },
-    "template": ["default", "modern"],
+    "template": ["default", "modern", "templates"],
     "sitemap": {
       "baseUrl": "https://sellistixorg.github.io/LawnDart"
     }

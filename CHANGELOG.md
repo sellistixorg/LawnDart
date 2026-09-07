@@ -32,6 +32,8 @@ changes to the public API.
 
 ### Fixed
 
+- DocFX navbar uses a 64px transparent logo constrained to 32px instead of
+  the 512px cream-backed mark, which overflowed the header.
 - Doc samples for `IReactor.ReactAsync` and aggregate/DCB `HandleAsync` match
   the current signatures (`MessageContext`, `CancellationToken`).
 
