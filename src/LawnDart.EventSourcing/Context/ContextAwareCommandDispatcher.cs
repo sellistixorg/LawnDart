@@ -10,9 +10,11 @@ namespace LawnDart.EventSourcing.Context;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Register via <c>services.AddContextAwareCommandDispatcher()</c>.  Once registered, the
-/// standard Minimal API / MVC endpoint code calls
-/// <c>dispatcher.DispatchAsync(command, ctx)</c> without knowing the context name.
+/// Registered automatically as <see cref="ICommandDispatcher"/> when you call
+/// <c>UseInMemory()</c>, <c>UseSqlServer()</c>, or <c>WithCommandHandlers()</c>.
+/// Do not register this type yourself. Once it is in the container, Minimal API /
+/// MVC endpoint code calls <c>dispatcher.DispatchAsync(command, ctx)</c> without
+/// knowing the context name.
 /// </para>
 /// <para>
 /// The handler is resolved as a <em>keyed</em> service using the context name returned by

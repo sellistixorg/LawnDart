@@ -2,8 +2,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using LawnDart;
-using LawnDart.Aggregates;
-using LawnDart.Dcb;
 using LawnDart.EventSourcing;
 using LawnDart.EventSourcing.SqlServer;
 using LawnDart.EventStore;
@@ -80,13 +78,6 @@ internal class Program
         {
             academyCtx.UseInMemory();
         }
-
-        services.AddSingleton<IEventStore>(sp =>
-            sp.GetRequiredKeyedService<IEventStore>("default"));
-        services.AddScoped<IAggregateRepository>(sp =>
-            sp.GetRequiredKeyedService<IAggregateRepository>("default"));
-        services.AddScoped<IDcbRepository>(sp =>
-            sp.GetRequiredKeyedService<IDcbRepository>("default"));
 
         services.AddSingleton<CourseSectionProjector>();
         services.AddSingleton<StudentTranscriptProjector>();

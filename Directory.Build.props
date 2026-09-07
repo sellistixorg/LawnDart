@@ -5,10 +5,10 @@
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <NoWarn>$(NoWarn);1591</NoWarn>
-    <Authors>Sellistix</Authors>
-    <Company>Sellistix</Company>
+    <Authors>Sellistix LLC</Authors>
+    <Company>Sellistix LLC</Company>
     <Product>LawnDart</Product>
-    <Copyright>Copyright (c) 2026 Sellistix</Copyright>
+    <Copyright>Copyright (c) 2026 Sellistix LLC</Copyright>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/sellistixorg/LawnDart</PackageProjectUrl>
     <RepositoryUrl>https://github.com/sellistixorg/LawnDart</RepositoryUrl>

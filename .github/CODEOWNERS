@@ -1,0 +1,4 @@
+# Default reviewer. Protect main does not require Code Owner approval
+# (solo maintainer, 0 required reviews). GitHub still requests review
+# on external PRs.
+* @sellistix

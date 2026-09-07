@@ -1,0 +1,28 @@
+---
+description: Keep CHANGELOG.md updated under [Unreleased] for user-facing work
+alwaysApply: true
+---
+
+# Changelog
+
+If this change is user-facing, add a bullet under `## [Unreleased]` in
+`CHANGELOG.md` in the same change. Do not invent a version heading — those
+are created only when tagging a release.
+
+User-facing includes: public API, runtime behavior, package identity or
+dependencies, consumer docs, and CI/release mechanics a downstream user
+would notice.
+
+Skip: internal refactors with no behavior change, test-only work,
+comment or formatting-only edits, and private planning files.
+
+Use Keep a Changelog categories (`Added`, `Changed`, `Fixed`, `Removed`,
+`Deprecated`, `Security`). Write the bullet in user voice, not commit voice.
+
+```markdown
+<!-- BAD -->
+- Updated Directory.Build.props and added MinVer.
+
+<!-- GOOD -->
+- Package versions are derived from git tags via MinVer.
+```

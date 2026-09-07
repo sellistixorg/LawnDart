@@ -48,6 +48,8 @@ from git tags (see [Releasing](CONTRIBUTING.md#releasing)).
 | `LawnDart.Authorization.AspNetCore` | HTTP claims → authorization context |
 | `LawnDart.Testing` | Given / when / then harnesses |
 
+Details: [Package map](docs/packages/README.md).
+
 ## Install (this repository)
 
 ```bash
@@ -93,6 +95,7 @@ Backend choice: [docs/BACKEND_SELECTION.md](docs/BACKEND_SELECTION.md).
 
 ## Documentation
 
+- [Documentation site](https://sellistixorg.github.io/LawnDart/)
 - [Start here](docs/START_HERE.md)
 - [Overview](docs/OVERVIEW.md)
 - [Quickstart](docs/QUICKSTART.md)

@@ -1,0 +1,15 @@
+# Default: Git detects text vs binary and stores text as LF.
+* text=auto
+
+# Scripts that break if the other platform's endings leak in.
+*.sh text eol=lf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Brand assets and other binaries — never convert.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary

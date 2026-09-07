@@ -33,9 +33,11 @@ public sealed class BddTestContext : IAsyncDisposable
     /// <summary>
     /// Creates a fresh InMemory-backed test context. Primary GWT host.
     /// </summary>
-    public static BddTestContext CreateInMemory(IEnumerable<Type>? eventTypes = null)
+    /// <remarks>
+    /// The in-memory store does not require an event-type catalog.
+    /// </remarks>
+    public static BddTestContext CreateInMemory()
     {
-        _ = eventTypes;
         var store = new InMemoryEventStore();
 
         var tenantProvider = new NullTenantContextProvider();
