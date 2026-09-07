@@ -1,0 +1,7 @@
+/* Navbar logo: DocFX otherwise renders _appLogoPath at intrinsic size. */
+.navbar-brand img,
+img#logo {
+  height: 32px;
+  width: auto;
+  max-height: 32px;
+}
