@@ -9,11 +9,6 @@ namespace LawnDart;
 public class LawnDartOptions
 {
     /// <summary>
-    /// Azure Storage connection string.
-    /// </summary>
-    public string? AzureStorageConnection { get; set; }
-
-    /// <summary>
     /// Require tenant ID in all framework operations.
     /// When true, TenantId must be present in CommandMetadata.
     /// When false, tenant is optional.

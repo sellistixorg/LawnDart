@@ -1,3 +1,5 @@
+- name: Package map
+  href: README.md
 - name: LawnDart
   href: core.md
 - name: EventSourcing

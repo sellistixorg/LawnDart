@@ -37,7 +37,7 @@
   homepage: learning-path/README.md
 - name: Packages
   href: packages/
-  homepage: packages/core.md
+  homepage: packages/README.md
 - name: Diagrams
   href: diagrams/
   homepage: diagrams/command-path.md

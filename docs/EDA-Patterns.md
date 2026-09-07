@@ -8,10 +8,11 @@ Event-driven choreography in LawnDart uses `LawnDart.Messaging` plus
 ```csharp
 public sealed class PaymentReactor : IReactor<SeatReservationConfirmed>
 {
-    public Task<IReadOnlyList<ICommand>> ReactAsync(
+    public Task<IEnumerable<ICommand>> ReactAsync(
         SeatReservationConfirmed @event,
+        MessageContext context,
         CancellationToken cancellationToken = default)
-        => Task.FromResult<IReadOnlyList<ICommand>>(
+        => Task.FromResult<IEnumerable<ICommand>>(
             [new ProcessPaymentCommand(...)]);
 }
 

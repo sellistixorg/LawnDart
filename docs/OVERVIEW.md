@@ -29,4 +29,5 @@ app.MapLawnDartCommands();
 | `LawnDart.Authorization.AspNetCore` | HTTP claims → `AuthorizationContext` |
 | `LawnDart.Testing` | Given / when / then harnesses |
 
-Academy + `UseInMemory()` is the zero-infra path.
+Academy + `UseInMemory()` is the zero-infra path. Per-package landing pages:
+[Package map](packages/README.md).

@@ -11,7 +11,7 @@ inventory). Use an aggregate when one stream owns the rule.
 ```csharp
 public sealed class EnrollmentEntity : DcbEntity<EnrollmentState>
 {
-    public override Task HandleAsync<TCommand>(TCommand command)
+    public override Task HandleAsync<TCommand>(TCommand command, CancellationToken cancellationToken = default)
     {
         if (command is EnrollStudentCommand enroll)
         {

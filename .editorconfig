@@ -1,6 +1,6 @@
 [*.{cs,vb}]
 
-file_header_template = Copyright (c) 2026 Sellistix. Licensed under the MIT License.
+file_header_template = Copyright (c) 2026 Sellistix LLC. Licensed under the MIT License.
 #### Naming styles ####
 
 # Naming rules
