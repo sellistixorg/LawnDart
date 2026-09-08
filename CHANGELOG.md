@@ -10,6 +10,22 @@ changes to the public API.
 
 ## [Unreleased]
 
+
+## [0.1.0-alpha] — 2026-08-20
+
+### Added
+
+- Happy-path packages: `LawnDart`, `LawnDart.EventSourcing`,
+  `LawnDart.EventSourcing.SqlServer`, `LawnDart.Projections.Lightweight`,
+  `LawnDart.AspNetCore`, `LawnDart.Authorization.AspNetCore`,
+  `LawnDart.Messaging`, `LawnDart.Messaging.InMemory`, `LawnDart.Testing`.
+- Academy console and WebApi demos on `UseInMemory()` (optional SQL profiles).
+- Docs, learning path 1–8, Eventhesis contract, and `lawndart-*` agent skills.
+- MIT license, SECURITY.md (`security@sellistix.com`), CI unit filter
+  `Category!=Integration`.
+
+## [0.1.0-alpha.1] — 2026-09-07
+
 ### Removed
 
 - Empty public type `LawnDartEventSourcingExtensions`. Registration stays on
@@ -49,16 +65,3 @@ changes to the public API.
 - The Academy console demo resolves `IEventStore`, `IAggregateRepository`, and
   `IDcbRepository` through the library's unkeyed `"default"` aliases instead of
   hand-written keyed bridges.
-
-## [0.1.0-alpha] — 2026-08-20
-
-### Added
-
-- Happy-path packages: `LawnDart`, `LawnDart.EventSourcing`,
-  `LawnDart.EventSourcing.SqlServer`, `LawnDart.Projections.Lightweight`,
-  `LawnDart.AspNetCore`, `LawnDart.Authorization.AspNetCore`,
-  `LawnDart.Messaging`, `LawnDart.Messaging.InMemory`, `LawnDart.Testing`.
-- Academy console and WebApi demos on `UseInMemory()` (optional SQL profiles).
-- Docs, learning path 1–8, Eventhesis contract, and `lawndart-*` agent skills.
-- MIT license, SECURITY.md (`security@sellistix.com`), CI unit filter
-  `Category!=Integration`.
