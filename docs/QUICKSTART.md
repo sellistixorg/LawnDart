@@ -2,20 +2,19 @@
 
 Zero infrastructure. .NET 10 SDK only.
 
-## 1. Add project references
+## 1. Add packages
 
-Packages are not on nuget.org yet. Clone this repository and
-reference the projects you need:
+Packages are on nuget.org as a prerelease. Use `--prerelease` until a
+stable version exists:
 
-```xml
-<ItemGroup>
-  <ProjectReference Include="path/to/LawnDart/src/LawnDart/LawnDart.csproj" />
-  <ProjectReference Include="path/to/LawnDart/src/LawnDart.EventSourcing/LawnDart.EventSourcing.csproj" />
-</ItemGroup>
+```bash
+dotnet add package LawnDart --prerelease
+dotnet add package LawnDart.EventSourcing --prerelease
 ```
 
 A console host also needs `Microsoft.Extensions.DependencyInjection`.
-Or pack to a local feed (see the root [README](../README.md)).
+To work from this repository instead, clone it and add project references
+(see the root [README](../README.md)).
 
 ## 2. Register the host
 

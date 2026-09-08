@@ -22,7 +22,7 @@ Use for:
 
 - Academy (`dotnet run --project demos/LawnDart.Demo.Academy`)
 - Given / when / then specs (`BddTestContext.CreateInMemory`)
-- CI unit tests (`Category!=Integration`)
+- Local unit tests (`Category!=Integration`)
 
 Data lasts for the process lifetime. Partition hashing can differ from
 SQL Server, so treat routing as backend-specific.
@@ -42,9 +42,10 @@ services.AddBoundedContext("default")
 Use for production-shaped hosts, outbox, and Testcontainers integration tests
 tagged `Category=Integration`.
 
-CI and local unit runs use `--filter Category!=Integration`. SQL Server tests
-need Docker (Testcontainers). In-process projection harnesses under
-`tests/.../Integration` use the same trait so they stay out of the unit job.
+Local unit runs use `--filter Category!=Integration`. CI runs unit tests and
+then `Category=Integration`. SQL Server tests need Docker (Testcontainers).
+In-process projection harnesses under `tests/.../Integration` use the same
+trait so they stay out of the local unit job.
 
 Academy optional profile:
 

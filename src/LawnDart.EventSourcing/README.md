@@ -15,8 +15,8 @@ processing.
 ## Installation
 
 ```bash
-dotnet add package LawnDart
-dotnet add package LawnDart.EventSourcing
+dotnet add package LawnDart --prerelease
+dotnet add package LawnDart.EventSourcing --prerelease
 ```
 
 ## Getting started

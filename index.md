@@ -20,9 +20,10 @@ State (present view).
 
 ## Quick install (zero infrastructure)
 
-Packages are not on nuget.org yet (`0.1.0-alpha`). Clone this repository and
-add project references to `src/LawnDart` and `src/LawnDart.EventSourcing`, or
-pack to a local feed (see the root README).
+```bash
+dotnet add package LawnDart --prerelease
+dotnet add package LawnDart.EventSourcing --prerelease
+```
 
 Then `AddLawnDart` and `AddBoundedContext("default").UseInMemory()`.
 

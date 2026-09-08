@@ -10,6 +10,10 @@ changes to the public API.
 
 ## [Unreleased]
 
+### Changed
+
+- Packages install from nuget.org with `--prerelease` until a stable version exists.
+- CI and release run `Category=Integration` (SQL Server Testcontainers) after unit tests.
 
 ## [0.1.0-alpha] — 2026-08-20
 

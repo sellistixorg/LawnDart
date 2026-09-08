@@ -17,9 +17,10 @@ Consistency Boundaries, an event store (InMemory or SQL Server), lightweight
 projections, messaging, ASP.NET Core command mapping, and a given/when/then
 test harness.
 
-Packages are not published to nuget.org yet. Clone this repository and use
-project references, or pack to a local feed. Package versions are derived
-from git tags (see [Releasing](CONTRIBUTING.md#releasing)).
+Packages are on [nuget.org](https://www.nuget.org/packages?q=LawnDart)
+as a prerelease (`0.1.0-alpha.1` and later). Use `--prerelease` until a
+stable version exists. Package versions are derived from git tags (see
+[Releasing](CONTRIBUTING.md#releasing)).
 
 ## Requirements
 
@@ -50,29 +51,23 @@ from git tags (see [Releasing](CONTRIBUTING.md#releasing)).
 
 Details: [Package map](docs/packages/README.md).
 
-## Install (this repository)
+## Install
+
+```bash
+dotnet add package LawnDart --prerelease
+dotnet add package LawnDart.EventSourcing --prerelease
+```
+
+Add the other packages from the table above as you need them, each with
+`--prerelease`.
+
+To work on this repository, clone and restore:
 
 ```bash
 git clone https://github.com/sellistixorg/LawnDart.git
 cd LawnDart
 dotnet restore
 dotnet build
-```
-
-Reference the projects you need, for example:
-
-```xml
-<ItemGroup>
-  <ProjectReference Include="path/to/LawnDart/src/LawnDart/LawnDart.csproj" />
-  <ProjectReference Include="path/to/LawnDart/src/LawnDart.EventSourcing/LawnDart.EventSourcing.csproj" />
-</ItemGroup>
-```
-
-To consume packed nupkgs from a local feed:
-
-```bash
-dotnet pack LawnDart.sln -c Release -o ./nupkgs
-dotnet nuget add source ./nupkgs --name lawndart-local
 ```
 
 ## Quick start

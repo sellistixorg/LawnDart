@@ -24,14 +24,9 @@ This is the foundation package — all other LawnDart packages depend on it.
 
 ## Installation
 
-Packages are not on nuget.org yet (`0.1.0-alpha`). Clone this repository and
-add a project reference:
-
-```xml
-<ProjectReference Include="path/to/LawnDart/src/LawnDart/LawnDart.csproj" />
+```bash
+dotnet add package LawnDart --prerelease
 ```
-
-Or pack to a local feed (see the root README).
 
 ## Getting started
 
