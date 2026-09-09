@@ -30,7 +30,7 @@ public sealed class DcbSqlServerSnapshotTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _container = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2025-latest")
+        _container = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-latest")
             .WithPassword("Test123!")
             .Build();
         await _container.StartAsync();
