@@ -1,18 +1,27 @@
-# Eventhesis compile contract
+# Eventhesis and LawnDart
 
-Eventhesis widgets compile to LawnDart types and DI registrations.
+[Eventhesis](https://eventhesis.com) is a separate event-modelling canvas. It
+emits a **slice-based JSON** event model for event-sourced implementation. It
+does **not** generate LawnDart (or Patterns) C# types.
 
-| Eventhesis widget | LawnDart artifact |
+You implement the model however you choose. LawnDart is one runtime you can
+target. Academy is a reference host, not generated output.
+
+## Model → implementation (optional mapping)
+
+| Eventhesis concept | Typical LawnDart implementation |
 |---|---|
 | Command | `ICommand` + aggregate / DCB handler |
-| Event | `IEvent` (`Id`, `Timestamp` first) |
-| Entity (aggregate) | `AggregateRoot<TState>` or `DcbEntity<TState>` |
-| View | `IProjector` + read model |
+| Event | `IEvent` (`Id`, `Timestamp` first if you use the Eventhesis field-order convention) |
+| Entity | `AggregateRoot<TState>` or `DcbEntity<TState>` declaring `Handle(TCommand)` |
+| View | A read model. Lightweight host: `ProjectionBase<TView>` + scope attributes + `IMultiStreamEntityResolver` when multi-stream (the Flywheel hook). Or your own projector against `IEventStore`. `IProjector` is experimental and unused — neither host calls it. |
 | Process / reaction | `IReactor` / `IEventProcessor` / `ITaskProcessor` |
 | GWT | `LawnDart.Testing` spec |
 | Vertical slice | `AddBoundedContext(name)` |
 
-## Host grammar
+There is no required CLR type for a View widget.
+
+## Host grammar (if you use LawnDart)
 
 ```csharp
 services.AddLawnDart(o => o.RequireTenantId = false);
@@ -23,9 +32,9 @@ services.AddLawnDartHttpCommands(typeof(SomeCommand).Assembly);
 app.MapLawnDartCommands();
 ```
 
-Keep type names stable. Rename only the package and extension-method prefixes
-(`AddLawnDart`, `MapLawnDartCommands`, `AddLawnDartAuthorization`).
+Keep type names stable when you hand-write LawnDart code.
+Rename only the package and extension-method prefixes (`AddLawnDart`,
+`MapLawnDartCommands`, `AddLawnDartAuthorization`).
 
-Academy (`demos/LawnDart.Demo.Academy`) is the reference host Eventhesis
-should be able to emit: InMemory by default, optional SQL, HTTP commands via
-`MapLawnDartCommands`.
+Academy (`demos/LawnDart.Demo.Academy`) is a reference InMemory host with
+optional SQL and HTTP commands via `MapLawnDartCommands`.

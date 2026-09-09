@@ -9,7 +9,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\LawnDart\LawnDart.csproj" />
-    <ProjectReference Include="..\LawnDart.Messaging\LawnDart.Messaging.csproj" />
   </ItemGroup>
 
   <ItemGroup>

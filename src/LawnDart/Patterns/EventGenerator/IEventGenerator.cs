@@ -1,10 +1,17 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace LawnDart.Patterns.EventGenerator;
 
 /// <summary>
 /// Generates events from current state (State → Event pattern).
-/// Interface stub — no implementation is provided yet.
 /// </summary>
+/// <remarks>
+/// Planned cell (🔧). No host in this version. Implementing this
+/// interface does not register it with DI or cause the runtime to
+/// invoke it.
+/// </remarks>
 /// <typeparam name="TState">The state type to inspect.</typeparam>
+[Experimental("LAWNDART002")]
 public interface IEventGenerator<in TState> where TState : IState
 {
     /// <summary>

@@ -78,11 +78,22 @@ public abstract class DcbEntity
     /// <summary>
     /// Handles a command and emits resulting events.
     /// </summary>
+    /// <remarks>
+    /// Declare closed <c>Handle(TCommand)</c> or <c>Handle(TCommand, CancellationToken)</c>
+    /// methods. The repository uses those when this method is not overridden.
+    /// </remarks>
     /// <typeparam name="TCommand">Command type.</typeparam>
     /// <param name="command">Command to handle.</param>
     /// <param name="cancellationToken">Token used to cancel domain work.</param>
     /// <returns>Task representing the async operation.</returns>
-    public abstract Task HandleAsync<TCommand>(TCommand command, CancellationToken cancellationToken = default) where TCommand : ICommand;
+    [Obsolete("Declare Handle(TCommand) methods instead.")]
+    public virtual Task HandleAsync<TCommand>(TCommand command, CancellationToken cancellationToken = default) where TCommand : ICommand
+    {
+        throw new InvalidOperationException(
+            $"{GetType().Name} does not override HandleAsync<TCommand> and was invoked directly. " +
+            $"Declare Handle({typeof(TCommand).Name}) and dispatch via IDcbRepository.HandleCommandAsync, " +
+            "or override HandleAsync<TCommand>.");
+    }
     
     /// <summary>
     /// Emits an event and tracks it as pending.
@@ -121,6 +132,10 @@ public abstract class DcbEntity
     /// <summary>
     /// Replays events to rebuild entity state. Used when loading from event store.
     /// </summary>
+    /// <remarks>
+    /// Application code should load through <c>IDcbRepository</c>, not replay
+    /// the store itself.
+    /// </remarks>
     /// <param name="events">Sequenced events to replay.</param>
     public void ReplayEvents(IEnumerable<SequencedEvent> events)
     {
@@ -150,7 +165,7 @@ public abstract class DcbEntity
     /// <summary>
     /// Clears pending events. Called after events have been persisted.
     /// </summary>
-    public void ClearPendingEvents()
+    internal void ClearPendingEvents()
     {
         _pendingEvents.Clear();
     }
@@ -160,7 +175,7 @@ public abstract class DcbEntity
     /// Does not change <see cref="ConsistencyTags"/>.
     /// </summary>
     /// <param name="tags">Tags to set.</param>
-    public void SetTags(params string[] tags)
+    internal void SetTags(params string[] tags)
     {
         _tags.Clear();
         _tags.AddRange(tags);
@@ -172,7 +187,7 @@ public abstract class DcbEntity
     /// or <see cref="Emit{TEvent}"/>.
     /// </summary>
     /// <param name="tags">Load-query tags to set.</param>
-    public void SetConsistencyTags(params string[] tags)
+    internal void SetConsistencyTags(params string[] tags)
     {
         _consistencyTags.Clear();
         if (tags == null || tags.Length == 0)
@@ -201,7 +216,7 @@ public abstract class DcbEntity
     /// concurrency to skip the redundant re-read during the DCB concurrency check.
     /// </summary>
     /// <param name="marker">Marker to store, or <c>null</c> to clear.</param>
-    public void SetConsistencyMarker(byte[]? marker)
+    internal void SetConsistencyMarker(byte[]? marker)
     {
         ConsistencyMarker = marker;
     }

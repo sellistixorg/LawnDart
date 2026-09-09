@@ -12,9 +12,11 @@ This is the foundation package — all other LawnDart packages depend on it.
 - **`IBoundedContextEventStore`** — named handle to a full context stack
 - **`BoundedContextBuilder`** — fluent builder returned by `services.AddBoundedContext(contextName)`
 - **`IDcbRepository`** — Dynamic Consistency Boundary (DCB) pattern support
-- **`IReactor` / `IProjector` / `IEventProcessor`** — patterns for reacting to and projecting events
-- **`ICommandHandler` / `ICommandDelegator`** — command dispatch abstractions
-- **`ITaskProcessor`** — background task processing pattern
+- **`IReactor` / `IEventProcessor` / `ITaskProcessor`** — hosted pattern contracts
+- **`ICommandHandler`** — app-facing command dispatch
+- **`ICommandDispatcher`** — routes reactor/processor commands to `ICommandHandler<T>` (same `LawnDart.Messaging` namespace as `MessageContext`; EventSourcing registers `ContextAwareCommandDispatcher`)
+- **`IProjector`** — optional Event → State stub (`ProjectAsync`). Lightweight does not call it; use `ProjectionBase` for the shipped host, or hand-roll your own loop
+- **`ICommandDelegator` / `IDownstreamActivity` / `IEventGenerator` / `IStateTransformer`** — `[Experimental]` 🔧 stubs; no host in this version. Implementing them does not register or run them.
 - **Snapshots** — `ISnapshotStore`, `IDcbSnapshotStore`, `ISnapshotStrategy`, built-in strategies
 - **Authorization** — `IAuthorizationProvider`, attributes, `AuthorizationService`
 - **Metadata** — `IMetadataProvider`, `ITenantContextProvider`, `EventMetadata`, `CommandMetadata`

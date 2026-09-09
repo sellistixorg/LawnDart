@@ -5,6 +5,14 @@ description: Register LawnDart Lightweight projections — AddInMemoryProjection
 
 # Lightweight projections
 
+## Frozen surface
+
+1. **App-facing dispatch** is `ICommandHandler<T>` (HTTP, jobs).
+2. **Aggregates / DCB** declare closed `Handle(TCommand)`. `HandleCommandAsync` is persistence + authorization.
+3. **Load** by `string streamId` when the stream is not `{type}:{guid}`.
+4. **Projections:** author `ProjectionBase<TView>` plus attributes; multi-stream views implement `IMultiStreamEntityResolver`. Host with `WithProjections`.
+5. **Stores:** `UseInMemory` / `UseSqlServer` on `AddBoundedContext(name)` before `WithProjections`.
+
 ```csharp
 services.AddInMemoryProjectionStores("default"); // or AddSqlProjectionStores(name, cs)
 

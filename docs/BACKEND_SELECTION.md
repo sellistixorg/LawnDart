@@ -11,6 +11,46 @@ Both register through the same `AddBoundedContext` grammar, so switching backend
 one-line change. Additional backends can be added by implementing `IEventStore` and
 extending `BoundedContextBuilder`.
 
+## Portable store contract
+
+`IEventStore` inherits `IStreamRegistry` — do not split. Changing a method
+signature here breaks InMemory, SQL Server, and any third-party store.
+`IEventStoreSubscriptions` is optional for a custom store; both shipped
+backends implement it.
+
+**`IEventStore`**
+
+| Method | Role |
+|---|---|
+| `ReadStreamAsync(streamId, fromVersion = 0, toVersion = null, toTimestamp = null, ct)` | Stream read (list) |
+| `ReadStreamEnumerableAsync(streamId, fromVersion = 0, toVersion = null, toTimestamp = null, ct)` | Stream read (async sequence) |
+| `ReadByQueryAsync(query, fromSequencePosition = null, limit = null, toSequencePosition = null, toTimestamp = null, ct)` | DCB query (list + consistency marker) |
+| `ReadByQueryStreamAsync(query, fromSequencePosition = null, toSequencePosition = null, toTimestamp = null, ct)` | DCB query (async sequence) |
+| `AppendAsync(streamId, events, expectedVersion = null, metadata = null, tags = null, ct)` | Stream append |
+| `AppendAsync(events, condition, metadata = null, tags = null, ct)` | DCB append |
+| `GetCurrentSequenceAsync(ct)` | Store-wide head |
+| `GetMaxSequencePositionAsync(query, fromSequencePosition = null, toSequencePosition = null, toTimestamp = null, ct)` | Filtered max sequence |
+
+**`IStreamRegistry`** (inherited)
+
+| Method | Role |
+|---|---|
+| `GetStreamAsync(streamId, ct)` | One stream's metadata |
+| `GetStreamsByAggregateTypeAsync(aggregateType, ct)` | Discover by type |
+| `GetStreamsByTagAsync(tag, ct)` | Discover by tag |
+| `EnumerateStreamIdsAsync(prefix = null, ct)` | List stream IDs |
+| `GetStreamsUpdatedAfterAsync(afterSequencePosition, limit = null, ct)` | Incremental catch-up |
+| `GetStreamCountAsync(prefix = null, ct)` | Count |
+
+**`IEventStoreSubscriptions`**
+
+| Method | Role |
+|---|---|
+| `Subscribe(subscriberId, fromSequence, filter = null, ct)` | Catch-up → live push |
+
+Core freezes this surface in `PublicAPI.Shipped.txt`. Adding or removing a
+public Core member without editing that file fails the build.
+
 ## InMemory
 
 ```csharp

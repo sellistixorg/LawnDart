@@ -1,6 +1,8 @@
 # LawnDart.Messaging
 
 Reactors, event processors, task processors, and outbox publisher hooks.
+`ICommandDispatcher` lives in Core (`LawnDart.Messaging` namespace); this
+package type-forwards it and calls it from hosted reactors/processors.
 
 Take it when an event in one slice should become a command (or further work)
 in another. This package is the host and the contracts; it does not include

@@ -7,6 +7,14 @@ description: Choose and register a LawnDart event store. UseInMemory for zero in
 
 v1 backends: **InMemory** and **SQL Server**.
 
+## Frozen surface
+
+1. **App-facing dispatch** is `ICommandHandler<T>` (HTTP, jobs).
+2. **Aggregates / DCB** declare closed `Handle(TCommand)`. `HandleCommandAsync` is persistence + authorization.
+3. **Load** by `string streamId` when the stream is not `{type}:{guid}`.
+4. **Projections:** `ProjectionBase<TView>` plus attributes; multi-stream views implement `IMultiStreamEntityResolver`.
+5. **Stores:** `UseInMemory()` / `UseSqlServer(...)` on `AddBoundedContext(name)`.
+
 ```csharp
 services.AddLawnDart(o => o.RequireTenantId = false);
 

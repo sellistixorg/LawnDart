@@ -7,16 +7,17 @@ _layout: landing
 In-process .NET library for event-sourced commands, events, and state.
 
 LawnDart implements the **nine common patterns** — a command–event–state
-matrix of transitions between Command (future intent), Event (past fact), and
-State (present view).
+matrix. Five cells are hosted; four are planned interfaces with no host.
 
 ## Pattern matrix
 
 | From \ To | **Command** | **Event** | **State** |
 |-----------|-------------|-----------|-----------|
-| **Command** | Delegation | Aggregate Root & DCB | Downstream Activity |
-| **Event** | Reaction | Event Processing | Projection |
-| **State** | Task Processing | Event Generator | State Transformation |
+| **Command** | Delegation 🔧 | Aggregate Root & DCB ✅ | Downstream Activity 🔧 |
+| **Event** | Reaction ✅ | Event Processing ✅ | Projection ✅ |
+| **State** | Task Processing ✅ | Event Generator 🔧 | State Transformation 🔧 |
+
+✅ Hosted (runtime, DI, tests) · 🔧 Planned interface — `[Experimental]`, no host yet. Implementing a 🔧 type does not register or run it.
 
 ## Quick install (zero infrastructure)
 
@@ -32,4 +33,4 @@ Then `AddLawnDart` and `AddBoundedContext("default").UseInMemory()`.
 1. [Start Here](docs/START_HERE.md)
 2. [Quickstart](docs/QUICKSTART.md)
 3. [Learning Path](docs/learning-path/README.md)
-4. [Eventhesis compile contract](docs/EVENTHESIS.md)
+4. [Eventhesis and LawnDart](docs/EVENTHESIS.md)

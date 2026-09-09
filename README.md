@@ -29,8 +29,8 @@ stable version exists. Package versions are derived from git tags (see
 
 ## Features
 
-- Command / event / state types and the nine CES patterns (aggregates, DCB,
-  projections, reactions, processors)
+- Command / event / state types and the CES matrix (five hosted cells; four
+  planned interfaces)
 - `AddBoundedContext` + `UseInMemory()` with no infrastructure
 - Durable SQL Server store, outbox, and lightweight projections
 - ASP.NET Core HTTP command mapping and optional claims-based authorization
@@ -50,6 +50,18 @@ stable version exists. Package versions are derived from git tags (see
 | `LawnDart.Testing` | Given / when / then harnesses |
 
 Details: [Package map](docs/packages/README.md).
+
+## Pattern matrix
+
+Five cells are hosted; four are planned interfaces with no host.
+
+| From \ To | **Command** | **Event** | **State** |
+|---|---|---|---|
+| **Command** | Delegation 🔧 | Aggregate Root & DCB ✅ | Downstream Activity 🔧 |
+| **Event** | Reaction ✅ | Event Processing ✅ | Projection ✅ |
+| **State** | Task Processing ✅ | Event Generator 🔧 | State Transformation 🔧 |
+
+✅ Hosted (runtime, DI, tests) · 🔧 Planned interface — `[Experimental]`, no host yet. Implementing a 🔧 type does not register or run it.
 
 ## Install
 
@@ -106,8 +118,9 @@ artifacts. See [CHANGELOG.md](CHANGELOG.md).
 
 ## Modelling companion
 
-[Eventhesis](https://eventhesis.com) is a separate event-modelling tool that can
-target LawnDart. You do not need it to use this library.
+[Eventhesis](https://eventhesis.com) is a separate event-modelling tool that
+emits slice-based JSON. It does not generate LawnDart types. You do not need
+it to use this library.
 
 ## Contributing
 

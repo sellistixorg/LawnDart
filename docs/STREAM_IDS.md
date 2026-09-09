@@ -21,6 +21,18 @@ stay unique across demos.
 One stream per aggregate instance. The repository loads that stream, applies
 events to state, and appends with expected version.
 
+`GetAsync(Guid)` / `GetOrCreateAsync(Guid)` / `CreateAsync(Guid)` still build
+`{tenant}:{type}:{guid}` (or `{type}:{guid}` when no tenant). When the stream
+is not that shape — for example
+`{account}:InboundShipment:{plan}:{shipment}` — load with the string overloads:
+
+```csharp
+var streamId = $"{accountId}:InboundShipment:{planId:N}:{shipmentId}";
+var shipment = await repo.GetOrCreateAsync<InboundShipmentAggregate>(streamId);
+```
+
+Do not call `SetStreamId` / `ReplayEvents` / `SetCommittedVersion` yourself.
+
 ## DCB
 
 DCB reads by **tags**, not by guessing every stream. Appends still land in an

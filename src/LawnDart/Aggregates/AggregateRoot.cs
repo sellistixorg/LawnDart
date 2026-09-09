@@ -11,6 +11,10 @@ public abstract class AggregateRoot
     /// <summary>
     /// The stream ID for this aggregate instance.
     /// </summary>
+    /// <remarks>
+    /// Set by the repository on load or create. Application code should not
+    /// assign it or reconstruct the store itself.
+    /// </remarks>
     public string StreamId { get; protected set; } = string.Empty;
 
     /// <summary>
@@ -30,16 +34,15 @@ public abstract class AggregateRoot
     ///   <item><c>N ≥ 0</c> — aggregate was loaded via <c>GetAsync</c> or was flushed at least once.
     ///     <c>AppendAsync</c> will assert the stream is currently at version N.</item>
     /// </list>
-    /// <c>AggregateRepository</c> sets this via <see cref="SetCommittedVersion"/> — it must not
-    /// be set directly by application code.
+    /// <c>AggregateRepository</c> sets this after a successful flush. Application
+    /// code must not set it.
     /// </summary>
     public long CommittedVersion { get; private set; } = -1;
 
     /// <summary>
     /// Called by <c>AggregateRepository</c> to record the last version confirmed in the store.
-    /// Sets <see cref="CommittedVersion"/>. Must not be called by application code.
     /// </summary>
-    public void SetCommittedVersion(long version) => CommittedVersion = version;
+    internal void SetCommittedVersion(long version) => CommittedVersion = version;
 
     /// <summary>
     /// Events that have been applied but not yet persisted.
@@ -49,12 +52,12 @@ public abstract class AggregateRoot
     /// <summary>
     /// Clears pending events. Called after events have been persisted.
     /// </summary>
-    public abstract void ClearPendingEvents();
+    internal abstract void ClearPendingEvents();
 
     /// <summary>
     /// Sets the stream ID. Called when loading from event store.
     /// </summary>
-    public void SetStreamId(string streamId)
+    internal void SetStreamId(string streamId)
     {
         StreamId = streamId ?? throw new ArgumentNullException(nameof(streamId));
     }
@@ -62,20 +65,30 @@ public abstract class AggregateRoot
     /// <summary>
     /// Sets the version. Called when loading from event store.
     /// </summary>
-    public void SetVersion(long version)
+    internal void SetVersion(long version)
     {
         Version = version;
     }
     
     /// <summary>
     /// Handles a command and applies resulting events.
-    /// This method must be implemented by derived aggregate types.
     /// </summary>
+    /// <remarks>
+    /// Declare closed <c>Handle(TCommand)</c> or <c>Handle(TCommand, CancellationToken)</c>
+    /// methods. The repository uses those when this method is not overridden.
+    /// </remarks>
     /// <typeparam name="TCommand">The command type.</typeparam>
     /// <param name="command">The command to handle.</param>
     /// <param name="cancellationToken">Token used to cancel domain work.</param>
     /// <returns>Task representing the async operation.</returns>
-    public abstract Task HandleAsync<TCommand>(TCommand command, CancellationToken cancellationToken = default) where TCommand : ICommand;
+    [Obsolete("Declare Handle(TCommand) methods instead.")]
+    public virtual Task HandleAsync<TCommand>(TCommand command, CancellationToken cancellationToken = default) where TCommand : ICommand
+    {
+        throw new InvalidOperationException(
+            $"{GetType().Name} does not override HandleAsync<TCommand> and was invoked directly. " +
+            $"Declare Handle({typeof(TCommand).Name}) and dispatch via IAggregateRepository.HandleCommandAsync, " +
+            "or override HandleAsync<TCommand>.");
+    }
 
     // ── Snapshot hooks ───────────────────────────────────────────────────────
     // These virtual methods allow the repository (which works with the non-generic
@@ -129,16 +142,8 @@ public abstract partial class AggregateRoot<TState> : AggregateRoot where TState
     public override IEnumerable<IEvent> PendingEvents => _pendingEvents.AsReadOnly();
 
     /// <summary>
-    /// Handles a command and applies resulting events.
-    /// </summary>
-    /// <typeparam name="TCommand">The command type.</typeparam>
-    /// <param name="command">The command to handle.</param>
-    /// <param name="cancellationToken">Token used to cancel domain work.</param>
-    /// <returns>Task representing the async operation.</returns>
-    public override abstract Task HandleAsync<TCommand>(TCommand command, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Applies an event to the aggregate state. This should be called from HandleAsync implementations.
+    /// Applies an event to the aggregate state. Call this from <c>Handle(TCommand)</c>
+    /// or an overridden <see cref="AggregateRoot.HandleAsync{TCommand}"/>.
     /// </summary>
     /// <typeparam name="TEvent">The event type.</typeparam>
     /// <param name="event">The event to apply.</param>
@@ -168,6 +173,10 @@ public abstract partial class AggregateRoot<TState> : AggregateRoot where TState
     /// <summary>
     /// Replays events to rebuild aggregate state. Used when loading from event store.
     /// </summary>
+    /// <remarks>
+    /// Application code should load through <c>IAggregateRepository</c>
+    /// (<c>GetAsync</c> / <c>GetOrCreateAsync</c>), not replay the store itself.
+    /// </remarks>
     /// <param name="events">Events to replay.</param>
     public void ReplayEvents(IEnumerable<IEvent> events)
     {
@@ -184,7 +193,7 @@ public abstract partial class AggregateRoot<TState> : AggregateRoot where TState
     /// <summary>
     /// Clears pending events. Called after events have been persisted.
     /// </summary>
-    public override void ClearPendingEvents()
+    internal override void ClearPendingEvents()
     {
         _pendingEvents.Clear();
     }
