@@ -47,15 +47,8 @@ public sealed class InMemoryGwtTests
 
     public sealed class Counter : AggregateRoot<CounterState>
     {
-        public override Task HandleAsync<TCommand>(TCommand command, CancellationToken cancellationToken = default)
-        {
-            if (command is IncrementCommand increment)
-            {
-                Apply(new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, increment.CounterId));
-            }
-
-            return Task.CompletedTask;
-        }
+        public void Handle(IncrementCommand increment) =>
+            Apply(new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, increment.CounterId));
 
         protected override void ApplyEventToState(IEvent @event)
         {
@@ -75,15 +68,8 @@ public sealed class InMemoryGwtTests
     {
         public int Value { get; private set; }
 
-        public override Task HandleAsync<TCommand>(TCommand command, CancellationToken cancellationToken = default)
-        {
-            if (command is IncrementCommand increment)
-            {
-                Emit(new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, increment.CounterId));
-            }
-
-            return Task.CompletedTask;
-        }
+        public void Handle(IncrementCommand increment) =>
+            Emit(new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, increment.CounterId));
 
         protected override void ApplyEventToState(IEvent @event)
         {

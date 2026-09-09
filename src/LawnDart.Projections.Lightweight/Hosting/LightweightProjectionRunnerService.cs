@@ -1573,7 +1573,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
                     return 0;
                 }
 
-                if (!reader.TryRead(out first))
+                if (!reader.TryRead(out first!))
                     return 0;
             }
         }

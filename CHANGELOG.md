@@ -65,7 +65,7 @@ changes to the public API.
   `IDcbRepository` through the library's unkeyed `"default"` aliases instead of
   hand-written keyed bridges.
 
-  ## [0.1.0-alpha.2] — 2026-09-08
+  ## [0.2.0-alpha.1] — 2026-09-08
 
   ### Added
 

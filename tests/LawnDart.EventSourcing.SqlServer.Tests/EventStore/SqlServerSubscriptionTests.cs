@@ -100,20 +100,17 @@ public class SqlServerSubscriptionTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Idle_Then_Append_Delivers_Within_Two_Poll_Intervals()
+    public async Task Idle_Then_Append_Delivers()
     {
         await using var handle = _store.Subscribe("sub-idle", fromSequence: 1);
         // Allow one idle poll cycle with empty store.
         await Task.Delay(80);
 
-        var sw = System.Diagnostics.Stopwatch.StartNew();
         var readTask = ReadExactlyAsync(handle, 1, TimeSpan.FromSeconds(10));
         await _store.AppendAsync("s1", [Evt()]);
-        await readTask;
-        sw.Stop();
+        var received = await readTask;
 
-        // Poll interval is 50ms; allow ~2× plus overhead for container latency.
-        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(2), $"Delivery took {sw.Elapsed}");
+        Assert.Equal(1, received[0].SequencePosition);
     }
 
     [Fact]

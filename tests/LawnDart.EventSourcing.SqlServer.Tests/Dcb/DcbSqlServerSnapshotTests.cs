@@ -30,7 +30,7 @@ public sealed class DcbSqlServerSnapshotTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _container = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2025-latest")
+        _container = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-latest")
             .WithPassword("Test123!")
             .Build();
         await _container.StartAsync();
@@ -240,12 +240,8 @@ public sealed class DcbSqlServerSnapshotTests : IAsyncLifetime
 
     public sealed class InventoryEntity : DcbEntity<InventoryState>
     {
-        public override Task HandleAsync<TCommand>(TCommand command, CancellationToken cancellationToken = default)
-        {
-            if (command is CountInventory count)
-                Emit(new InventoryCounted(Guid.NewGuid(), DateTime.UtcNow, count.Units), Tags.ToArray());
-            return Task.CompletedTask;
-        }
+        public void Handle(CountInventory count) =>
+            Emit(new InventoryCounted(Guid.NewGuid(), DateTime.UtcNow, count.Units), Tags.ToArray());
 
         protected override void ApplyEventToState(IEvent @event)
         {

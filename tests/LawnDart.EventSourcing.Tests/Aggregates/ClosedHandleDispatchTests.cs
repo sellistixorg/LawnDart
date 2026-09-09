@@ -110,6 +110,7 @@ public class ClosedHandleDispatchTests
     {
         public bool GenericCalled { get; private set; }
 
+        [Obsolete("Declare Handle(TCommand) methods instead.")]
         public override Task HandleAsync<TCommand>(TCommand command, CancellationToken cancellationToken = default)
         {
             GenericCalled = true;
