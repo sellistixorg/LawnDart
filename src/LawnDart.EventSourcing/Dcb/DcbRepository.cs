@@ -439,8 +439,14 @@ public class DcbRepository : IDcbRepository
                 commandMetadata.AuthorizationPolicies = authResult.FailedChecks.ToArray();
             }
 
-            // Handle command via entity
-            await entity.HandleAsync(command, cancellationToken);
+            if (CompiledCommandApplicator.OverridesHandleAsync(entity.GetType()))
+            {
+#pragma warning disable CS0618
+                await entity.HandleAsync(command, cancellationToken);
+#pragma warning restore CS0618
+            }
+            else
+                await CompiledCommandApplicator.DispatchAsync(entity, command, cancellationToken);
 
             var pendingCount = entity.PendingEvents.Count();
             

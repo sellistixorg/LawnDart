@@ -7,6 +7,14 @@ description: Hub skill for wiring LawnDart in Program.cs — packages, AddLawnDa
 
 Use this skill first when wiring a new application on LawnDart packages.
 
+## Frozen surface
+
+1. **App-facing dispatch** is `ICommandHandler<T>` (HTTP, jobs) — register with `WithCommandHandlers`.
+2. **Aggregates / DCB** declare closed `Handle(TCommand)`. `HandleCommandAsync` is persistence + authorization.
+3. **Load** by `string streamId` when the stream is not `{type}:{guid}`.
+4. **Projections:** `ProjectionBase<TView>` plus attributes; multi-stream views implement `IMultiStreamEntityResolver`.
+5. **Stores:** `UseInMemory` / `UseSqlServer` on `AddBoundedContext(name)`.
+
 ## Decision tree
 
 1. **Tests only?** → `lawndart-event-store` → `UseInMemory()` on `"default"`.

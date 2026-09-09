@@ -5,7 +5,8 @@
 ## Validation
 
 - [ ] `dotnet build --configuration Release`
-- [ ] `dotnet test --filter "Category!=Integration" --configuration Release` (or explain why skipped)
+- [ ] `dotnet test --filter "Category!=Integration" --configuration Release` (no Docker)
+- [ ] CI also runs `Category=Integration` (SQL Server / Testcontainers)
 - [ ] If docs changed: `dotnet docfx metadata docfx.json` (when API DLLs exist)
 - [ ] If docs changed: `dotnet docfx build docfx.json`
 - [ ] Public and protected members have XML `<summary>` docs

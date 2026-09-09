@@ -1,8 +1,17 @@
 # Overview
 
 LawnDart is a .NET 10 library for the **nine common patterns** in the
-command–event–state matrix. It is the in-process runtime that Eventhesis
-compiles to.
+command–event–state matrix. Five cells are hosted; four are planned
+interfaces with no host. [Eventhesis](https://eventhesis.com) is an optional
+companion that emits slice JSON — it does not generate LawnDart types.
+
+| From \ To | **Command** | **Event** | **State** |
+|---|---|---|---|
+| **Command** | Delegation 🔧 | Aggregate Root & DCB ✅ | Downstream Activity 🔧 |
+| **Event** | Reaction ✅ | Event Processing ✅ | Projection ✅ |
+| **State** | Task Processing ✅ | Event Generator 🔧 | State Transformation 🔧 |
+
+✅ Hosted (runtime, DI, tests) · 🔧 Planned interface — `[Experimental]`, no host yet. Implementing a 🔧 type does not register or run it.
 
 ## Host grammar
 

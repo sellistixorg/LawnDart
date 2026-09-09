@@ -6,15 +6,19 @@
 
 Every message-driven system shuffles three kinds of thing: **commands** (intent),
 **events** (facts), and **state** (present view). Those combine into nine
-patterns — the command–event–state matrix.
+patterns — the command–event–state matrix. Five are hosted; four are planned
+interfaces.
 
-| Input → Output | Command | Event | State |
+| From \ To | **Command** | **Event** | **State** |
 |---|---|---|---|
-| **Command** | Delegation | Aggregate Root | Downstream Activity |
-| **Event** | Reaction | Event Processing | Projection |
-| **State** | Task Processing | Event Generator | State Transformation |
+| **Command** | Delegation 🔧 | Aggregate Root & DCB ✅ | Downstream Activity 🔧 |
+| **Event** | Reaction ✅ | Event Processing ✅ | Projection ✅ |
+| **State** | Task Processing ✅ | Event Generator 🔧 | State Transformation 🔧 |
 
-You do not need all nine on day one. Most apps start with aggregate + projection.
+✅ Hosted (runtime, DI, tests) · 🔧 Planned interface — `[Experimental]`, no host yet. Implementing a 🔧 type does not register or run it.
+
+You do not need all nine on day one. Most apps start with aggregate + projection
+(both ✅).
 
 ## What each pattern does
 

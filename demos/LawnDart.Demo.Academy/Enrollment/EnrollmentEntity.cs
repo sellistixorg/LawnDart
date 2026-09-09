@@ -34,18 +34,7 @@ public class EnrollmentEntity : DcbEntity<EnrollmentState>
     private Guid _studentId => State.StudentId == Guid.Empty ? Guid.Empty : State.StudentId;
     private Guid _sectionId => State.SectionId == Guid.Empty ? Guid.Empty : State.SectionId;
 
-    public override Task HandleAsync<TCommand>(TCommand command, CancellationToken cancellationToken = default)
-    {
-        return command switch
-        {
-            EnrollStudentCommand cmd   => HandleEnrollAsync(cmd),
-            SendConfirmationCommand cmd => HandleSendConfirmationAsync(cmd),
-            CancelRegistrationCommand cmd => HandleCancelAsync(cmd),
-            _ => Task.CompletedTask
-        };
-    }
-
-    private Task HandleEnrollAsync(EnrollStudentCommand cmd)
+    public void Handle(EnrollStudentCommand cmd)
     {
         if (!State.StudentIsActive)
             throw new InvalidOperationException("Student must be registered before enrolling.");
@@ -68,29 +57,25 @@ public class EnrollmentEntity : DcbEntity<EnrollmentState>
 
         Emit(new StudentEnrolled(Guid.NewGuid(), DateTime.UtcNow, _studentId, cmd.CourseId),
             $"student:{_studentId}", $"section:{_sectionId}", $"course:{cmd.CourseId}");
-
-        return Task.CompletedTask;
     }
 
-    private Task HandleSendConfirmationAsync(SendConfirmationCommand cmd)
+    public void Handle(SendConfirmationCommand cmd)
     {
         if (!State.StudentEnrolled)
             throw new InvalidOperationException("Cannot send confirmation before enrollment is complete.");
 
         if (State.ConfirmationSent)
-            return Task.CompletedTask;
+            return;
 
         Emit(new RegistrationConfirmationSent(Guid.NewGuid(), DateTime.UtcNow,
             _studentId, cmd.CourseId, cmd.Email),
             $"student:{_studentId}", $"section:{_sectionId}");
-
-        return Task.CompletedTask;
     }
 
-    private Task HandleCancelAsync(CancelRegistrationCommand cmd)
+    public void Handle(CancelRegistrationCommand cmd)
     {
         if (!State.StudentEnrolled || State.IsCancelled)
-            return Task.CompletedTask;
+            return;
 
         Emit(new SeatReleased(Guid.NewGuid(), DateTime.UtcNow, _sectionId, _studentId),
             $"student:{_studentId}", $"section:{_sectionId}");
@@ -98,8 +83,6 @@ public class EnrollmentEntity : DcbEntity<EnrollmentState>
         Emit(new RegistrationCancelled(Guid.NewGuid(), DateTime.UtcNow,
             _studentId, cmd.CourseId, cmd.Reason),
             $"student:{_studentId}", $"section:{_sectionId}");
-
-        return Task.CompletedTask;
     }
 
     protected override void ApplyEventToState(IEvent @event)

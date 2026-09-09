@@ -68,4 +68,7 @@ Academy Showcase B does this for enrollment: one read of `student:{id}` +
 `section:{id}`, then one append of `SeatReserved` + `StudentEnrolled`.
 Showcase A needs five hops and is eventually consistent.
 
+DCB uses `Emit(event, tags)`, not aggregate `Apply`. `HandleCommandAsync`
+is the repository. See [Intentional verb differences](../GLOSSARY.md#intentional-verb-differences).
+
 Guides: [DCB_PATTERNS.md](../DCB_PATTERNS.md), [TAGGING.md](../TAGGING.md).

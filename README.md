@@ -17,9 +17,10 @@ Consistency Boundaries, an event store (InMemory or SQL Server), lightweight
 projections, messaging, ASP.NET Core command mapping, and a given/when/then
 test harness.
 
-Packages are not published to nuget.org yet. Clone this repository and use
-project references, or pack to a local feed. Package versions are derived
-from git tags (see [Releasing](CONTRIBUTING.md#releasing)).
+Packages are on [nuget.org](https://www.nuget.org/packages?q=LawnDart)
+as a prerelease (`0.1.0-alpha.1` and later). Use `--prerelease` until a
+stable version exists. Package versions are derived from git tags (see
+[Releasing](CONTRIBUTING.md#releasing)).
 
 ## Requirements
 
@@ -28,8 +29,8 @@ from git tags (see [Releasing](CONTRIBUTING.md#releasing)).
 
 ## Features
 
-- Command / event / state types and the nine CES patterns (aggregates, DCB,
-  projections, reactions, processors)
+- Command / event / state types and the CES matrix (five hosted cells; four
+  planned interfaces)
 - `AddBoundedContext` + `UseInMemory()` with no infrastructure
 - Durable SQL Server store, outbox, and lightweight projections
 - ASP.NET Core HTTP command mapping and optional claims-based authorization
@@ -50,29 +51,35 @@ from git tags (see [Releasing](CONTRIBUTING.md#releasing)).
 
 Details: [Package map](docs/packages/README.md).
 
-## Install (this repository)
+## Pattern matrix
+
+Five cells are hosted; four are planned interfaces with no host.
+
+| From \ To | **Command** | **Event** | **State** |
+|---|---|---|---|
+| **Command** | Delegation 🔧 | Aggregate Root & DCB ✅ | Downstream Activity 🔧 |
+| **Event** | Reaction ✅ | Event Processing ✅ | Projection ✅ |
+| **State** | Task Processing ✅ | Event Generator 🔧 | State Transformation 🔧 |
+
+✅ Hosted (runtime, DI, tests) · 🔧 Planned interface — `[Experimental]`, no host yet. Implementing a 🔧 type does not register or run it.
+
+## Install
+
+```bash
+dotnet add package LawnDart --prerelease
+dotnet add package LawnDart.EventSourcing --prerelease
+```
+
+Add the other packages from the table above as you need them, each with
+`--prerelease`.
+
+To work on this repository, clone and restore:
 
 ```bash
 git clone https://github.com/sellistixorg/LawnDart.git
 cd LawnDart
 dotnet restore
 dotnet build
-```
-
-Reference the projects you need, for example:
-
-```xml
-<ItemGroup>
-  <ProjectReference Include="path/to/LawnDart/src/LawnDart/LawnDart.csproj" />
-  <ProjectReference Include="path/to/LawnDart/src/LawnDart.EventSourcing/LawnDart.EventSourcing.csproj" />
-</ItemGroup>
-```
-
-To consume packed nupkgs from a local feed:
-
-```bash
-dotnet pack LawnDart.sln -c Release -o ./nupkgs
-dotnet nuget add source ./nupkgs --name lawndart-local
 ```
 
 ## Quick start
@@ -111,8 +118,9 @@ artifacts. See [CHANGELOG.md](CHANGELOG.md).
 
 ## Modelling companion
 
-[Eventhesis](https://eventhesis.com) is a separate event-modelling tool that can
-target LawnDart. You do not need it to use this library.
+[Eventhesis](https://eventhesis.com) is a separate event-modelling tool that
+emits slice-based JSON. It does not generate LawnDart types. You do not need
+it to use this library.
 
 ## Contributing
 

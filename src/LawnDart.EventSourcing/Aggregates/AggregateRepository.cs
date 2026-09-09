@@ -50,22 +50,12 @@ public class AggregateRepository : IAggregateRepository
         _strategyResolver = strategyResolver;
     }
 
-    public async Task<T?> GetAsync<T>(Guid id, CancellationToken cancellationToken = default) where T : AggregateRoot, new()
+    public Task<T?> GetAsync<T>(Guid id, CancellationToken cancellationToken = default) where T : AggregateRoot, new()
+        => GetAsync<T>(ResolveStreamId<T>(id), cancellationToken);
+
+    public async Task<T?> GetAsync<T>(string streamId, CancellationToken cancellationToken = default) where T : AggregateRoot, new()
     {
-        string streamId;
-        if (_options.RequireTenantId)
-        {
-            var tenantId = _tenantContextProvider.GetTenantIdRequired();
-            streamId = GetStreamId<T>(id, tenantId);
-        }
-        else
-        {
-            // Optional tenant: use tenant if available, otherwise just type:id
-            var tenantId = _tenantContextProvider.GetTenantId();
-            streamId = tenantId != null 
-                ? GetStreamId<T>(id, tenantId)
-                : $"{typeof(T).Name}:{id}";
-        }
+        ArgumentException.ThrowIfNullOrWhiteSpace(streamId);
 
         // ── Snapshot restore (optional) ────────────────────────────────────────
         // Create aggregate first so we can call the virtual snapshot hook.
@@ -85,8 +75,8 @@ public class AggregateRepository : IAggregateRepository
                 if (snapshotInfo != null)
                 {
                     _logger?.LogDebug(
-                        "Restored {Type} {Id} from snapshot at version {Version} (global seq {Seq})",
-                        typeof(T).Name, id, snapshotInfo.Version, snapshotInfo.GlobalSequence);
+                        "Restored {Type} {StreamId} from snapshot at version {Version} (global seq {Seq})",
+                        typeof(T).Name, streamId, snapshotInfo.Version, snapshotInfo.GlobalSequence);
                     // Hit telemetry is recorded after delta replay so the delta count is known.
                 }
             }
@@ -95,8 +85,8 @@ public class AggregateRepository : IAggregateRepository
                 restoreSw.Stop();
                 // Corrupt or incompatible snapshot — fall back to full replay.
                 _logger?.LogWarning(ex,
-                    "Snapshot restore failed for {Type} {Id}; falling back to full replay",
-                    typeof(T).Name, id);
+                    "Snapshot restore failed for {Type} {StreamId}; falling back to full replay",
+                    typeof(T).Name, streamId);
                 SnapshotTelemetry.RecordMiss(typeof(T).Name, "aggregate", restoreSw.Elapsed);
                 snapshotInfo = null;
                 aggregate = new T();
@@ -110,7 +100,7 @@ public class AggregateRepository : IAggregateRepository
 
         if (events.Count == 0 && snapshotInfo == null)
         {
-            _logger?.LogDebug("Aggregate {Type} with ID {Id} not found", typeof(T).Name, id);
+            _logger?.LogDebug("Aggregate {Type} with stream {StreamId} not found", typeof(T).Name, streamId);
             return null;
         }
 
@@ -156,9 +146,9 @@ public class AggregateRepository : IAggregateRepository
         }
 
         _logger?.LogDebug(
-            "Loaded aggregate {Type} with ID {Id}, version {Version}, {DeltaEventCount} delta events (snapshot: {HasSnapshot})",
+            "Loaded aggregate {Type} with stream {StreamId}, version {Version}, {DeltaEventCount} delta events (snapshot: {HasSnapshot})",
             typeof(T).Name,
-            id,
+            streamId,
             aggregate.Version,
             events.Count,
             snapshotInfo != null);
@@ -167,43 +157,35 @@ public class AggregateRepository : IAggregateRepository
     }
 
     public Task<T> CreateAsync<T>(Guid id, CancellationToken cancellationToken = default) where T : AggregateRoot, new()
+        => CreateAsync<T>(ResolveStreamId<T>(id), cancellationToken);
+
+    public Task<T> CreateAsync<T>(string streamId, CancellationToken cancellationToken = default) where T : AggregateRoot, new()
     {
-        string streamId;
-        if (_options.RequireTenantId)
-        {
-            var tenantId = _tenantContextProvider.GetTenantIdRequired();
-            streamId = GetStreamId<T>(id, tenantId);
-        }
-        else
-        {
-            var tenantId = _tenantContextProvider.GetTenantId();
-            streamId = tenantId != null 
-                ? GetStreamId<T>(id, tenantId)
-                : $"{typeof(T).Name}:{id}";
-        }
+        ArgumentException.ThrowIfNullOrWhiteSpace(streamId);
 
         var aggregate = new T();
         aggregate.SetStreamId(streamId);
         aggregate.SetCommittedVersion(-1);   // -1 = brand new, never flushed: "stream must not exist yet"
-        
-        _logger?.LogDebug("Created new aggregate {Type} with ID {Id}, StreamId: {StreamId}", typeof(T).Name, id, streamId);
-        
+
+        _logger?.LogDebug("Created new aggregate {Type} with StreamId: {StreamId}", typeof(T).Name, streamId);
+
         return Task.FromResult(aggregate);
     }
 
-    public async Task<T> GetOrCreateAsync<T>(Guid id, CancellationToken cancellationToken = default) where T : AggregateRoot, new()
+    public Task<T> GetOrCreateAsync<T>(Guid id, CancellationToken cancellationToken = default) where T : AggregateRoot, new()
+        => GetOrCreateAsync<T>(ResolveStreamId<T>(id), cancellationToken);
+
+    public async Task<T> GetOrCreateAsync<T>(string streamId, CancellationToken cancellationToken = default) where T : AggregateRoot, new()
     {
-        // Try to get existing aggregate first
-        var existing = await GetAsync<T>(id, cancellationToken);
+        var existing = await GetAsync<T>(streamId, cancellationToken);
         if (existing != null)
         {
-            _logger?.LogDebug("Found existing aggregate {Type} with ID {Id}, version {Version}", typeof(T).Name, id, existing.Version);
+            _logger?.LogDebug("Found existing aggregate {Type} with stream {StreamId}, version {Version}", typeof(T).Name, streamId, existing.Version);
             return existing;
         }
 
-        // Create new aggregate if it doesn't exist
-        var aggregate = await CreateAsync<T>(id, cancellationToken);
-        _logger?.LogDebug("Created new aggregate {Type} with ID {Id} (did not exist)", typeof(T).Name, id);
+        var aggregate = await CreateAsync<T>(streamId, cancellationToken);
+        _logger?.LogDebug("Created new aggregate {Type} with stream {StreamId} (did not exist)", typeof(T).Name, streamId);
         return aggregate;
     }
 
@@ -441,13 +423,33 @@ public class AggregateRepository : IAggregateRepository
                 commandMetadata.UserId);
         }
 
-        // Handle command via aggregate
-        await aggregate.HandleAsync(command, cancellationToken);
+        if (CompiledCommandApplicator.OverridesHandleAsync(aggregate.GetType()))
+        {
+#pragma warning disable CS0618
+            await aggregate.HandleAsync(command, cancellationToken);
+#pragma warning restore CS0618
+        }
+        else
+            await CompiledCommandApplicator.DispatchAsync(aggregate, command, cancellationToken);
         
         // Persist events
         await SaveAsync(aggregate, commandMetadata, cancellationToken);
         
         return aggregate;
+    }
+
+    private string ResolveStreamId<T>(Guid id) where T : AggregateRoot
+    {
+        if (_options.RequireTenantId)
+        {
+            var tenantId = _tenantContextProvider.GetTenantIdRequired();
+            return GetStreamId<T>(id, tenantId);
+        }
+
+        var optionalTenant = _tenantContextProvider.GetTenantId();
+        return optionalTenant != null
+            ? GetStreamId<T>(id, optionalTenant)
+            : $"{typeof(T).Name}:{id}";
     }
 
     private static string GetStreamId<T>(Guid id, string tenantId) where T : AggregateRoot

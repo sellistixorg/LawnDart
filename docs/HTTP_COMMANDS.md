@@ -3,6 +3,18 @@
 `LawnDart.AspNetCore` scans assemblies for `ICommandHandler<TCommand>` and maps
 POST endpoints. Authorization attributes on the command are optional.
 
+HTTP endpoints call `ICommandHandler<T>` directly. Reactors and task processors
+go through `ICommandDispatcher` (Core, `LawnDart.Messaging` namespace),
+registered by `UseInMemory` / `WithCommandHandlers`.
+
+## Frozen surface
+
+1. **App-facing dispatch** is `ICommandHandler<T>` (HTTP, jobs). `AddLawnDartHttpCommands` / `MapLawnDartCommands` discover those handlers.
+2. **Aggregates / DCB** declare closed `Handle(TCommand)`. The handler calls `HandleCommandAsync` for persistence + authorization.
+3. **Load** with `GetOrCreateAsync<T>(id)` or `GetOrCreateAsync<T>(streamId)` when the stream is not `{type}:{guid}`.
+4. **Projections:** `ProjectionBase<TView>` plus attributes; multi-stream views implement `IMultiStreamEntityResolver`.
+5. **Stores:** `AddBoundedContext(name).UseInMemory()` / `UseSqlServer(...)`.
+
 ## Workflow
 
 ```csharp

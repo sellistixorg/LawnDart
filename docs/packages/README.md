@@ -39,5 +39,13 @@ Swap `.UseInMemory()` for `.UseSqlServer(...)` and
 `AddInMemoryProjectionStores` for `AddSqlProjectionStores` when you leave
 dev. The bounded-context name stays the same.
 
+## Frozen surface
+
+1. **App-facing dispatch** is `ICommandHandler<T>` (HTTP, jobs).
+2. **Aggregates / DCB** declare closed `Handle(TCommand)`. `HandleCommandAsync` is persistence + authorization.
+3. **Load** by `string streamId` when the stream is not `{type}:{guid}`.
+4. **Projections:** `ProjectionBase<TView>` plus attributes; multi-stream views implement `IMultiStreamEntityResolver`.
+5. **Stores:** `AddBoundedContext(name).UseInMemory()` / `UseSqlServer(...)`.
+
 See [DI Grammar](../DI_GRAMMAR.md) and the
 [extension method index](../EXTENSION_METHOD_INDEX.md).

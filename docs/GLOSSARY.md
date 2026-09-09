@@ -2,6 +2,22 @@
 
 Terms used across LawnDart docs. Avoid inventing a second vocabulary.
 
+## Intentional verb differences
+
+Aggregate and DCB paths use different verbs on purpose. These are **not**
+renames waiting to happen.
+
+| Concept | Aggregate / broker | DCB | Why they differ |
+|---|---|---|---|
+| Record a pending event | `Apply(event)` | `Emit(event, tags)` | `Emit` attaches payload tags for the tag query. `Apply` is stream-scoped and has no tags. |
+| Fold an event into state | `ApplyEventToState` | `ApplyEventToState` | Same name on both bases. |
+| Author command logic | `Handle(TCommand)` | `Handle(TCommand)` | Same authoring. `HandleAsync<TCommand>` is obsolete. |
+| Persist and dispatch | `IAggregateRepository.HandleCommandAsync` | `IDcbRepository.HandleCommandAsync` | Repository verb. Not the same as entity `Handle`. |
+| App-facing handler | `ICommandHandler<T>.HandleAsync` | same | Handler interface; not renamed. |
+| Reaction | `IReactor<TEvent>.ReactAsync(evt, MessageContext, ct)` | `IDcbReactor.ReactAsync(evt, EventMetadata, ct)` | Broker transport vs in-process tag/metadata. `IDcbReactor` is for in-service workflows without a broker. |
+| Projection stub | `IProjector.ProjectAsync` (experimental, unused) | `DcbProjector.ProjectEventAsync` | Different hosts. Author `ProjectionBase` for Lightweight. |
+| Cancellation parameter | `cancellationToken` almost everywhere | `ct` in Snapshots | Historical. Do not rename. |
+
 ## A
 
 **Aggregate Root**  
@@ -43,11 +59,10 @@ See [DCB_PATTERNS.md](DCB_PATTERNS.md).
 Base type for tag-based entities (`DcbEntity` / `DcbEntity<TState>`).
 
 **Delegation**  
-Command → Command. Re-dispatch without emitting an event first.
+Command → Command. `[Experimental]` planned interface (`ICommandDelegator`); no host yet. Implementing it does not register or run it.
 
 **Downstream Activity**  
-Command → State. A command updates a read model or external system without
-appending an event.
+Command → State. `[Experimental]` planned interface (`IDownstreamActivity`); no host yet. Implementing it does not register or run it.
 
 ## E
 
@@ -55,13 +70,14 @@ appending an event.
 Immutable fact. `IEvent` with `Id` and `Timestamp` first.
 
 **Event Generator**  
-State → Event. Emit facts from current state (rare; usually a processor).
+State → Event. `[Experimental]` planned interface (`IEventGenerator`); no host yet. Implementing it does not register or run it.
 
 **Event Processing**  
 Event → Event. Transform or enrich events without a command.
 
 **Eventhesis**  
-Canvas that compiles widgets to LawnDart types. See [EVENTHESIS.md](EVENTHESIS.md).
+Separate event-modelling canvas that emits slice-based JSON. It does not
+generate LawnDart types. See [EVENTHESIS.md](EVENTHESIS.md).
 
 ## I
 
@@ -76,7 +92,8 @@ In-process projection host (`LawnDart.Projections.Lightweight`).
 ## N
 
 **Nine common patterns**  
-The command–event–state matrix.
+The command–event–state matrix. Five cells are hosted; four are planned
+interfaces with no host. See the root [README](../README.md#pattern-matrix).
 
 ## O
 
@@ -92,7 +109,9 @@ Event → State. Incremental read model.
 ## R
 
 **Reaction**  
-Event → Command. `IReactor<TEvent>`.
+Event → Command. Broker path: `IReactor<TEvent>` (`MessageContext`). DCB
+in-process path: `IDcbReactor` (`EventMetadata`). Not the same contract —
+see **Intentional verb differences**.
 
 ## S
 
@@ -101,6 +120,9 @@ Durable event store and projection store.
 
 **State**  
 Present view: aggregate state, DCB state, or a projection read model.
+
+**State Transformation**  
+State → State. `[Experimental]` planned interface (`IStateTransformer`); no host yet. Implementing it does not register or run it.
 
 **Stream ID**  
 Identity of an event stream. See [STREAM_IDS.md](STREAM_IDS.md).

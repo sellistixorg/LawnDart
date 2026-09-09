@@ -37,6 +37,7 @@ sleeping:
 await WaitForAsync.UntilAsync(() => view.Confirmed);
 ```
 
-SQL Server integration tests are optional and tagged `Category=Integration`.
+SQL Server integration tests are tagged `Category=Integration` and run in
+CI (Docker / Testcontainers). Locally they are optional.
 
 Full aggregate / DCB given-when-then: [BDD_TESTING.md](../testing/BDD_TESTING.md).

@@ -15,39 +15,24 @@ public class Student : AggregateRoot<StudentState>
         State = new StudentState();
     }
 
-    public override Task HandleAsync<TCommand>(TCommand command, CancellationToken cancellationToken = default)
-    {
-        return command switch
-        {
-            RegisterStudentCommand cmd  => HandleRegister(cmd),
-            ProcessPaymentCommand cmd   => HandleProcessPayment(cmd),
-            EnrollStudentCommand cmd    => HandleEnroll(cmd),
-            SendConfirmationCommand cmd => HandleSendConfirmation(cmd),
-            CancelRegistrationCommand cmd => HandleCancelRegistration(cmd),
-            _ => Task.CompletedTask
-        };
-    }
-
-    private Task HandleRegister(RegisterStudentCommand cmd)
+    public void Handle(RegisterStudentCommand cmd)
     {
         if (State.IsActive)
             throw new InvalidOperationException($"Student {cmd.StudentId} is already registered.");
 
         Apply(new StudentRegistered(Guid.NewGuid(), DateTime.UtcNow, cmd.StudentId, cmd.Name, cmd.Email));
-        return Task.CompletedTask;
     }
 
-    private Task HandleProcessPayment(ProcessPaymentCommand cmd)
+    public void Handle(ProcessPaymentCommand cmd)
     {
         if (!State.IsActive)
             throw new InvalidOperationException("Student must be registered before processing payment.");
 
         Apply(new StudentPaymentProcessed(Guid.NewGuid(), DateTime.UtcNow,
             cmd.StudentId, cmd.CourseId, cmd.Amount, $"REF-{Guid.NewGuid():N}"));
-        return Task.CompletedTask;
     }
 
-    private Task HandleEnroll(EnrollStudentCommand cmd)
+    public void Handle(EnrollStudentCommand cmd)
     {
         if (!State.IsActive)
             throw new InvalidOperationException("Student must be registered before enrolling.");
@@ -56,24 +41,21 @@ public class Student : AggregateRoot<StudentState>
             throw new InvalidOperationException($"Student is already enrolled in course {cmd.CourseId}.");
 
         Apply(new StudentEnrolled(Guid.NewGuid(), DateTime.UtcNow, cmd.StudentId, cmd.CourseId));
-        return Task.CompletedTask;
     }
 
-    private Task HandleSendConfirmation(SendConfirmationCommand cmd)
+    public void Handle(SendConfirmationCommand cmd)
     {
         Apply(new RegistrationConfirmationSent(Guid.NewGuid(), DateTime.UtcNow,
             cmd.StudentId, cmd.CourseId, cmd.Email));
-        return Task.CompletedTask;
     }
 
-    private Task HandleCancelRegistration(CancelRegistrationCommand cmd)
+    public void Handle(CancelRegistrationCommand cmd)
     {
         if (State.EnrolledCourseIds.Contains(cmd.CourseId))
         {
             Apply(new RegistrationCancelled(Guid.NewGuid(), DateTime.UtcNow,
                 cmd.StudentId, cmd.CourseId, cmd.Reason));
         }
-        return Task.CompletedTask;
     }
 
     protected override void ApplyEventToState(IEvent @event)

@@ -19,6 +19,11 @@ public sealed class PaymentReactor : IReactor<SeatReservationConfirmed>
 services.AddReactor<PaymentReactor, SeatReservationConfirmed>();
 ```
 
+`IReactor<TEvent>` is the broker path (`MessageContext`). `IDcbReactor` is
+the in-process DCB path (`EventMetadata`, `GetTagsForReaction()`). They are
+not the same contract. See
+[Intentional verb differences](GLOSSARY.md#intentional-verb-differences).
+
 Academy Showcase A wires `InMemoryMessageTransport` so the reservation event
 becomes a payment command, then a confirmation command.
 

@@ -28,9 +28,19 @@ services.AddSqlProjectionStores("default", connectionString);
 
 ## Authoring
 
-A projector implements `IProjector` (or the Lightweight attributes / SDK types
-in `LawnDart.Projections.Sdk`) and reduces events into a view. Academy WebApi
-ships `StudentSummaryProjection`, section availability, and an enrollment index.
+Extend `ProjectionBase<TView>` and decorate with a scope attribute
+(`[SingleStreamProjection]`, `[GlobalProjection]`, `[DcbProjection]`,
+`[MultiStreamProjection]`, or `[ProjectionEndpoint]`). `WithProjections`
+scans those types. Academy WebApi ships `StudentSummaryProjection`,
+section availability, and an enrollment index.
+
+A view that spans stream types must also implement
+`IMultiStreamEntityResolver` (`GetEntityId`). That is the multi-stream
+hook (Flywheel and other Lightweight hosts).
+
+`IProjector` is experimental and unused (`ProjectAsync`). This host does
+not discover or call it. You may hand-roll a projector against
+`IEventStore` instead of using Lightweight.
 
 ## Checkpoints
 

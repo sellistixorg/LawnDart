@@ -17,8 +17,8 @@ public sealed class EnrollmentEntity : DcbEntity<EnrollmentState>
         {
             if (State.SeatsRemaining <= 0)
                 throw new DomainException("Section is full.");
-            Emit(new SeatReserved(...));
-            Emit(new StudentEnrolled(...));
+            Emit(new SeatReserved(...), $"student:{enroll.StudentId}", $"section:{enroll.SectionId}");
+            Emit(new StudentEnrolled(...), $"student:{enroll.StudentId}", $"section:{enroll.SectionId}");
         }
         return Task.CompletedTask;
     }
@@ -36,5 +36,9 @@ The repository:
 
 Academy Showcase A (aggregate + in-memory broker) is eventually consistent.
 Showcase B (DCB) appends `SeatReserved` and `StudentEnrolled` in one write.
+
+DCB records pending events with `Emit` (tags), not aggregate `Apply`.
+`HandleCommandAsync` is the repository; author `Handle(TCommand)` on the
+entity. See [Glossary — Intentional verb differences](GLOSSARY.md#intentional-verb-differences).
 
 See [TAGGING.md](TAGGING.md) and Academy `Enrollment/EnrollmentEntity.cs`.

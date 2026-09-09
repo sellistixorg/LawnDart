@@ -5,6 +5,14 @@ description: Register named LawnDart bounded contexts, keyed stores, and WithCom
 
 # Bounded context
 
+## Frozen surface
+
+1. **App-facing dispatch** is `ICommandHandler<T>` (HTTP, jobs) — `WithCommandHandlers` per context.
+2. **Aggregates / DCB** declare closed `Handle(TCommand)`. `HandleCommandAsync` is persistence + authorization.
+3. **Load** by `string streamId` when the stream is not `{type}:{guid}`.
+4. **Projections:** `ProjectionBase<TView>` plus attributes; multi-stream views implement `IMultiStreamEntityResolver`.
+5. **Stores:** each context calls `UseInMemory()` / `UseSqlServer(...)`.
+
 ```csharp
 var orders = services.AddBoundedContext("orders");
 orders.UseInMemory();

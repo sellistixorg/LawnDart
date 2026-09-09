@@ -2,20 +2,19 @@
 
 Zero infrastructure. .NET 10 SDK only.
 
-## 1. Add project references
+## 1. Add packages
 
-Packages are not on nuget.org yet. Clone this repository and
-reference the projects you need:
+Packages are on nuget.org as a prerelease. Use `--prerelease` until a
+stable version exists:
 
-```xml
-<ItemGroup>
-  <ProjectReference Include="path/to/LawnDart/src/LawnDart/LawnDart.csproj" />
-  <ProjectReference Include="path/to/LawnDart/src/LawnDart.EventSourcing/LawnDart.EventSourcing.csproj" />
-</ItemGroup>
+```bash
+dotnet add package LawnDart --prerelease
+dotnet add package LawnDart.EventSourcing --prerelease
 ```
 
 A console host also needs `Microsoft.Extensions.DependencyInjection`.
-Or pack to a local feed (see the root [README](../README.md)).
+To work from this repository instead, clone it and add project references
+(see the root [README](../README.md)).
 
 ## 2. Register the host
 
@@ -32,7 +31,8 @@ them without a key.
 ## 3. Handle a command
 
 Define an `ICommand`, an `IEvent`, and an `AggregateRoot<TState>`. Keep `Id`
-and `Timestamp` first on events — that is the Eventhesis contract.
+and `Timestamp` first on events if you follow the Eventhesis field-order
+convention.
 
 ```csharp
 using Microsoft.Extensions.DependencyInjection;
@@ -53,20 +53,11 @@ public sealed class CounterState : IState
 
 public sealed class Counter : AggregateRoot<CounterState>
 {
-    public override Task HandleAsync<TCommand>(TCommand command, CancellationToken cancellationToken = default)
-    {
-        switch (command)
-        {
-            case CreateCounterCommand create:
-                Apply(new CounterCreated(Guid.NewGuid(), DateTime.UtcNow, create.CounterId));
-                break;
-            case IncrementCommand increment:
-                Apply(new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, increment.CounterId));
-                break;
-        }
+    public void Handle(CreateCounterCommand create) =>
+        Apply(new CounterCreated(Guid.NewGuid(), DateTime.UtcNow, create.CounterId));
 
-        return Task.CompletedTask;
-    }
+    public void Handle(IncrementCommand increment) =>
+        Apply(new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, increment.CounterId));
 
     protected override void ApplyEventToState(IEvent @event)
     {
@@ -96,8 +87,11 @@ Console.WriteLine(loaded!.State.Value); // 1
 ```
 
 `GetOrCreateAsync` loads existing events (or starts a new stream).
-`HandleCommandAsync` authorizes if configured, calls `HandleAsync`, and
-appends the pending events.
+`HandleCommandAsync` authorizes if configured, dispatches `Handle(TCommand)`
+(or `HandleAsync` when that is still overridden), and
+appends the pending events. Guid overloads build `{type}:{id}` (with a tenant
+prefix when one is present). Use `GetOrCreateAsync<T>(streamId)` when the
+stream is not that shape.
 
 ## 4. Run Academy
 
@@ -115,4 +109,4 @@ dotnet run --project demos/LawnDart.Demo.Academy.WebApi
 ## Next
 
 - [Learning path](learning-path/README.md)
-- [Eventhesis compile contract](EVENTHESIS.md)
+- [Eventhesis and LawnDart](EVENTHESIS.md)

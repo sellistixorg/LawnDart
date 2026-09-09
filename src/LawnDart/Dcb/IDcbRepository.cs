@@ -88,7 +88,9 @@ public interface IDcbRepository
     
     /// <summary>
     /// Handles a command on a DCB entity with optional authorization checking.
-    /// This method performs authorization (if enabled), executes the command, and persists events.
+    /// This method performs authorization (if enabled), dispatches the command
+    /// (<c>HandleAsync</c> when overridden, otherwise closed <c>Handle(TCommand)</c>),
+    /// and persists events.
     /// If <paramref name="commandMetadata"/> is <c>null</c>, metadata is captured automatically
     /// from the registered <see cref="IMetadataProvider"/>.
     /// </summary>

@@ -7,6 +7,7 @@ using LawnDart.EventSourcing.Aggregates;
 using LawnDart.EventSourcing.EventStore;
 using LawnDart.EventStore;
 using LawnDart.Metadata;
+using LawnDart.Snapshots;
 using LawnDart.TestUtilities;
 using Xunit;
 
@@ -427,6 +428,110 @@ public class AggregateRepositoryTests
         Assert.Equal(reloaded.Version, reloaded.CommittedVersion);
     }
 
+    [Fact]
+    public async Task GetAsync_ByStreamId_Missing_ReturnsNull()
+    {
+        var repository = new AggregateRepository(
+            new InMemoryEventStore(), new DefaultMetadataProvider(), new TestTenantContextProvider(), CreateOptions());
+
+        var result = await repository.GetAsync<TestAggregate>("42:InboundShipment:abc:SHIP-1");
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task GetOrCreateAsync_ByStreamId_WhenNotExists_SetsStreamIdAndCommittedVersionMinusOne()
+    {
+        var repository = new AggregateRepository(
+            new InMemoryEventStore(), new DefaultMetadataProvider(), new TestTenantContextProvider(), CreateOptions());
+        const string streamId = "42:InboundShipment:abc:SHIP-1";
+
+        var result = await repository.GetOrCreateAsync<TestAggregate>(streamId);
+
+        Assert.Equal(streamId, result.StreamId);
+        Assert.Equal(-1, result.CommittedVersion);
+        Assert.Equal(0, result.Version);
+    }
+
+    [Fact]
+    public async Task GetOrCreateAsync_ByStreamId_WhenExists_LoadsEventsAndCommittedVersion()
+    {
+        var eventStore = new InMemoryEventStore();
+        var repository = new AggregateRepository(
+            eventStore, new DefaultMetadataProvider(), new TestTenantContextProvider(), CreateOptions());
+        const string streamId = "42:InboundShipment:abc:SHIP-1";
+        await eventStore.AppendAsync(streamId, new IEvent[]
+        {
+            new TestEvent(Guid.NewGuid(), DateTime.UtcNow),
+            new TestEvent(Guid.NewGuid(), DateTime.UtcNow)
+        });
+
+        var result = await repository.GetOrCreateAsync<TestAggregate>(streamId);
+
+        Assert.Equal(streamId, result.StreamId);
+        Assert.Equal(2, result.Version);
+        Assert.Equal(2, result.CommittedVersion);
+        Assert.Equal(2, result.AppliedEventCount);
+    }
+
+    [Fact]
+    public async Task GetOrCreateAsync_ByStreamId_ThenSave_HandlesConcurrency()
+    {
+        var eventStore = new InMemoryEventStore();
+        var repository = new AggregateRepository(
+            eventStore, new DefaultMetadataProvider(), new TestTenantContextProvider(), CreateOptions());
+        const string streamId = "42:InboundShipment:abc:SHIP-1";
+        var cmd = new CommandMetadata { TenantId = "test-tenant", UserId = "user1" };
+
+        var first = await repository.GetOrCreateAsync<TestAggregate>(streamId);
+        first.ApplyTest(new TestEvent(Guid.NewGuid(), DateTime.UtcNow));
+        await repository.SaveAsync(first, cmd);
+
+        var a = await repository.GetOrCreateAsync<TestAggregate>(streamId);
+        var b = await repository.GetOrCreateAsync<TestAggregate>(streamId);
+        a.ApplyTest(new TestEvent(Guid.NewGuid(), DateTime.UtcNow));
+        await repository.SaveAsync(a, cmd);
+        b.ApplyTest(new TestEvent(Guid.NewGuid(), DateTime.UtcNow));
+
+        await Assert.ThrowsAsync<ConcurrencyException>(() => repository.SaveAsync(b, cmd));
+    }
+
+    [Fact]
+    public async Task GetAsync_ByStreamId_RestoresSnapshotThenReplaysDelta()
+    {
+        var eventStore = new InMemoryEventStore();
+        var snapshots = new MemorySnapshotStore();
+        const string streamId = "42:InboundShipment:abc:SHIP-1";
+        await eventStore.AppendAsync(streamId, new IEvent[]
+        {
+            new TestEvent(Guid.NewGuid(), DateTime.UtcNow),
+            new TestEvent(Guid.NewGuid(), DateTime.UtcNow),
+            new TestEvent(Guid.NewGuid(), DateTime.UtcNow)
+        });
+        await snapshots.SaveSnapshotAsync(streamId, 2, 2, new TestState { EventCount = 2 });
+
+        var repository = new AggregateRepository(
+            eventStore, new DefaultMetadataProvider(), new TestTenantContextProvider(), CreateOptions(),
+            snapshotStore: snapshots);
+
+        var result = await repository.GetAsync<TestAggregate>(streamId);
+
+        Assert.NotNull(result);
+        Assert.Equal(streamId, result!.StreamId);
+        Assert.Equal(3, result.Version);
+        Assert.Equal(3, result.CommittedVersion);
+        Assert.Equal(1, result.AppliedEventCount);
+    }
+
+    [Fact]
+    public async Task GetAsync_ByStreamId_Empty_Throws()
+    {
+        var repository = new AggregateRepository(
+            new InMemoryEventStore(), new DefaultMetadataProvider(), new TestTenantContextProvider(), CreateOptions());
+
+        await Assert.ThrowsAsync<ArgumentException>(() => repository.GetAsync<TestAggregate>(" "));
+    }
+
     // Test aggregate for command batching scenario
     private class CounterState : IState
     {
@@ -464,5 +569,25 @@ public class AggregateRepositoryTests
 
     private record IncrementCommand(Guid Id, int Amount) : ICommand;
     private record IncrementedEvent(Guid Id, DateTime Timestamp, int Amount) : IEvent;
+
+    private sealed class MemorySnapshotStore : ISnapshotStore
+    {
+        private readonly Dictionary<string, (object State, SnapshotInfo Info)> _snaps = new();
+
+        public Task<(TState? State, SnapshotInfo? Info)> LoadSnapshotAsync<TState>(
+            string streamId, CancellationToken ct = default)
+        {
+            if (_snaps.TryGetValue(streamId, out var entry) && entry.State is TState state)
+                return Task.FromResult<(TState?, SnapshotInfo?)>((state, entry.Info));
+            return Task.FromResult<(TState?, SnapshotInfo?)>((default, null));
+        }
+
+        public Task SaveSnapshotAsync<TState>(
+            string streamId, long version, long globalSequence, TState state, CancellationToken ct = default)
+        {
+            _snaps[streamId] = (state!, new SnapshotInfo(version, globalSequence, DateTime.UtcNow));
+            return Task.CompletedTask;
+        }
+    }
 }
 

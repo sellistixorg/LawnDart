@@ -5,6 +5,7 @@
     <PackageId>LawnDart</PackageId>
     <Description>Core interfaces and abstractions for the LawnDart command–event–state runtime.</Description>
     <IsPackable>true</IsPackable>
+    <WarningsAsErrors>$(WarningsAsErrors);RS0016;RS0017</WarningsAsErrors>
   </PropertyGroup>
 
   <ItemGroup>
@@ -13,6 +14,20 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Options" />
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="All" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="LawnDart.EventSourcing" />
+    <InternalsVisibleTo Include="LawnDart.EventSourcing.SqlServer" />
+    <InternalsVisibleTo Include="LawnDart.Testing" />
+    <InternalsVisibleTo Include="LawnDart.EventSourcing.Tests" />
+    <InternalsVisibleTo Include="LawnDart.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
   </ItemGroup>
 
 </Project>

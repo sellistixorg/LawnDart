@@ -17,5 +17,5 @@ await AggregateSpec
 
 Full guide: [BDD_TESTING.md](../testing/BDD_TESTING.md).
 
-SQL Server tests are tagged `Category=Integration` and need Docker. CI unit
-jobs use `--filter Category!=Integration`.
+SQL Server tests are tagged `Category=Integration` and need Docker. Local
+unit runs use `--filter Category!=Integration`. CI runs both.

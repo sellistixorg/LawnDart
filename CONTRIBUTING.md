@@ -65,7 +65,7 @@ dotnet run --project demos/LawnDart.Demo.Academy
 
 ### PR conventions
 
-- PRs must pass CI (build + unit tests + DocFX) before merging.
+- PRs must pass CI (build + unit tests + integration tests + DocFX) before merging.
 - Each PR should address a single concern.
 - PR description must include **what** changed, **why**, and any **trade-offs**.
 - Commit subjects: imperative mood, 72 characters or less, no trailing period

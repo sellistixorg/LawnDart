@@ -9,6 +9,8 @@ namespace LawnDart.Projections.Lightweight;
 /// The entity ID groups events from multiple stream types into a single view instance.
 /// For example, an order fulfilment view consuming events from both <c>OrderAggregate</c> and
 /// <c>ShipmentAggregate</c> streams would return the shared <c>OrderId</c> as the entity ID.
+/// This is the multi-stream hook for Lightweight hosts (including Flywheel).
+/// It is not <c>IProjector</c>.
 ///
 /// Return <see langword="null"/> from <see cref="GetEntityId"/> if the event is not relevant to
 /// any entity — it will be silently skipped.

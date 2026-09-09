@@ -17,18 +17,7 @@ public class CourseSection : AggregateRoot<CourseSectionState>
         State = new CourseSectionState();
     }
 
-    public override Task HandleAsync<TCommand>(TCommand command, CancellationToken cancellationToken = default)
-    {
-        return command switch
-        {
-            CreateSectionCommand cmd  => HandleCreate(cmd),
-            ReserveSeatCommand cmd    => HandleReserveSeat(cmd),
-            ReleaseSeatCommand cmd    => HandleReleaseSeat(cmd),
-            _ => Task.CompletedTask
-        };
-    }
-
-    private Task HandleCreate(CreateSectionCommand cmd)
+    public void Handle(CreateSectionCommand cmd)
     {
         if (State.SectionId != Guid.Empty)
             throw new InvalidOperationException("Section already exists.");
@@ -38,26 +27,23 @@ public class CourseSection : AggregateRoot<CourseSectionState>
 
         Apply(new SectionCreated(Guid.NewGuid(), DateTime.UtcNow,
             cmd.SectionId, cmd.CourseId, cmd.Title, cmd.TotalSeats));
-        return Task.CompletedTask;
     }
 
-    private Task HandleReserveSeat(ReserveSeatCommand cmd)
+    public void Handle(ReserveSeatCommand cmd)
     {
         if (State.SeatsAvailable <= 0)
             throw new InvalidOperationException(
                 $"No seats available in section {State.SectionId}. ({State.TotalSeats} seats, {State.SeatsReserved} reserved)");
 
         Apply(new SeatReserved(Guid.NewGuid(), DateTime.UtcNow, cmd.SectionId, cmd.StudentId));
-        return Task.CompletedTask;
     }
 
-    private Task HandleReleaseSeat(ReleaseSeatCommand cmd)
+    public void Handle(ReleaseSeatCommand cmd)
     {
         if (State.SeatsReserved <= 0)
             throw new InvalidOperationException("No seats are currently reserved.");
 
         Apply(new SeatReleased(Guid.NewGuid(), DateTime.UtcNow, cmd.SectionId, cmd.StudentId));
-        return Task.CompletedTask;
     }
 
     protected override void ApplyEventToState(IEvent @event)

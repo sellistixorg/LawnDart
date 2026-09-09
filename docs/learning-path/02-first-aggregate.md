@@ -18,20 +18,11 @@ public sealed class CounterState : IState
 
 public sealed class Counter : AggregateRoot<CounterState>
 {
-    public override Task HandleAsync<TCommand>(TCommand command, CancellationToken cancellationToken = default)
-    {
-        switch (command)
-        {
-            case CreateCounterCommand create:
-                Apply(new CounterCreated(Guid.NewGuid(), DateTime.UtcNow, create.CounterId));
-                break;
-            case IncrementCommand increment:
-                Apply(new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, increment.CounterId));
-                break;
-        }
+    public void Handle(CreateCounterCommand create) =>
+        Apply(new CounterCreated(Guid.NewGuid(), DateTime.UtcNow, create.CounterId));
 
-        return Task.CompletedTask;
-    }
+    public void Handle(IncrementCommand increment) =>
+        Apply(new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, increment.CounterId));
 
     protected override void ApplyEventToState(IEvent @event)
     {
@@ -41,7 +32,8 @@ public sealed class Counter : AggregateRoot<CounterState>
 }
 ```
 
-Keep `Id` and `Timestamp` first on events. That is the Eventhesis contract.
+Keep `Id` and `Timestamp` first on events if you follow the Eventhesis
+field-order convention.
 
 ## Host and execute
 
@@ -70,5 +62,16 @@ Console.WriteLine(loaded!.State.Value); // 1
 `UseInMemory()` on the `"default"` context registers unkeyed aliases, so
 `GetRequiredService<IAggregateRepository>()` resolves without a key. Multi-context
 hosts still use `GetRequiredKeyedService<IAggregateRepository>("other")`.
+
+Guid overloads build `{type}:{id}` (or `{tenant}:{type}:{id}`). If the stream
+is a custom ID, use `GetOrCreateAsync<T>(streamId)` instead.
+
+Do not load the store yourself. Use `GetAsync` / `GetOrCreateAsync` and
+`HandleCommandAsync`. Do not call `SetStreamId`, `SetVersion`,
+`SetCommittedVersion`, or `ReplayEvents` from application code.
+
+Aggregates record events with `Apply`. DCB entities use `Emit` (tags).
+`Handle(TCommand)` is authoring; `HandleCommandAsync` is the repository.
+See [Intentional verb differences](../GLOSSARY.md#intentional-verb-differences).
 
 Academy domain: `demos/LawnDart.Demo.Academy/Domain`.

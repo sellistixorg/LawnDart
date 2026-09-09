@@ -29,13 +29,14 @@ jobs:
       run: dotnet build LawnDart.sln --no-restore --configuration Release
 
     - name: Test (unit)
-      run: |
-        projects=$(dotnet sln LawnDart.sln list)
-        if echo "$projects" | grep -q 'Tests'; then
-          dotnet test LawnDart.sln --no-build --configuration Release --verbosity normal --filter "Category!=Integration"
-        else
-          echo "No test projects yet; skipping tests."
-        fi
+      run: >
+        dotnet test LawnDart.sln --no-build --configuration Release
+        --verbosity normal --filter "Category!=Integration"
+
+    - name: Test (integration)
+      run: >
+        dotnet test LawnDart.sln --no-build --configuration Release
+        --verbosity normal --filter "Category=Integration"
 
     - name: Restore local tools
       run: dotnet tool restore

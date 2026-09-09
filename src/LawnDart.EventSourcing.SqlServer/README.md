@@ -13,7 +13,7 @@ the zero-infra default.
 ## Installation
 
 ```bash
-dotnet add package LawnDart.EventSourcing.SqlServer
+dotnet add package LawnDart.EventSourcing.SqlServer --prerelease
 ```
 
 ## Getting started
