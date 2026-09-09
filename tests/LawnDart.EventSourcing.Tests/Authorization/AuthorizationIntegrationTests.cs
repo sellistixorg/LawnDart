@@ -301,27 +301,11 @@ public class AuthorizationIntegrationTests
 
     private class TestAggregate : AggregateRoot<TestState>
     {
-        public override Task HandleAsync<TCommand>(TCommand command, CancellationToken cancellationToken = default)
-        {
-            return command switch
-            {
-                CreateOrderCommand createCmd => HandleAsync(createCmd),
-                PremiumOrderCommand premiumCmd => HandleAsync(premiumCmd),
-                _ => throw new NotSupportedException($"Command type {typeof(TCommand).Name} not supported")
-            };
-        }
-
-        private Task HandleAsync(CreateOrderCommand command)
-        {
+        public void Handle(CreateOrderCommand command) =>
             Apply(new OrderCreatedEvent(command.Id, command.OrderNumber));
-            return Task.CompletedTask;
-        }
 
-        private Task HandleAsync(PremiumOrderCommand command)
-        {
+        public void Handle(PremiumOrderCommand command) =>
             Apply(new OrderCreatedEvent(command.Id, command.OrderNumber));
-            return Task.CompletedTask;
-        }
 
         protected override void ApplyEventToState(IEvent @event)
         {

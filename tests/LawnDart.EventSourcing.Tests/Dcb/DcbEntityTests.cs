@@ -45,14 +45,14 @@ public class DcbEntityTests
     }
 
     [Fact]
-    public async Task Emit_AddsToPendingEvents()
+    public void Emit_AddsToPendingEvents()
     {
         // Arrange
         var entity = new TestDcbEntityForEntityTests();
         entity.SetTags("order:123");
 
         // Act
-        await entity.HandleAsync(new TestCommand { Value = "test" });
+        entity.Handle(new TestCommand { Value = "test" });
 
         // Assert
         Assert.Single(entity.PendingEvents);
@@ -62,14 +62,14 @@ public class DcbEntityTests
     }
 
     [Fact]
-    public async Task Emit_AppliesEventToState()
+    public void Emit_AppliesEventToState()
     {
         // Arrange
         var entity = new TestDcbEntityForEntityTests();
         entity.SetTags("order:123");
 
         // Act
-        await entity.HandleAsync(new TestCommand { Value = "test" });
+        entity.Handle(new TestCommand { Value = "test" });
 
         // Assert
         Assert.Equal(1, entity.State.EventCount);
@@ -77,14 +77,14 @@ public class DcbEntityTests
     }
 
     [Fact]
-    public async Task Emit_WithTags_MergesTags()
+    public void Emit_WithTags_MergesTags()
     {
         // Arrange
         var entity = new TestDcbEntityForEntityTests();
         entity.SetTags("tag1");
 
         // Act
-        await entity.HandleAsync(new TestCommand { Value = "test" });
+        entity.Handle(new TestCommand { Value = "test" });
 
         // Assert
         Assert.Contains("tag1", entity.Tags);
@@ -92,12 +92,12 @@ public class DcbEntityTests
     }
 
     [Fact]
-    public async Task ClearPendingEvents_RemovesAllPendingEvents()
+    public void ClearPendingEvents_RemovesAllPendingEvents()
     {
         // Arrange
         var entity = new TestDcbEntityForEntityTests();
         entity.SetTags("order:123");
-        await entity.HandleAsync(new TestCommand { Value = "test" });
+        entity.Handle(new TestCommand { Value = "test" });
 
         // Act
         entity.ClearPendingEvents();
@@ -195,13 +195,13 @@ public class DcbEntityTests
     }
 
     [Fact]
-    public async Task Emit_DoesNotMutateConsistencyTags()
+    public void Emit_DoesNotMutateConsistencyTags()
     {
         var entity = new TestDcbEntityForEntityTests();
         entity.SetTags("tag1");
         entity.SetConsistencyTags("tag1");
 
-        await entity.HandleAsync(new TestCommand { Value = "test" });
+        entity.Handle(new TestCommand { Value = "test" });
 
         Assert.Equal(new[] { "tag1" }, entity.ConsistencyTags);
         Assert.Contains("order:123", entity.Tags);
@@ -279,15 +279,8 @@ public class DcbEntityTests
 
 public class TestDcbEntityForEntityTests : DcbEntity<TestState>
 {
-    public override Task HandleAsync<TCommand>(TCommand command, CancellationToken cancellationToken = default)
-    {
-        if (command is TestCommand testCommand)
-        {
-            // Emit with a specific tag
-            Emit(new TestEvent { Value = testCommand.Value }, "order:123");
-        }
-        return Task.CompletedTask;
-    }
+    public void Handle(TestCommand testCommand) =>
+        Emit(new TestEvent { Value = testCommand.Value }, "order:123");
 
     protected override void ApplyEventToState(IEvent @event)
     {

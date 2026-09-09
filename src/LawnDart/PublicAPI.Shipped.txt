@@ -478,25 +478,20 @@ LawnDart.Outbox.OutboxMessage.SequencePosition.get -> long
 LawnDart.Outbox.OutboxMessage.SequencePosition.init -> void
 LawnDart.Outbox.OutboxMessage.StreamId.get -> string!
 LawnDart.Outbox.OutboxMessage.StreamId.init -> void
-[System.Diagnostics.CodeAnalysis.Experimental("LAWNDART002")]
-LawnDart.Patterns.Delegation.ICommandDelegator<TCommand>
-LawnDart.Patterns.Delegation.ICommandDelegator<TCommand>.DelegateAsync(TCommand command, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<LawnDart.ICommand!>!
-[System.Diagnostics.CodeAnalysis.Experimental("LAWNDART002")]
-LawnDart.Patterns.DownstreamActivity.IDownstreamActivity<TTrigger>
-LawnDart.Patterns.DownstreamActivity.IDownstreamActivity<TTrigger>.ExecuteAsync(TTrigger trigger, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-[System.Diagnostics.CodeAnalysis.Experimental("LAWNDART002")]
-LawnDart.Patterns.EventGenerator.IEventGenerator<TState>
-LawnDart.Patterns.EventGenerator.IEventGenerator<TState>.GenerateAsync(TState state, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IEnumerable<LawnDart.IEvent!>!>!
+[LAWNDART002]LawnDart.Patterns.Delegation.ICommandDelegator<TCommand>
+[LAWNDART002]LawnDart.Patterns.Delegation.ICommandDelegator<TCommand>.DelegateAsync(TCommand command, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<LawnDart.ICommand!>!
+[LAWNDART002]LawnDart.Patterns.DownstreamActivity.IDownstreamActivity<TTrigger>
+[LAWNDART002]LawnDart.Patterns.DownstreamActivity.IDownstreamActivity<TTrigger>.ExecuteAsync(TTrigger trigger, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+[LAWNDART002]LawnDart.Patterns.EventGenerator.IEventGenerator<TState>
+[LAWNDART002]LawnDart.Patterns.EventGenerator.IEventGenerator<TState>.GenerateAsync(TState state, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IEnumerable<LawnDart.IEvent!>!>!
 LawnDart.Patterns.EventProcessing.IEventProcessor<TEvent>
 LawnDart.Patterns.EventProcessing.IEventProcessor<TEvent>.ProcessAsync(TEvent event, LawnDart.Messaging.MessageContext! context, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IEnumerable<LawnDart.IEvent!>!>!
-[System.Diagnostics.CodeAnalysis.Experimental("LAWNDART001")]
-LawnDart.Patterns.Projection.IProjector<TState>
-LawnDart.Patterns.Projection.IProjector<TState>.ProjectAsync<TEvent>(TEvent event, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+[LAWNDART001]LawnDart.Patterns.Projection.IProjector<TState>
+[LAWNDART001]LawnDart.Patterns.Projection.IProjector<TState>.ProjectAsync<TEvent>(TEvent event, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 LawnDart.Patterns.Reaction.IReactor<TEvent>
 LawnDart.Patterns.Reaction.IReactor<TEvent>.ReactAsync(TEvent event, LawnDart.Messaging.MessageContext! context, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IEnumerable<LawnDart.ICommand!>!>!
-[System.Diagnostics.CodeAnalysis.Experimental("LAWNDART002")]
-LawnDart.Patterns.StateTransformation.IStateTransformer<TInput, TOutput>
-LawnDart.Patterns.StateTransformation.IStateTransformer<TInput, TOutput>.TransformAsync(TInput input, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TOutput>!
+[LAWNDART002]LawnDart.Patterns.StateTransformation.IStateTransformer<TInput, TOutput>
+[LAWNDART002]LawnDart.Patterns.StateTransformation.IStateTransformer<TInput, TOutput>.TransformAsync(TInput input, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TOutput>!
 LawnDart.Patterns.TaskProcessing.ITaskProcessor
 LawnDart.Patterns.TaskProcessing.ITaskProcessor.ProcessTasksAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IEnumerable<LawnDart.ICommand!>!>!
 LawnDart.Patterns.TaskProcessing.TaskProcessorOptions
@@ -657,14 +652,12 @@ static LawnDart.Snapshots.Telemetry.SnapshotTelemetry.RecordHit(string! entityTy
 static LawnDart.Snapshots.Telemetry.SnapshotTelemetry.RecordMiss(string! entityType, string! kind, System.TimeSpan restoreDuration) -> void
 static LawnDart.Snapshots.Telemetry.SnapshotTelemetry.RecordWrite(string! entityType, string! kind, System.TimeSpan writeDuration) -> void
 static readonly LawnDart.Snapshots.NeverSnapshotStrategy.Instance -> LawnDart.Snapshots.NeverSnapshotStrategy!
-[System.Obsolete("Declare Handle(TCommand) methods instead.")]
 virtual LawnDart.Aggregates.AggregateRoot.HandleAsync<TCommand>(TCommand command, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 virtual LawnDart.Aggregates.AggregateRoot.TryRestoreFromSnapshotAsync(LawnDart.Snapshots.ISnapshotStore! store, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<LawnDart.Snapshots.SnapshotInfo?>!
 virtual LawnDart.Aggregates.AggregateRoot.TrySaveSnapshotAsync(LawnDart.Snapshots.ISnapshotStore! store, long globalSequence, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task!
 virtual LawnDart.Authorization.DefaultAuthorizationProvider.CheckEntitlementAsync(LawnDart.Authorization.AuthorizationContext! context, string! entitlement, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<LawnDart.Authorization.AuthorizationResult!>!
 virtual LawnDart.Authorization.DefaultAuthorizationProvider.CheckPermissionAsync(LawnDart.Authorization.AuthorizationContext! context, string! permission, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<LawnDart.Authorization.AuthorizationResult!>!
 virtual LawnDart.Authorization.DefaultAuthorizationProvider.CheckPolicyAsync(LawnDart.Authorization.AuthorizationContext! context, string! policyName, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<LawnDart.Authorization.AuthorizationResult!>!
-[System.Obsolete("Declare Handle(TCommand) methods instead.")]
 virtual LawnDart.Dcb.DcbEntity.HandleAsync<TCommand>(TCommand command, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 virtual LawnDart.Dcb.DcbProjector<TState>.InitializeFromHistoryAsync(LawnDart.EventStore.IEventStore! eventStore, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 virtual LawnDart.EventStore.AppendCondition.<Clone>$() -> LawnDart.EventStore.AppendCondition!

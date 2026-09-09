@@ -64,7 +64,9 @@ public class ClosedHandleDcbDispatchTests
     {
         var entity = new GenericOverrideDcbEntity();
 
+#pragma warning disable CS0618 // Compat path: call obsolete override directly
         await entity.HandleAsync(new UnknownDcbCommand());
+#pragma warning restore CS0618
 
         Assert.True(entity.GenericCalled);
         Assert.Equal(0, entity.State.EventCount);
@@ -102,6 +104,7 @@ public class ClosedHandleDcbDispatchTests
     {
         public bool GenericCalled { get; private set; }
 
+        [Obsolete("Declare Handle(TCommand) methods instead.")]
         public override Task HandleAsync<TCommand>(TCommand command, CancellationToken cancellationToken = default)
         {
             GenericCalled = true;

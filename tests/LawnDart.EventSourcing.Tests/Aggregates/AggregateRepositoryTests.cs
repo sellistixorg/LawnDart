@@ -278,7 +278,7 @@ public class AggregateRepositoryTests
 
         // Create initial aggregate with one item
         var initialAggregate = await repository.GetOrCreateAsync<CounterAggregate>(aggregateId);
-        await initialAggregate.HandleAsync(new IncrementCommand(Guid.NewGuid(), 1));
+        initialAggregate.Handle(new IncrementCommand(Guid.NewGuid(), 1));
         await repository.SaveAsync(initialAggregate, new CommandMetadata { TenantId = "test-tenant", UserId = "user1" });
 
         // Thread 1: Load aggregate and handle first command (but don't save yet)
@@ -286,7 +286,7 @@ public class AggregateRepositoryTests
         // Thread 1 thinks it's at version 1 (one event in store)
         Assert.Equal(1, thread1Aggregate.Version);
         
-        await thread1Aggregate.HandleAsync(new IncrementCommand(Guid.NewGuid(), 5));
+        thread1Aggregate.Handle(new IncrementCommand(Guid.NewGuid(), 5));
         // Thread 1 now has version 2 locally (pending event), but hasn't saved yet
 
         // Thread 2: Load same aggregate, handle a different command, and save successfully
@@ -294,13 +294,13 @@ public class AggregateRepositoryTests
         // Thread 2 also loads at version 1
         Assert.Equal(1, thread2Aggregate.Version);
         
-        await thread2Aggregate.HandleAsync(new IncrementCommand(Guid.NewGuid(), 10));
+        thread2Aggregate.Handle(new IncrementCommand(Guid.NewGuid(), 10));
         await repository.SaveAsync(thread2Aggregate, new CommandMetadata { TenantId = "test-tenant", UserId = "user2" });
         // Thread 2 successfully saves, aggregate is now at version 2 in store
 
         // Thread 1: Now handles a second command (still using stale state from initial load)
         // This is the problematic pattern: handling multiple commands before saving
-        await thread1Aggregate.HandleAsync(new IncrementCommand(Guid.NewGuid(), 3));
+        thread1Aggregate.Handle(new IncrementCommand(Guid.NewGuid(), 3));
         // Thread 1 thinks it's at version 3 locally (1 initial + 2 pending events)
         // But the store is actually at version 2 (1 initial + 1 from thread 2)
 
@@ -333,11 +333,6 @@ public class AggregateRepositoryTests
         public void ApplyTest(IEvent @event)
         {
             Apply(@event);
-        }
-
-        public override Task HandleAsync<TCommand>(TCommand command, CancellationToken cancellationToken = default)
-        {
-            throw new NotImplementedException();
         }
 
         protected override void ApplyEventToState(IEvent @event)
@@ -545,16 +540,8 @@ public class AggregateRepositoryTests
             State = new CounterState();
         }
 
-        public override Task HandleAsync<TCommand>(TCommand command, CancellationToken cancellationToken = default)
-        {
-            switch (command)
-            {
-                case IncrementCommand inc:
-                    Apply(new IncrementedEvent(Guid.NewGuid(), DateTime.UtcNow, inc.Amount));
-                    break;
-            }
-            return Task.CompletedTask;
-        }
+        public void Handle(IncrementCommand inc) =>
+            Apply(new IncrementedEvent(Guid.NewGuid(), DateTime.UtcNow, inc.Amount));
 
         protected override void ApplyEventToState(IEvent @event)
         {

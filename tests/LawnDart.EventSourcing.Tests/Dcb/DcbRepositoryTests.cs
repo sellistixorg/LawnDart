@@ -587,14 +587,8 @@ public class TestCommand : ICommand
 
 public class TestDcbEntity : DcbEntity<TestState>
 {
-    public override Task HandleAsync<TCommand>(TCommand command, CancellationToken cancellationToken = default)
-    {
-        if (command is TestCommand testCommand)
-        {
-            Emit(new TestEvent { Value = testCommand.Value }, Tags.ToArray());
-        }
-        return Task.CompletedTask;
-    }
+    public void Handle(TestCommand testCommand) =>
+        Emit(new TestEvent { Value = testCommand.Value }, Tags.ToArray());
 
     protected override void ApplyEventToState(IEvent @event)
     {

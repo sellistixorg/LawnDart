@@ -93,11 +93,6 @@ public class AggregateRootTests
             Apply(@event);
         }
 
-        public override Task HandleAsync<TCommand>(TCommand command, CancellationToken cancellationToken = default)
-        {
-            throw new NotImplementedException();
-        }
-
         protected override void ApplyEventToState(IEvent @event)
         {
             AppliedEventCount++;
