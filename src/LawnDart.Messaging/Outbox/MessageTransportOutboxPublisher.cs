@@ -18,9 +18,9 @@ namespace LawnDart.Messaging.Outbox;
 /// <see cref="MessageContext.MessageId"/> (this type uses the outbox row id).
 /// </para>
 /// <para>
-/// Event type resolution uses the CLR types supplied at construction (FullName, Name, and
-/// <see cref="EventTypeNameResolver.GetName"/>). SQL Server outbox rows store
-/// <c>event.GetType().FullName</c> today — include those types in the map.
+/// Event type resolution uses the catalog token from
+/// <see cref="EventTypeNameResolver.GetName"/>. FullName and simple name remain
+/// read aliases for older outbox rows.
 /// </para>
 /// </remarks>
 public sealed class MessageTransportOutboxPublisher : IOutboxPublisher

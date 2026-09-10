@@ -12,7 +12,7 @@ namespace LawnDart.Patterns.DownstreamActivity;
 /// </remarks>
 /// <typeparam name="TTrigger">The trigger type (command or event).</typeparam>
 [Experimental("LAWNDART002")]
-public interface IDownstreamActivity<in TTrigger> where TTrigger : IMessage
+public interface IDownstreamActivity<in TTrigger>
 {
     /// <summary>
     /// Executes the downstream activity.

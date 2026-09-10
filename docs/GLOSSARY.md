@@ -69,6 +69,12 @@ Command → State. `[Experimental]` planned interface (`IDownstreamActivity`); n
 **Event**  
 Immutable fact. `IEvent` with `Id` and `Timestamp` first.
 
+**Event clocks**  
+Three times on the envelope, do not mix them:
+- **Business time** — `IEvent.Timestamp` and `EventMetadata.Timestamp` (same after enrich). `toTimestamp` / time-travel uses this.
+- **Commit time** — `EventMetadata.CommitTimestamp`, set only at `AppendAsync`. Lag and ops, not domain queries.
+- **Trace** — `TraceId` / `SpanId` (W3C hex). The Activity clock is not stored as a third `DateTime`.
+
 **Event Generator**  
 State → Event. `[Experimental]` planned interface (`IEventGenerator`); no host yet. Implementing it does not register or run it.
 

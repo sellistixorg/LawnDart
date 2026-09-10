@@ -105,6 +105,7 @@ namespace LawnDart.AspNetCore.Tests.DefaultContext
 {
     public record AppendNoteCommand(Guid Id, string Text) : ICommand;
 
+    [EventTypeName("http-default-note-appended")]
     public sealed record NoteAppended(Guid Id, DateTime Timestamp, string Text) : IEvent;
 
     public sealed class AppendNoteCommandHandler(IEventStore store) : ICommandHandler<AppendNoteCommand>
@@ -123,6 +124,7 @@ namespace LawnDart.AspNetCore.Tests.OrderingContext
 {
     public record AppendNoteCommand(Guid Id, string Text) : ICommand;
 
+    [EventTypeName("http-ordering-note-appended")]
     public sealed record NoteAppended(Guid Id, DateTime Timestamp, string Text) : IEvent;
 
     public sealed class AppendNoteCommandHandler(IEventStore store) : ICommandHandler<AppendNoteCommand>

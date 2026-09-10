@@ -49,7 +49,7 @@ push surface; implement it when the store can deliver a continuous log.
 
 **`IEventStore`**
 
-- `ReadStreamAsync(string streamId, long fromVersion = 0, long? toVersion = null, DateTime? toTimestamp = null, CancellationToken cancellationToken = default)`
+- `ReadStreamAsync(string streamId, long fromVersion = 0, long? toVersion = null, DateTime? toTimestamp = null, CancellationToken cancellationToken = default)` — `toTimestamp` is envelope business time (`EventMetadata.Timestamp`), not `CommitTimestamp`.
 - `ReadStreamEnumerableAsync(string streamId, long fromVersion = 0, long? toVersion = null, DateTime? toTimestamp = null, CancellationToken cancellationToken = default)`
 - `ReadByQueryAsync(Query query, long? fromSequencePosition = null, int? limit = null, long? toSequencePosition = null, DateTime? toTimestamp = null, CancellationToken cancellationToken = default)`
 - `ReadByQueryStreamAsync(Query query, long? fromSequencePosition = null, long? toSequencePosition = null, DateTime? toTimestamp = null, CancellationToken cancellationToken = default)`

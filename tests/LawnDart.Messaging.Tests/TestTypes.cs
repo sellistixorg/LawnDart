@@ -3,11 +3,14 @@ using LawnDart.Patterns.EventProcessing;
 using LawnDart.Patterns.Reaction;
 using LawnDart.Patterns.TaskProcessing;
 
+using LawnDart.EventStore;
 namespace LawnDart.Messaging.Tests;
 
 // ── Events ──────────────────────────────────────────────────────────────────
+[EventTypeName("test-types.order-placed-event")]
 
 internal record OrderPlacedEvent(Guid Id, DateTime Timestamp, string OrderId) : IEvent;
+[EventTypeName("test-types.inventory-reserved-event")]
 internal record InventoryReservedEvent(Guid Id, DateTime Timestamp, string OrderId) : IEvent;
 
 // ── Commands ─────────────────────────────────────────────────────────────────

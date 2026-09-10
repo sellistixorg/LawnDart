@@ -121,6 +121,7 @@ public class InMemoryEventStoreRegistryTests
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => eventStore.GetStreamAsync("Order:12345"));
     }
+[EventTypeName("in-memory-event-store-registry-t.test-event")]
 
     private record TestEvent(Guid Id, DateTime Timestamp) : IEvent;
 }

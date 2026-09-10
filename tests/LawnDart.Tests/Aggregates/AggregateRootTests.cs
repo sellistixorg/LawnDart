@@ -2,6 +2,7 @@ using LawnDart;
 using LawnDart.Aggregates;
 using Xunit;
 
+using LawnDart.EventStore;
 namespace LawnDart.Tests.Aggregates;
 
 public class AggregateRootTests
@@ -99,6 +100,7 @@ public class AggregateRootTests
             State.EventCount = AppliedEventCount;
         }
     }
+[EventTypeName("aggregate-root-tests.test-event")]
 
     private record TestEvent(Guid Id, DateTime Timestamp) : IEvent;
 }

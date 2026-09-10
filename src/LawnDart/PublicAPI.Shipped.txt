@@ -320,7 +320,6 @@ LawnDart.ICommandHandler<TCommand>.HandleAsync(TCommand command, System.Threadin
 LawnDart.IEvent
 LawnDart.IEvent.Id.get -> System.Guid
 LawnDart.IEvent.Timestamp.get -> System.DateTime
-LawnDart.IMessage
 LawnDart.IMetadataProvider
 LawnDart.IMetadataProvider.CaptureCommandMetadata(object? context = null) -> LawnDart.Metadata.CommandMetadata!
 LawnDart.IMetadataProvider.EnrichEventMetadata(LawnDart.Metadata.EventMetadata! baseMetadata, LawnDart.Metadata.CommandMetadata! commandMetadata, LawnDart.IEvent! event) -> LawnDart.Metadata.EventMetadata!

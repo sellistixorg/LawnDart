@@ -99,7 +99,8 @@ public sealed class CompiledHandleNoteAppliedTests
         Assert.NotEqual(typeof(AliasedNamedEvent).FullName, EventTypeNameResolver.GetName(typeof(AliasedNamedEvent)));
 
         Assert.True(defaultMap.ContainsKey(typeof(GlobalTagged)));
-        Assert.Equal(typeof(GlobalTagged).FullName, EventTypeNameResolver.GetName(typeof(GlobalTagged)));
+        Assert.Equal("test-projection-fixtures.global-tagged", EventTypeNameResolver.GetName(typeof(GlobalTagged)));
+        Assert.NotEqual(typeof(GlobalTagged).FullName, EventTypeNameResolver.GetName(typeof(GlobalTagged)));
     }
 
     private static EventMetadata Meta() =>

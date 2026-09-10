@@ -220,6 +220,7 @@ public sealed class DcbSqlServerSnapshotTests : IAsyncLifetime
 
         throw new TimeoutException($"DCB snapshot for {dcbId} was not written.");
     }
+[EventTypeName("dcb-sql-server-snapshot-tests.inventory-counted")]
 
     public sealed record InventoryCounted(Guid Id, DateTime Timestamp, int Units) : IEvent;
 

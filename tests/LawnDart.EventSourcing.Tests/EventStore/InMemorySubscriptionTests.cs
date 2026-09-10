@@ -228,6 +228,7 @@ public class InMemorySubscriptionTests
     }
 
     private static TestEvent Evt() => new(Guid.NewGuid(), DateTime.UtcNow);
+[EventTypeName("in-memory-subscription-tests.test-event")]
 
     private record TestEvent(Guid Id, DateTime Timestamp) : IEvent;
 }

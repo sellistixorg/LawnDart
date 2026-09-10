@@ -6,7 +6,7 @@ This is the foundation package — all other LawnDart packages depend on it.
 ## What's included
 
 - **`IEventStore`** — primary abstraction for reading and appending events
-- **`IEvent` / `ICommand` / `IMessage` / `IState`** — base marker interfaces for your domain types
+- **`IEvent` / `ICommand` / `IState`** — base interfaces for your domain types
 - **`AggregateRoot`** — base class for aggregate roots; apply events and track uncommitted changes
 - **`IAggregateRepository`** — load and save aggregates against any `IEventStore` implementation
 - **`IBoundedContextEventStore`** — named handle to a full context stack

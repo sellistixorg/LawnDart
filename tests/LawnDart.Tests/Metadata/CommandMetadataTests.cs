@@ -31,6 +31,8 @@ public class CommandMetadataTests
             UserAgent = "TestAgent/1.0",
             CorrelationId = "corr-123",
             CausationId = "cause-456",
+            TraceId = "0af7651916cd43dd8448eb211c80319c",
+            SpanId = "b7ad6b7169203331",
             AuthorizedBy = "admin",
             AuthorizedAt = DateTime.UtcNow,
             AuthorizationPolicies = new[] { "Policy1", "Policy2" },
@@ -46,6 +48,8 @@ public class CommandMetadataTests
         Assert.Equal("TestAgent/1.0", metadata.UserAgent);
         Assert.Equal("corr-123", metadata.CorrelationId);
         Assert.Equal("cause-456", metadata.CausationId);
+        Assert.Equal("0af7651916cd43dd8448eb211c80319c", metadata.TraceId);
+        Assert.Equal("b7ad6b7169203331", metadata.SpanId);
         Assert.Equal("admin", metadata.AuthorizedBy);
         Assert.NotNull(metadata.AuthorizedAt);
         Assert.Equal(2, metadata.AuthorizationPolicies?.Length);

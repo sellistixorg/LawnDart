@@ -1,4 +1,5 @@
 using LawnDart;
+using LawnDart.EventStore;
 using LawnDart.Projections.Lightweight;
 using LawnDart.Projections.Lightweight.Registration;
 using LawnDart.Projections.Sdk;
@@ -6,29 +7,37 @@ using LawnDart.Projections.Sdk;
 namespace LawnDart.Projections.Lightweight.Tests.Helpers;
 
 // ── Minimal event types ────────────────────────────────────────────────────────
+[EventTypeName("test-projection-fixtures.counter-incremented")]
 
 public record CounterIncremented(Guid Id, DateTime Timestamp, int Amount) : IEvent;
+[EventTypeName("test-projection-fixtures.counter-reset")]
 public record CounterReset(Guid Id, DateTime Timestamp) : IEvent;
+[EventTypeName("test-projection-fixtures.global-tagged")]
 public record GlobalTagged(Guid Id, DateTime Timestamp, string Tag) : IEvent;
 
 /// <summary>
 /// Emitted on an <c>OrderAggregate</c> stream — simulates order placement across tenants.
 /// </summary>
+[EventTypeName("test-projection-fixtures.order-created-local")]
 public record OrderCreatedLocal(Guid Id, DateTime Timestamp, Guid OrderId, string Customer) : IEvent;
 
 /// <summary>
 /// Emitted on a <c>ShipmentAggregate</c> stream — a different stream type to the order stream,
 /// used to verify the multi-stream projection combines events from two distinct stream types.
 /// </summary>
+[EventTypeName("test-projection-fixtures.shipment-dispatched-local")]
 public record ShipmentDispatchedLocal(Guid Id, DateTime Timestamp, Guid OrderId, string Carrier) : IEvent;
 
 /// <summary>Item added to a listing aggregate stream.</summary>
+[EventTypeName("test-projection-fixtures.catalog-item-added")]
 public record CatalogItemAdded(Guid Id, DateTime Timestamp, Guid ListingId, Guid ItemId) : IEvent;
 
 /// <summary>Item removed from a listing aggregate stream.</summary>
+[EventTypeName("test-projection-fixtures.catalog-item-removed")]
 public record CatalogItemRemoved(Guid Id, DateTime Timestamp, Guid ListingId, Guid ItemId) : IEvent;
 
 /// <summary>Matching event that a poison projection handles by throwing.</summary>
+[EventTypeName("test-projection-fixtures.poison-pill")]
 public record PoisonPill(Guid Id, DateTime Timestamp) : IEvent;
 
 // ── Minimal view types ─────────────────────────────────────────────────────────

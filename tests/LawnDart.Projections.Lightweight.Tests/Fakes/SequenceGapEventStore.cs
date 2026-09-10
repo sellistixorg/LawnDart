@@ -80,30 +80,7 @@ public sealed class SequenceGapEventStore : IEventStore
     }
 
     private static bool MatchesQuery(Query query, SequencedEvent se)
-    {
-        if (query.Items.Count == 0)
-            return true;
-
-        var eventTypeName = se.Event.GetType().FullName ?? se.Event.GetType().Name;
-        var shortName = se.Event.GetType().Name;
-
-        foreach (var item in query.Items)
-        {
-            var typeMatch = item.Types is null or { Count: 0 }
-                || item.Types.Any(t =>
-                    string.Equals(t, eventTypeName, StringComparison.Ordinal)
-                    || string.Equals(t, shortName, StringComparison.Ordinal)
-                    || eventTypeName.StartsWith(t + ",", StringComparison.Ordinal));
-
-            var tagMatch = item.Tags is null or { Count: 0 }
-                || item.Tags.Any(tag => se.Tags.Contains(tag));
-
-            if (typeMatch && tagMatch)
-                return true;
-        }
-
-        return false;
-    }
+        => EventQueryMatcher.Matches(se, query);
 
     public Task<AppendResult> AppendAsync(
         string streamId,

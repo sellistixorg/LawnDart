@@ -161,12 +161,14 @@ public class DcbReactorTests
 }
 
 // Test types
+[EventTypeName("dcb-patterns-tests.test-projection-event")]
 public class TestProjectionEvent : IEvent
 {
     public Guid Id { get; init; } = Guid.NewGuid();
     public DateTime Timestamp { get; init; } = DateTime.UtcNow;
     public string Value { get; init; } = string.Empty;
 }
+[EventTypeName("dcb-patterns-tests.test-reaction-event")]
 
 public class TestReactionEvent : IEvent
 {

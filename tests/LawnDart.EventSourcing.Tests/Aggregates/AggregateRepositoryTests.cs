@@ -341,6 +341,7 @@ public class AggregateRepositoryTests
             State.EventCount = AppliedEventCount;
         }
     }
+[EventTypeName("aggregate-repository-tests.test-event")]
 
     private record TestEvent(Guid Id, DateTime Timestamp) : IEvent;
 
@@ -555,6 +556,7 @@ public class AggregateRepositoryTests
     }
 
     private record IncrementCommand(Guid Id, int Amount) : ICommand;
+    [EventTypeName("aggregate-repository-tests.incremented-event")]
     private record IncrementedEvent(Guid Id, DateTime Timestamp, int Amount) : IEvent;
 
     private sealed class MemorySnapshotStore : ISnapshotStore

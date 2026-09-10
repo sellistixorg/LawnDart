@@ -2,6 +2,7 @@ using LawnDart.Aggregates;
 using LawnDart.Dcb;
 using LawnDart.Testing.Bdd;
 
+using LawnDart.EventStore;
 namespace LawnDart.Testing.Tests.Bdd;
 
 public sealed class InMemoryGwtTests
@@ -81,8 +82,10 @@ public sealed class InMemoryGwtTests
     }
 
     public sealed record IncrementCommand(Guid Id, Guid CounterId) : ICommand;
+[EventTypeName("in-memory-gwt-tests.counter-created")]
 
     public sealed record CounterCreated(Guid Id, DateTime Timestamp, Guid CounterId) : IEvent;
+[EventTypeName("in-memory-gwt-tests.counter-incremented")]
 
     public sealed record CounterIncremented(Guid Id, DateTime Timestamp, Guid CounterId) : IEvent;
 }

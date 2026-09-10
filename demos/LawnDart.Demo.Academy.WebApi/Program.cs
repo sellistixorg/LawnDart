@@ -8,6 +8,7 @@ using LawnDart.Authorization;
 using LawnDart.Authorization.AspNetCore;
 using LawnDart.Demo.Academy.WebApi.Authorization;
 using LawnDart.Demo.Academy.WebApi.Commands;
+using LawnDart.Demo.Academy.WebApi.Domain.Events;
 using LawnDart.Demo.Academy.WebApi.Projections;
 using LawnDart.EventSourcing;
 using LawnDart.EventSourcing.SqlServer;
@@ -26,7 +27,8 @@ builder.Services.AddLawnDart(opts =>
 });
 
 builder.Services.AddInMemoryProjectionStores("default");
-var ctx = builder.Services.AddBoundedContext("default");
+var ctx = builder.Services.AddBoundedContext("default")
+    .WithEventTypes(typeof(StudentRegistered).Assembly);
 
 var useSql = args.Contains("--sql")
     || builder.Configuration.GetValue("EventStore:UseSqlServer", false);

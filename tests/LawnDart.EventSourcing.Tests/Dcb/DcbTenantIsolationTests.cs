@@ -205,6 +205,7 @@ public class DcbTenantIsolationTests
     }
 
     // Test types
+    [EventTypeName("dcb-tenant-isolation-tests.test-event")]
     private record TestEvent : IEvent
     {
         public Guid Id { get; init; }

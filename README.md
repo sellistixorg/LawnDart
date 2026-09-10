@@ -119,7 +119,7 @@ artifacts. See [CHANGELOG.md](CHANGELOG.md).
 ## Modelling companion
 
 [Eventhesis](https://eventhesis.com) is a separate event-modelling tool that
-emits slice-based JSON. It does not generate LawnDart types. You do not need
+emits slice-based JSON. It does not generate LawnDart types. There will be tooling for that soon. You do not need
 it to use this library.
 
 ## Contributing

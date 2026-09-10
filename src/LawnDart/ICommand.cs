@@ -3,7 +3,7 @@ namespace LawnDart;
 /// <summary>
 /// Represents a command - an intent to perform an action (future intent).
 /// </summary>
-public interface ICommand : IMessage
+public interface ICommand
 {
     /// <summary>
     /// Unique identifier for the command.

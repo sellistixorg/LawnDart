@@ -113,6 +113,7 @@ public class SqlServerEventStoreRegistryTests : IAsyncLifetime
         Assert.Contains("test-tenant:Order:12345", streamIds);
         Assert.Contains("test-tenant:Order:67890", streamIds);
     }
+[EventTypeName("sql-server-event-store-registry-.test-event")]
 
     private record TestEvent(Guid Id, DateTime Timestamp) : IEvent;
 }

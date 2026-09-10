@@ -148,6 +148,7 @@ public class SqlServerMultiContextIsolationTests : IAsyncLifetime
                 ContextName     = contextName
             },
             null, null);
+[EventTypeName("sql-server-multi-context-isolati.stub-event")]
 
     private sealed record StubEvent(Guid Id, DateTime Timestamp) : IEvent;
 }

@@ -760,8 +760,11 @@ public class SqlServerEventStoreTests : IAsyncLifetime
         Assert.Equal(result.Events[0].SequencePosition, max);
     }
 
+    [EventTypeName("sql-server-event-store-tests.test-event")]
     private record TestEvent(Guid Id, DateTime Timestamp) : IEvent;
+    [EventTypeName("sql-server-event-store-tests.another-event")]
     private record AnotherEvent(Guid Id, DateTime Timestamp) : IEvent;
+    [EventTypeName("sql-server-event-store-tests.event-with-properties")]
     private record EventWithProperties(Guid Id, DateTime Timestamp, string ProductId, int Quantity) : IEvent;
     [EventTypeName("tests.sql.alias-event")]
     private record SqlAliasedEvent(Guid Id, DateTime Timestamp) : IEvent;

@@ -2,7 +2,7 @@
 
 LawnDart is the in-process .NET runtime for commands, events, and state.
 [Eventhesis](https://eventhesis.com) is an optional modelling canvas that emits
-slice-based event-model JSON. It does not generate LawnDart types.
+slice-based event-model JSON. It does not generate LawnDart types.  There will be tooling for that soon.
 
 ## Core mental model
 
@@ -33,7 +33,7 @@ Typical first path:
 
 - **Core contracts**: `LawnDart` (`AddLawnDart`)
 - **Event-sourcing runtime**: `LawnDart.EventSourcing`
-- **Storage**: `UseInMemory()` (zero infra) or `UseSqlServer(...)` (durable)
+- **Storage**: `UseInMemory()` (zero infra) or `UseSqlServer(...)` (durable) or others that exist, just not here
 - **Projections**: `LawnDart.Projections.Lightweight` via `.WithProjections(...)`
 - **HTTP**: `LawnDart.AspNetCore` plus optional `LawnDart.Authorization.AspNetCore`
 

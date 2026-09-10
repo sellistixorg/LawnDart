@@ -571,6 +571,7 @@ public class TestState : IState
         }
     }
 }
+[EventTypeName("dcb-repository-tests.test-event")]
 
 public class TestEvent : IEvent
 {
@@ -628,7 +629,10 @@ public class TestMetadataProvider : IMetadataProvider
         eventMetadata.UserId = commandMetadata.UserId;
         eventMetadata.CorrelationId = commandMetadata.CorrelationId;
         eventMetadata.CausationId = commandMetadata.CorrelationId;
-        eventMetadata.Timestamp = DateTime.UtcNow;
+        eventMetadata.EventId = @event.Id.ToString();
+        eventMetadata.Timestamp = @event.Timestamp;
+        eventMetadata.TraceId = commandMetadata.TraceId;
+        eventMetadata.SpanId = commandMetadata.SpanId;
         return eventMetadata;
     }
 }

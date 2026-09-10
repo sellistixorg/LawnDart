@@ -228,8 +228,8 @@ public static class ProjectionScanner
     /// </summary>
     /// <remarks>
     /// Attributes often use short CLR type names (e.g. <c>"OrderPlaced"</c>).  The in-memory and
-    /// persisted event stores match on <see cref="EventTypeNameResolver.GetName(Type)"/> (typically
-    /// namespace-qualified).  When a token contains no <c>'.'</c>, resolve it against the handler
+    /// persisted event stores match on <see cref="EventTypeNameResolver.GetName(Type)"/> (catalog
+    /// token).  When a token contains no <c>'.'</c>, resolve it against the handler
     /// assembly's exported <see cref="IEvent"/> types by simple name; if ambiguous, fail fast.
     /// </remarks>
     private static IReadOnlyList<string> NormalizeDcbQueryTypeNames(Assembly assembly, string[] queryTokens)

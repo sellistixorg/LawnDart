@@ -5,6 +5,18 @@ namespace LawnDart.Metadata;
 /// <summary>
 /// Metadata for an event, including identity, network context, tracing, authorization, and schema information.
 /// </summary>
+/// <remarks>
+/// Three clocks, do not mix them:
+/// <list type="bullet">
+/// <item><description><b>Business time</b> — <c>IEvent.Timestamp</c> and
+/// <see cref="Timestamp"/> are the same after enrich. Time-travel
+/// (<c>toTimestamp</c>) uses this value.</description></item>
+/// <item><description><b>Commit time</b> — <see cref="CommitTimestamp"/> is set only
+/// at <c>AppendAsync</c>. Used for lag, not domain queries.</description></item>
+/// <item><description><b>Trace</b> — <see cref="TraceId"/> / <see cref="SpanId"/>
+/// (W3C hex). The Activity clock is not stored as a third <see cref="DateTime"/>.</description></item>
+/// </list>
+/// </remarks>
 [MemoryPackable]
 public partial class EventMetadata
 {
@@ -74,8 +86,9 @@ public partial class EventMetadata
 
     // Timing
     /// <summary>
-    /// When event was created (business/domain time).
-    /// This represents when the domain event actually occurred.
+    /// Business/domain time — when the event occurred.
+    /// Copied from <c>IEvent.Timestamp</c> during enrich. Not overwritten with
+    /// <see cref="DateTime.UtcNow"/>. Time-travel filters use this value.
     /// </summary>
     public DateTime Timestamp { get; set; } = DateTime.UtcNow;
 
@@ -102,6 +115,17 @@ public partial class EventMetadata
     /// Additional custom context.
     /// </summary>
     public Dictionary<string, string> Custom { get; set; } = new();
+
+    /// <summary>
+    /// W3C trace id (32 hex characters). Inherited from the command envelope.
+    /// Appended last so MemoryPack ordinals of existing members stay stable.
+    /// </summary>
+    public string? TraceId { get; set; }
+
+    /// <summary>
+    /// W3C span id (16 hex characters). Inherited from the command envelope.
+    /// </summary>
+    public string? SpanId { get; set; }
 }
 
 

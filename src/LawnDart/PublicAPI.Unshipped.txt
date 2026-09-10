@@ -1,1 +1,14 @@
 #nullable enable
+*REMOVED*LawnDart.IMessage
+static LawnDart.EventStore.BoundedContextExtensions.WithEventTypes(this LawnDart.EventStore.BoundedContextBuilder! builder, params System.Reflection.Assembly![]! assemblies) -> LawnDart.EventStore.BoundedContextBuilder!
+static LawnDart.EventStore.BoundedContextExtensions.WithEventTypes(this LawnDart.EventStore.BoundedContextBuilder! builder, params System.Type![]! types) -> LawnDart.EventStore.BoundedContextBuilder!
+static LawnDart.EventStore.EventTypeNameResolver.TryGetDeclaredName(System.Type! type) -> string?
+static LawnDart.EventStore.EventTypeNameResolver.TryResolveType(string! storedName, out System.Type? type) -> bool
+LawnDart.Metadata.CommandMetadata.SpanId.get -> string?
+LawnDart.Metadata.CommandMetadata.SpanId.set -> void
+LawnDart.Metadata.CommandMetadata.TraceId.get -> string?
+LawnDart.Metadata.CommandMetadata.TraceId.set -> void
+LawnDart.Metadata.EventMetadata.SpanId.get -> string?
+LawnDart.Metadata.EventMetadata.SpanId.set -> void
+LawnDart.Metadata.EventMetadata.TraceId.get -> string?
+LawnDart.Metadata.EventMetadata.TraceId.set -> void

@@ -1,3 +1,4 @@
+using LawnDart.EventStore;
 using LawnDart.Metadata;
 
 namespace LawnDart;
@@ -61,9 +62,11 @@ public class DefaultMetadataProvider : IMetadataProvider
 
             // Event-specific
             EventId = @event.Id.ToString(),
-            Timestamp = DateTime.UtcNow,
+            Timestamp = @event.Timestamp,
             SchemaVersion = baseMetadata.SchemaVersion > 0 ? baseMetadata.SchemaVersion : 1,
-            SchemaName = @event.GetType().FullName,
+            SchemaName = EventTypeNameResolver.GetName(@event.GetType()),
+            TraceId = commandMetadata.TraceId ?? baseMetadata.TraceId,
+            SpanId = commandMetadata.SpanId ?? baseMetadata.SpanId,
 
             // Custom metadata
             Custom = commandMetadata.Custom
