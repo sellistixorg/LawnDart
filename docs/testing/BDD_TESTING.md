@@ -2,6 +2,12 @@
 
 `LawnDart.Testing` runs Given / When / Then specs against `UseInMemory()`.
 
+Events used in `Given` / `When` must declare `[EventTypeName]`. In-memory GWT
+does not call `WithEventTypes`; the attribute is enough for writes. After
+`RunAsync`, `result.EmittedSequencedEvents` carries envelope `CausationId`
+(the command id when the caller left it unset) and a stable `CorrelationId`.
+Those fields live on the envelope, not on `ICommand` / `IEvent`.
+
 ## Package
 
 - `LawnDart.Testing`

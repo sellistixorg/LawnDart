@@ -8,7 +8,10 @@
 public sealed record CreateCounterCommand(Guid Id, Guid CounterId) : ICommand;
 public sealed record IncrementCommand(Guid Id, Guid CounterId) : ICommand;
 
+[EventTypeName("counter-created")]
 public sealed record CounterCreated(Guid Id, DateTime Timestamp, Guid CounterId) : IEvent;
+
+[EventTypeName("counter-incremented")]
 public sealed record CounterIncremented(Guid Id, DateTime Timestamp, Guid CounterId) : IEvent;
 
 public sealed class CounterState : IState
@@ -33,7 +36,7 @@ public sealed class Counter : AggregateRoot<CounterState>
 ```
 
 Keep `Id` and `Timestamp` first on events if you follow the Eventhesis
-field-order convention.
+field-order convention. Every concrete `IEvent` needs `[EventTypeName]`.
 
 ## Host and execute
 
@@ -42,10 +45,13 @@ using Microsoft.Extensions.DependencyInjection;
 using LawnDart;
 using LawnDart.Aggregates;
 using LawnDart.EventSourcing;
+using LawnDart.EventStore;
 
 var services = new ServiceCollection();
 services.AddLawnDart(o => o.RequireTenantId = false);
-services.AddBoundedContext("default").UseInMemory();
+services.AddBoundedContext("default")
+    .UseInMemory()
+    .WithEventTypes(typeof(CounterCreated), typeof(CounterIncremented));
 var sp = services.BuildServiceProvider();
 
 var repo = sp.GetRequiredService<IAggregateRepository>();

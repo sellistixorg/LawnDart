@@ -20,10 +20,10 @@ public static class ReactorTelemetry
     private static readonly Counter<long> Errors = Meter.CreateCounter<long>(
         "reactor.errors", "count", "Reactor handler errors");
 
-    /// <summary>Starts a reactor handle activity span.</summary>
-    public static Activity? StartHandle(string reactorType, string eventType)
+    /// <summary>Starts a reactor handle activity span, continuing from inbound <c>traceparent</c>.</summary>
+    public static Activity? StartHandle(string reactorType, string eventType, MessageContext? context = null)
     {
-        var activity = ActivitySource.StartActivity("Reactor.Handle");
+        var activity = MessageTrace.Start(ActivitySource, "Reactor.Handle", context);
         activity?.SetTag("reactor.type", reactorType);
         activity?.SetTag("reactor.event_type", eventType);
         return activity;

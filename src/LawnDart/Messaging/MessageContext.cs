@@ -63,6 +63,6 @@ public class MessageContext
         TenantId = TenantId,
         UserId = UserId,
         TransportType = TransportType,
-        Headers = Headers,
+        Headers = MessageTrace.WithCurrentTraceHeaders(Headers),
     };
 }

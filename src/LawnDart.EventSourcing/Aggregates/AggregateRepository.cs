@@ -396,6 +396,7 @@ public class AggregateRepository : IAggregateRepository
         
         // Capture metadata if not provided
         commandMetadata ??= _metadataProvider.CaptureCommandMetadata();
+        commandMetadata.CausationId ??= command.Id.ToString();
         
         // Authorization check (if enabled and service is registered)
         if (_options.EnableAuthorization && _authorizationService != null)

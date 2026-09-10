@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using LawnDart.Messaging;
@@ -14,7 +15,10 @@ namespace LawnDart.EventSourcing.Context;
 /// <c>UseInMemory()</c>, <c>UseSqlServer()</c>, or <c>WithCommandHandlers()</c>.
 /// Do not register this type yourself. Once it is in the container, Minimal API /
 /// MVC endpoint code calls <c>dispatcher.DispatchAsync(command, ctx)</c> without
-/// knowing the context name.
+/// knowing the context name. The <see cref="MessageContext"/> is published on
+/// <see cref="AmbientMessageContext"/> and, when <c>traceparent</c> is present,
+/// continued as an <see cref="System.Diagnostics.Activity"/> before
+/// <c>HandleAsync</c>.
 /// </para>
 /// <para>
 /// The handler is resolved as a <em>keyed</em> service using the context name returned by
@@ -25,6 +29,8 @@ namespace LawnDart.EventSourcing.Context;
 /// </remarks>
 public sealed class ContextAwareCommandDispatcher : ICommandDispatcher
 {
+    private static readonly ActivitySource ActivitySource = new("LawnDart.CommandDispatcher");
+
     private readonly ICommandContextRegistry _registry;
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<ContextAwareCommandDispatcher>? _logger;
@@ -41,12 +47,13 @@ public sealed class ContextAwareCommandDispatcher : ICommandDispatcher
     }
 
     /// <inheritdoc/>
-    public Task DispatchAsync(
+    public async Task DispatchAsync(
         ICommand command,
         MessageContext context,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(command);
+        ArgumentNullException.ThrowIfNull(context);
 
         var commandType = command.GetType();
         var contextName = _registry.GetContextName(commandType);
@@ -69,6 +76,15 @@ public sealed class ContextAwareCommandDispatcher : ICommandDispatcher
             ?? throw new InvalidOperationException(
                 $"HandleAsync method not found on {handlerType.FullName}.");
 
-        return (Task)handleMethod.Invoke(handler, [command, cancellationToken])!;
+        using var activity = MessageTrace.Start(
+            ActivitySource,
+            $"command.{commandType.Name}",
+            context,
+            ActivityKind.Internal);
+        using var ambient = AmbientMessageContext.Push(context);
+
+        var task = (Task)handleMethod.Invoke(handler, [command, cancellationToken])!;
+        await task.ConfigureAwait(false);
     }
+
 }

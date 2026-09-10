@@ -140,6 +140,20 @@ public class EventTypeNameResolverTests
     }
 
     [Fact]
+    public void WriteName_IsCatalogToken_FullNameIsReadAliasOnly()
+    {
+        EventTypeNameResolver.Warmup([typeof(EventWithAlias)]);
+
+        var written = EventTypeNameResolver.GetName(typeof(EventWithAlias));
+        Assert.Equal("my-stable-alias", written);
+        Assert.NotEqual(typeof(EventWithAlias).FullName, written);
+
+        Assert.True(EventTypeNameResolver.TryResolveType(typeof(EventWithAlias).FullName!, out var aliased));
+        Assert.Equal(typeof(EventWithAlias), aliased);
+        Assert.Equal(written, EventTypeNameResolver.GetName(aliased));
+    }
+
+    [Fact]
     public void WithEventTypes_RejectsNonEvent()
     {
         var services = new ServiceCollection();

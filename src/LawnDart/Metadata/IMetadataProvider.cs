@@ -9,6 +9,8 @@ public interface IMetadataProvider
 {
     /// <summary>
     /// Captures metadata from the current execution context (HTTP, messaging, background).
+    /// Reads <c>Activity.Current</c> and ambient <c>MessageContext</c> when present;
+    /// otherwise mints a correlation id.
     /// </summary>
     /// <param name="context">Optional context object (e.g., HttpContext, ServiceBusReceivedMessage).</param>
     /// <returns>Command metadata captured from the context.</returns>

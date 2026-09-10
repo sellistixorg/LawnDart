@@ -13,9 +13,11 @@ PaymentAuthorised        → ConfirmationReactor → SendConfirmationCommand
 
 ```csharp
 using LawnDart;
+using LawnDart.EventStore;
 using LawnDart.Messaging;
 using LawnDart.Patterns.Reaction;
 
+[EventTypeName("seat-reservation-confirmed")]
 public sealed record SeatReservationConfirmed(
     Guid Id, DateTime Timestamp, Guid StudentId, decimal Amount) : IEvent;
 public sealed record ProcessPaymentCommand(

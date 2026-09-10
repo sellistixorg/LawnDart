@@ -1,8 +1,9 @@
+using LawnDart;
 using LawnDart.Aggregates;
 using LawnDart.Dcb;
+using LawnDart.EventStore;
 using LawnDart.Testing.Bdd;
 
-using LawnDart.EventStore;
 namespace LawnDart.Testing.Tests.Bdd;
 
 public sealed class InMemoryGwtTests
@@ -23,6 +24,42 @@ public sealed class InMemoryGwtTests
 
         Assert.Single(result.EmittedEvents);
         Assert.Equal(1, result.Aggregate.State.Value);
+    }
+
+    [Fact]
+    public async Task aggregate_spec_envelope_causation_and_stable_correlation()
+    {
+        await using var ctx = BddTestContext.CreateInMemory();
+        var id = Guid.NewGuid();
+        var command = new DoubleIncrementCommand(Guid.NewGuid(), id);
+
+        var result = await AggregateSpec
+            .For<Counter>(ctx, id)
+            .Given(new CounterCreated(Guid.NewGuid(), DateTime.UtcNow, id))
+            .When(command)
+            .ThenEmittedTypes(typeof(CounterIncremented), typeof(CounterIncremented))
+            .RunAsync();
+
+        Assert.Equal(2, result.EmittedSequencedEvents.Count);
+        Assert.All(result.EmittedSequencedEvents, e =>
+            Assert.Equal(command.Id.ToString(), e.Metadata.CausationId));
+
+        var correlation = result.EmittedSequencedEvents[0].Metadata.CorrelationId;
+        Assert.False(string.IsNullOrWhiteSpace(correlation));
+        Assert.NotEqual(command.Id.ToString(), correlation);
+        Assert.All(result.EmittedSequencedEvents, e =>
+            Assert.Equal(correlation, e.Metadata.CorrelationId));
+
+        var business = new DateTime(2020, 6, 15, 12, 0, 0, DateTimeKind.Utc);
+        Assert.All(result.EmittedSequencedEvents, e =>
+        {
+            Assert.Equal(business, e.Event.Timestamp);
+            Assert.Equal(business, e.Metadata.Timestamp);
+            Assert.NotNull(e.Metadata.CommitTimestamp);
+            Assert.True(e.Metadata.CommitTimestamp > e.Metadata.Timestamp);
+            Assert.Equal("in-memory-gwt-tests.counter-incremented", e.Metadata.SchemaName);
+            Assert.NotEqual(typeof(CounterIncremented).FullName, e.Metadata.SchemaName);
+        });
     }
 
     [Fact]
@@ -50,6 +87,13 @@ public sealed class InMemoryGwtTests
     {
         public void Handle(IncrementCommand increment) =>
             Apply(new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, increment.CounterId));
+
+        public void Handle(DoubleIncrementCommand increment)
+        {
+            var business = new DateTime(2020, 6, 15, 12, 0, 0, DateTimeKind.Utc);
+            Apply(new CounterIncremented(Guid.NewGuid(), business, increment.CounterId));
+            Apply(new CounterIncremented(Guid.NewGuid(), business, increment.CounterId));
+        }
 
         protected override void ApplyEventToState(IEvent @event)
         {
@@ -82,10 +126,12 @@ public sealed class InMemoryGwtTests
     }
 
     public sealed record IncrementCommand(Guid Id, Guid CounterId) : ICommand;
-[EventTypeName("in-memory-gwt-tests.counter-created")]
 
+    public sealed record DoubleIncrementCommand(Guid Id, Guid CounterId) : ICommand;
+
+    [EventTypeName("in-memory-gwt-tests.counter-created")]
     public sealed record CounterCreated(Guid Id, DateTime Timestamp, Guid CounterId) : IEvent;
-[EventTypeName("in-memory-gwt-tests.counter-incremented")]
 
+    [EventTypeName("in-memory-gwt-tests.counter-incremented")]
     public sealed record CounterIncremented(Guid Id, DateTime Timestamp, Guid CounterId) : IEvent;
 }

@@ -39,15 +39,29 @@ and optional projections. Not the same as multi-tenancy.
 
 ## C
 
+**Catalog token**  
+Stable kebab-case name stored for an event type (`[EventTypeName]`). Required
+on every concrete `IEvent` that is written. CLR `FullName` is not stored.
+Register types with `WithEventTypes` (or `EventTypeNameResolver.Warmup`).
+Missing attributes and duplicate tokens fail at warmup. Older FullName rows
+still resolve as a read alias.
+
 **Checkpoint**  
 Last processed event position for a projector. InMemory or SQL Server.
 
 **Command**  
 Intent to change the future. `ICommand` with a `Guid Id` idempotency key.
-Commands can be rejected; events cannot.
+Commands can be rejected; events cannot. `ICommand` does not inherit a
+shared `IMessage` marker. Correlation, causation, and W3C trace are not
+command payload fields.
 
 **ConcurrencyException**  
 Expected stream version or DCB `AppendCondition` was not satisfied.
+
+**Correlation / causation**  
+Envelope fields. `CausationId` is the immediate parent (defaults to
+`command.Id` on `HandleCommandAsync` when unset). `CorrelationId` is the
+saga / W3C trace id — not a copy of causation.
 
 ## D
 
@@ -62,12 +76,18 @@ Base type for tag-based entities (`DcbEntity` / `DcbEntity<TState>`).
 Command → Command. `[Experimental]` planned interface (`ICommandDelegator`); no host yet. Implementing it does not register or run it.
 
 **Downstream Activity**  
-Command → State. `[Experimental]` planned interface (`IDownstreamActivity`); no host yet. Implementing it does not register or run it.
+Command → State. `[Experimental]` planned interface (`IDownstreamActivity`); no host yet. `TTrigger` is unconstrained (no `IMessage` marker). Implementing it does not register or run it.
 
 ## E
 
+**Envelope**  
+`EventMetadata` / `CommandMetadata` / `MessageContext`. Source of truth for
+event id, business time, commit time, correlation, causation, `TraceId`,
+`SpanId`, and tenant. `SchemaName` is the catalog token.
+
 **Event**  
-Immutable fact. `IEvent` with `Id` and `Timestamp` first.
+Immutable fact. `IEvent` with `Id` and `Timestamp` first, plus
+`[EventTypeName]`. `IEvent` does not inherit a shared `IMessage` marker.
 
 **Event clocks**  
 Three times on the envelope, do not mix them:
@@ -94,6 +114,14 @@ Process-local `IEventStore`. Zero infrastructure. Default for Academy and tests.
 
 **Lightweight projections**  
 In-process projection host (`LawnDart.Projections.Lightweight`).
+
+## M
+
+**MessageContext**  
+Inbound transport envelope (HTTP, messaging). `ContextAwareCommandDispatcher`
+publishes it on `AmbientMessageContext` and continues `traceparent` before
+`HandleAsync`. `IMessageTransport` is unchanged; there is no `IMessage`
+domain marker.
 
 ## N
 

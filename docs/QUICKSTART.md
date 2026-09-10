@@ -22,6 +22,7 @@ To work from this repository instead, clone it and add project references
 services.AddLawnDart(o => o.RequireTenantId = false);
 var ctx = services.AddBoundedContext("default");
 ctx.UseInMemory();
+ctx.WithEventTypes(/* assemblies or explicit IEvent types */);
 ```
 
 `UseInMemory()` registers keyed `IEventStore`, `IAggregateRepository`, and
@@ -39,11 +40,15 @@ using Microsoft.Extensions.DependencyInjection;
 using LawnDart;
 using LawnDart.Aggregates;
 using LawnDart.EventSourcing;
+using LawnDart.EventStore;
 
 public sealed record CreateCounterCommand(Guid Id, Guid CounterId) : ICommand;
 public sealed record IncrementCommand(Guid Id, Guid CounterId) : ICommand;
 
+[EventTypeName("counter-created")]
 public sealed record CounterCreated(Guid Id, DateTime Timestamp, Guid CounterId) : IEvent;
+
+[EventTypeName("counter-incremented")]
 public sealed record CounterIncremented(Guid Id, DateTime Timestamp, Guid CounterId) : IEvent;
 
 public sealed class CounterState : IState
@@ -72,7 +77,9 @@ Build the host, run the commands, and read the state back:
 ```csharp
 var services = new ServiceCollection();
 services.AddLawnDart(o => o.RequireTenantId = false);
-services.AddBoundedContext("default").UseInMemory();
+services.AddBoundedContext("default")
+    .UseInMemory()
+    .WithEventTypes(typeof(CounterCreated), typeof(CounterIncremented));
 var sp = services.BuildServiceProvider();
 
 var repo = sp.GetRequiredService<IAggregateRepository>();

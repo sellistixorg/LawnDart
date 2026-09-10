@@ -65,6 +65,44 @@ public class MessageTransportOutboxPublisherTests
     }
 
     [Fact]
+    public async Task PublishAsync_CopiesTraceHeadersFromMetadata()
+    {
+        var transport = new InMemoryMessageTransport(NullLogger<InMemoryMessageTransport>.Instance);
+        MessageContext? receivedCtx = null;
+
+        await transport.SubscribeAsync<OrderPlacedEvent>((_, ctx, _) =>
+        {
+            receivedCtx = ctx;
+            return Task.CompletedTask;
+        });
+
+        var publisher = new MessageTransportOutboxPublisher(transport, [typeof(OrderPlacedEvent)]);
+        var evt = new OrderPlacedEvent(Guid.NewGuid(), DateTime.UtcNow, "order-trace");
+
+        await publisher.PublishAsync(new OutboxMessage
+        {
+            Id = Guid.NewGuid(),
+            EventType = typeof(OrderPlacedEvent).FullName!,
+            Payload = JsonSerializer.Serialize(evt, evt.GetType(), JsonOptions),
+            Metadata = JsonSerializer.Serialize(new EventMetadata
+            {
+                TraceId = "0af7651916cd43dd8448eb211c80319c",
+                SpanId = "b7ad6b7169203331",
+            }, JsonOptions),
+            CreatedAt = DateTime.UtcNow,
+            StreamId = "Order:trace",
+            SequencePosition = 1,
+        });
+
+        Assert.NotNull(receivedCtx);
+        Assert.Equal("0af7651916cd43dd8448eb211c80319c", receivedCtx.Headers["TraceId"]);
+        Assert.Equal("b7ad6b7169203331", receivedCtx.Headers["SpanId"]);
+        Assert.Equal(
+            "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+            receivedCtx.Headers["traceparent"]);
+    }
+
+    [Fact]
     public async Task PublishAsync_UnknownEventType_Throws()
     {
         var transport = new InMemoryMessageTransport(NullLogger<InMemoryMessageTransport>.Instance);

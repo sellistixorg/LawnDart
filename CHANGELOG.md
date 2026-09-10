@@ -13,11 +13,19 @@ changes to the public API.
 ### Added
 
 - `EventMetadata` and `CommandMetadata` carry `TraceId` and `SpanId` (W3C hex).
+- `AmbientMessageContext` publishes inbound `MessageContext` for metadata capture without changing `ICommandHandler<T>`.
+- `MessageTrace` starts or continues a W3C Activity from `traceparent` and writes cheap `correlation_id` / `messaging.message_id` tags.
 
 ### Changed
 
+- `CaptureCommandMetadata` reads `Activity.Current` and ambient `MessageContext` for correlation, causation, tenant, user, and W3C trace ids. Without a trace it still mints a correlation id.
+- `ContextAwareCommandDispatcher` uses the inbound `MessageContext` (ambient publish + `traceparent` Activity) before `HandleAsync`.
+- `HandleCommandAsync` sets envelope `CausationId` to the command id when the caller left it unset. Correlation is not copied from causation.
+- HTTP command endpoints continue `traceparent`, publish ambient `MessageContext`, and may assign `ICommand.Id` from `Idempotency-Key` when the body omits it.
+- HTTP authorization context uses the W3C trace id, not `HttpContext.TraceIdentifier`, as `CorrelationId`.
+- Messaging hosts start Activity from inbound `traceparent` before handle. Outbox publish copies `TraceId` / `SpanId` / `traceparent` onto `MessageContext.Headers`. `CreateChild()` overlays the current span's trace headers.
 - Event enrichment copies `IEvent.Timestamp` onto the envelope. It no longer overwrites business time with `DateTime.UtcNow`. `CommitTimestamp` is still set only at append. Time-travel (`toTimestamp`) uses envelope `Timestamp`.
-- Event type names stored on append are the `[EventTypeName]` catalog token. CLR `FullName` is not written; older FullName rows still resolve as a read alias.
+- Event type names stored on append are the `[EventTypeName]` catalog token. Register types with `WithEventTypes`. CLR `FullName` is not written; older FullName rows still resolve as a read alias. Missing attributes and duplicate tokens fail at warmup.
 - Sellistix.Patterns consumes these packages at `0.2.0-alpha.2` instead of shipping a second Core.
 
 ### Removed

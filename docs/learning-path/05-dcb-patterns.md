@@ -13,7 +13,10 @@ rebuilds the entity, runs the command, and appends with
 ```csharp
 public sealed record HoldSeatCommand(Guid Id, Guid StudentId, Guid SectionId) : ICommand;
 
+[EventTypeName("section-opened")]
 public sealed record SectionOpened(Guid Id, DateTime Timestamp, Guid SectionId, int Seats) : IEvent;
+
+[EventTypeName("seat-held")]
 public sealed record SeatHeld(Guid Id, DateTime Timestamp, Guid StudentId, Guid SectionId) : IEvent;
 
 public sealed class SeatHoldState : IState

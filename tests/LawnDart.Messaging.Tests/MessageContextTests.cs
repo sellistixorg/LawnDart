@@ -68,4 +68,23 @@ public class MessageContextTests
         Assert.NotNull(child.MessageId);
         Assert.NotEqual("parent-id", child.MessageId);
     }
+
+    [Fact]
+    public void CreateChild_PreservesHeaders_WhenNoActivity()
+    {
+        var parent = new MessageContext
+        {
+            MessageId = "parent-id",
+            Headers = new Dictionary<string, string>
+            {
+                ["traceparent"] = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+                ["custom"] = "keep-me"
+            }
+        };
+
+        var child = parent.CreateChild();
+
+        Assert.Equal("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01", child.Headers["traceparent"]);
+        Assert.Equal("keep-me", child.Headers["custom"]);
+    }
 }

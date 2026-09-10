@@ -20,10 +20,10 @@ public static class EventProcessorTelemetry
     private static readonly Counter<long> Errors = Meter.CreateCounter<long>(
         "event_processor.errors", "count", "Event processor handler errors");
 
-    /// <summary>Starts an event processor activity span.</summary>
-    public static Activity? StartProcess(string processorType, string eventType)
+    /// <summary>Starts an event processor activity span, continuing from inbound <c>traceparent</c>.</summary>
+    public static Activity? StartProcess(string processorType, string eventType, MessageContext? context = null)
     {
-        var activity = ActivitySource.StartActivity("EventProcessor.Process");
+        var activity = MessageTrace.Start(ActivitySource, "EventProcessor.Process", context);
         activity?.SetTag("event_processor.type", processorType);
         activity?.SetTag("event_processor.event_type", eventType);
         return activity;

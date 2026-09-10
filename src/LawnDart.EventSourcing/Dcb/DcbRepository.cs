@@ -420,6 +420,7 @@ public class DcbRepository : IDcbRepository
 
         // Capture metadata if not provided
         commandMetadata ??= _metadataProvider.CaptureCommandMetadata();
+        commandMetadata.CausationId ??= command.Id.ToString();
         
         try
         {

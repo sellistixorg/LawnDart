@@ -12,3 +12,15 @@ LawnDart.Metadata.EventMetadata.SpanId.get -> string?
 LawnDart.Metadata.EventMetadata.SpanId.set -> void
 LawnDart.Metadata.EventMetadata.TraceId.get -> string?
 LawnDart.Metadata.EventMetadata.TraceId.set -> void
+LawnDart.Messaging.AmbientMessageContext
+static LawnDart.Messaging.AmbientMessageContext.Current.get -> LawnDart.Messaging.MessageContext?
+static LawnDart.Messaging.AmbientMessageContext.Push(LawnDart.Messaging.MessageContext! context) -> System.IDisposable!
+LawnDart.Messaging.MessageTrace
+const LawnDart.Messaging.MessageTrace.CorrelationIdTag = "correlation_id" -> string!
+const LawnDart.Messaging.MessageTrace.MessageIdTag = "messaging.message_id" -> string!
+const LawnDart.Messaging.MessageTrace.TraceParentHeader = "traceparent" -> string!
+const LawnDart.Messaging.MessageTrace.TraceStateHeader = "tracestate" -> string!
+static LawnDart.Messaging.MessageTrace.Start(System.Diagnostics.ActivitySource! source, string! name, LawnDart.Messaging.MessageContext? context, System.Diagnostics.ActivityKind kind = System.Diagnostics.ActivityKind.Consumer) -> System.Diagnostics.Activity?
+static LawnDart.Messaging.MessageTrace.Tag(System.Diagnostics.Activity? activity, LawnDart.Messaging.MessageContext? context) -> void
+static LawnDart.Messaging.MessageTrace.WithCurrentTraceHeaders(System.Collections.Generic.IReadOnlyDictionary<string!, string!>? existing, System.Diagnostics.Activity? activity = null) -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>!
+static LawnDart.Messaging.MessageTrace.WithMetadataTraceHeaders(System.Collections.Generic.IReadOnlyDictionary<string!, string!>? existing, LawnDart.Metadata.EventMetadata? metadata) -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>!

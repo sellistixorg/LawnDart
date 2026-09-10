@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -8,6 +9,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using LawnDart.Authorization;
 using LawnDart.EventStore;
+using LawnDart.Messaging;
 
 namespace LawnDart.AspNetCore;
 
@@ -18,6 +20,7 @@ namespace LawnDart.AspNetCore;
 internal static class CommandEndpointRegistrar
 {
     private static readonly Type CommandHandlerOpenType = typeof(ICommandHandler<>);
+    private static readonly ActivitySource ActivitySource = new("LawnDart.AspNetCore");
 
     internal const string DefaultContextName = "default";
 
@@ -223,12 +226,13 @@ internal static class CommandEndpointRegistrar
                             detail: string.Join("; ", authResult.FailedChecks),
                             statusCode: StatusCodes.Status403Forbidden);
 
-                    return await ExecuteHandlerAsync(command, handler, ct);
+                    return await ExecuteHttpCommandAsync(command, http, handler, ct);
                 };
             }
 
             return async (
                 TCommand command,
+                HttpContext http,
                 ICommandHandler<TCommand> handler,
                 AuthorizationService authService,
                 CancellationToken ct) =>
@@ -240,7 +244,7 @@ internal static class CommandEndpointRegistrar
                         detail: string.Join("; ", authResult.FailedChecks),
                         statusCode: StatusCodes.Status403Forbidden);
 
-                return await ExecuteHandlerAsync(command, handler, ct);
+                return await ExecuteHttpCommandAsync(command, http, handler, ct);
             };
         }
 
@@ -252,17 +256,85 @@ internal static class CommandEndpointRegistrar
                 CancellationToken ct) =>
             {
                 var handler = http.RequestServices.GetRequiredKeyedService<ICommandHandler<TCommand>>(key!);
-                return await ExecuteHandlerAsync(command, handler, ct);
+                return await ExecuteHttpCommandAsync(command, http, handler, ct);
             };
         }
 
         // No auth attributes — publicly accessible, skip auth entirely
         return async (
             TCommand command,
+            HttpContext http,
             ICommandHandler<TCommand> handler,
             CancellationToken ct) =>
         {
-            return await ExecuteHandlerAsync(command, handler, ct);
+            return await ExecuteHttpCommandAsync(command, http, handler, ct);
+        };
+    }
+
+    private static async Task<IResult> ExecuteHttpCommandAsync<TCommand>(
+        TCommand command,
+        HttpContext http,
+        ICommandHandler<TCommand> handler,
+        CancellationToken ct)
+        where TCommand : ICommand
+    {
+        AssignCommandIdIfEmpty(command, http);
+        var message = CreateInboundContext(http);
+        using var activity = MessageTrace.Start(
+            ActivitySource,
+            $"http.command.{typeof(TCommand).Name}",
+            message,
+            ActivityKind.Server);
+        using var ambient = AmbientMessageContext.Push(message);
+        return await ExecuteHandlerAsync(command, handler, ct);
+    }
+
+    private static void AssignCommandIdIfEmpty<TCommand>(TCommand command, HttpContext http)
+        where TCommand : ICommand
+    {
+        if (command.Id != Guid.Empty)
+            return;
+
+        var raw = http.Request.Headers["Idempotency-Key"].FirstOrDefault();
+        var id = Guid.TryParse(raw, out var parsed) ? parsed : Guid.NewGuid();
+        var property = typeof(TCommand).GetProperty(nameof(ICommand.Id));
+        if (property?.SetMethod is not null)
+            property.SetValue(command, id);
+    }
+
+    private static MessageContext CreateInboundContext(HttpContext http)
+    {
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (http.Request.Headers.TryGetValue("traceparent", out var traceparent) &&
+            !string.IsNullOrWhiteSpace(traceparent))
+        {
+            headers[MessageTrace.TraceParentHeader] = traceparent.ToString();
+        }
+
+        if (http.Request.Headers.TryGetValue("tracestate", out var tracestate) &&
+            !string.IsNullOrWhiteSpace(tracestate))
+        {
+            headers[MessageTrace.TraceStateHeader] = tracestate.ToString();
+        }
+
+        string? correlation = null;
+        if (headers.TryGetValue(MessageTrace.TraceParentHeader, out var tp) &&
+            ActivityContext.TryParse(tp, traceState: null, out var parent) &&
+            parent != default)
+        {
+            correlation = parent.TraceId.ToHexString();
+        }
+
+        var idempotency = http.Request.Headers["Idempotency-Key"].FirstOrDefault();
+
+        return new MessageContext
+        {
+            MessageId = string.IsNullOrWhiteSpace(idempotency) ? Guid.NewGuid().ToString() : idempotency,
+            CorrelationId = correlation,
+            TenantId = http.Request.Headers["X-Tenant-Id"].FirstOrDefault(),
+            UserId = http.User.FindFirst("sub")?.Value,
+            TransportType = "HTTP",
+            Headers = headers
         };
     }
 

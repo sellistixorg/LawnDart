@@ -143,6 +143,7 @@ internal sealed class EmptyTaskProcessor : ITaskProcessor
 internal sealed class CapturingCommandDispatcher : ICommandDispatcher
 {
     private readonly List<ICommand> _dispatched = [];
+    private readonly List<MessageContext> _contexts = [];
     private readonly SemaphoreSlim _dispatchSignal = new(0);
 
     public IReadOnlyList<ICommand> Dispatched
@@ -150,9 +151,18 @@ internal sealed class CapturingCommandDispatcher : ICommandDispatcher
         get { lock (_dispatched) { return [.. _dispatched]; } }
     }
 
+    public IReadOnlyList<MessageContext> Contexts
+    {
+        get { lock (_dispatched) { return [.. _contexts]; } }
+    }
+
     public Task DispatchAsync(ICommand command, MessageContext context, CancellationToken cancellationToken = default)
     {
-        lock (_dispatched) { _dispatched.Add(command); }
+        lock (_dispatched)
+        {
+            _dispatched.Add(command);
+            _contexts.Add(context);
+        }
         _dispatchSignal.Release();
         return Task.CompletedTask;
     }

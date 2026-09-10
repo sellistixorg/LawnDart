@@ -2,7 +2,10 @@
 
 **Previous:** [First aggregate](02-first-aggregate.md) · **Next:** [Reading state](04-reading-state.md)
 
-Use `LawnDart.Testing` against InMemory. No Docker.
+Use `LawnDart.Testing` against InMemory. No Docker. Events from
+[step 2](02-first-aggregate.md) already declare `[EventTypeName]`; GWT writes
+need the attribute even though `CreateInMemory()` does not call
+`WithEventTypes`.
 
 ```csharp
 await using var ctx = BddTestContext.CreateInMemory();

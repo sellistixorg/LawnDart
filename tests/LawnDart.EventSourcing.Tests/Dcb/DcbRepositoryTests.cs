@@ -628,7 +628,7 @@ public class TestMetadataProvider : IMetadataProvider
     {
         eventMetadata.UserId = commandMetadata.UserId;
         eventMetadata.CorrelationId = commandMetadata.CorrelationId;
-        eventMetadata.CausationId = commandMetadata.CorrelationId;
+        eventMetadata.CausationId = commandMetadata.CausationId ?? commandMetadata.CorrelationId;
         eventMetadata.EventId = @event.Id.ToString();
         eventMetadata.Timestamp = @event.Timestamp;
         eventMetadata.TraceId = commandMetadata.TraceId;
