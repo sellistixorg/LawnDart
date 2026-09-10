@@ -1,19 +1,15 @@
 namespace LawnDart.EventStore;
 
 /// <summary>
-/// Declares a stable, human-readable alias for an event type that is stored in the event log
-/// instead of the CLR <c>FullName</c>. Use this attribute when:
-/// <list type="bullet">
-///   <item><description>The class or namespace may be renamed in a future refactor.</description></item>
-///   <item><description>You want a compact, domain-meaningful token on disk (e.g. <c>"order-placed"</c>).</description></item>
-///   <item><description>You need backward compatibility with data already written under a short name.</description></item>
-/// </list>
+/// Declares the stable catalog token stored in the event log for this type.
+/// Required on every concrete <see cref="IEvent"/> that is written.
+/// Prefer a kebab-case token (e.g. <c>"order-placed"</c>).
 /// </summary>
 /// <remarks>
-/// When this attribute is absent the <see cref="EventTypeNameResolver"/> falls back to
-/// <c>Type.FullName</c> (namespace-qualified class name), which is stable as long as the
-/// namespace and class name do not change.  If <c>FullName</c> is <c>null</c> (e.g. for
-/// anonymous types) <c>Type.Name</c> is used as a last resort.
+/// <see cref="EventTypeNameResolver.GetName"/> does not fall back to CLR
+/// <c>FullName</c>. Register types with <c>WithEventTypes</c> or
+/// <see cref="EventTypeNameResolver.Warmup"/> so duplicate tokens fail at startup
+/// and older FullName rows can still be resolved as read aliases.
 /// </remarks>
 /// <example>
 /// <code>

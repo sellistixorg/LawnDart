@@ -764,7 +764,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         command.Parameters.AddWithValue("@StreamId", streamId);
         command.Parameters.AddWithValue("@Version", version);
         command.Parameters.AddWithValue("@SequencePosition", sequencePosition);
-        // Store canonical event type name (FullName or [EventTypeName] alias for stable identity)
+        // Store the catalog token from [EventTypeName]. CLR FullName is never written.
         var eventTypeName = EventTypeNameResolver.GetName(@event.GetType());
         command.Parameters.AddWithValue("@EventType", eventTypeName);
         // Serialize using the pluggable serializer
@@ -1675,9 +1675,10 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
 
     private static Type? ResolveEventType(string typeName)
     {
-        // Fast path: new events are stored as FullName (or [EventTypeName] alias).
-        // EventTypeNameResolver.GetName produces FullName by default, so try direct
-        // assembly lookup first — this covers all newly-written events in O(1).
+        if (EventTypeNameResolver.TryResolveType(typeName, out var catalogType))
+            return catalogType;
+
+        // Older rows stored CLR FullName or AssemblyQualifiedName.
         foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
         {
             try
@@ -1688,15 +1689,11 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
             catch { /* skip unloadable assemblies */ }
         }
 
-        // Legacy shim: events written before this change may be stored as
-        // AssemblyQualifiedName (e.g. "My.Ns.OrderPlaced, MyAssembly, Version=1.0.0.0, ...").
-        // Extract the FullName portion and retry.
         var commaIndex = typeName.IndexOf(',');
         if (commaIndex > 0)
         {
             var fullName = typeName.Substring(0, commaIndex);
 
-            // Try Type.GetType with the full AQN first (may succeed if assembly is loaded)
             var directType = Type.GetType(typeName, throwOnError: false);
             if (directType != null) return directType;
 
@@ -1704,11 +1701,9 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
             {
                 try
                 {
-                    // GetType with FullName
                     var t = assembly.GetType(fullName, throwOnError: false);
                     if (t != null) return t;
 
-                    // Linear scan handles nested types (+ separator) GetType may miss
                     t = Array.Find(assembly.GetTypes(),
                         x => x.FullName == fullName || x.AssemblyQualifiedName?.StartsWith(fullName + ",", StringComparison.Ordinal) == true);
                     if (t != null) return t;
@@ -1725,8 +1720,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
             }
         }
 
-        // Alias fallback: resolve types stored using [EventTypeName] aliases.
-        // This keeps SQL behavior aligned with EventTypeNameResolver semantics used at write time.
+        // Token on disk, type not yet Warmup'd: match [EventTypeName] without GetName.
         foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
         {
             try
@@ -1736,7 +1730,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
                     if (!typeof(IEvent).IsAssignableFrom(candidate) || candidate.IsAbstract || candidate.IsInterface)
                         continue;
 
-                    if (string.Equals(EventTypeNameResolver.GetName(candidate), typeName, StringComparison.Ordinal))
+                    if (string.Equals(EventTypeNameResolver.TryGetDeclaredName(candidate), typeName, StringComparison.Ordinal))
                         return candidate;
                 }
             }
@@ -1748,7 +1742,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
                     if (candidate == null || !typeof(IEvent).IsAssignableFrom(candidate) || candidate.IsAbstract || candidate.IsInterface)
                         continue;
 
-                    if (string.Equals(EventTypeNameResolver.GetName(candidate), typeName, StringComparison.Ordinal))
+                    if (string.Equals(EventTypeNameResolver.TryGetDeclaredName(candidate), typeName, StringComparison.Ordinal))
                         return candidate;
                 }
             }
@@ -1780,7 +1774,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
             var outboxMessage = new OutboxMessage
             {
                 Id = Guid.NewGuid(),
-                EventType = @event.GetType().FullName ?? @event.GetType().Name,
+                EventType = EventTypeNameResolver.GetName(@event.GetType()),
                 Payload = JsonSerializer.Serialize(@event, @event.GetType(), _jsonOptions),
                 Metadata = metadata != null ? JsonSerializer.Serialize(metadata, _jsonOptions) : "{}",
                 StreamId = streamId,

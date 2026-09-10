@@ -3,7 +3,7 @@
 LawnDart is a .NET 10 library for the **nine common patterns** in the
 command–event–state matrix. Five cells are hosted; four are planned
 interfaces with no host. [Eventhesis](https://eventhesis.com) is an optional
-companion that emits slice JSON — it does not generate LawnDart types.
+companion that emits slice JSON — it does not generate LawnDart types. There will be tooling for that soon.
 
 | From \ To | **Command** | **Event** | **State** |
 |---|---|---|---|

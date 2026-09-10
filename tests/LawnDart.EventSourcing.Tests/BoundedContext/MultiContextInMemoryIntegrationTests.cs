@@ -145,6 +145,7 @@ public class MultiContextInMemoryIntegrationTests
     }
 
     // ── Stubs ──────────────────────────────────────────────────────────────────
+[EventTypeName("multi-context-in-memory-integrat.test-event")]
 
     private record TestEvent(Guid Id, DateTime Timestamp) : IEvent;
 }

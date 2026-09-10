@@ -52,7 +52,7 @@ public sealed class EventProcessorHostedService<TProcessor, TEvent> : Background
             return;
         }
 
-        using var activity = EventProcessorTelemetry.StartProcess(ProcessorTypeName, EventTypeName);
+        using var activity = EventProcessorTelemetry.StartProcess(ProcessorTypeName, EventTypeName, context);
         var start = TimeProvider.System.GetTimestamp();
 
         try

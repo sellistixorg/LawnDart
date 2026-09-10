@@ -119,13 +119,8 @@ public class ProjectionScannerTests
         Assert.Equal(ProjectionKind.MultiStream, msp.Kind);
         Assert.Equal(TenantScope.TenantScoped, msp.TenantScope);
         Assert.Null(msp.StreamType);
-        // QueryTypes are resolved via EventTypeNameResolver — full name for types without [EventTypeName]
-        Assert.Contains(
-            msp.DcbQueryTypes,
-            t => t.EndsWith("OrderCreatedLocal", StringComparison.Ordinal));
-        Assert.Contains(
-            msp.DcbQueryTypes,
-            t => t.EndsWith("ShipmentDispatchedLocal", StringComparison.Ordinal));
+        Assert.Contains("test-projection-fixtures.order-created-local", msp.DcbQueryTypes);
+        Assert.Contains("test-projection-fixtures.shipment-dispatched-local", msp.DcbQueryTypes);
         Assert.Equal(typeof(Helpers.FulfillmentView), msp.ViewType);
         Assert.Equal(typeof(Helpers.OrderFulfillmentSummaryProjection), msp.HandlerType);
     }

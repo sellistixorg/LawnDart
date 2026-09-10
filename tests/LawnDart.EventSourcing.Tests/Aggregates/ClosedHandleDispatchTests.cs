@@ -8,6 +8,7 @@ using LawnDart.Metadata;
 using LawnDart.TestUtilities;
 using Xunit;
 
+using LawnDart.EventStore;
 namespace LawnDart.EventSourcing.Tests.Aggregates;
 
 public class ClosedHandleDispatchTests
@@ -151,5 +152,6 @@ public class ClosedHandleDispatchTests
 
     private sealed record ClosedIncrementCommand(Guid Id, int Amount) : ICommand;
     private sealed record UnknownCommand(Guid Id) : ICommand;
+    [EventTypeName("closed-handle-dispatch-tests.closed-incremented")]
     private sealed record ClosedIncremented(Guid Id, DateTime Timestamp, int Amount) : IEvent;
 }

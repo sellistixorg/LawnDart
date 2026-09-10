@@ -458,6 +458,26 @@ public class InMemoryEventStoreTests
 
         Assert.Equal(2, result.Count);
         Assert.True(result.All(e => e.Metadata.Timestamp <= t2));
+        Assert.All(result, e => Assert.True(e.Metadata.CommitTimestamp > t2));
+    }
+
+    [Fact]
+    public async Task AppendAsync_SetsCommitTimestamp_WithoutChangingBusinessTime()
+    {
+        var store = new InMemoryEventStore();
+        var business = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        await store.AppendAsync(
+            "clock-stream",
+            [new TestEvent(Guid.NewGuid(), business)],
+            metadata: new EventMetadata { Timestamp = business });
+
+        var stored = Assert.Single(await store.ReadStreamAsync("clock-stream"));
+        Assert.Equal(business, stored.Metadata.Timestamp);
+        Assert.NotNull(stored.Metadata.CommitTimestamp);
+        Assert.True(stored.Metadata.CommitTimestamp > business);
+
+        var asOfBusiness = await store.ReadStreamAsync("clock-stream", toTimestamp: business);
+        Assert.Single(asOfBusiness);
     }
 
     [Fact]
@@ -573,9 +593,15 @@ public class InMemoryEventStoreTests
 
         var evt = Assert.Single(result.Events);
         Assert.IsType<AliasedEvent>(evt.Event);
+
+        var byFullName = await store.ReadByQueryAsync(
+            Query.FromItems(QueryItem.ByType(typeof(AliasedEvent).FullName!)));
+        Assert.Empty(byFullName.Events);
     }
 
+    [EventTypeName("tests.inmemory.test-event")]
     private record TestEvent(Guid Id, DateTime Timestamp) : IEvent;
+    [EventTypeName("tests.inmemory.another-event")]
     private record AnotherEvent(Guid Id, DateTime Timestamp) : IEvent;
     [EventTypeName("tests.inmemory.alias-event")]
     private record AliasedEvent(Guid Id, DateTime Timestamp) : IEvent;

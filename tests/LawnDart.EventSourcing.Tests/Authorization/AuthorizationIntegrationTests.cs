@@ -282,6 +282,7 @@ public class AuthorizationIntegrationTests
     [RequiresPermission("orders.premium")]
     [RequiresEntitlement("PremiumFeatures")]
     private record PremiumOrderCommand(Guid Id, string OrderNumber) : ICommand;
+[EventTypeName("authorization-integration-tests.order-created-event")]
 
     private record OrderCreatedEvent(Guid OrderId, string OrderNumber) : IEvent
     {

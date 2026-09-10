@@ -49,6 +49,24 @@ Rules:
 - Last meaningful namespace segment is the group (`Commands` is ignored).
 - Default prefix is `api`. Override with `MapLawnDartCommands(o => o.RoutePrefix = "v1")`.
 
+## Tracing and command identity
+
+Send W3C `traceparent` (and optional `tracestate`). The host continues that
+Activity. Envelope `TraceId` / `SpanId` and `CorrelationId` come from the
+trace — not `HttpContext.TraceIdentifier`.
+
+If the JSON body omits `Id` (or sends an empty GUID), the host may assign
+`ICommand.Id` from `Idempotency-Key` when that header is a GUID, otherwise a
+new GUID. The body `Id` still wins when present.
+
+The endpoint publishes inbound `MessageContext` on `AmbientMessageContext`
+before `HandleAsync`. `ICommandHandler<T>` is unchanged. `HandleCommandAsync`
+then captures correlation / causation / tenant from that ambient context
+(and sets `CausationId` to the command id when the caller left it unset).
+
+Other-language clients use the same HTTP JSON + `traceparent` + optional
+`Idempotency-Key`. There is no Command gRPC service in this release.
+
 ## Status codes
 
 - Authorized / no attributes → `202 Accepted` after the handler succeeds.

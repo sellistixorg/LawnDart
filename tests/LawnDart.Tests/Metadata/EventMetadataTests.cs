@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using LawnDart.Metadata;
 using Xunit;
 
@@ -40,6 +42,37 @@ public class EventMetadataTests
         Assert.Equal("tenant456", metadata.TenantId);
         Assert.Equal(2, metadata.SchemaVersion);
         Assert.Equal("TestEvent", metadata.SchemaName);
+    }
+
+    [Fact]
+    public void TraceIdAndSpanId_RoundTripOnMetadataJson()
+    {
+        var original = new EventMetadata
+        {
+            EventId = Guid.NewGuid().ToString(),
+            Timestamp = new DateTime(2021, 3, 4, 5, 6, 7, DateTimeKind.Utc),
+            TraceId = "0af7651916cd43dd8448eb211c80319c",
+            SpanId = "b7ad6b7169203331",
+            SchemaName = "demo.tick"
+        };
+
+        var options = new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        };
+
+        var json = JsonSerializer.Serialize(original, options);
+        var restored = JsonSerializer.Deserialize<EventMetadata>(json, options);
+
+        Assert.NotNull(restored);
+        Assert.Equal(original.EventId, restored.EventId);
+        Assert.Equal(original.Timestamp, restored.Timestamp);
+        Assert.Equal("0af7651916cd43dd8448eb211c80319c", restored.TraceId);
+        Assert.Equal("b7ad6b7169203331", restored.SpanId);
+        Assert.Equal("demo.tick", restored.SchemaName);
+        Assert.Contains("TraceId", json, StringComparison.Ordinal);
+        Assert.Contains("SpanId", json, StringComparison.Ordinal);
     }
 }
 

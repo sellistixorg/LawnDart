@@ -87,6 +87,7 @@ public class InMemoryReadByQueryStreamTests
         for (var i = 0; i < buffered.Count; i++)
             Assert.Equal(buffered[i].SequencePosition, streamed[i].SequencePosition);
     }
+[EventTypeName("in-memory-read-by-query-stream-t.test-stream-event")]
 
     private record TestStreamEvent(string Name) : IEvent
     {

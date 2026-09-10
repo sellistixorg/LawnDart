@@ -133,6 +133,7 @@ public class UseInMemoryBuilderTests
     }
 
     // ── Stubs ──────────────────────────────────────────────────────────────────
+[EventTypeName("use-in-memory-builder-tests.stub-event")]
 
     private sealed record StubEvent(Guid Id, DateTime Timestamp) : IEvent;
 }

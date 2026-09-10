@@ -13,12 +13,19 @@ changing domain types.
 
 ```csharp
 services.AddLawnDart(o => o.RequireTenantId = false);
-services.AddBoundedContext("default").UseInMemory();
+services.AddBoundedContext("default")
+    .UseInMemory()
+    .WithEventTypes(typeof(SomeEvent).Assembly);
 ```
 
 Registers keyed `IEventStore`, `IAggregateRepository`, and `IDcbRepository`
 for that context name. The `"default"` context also gets unkeyed aliases, so
 `GetRequiredService<IAggregateRepository>()` works without a key.
+
+Append stores the `[EventTypeName]` token, not CLR `FullName`.
+`ContextAwareCommandDispatcher` publishes inbound `MessageContext` (and
+continues `traceparent`) before `HandleAsync`. `HandleCommandAsync` sets
+envelope `CausationId` to the command id when the caller left it unset.
 
 `IAggregateRepository` loads by `Guid` (`{type}:{id}` / `{tenant}:{type}:{id}`)
 or by `string streamId` when the stream is a custom identity. Prefer

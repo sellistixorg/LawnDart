@@ -1,3 +1,4 @@
+using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace LawnDart.EventStore;
@@ -57,6 +58,52 @@ public static class BoundedContextExtensions
         registry.Register(contextName);
 
         return new BoundedContextBuilder(contextName, services);
+    }
+
+    /// <summary>
+    /// Scans assemblies for concrete <see cref="IEvent"/> types and registers them
+    /// as this context's event-type catalog. Types must declare
+    /// <see cref="EventTypeNameAttribute"/>. Duplicate tokens, abstract types, and
+    /// non-events fail closed.
+    /// </summary>
+    public static BoundedContextBuilder WithEventTypes(
+        this BoundedContextBuilder builder,
+        params Assembly[] assemblies)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        if (assemblies.Length == 0)
+            assemblies = [Assembly.GetCallingAssembly()];
+
+        var types = new List<Type>();
+        foreach (var assembly in assemblies)
+        {
+            ArgumentNullException.ThrowIfNull(assembly);
+            foreach (var type in assembly.GetExportedTypes())
+            {
+                if (!type.IsClass || type.IsAbstract || type.IsGenericTypeDefinition)
+                    continue;
+                if (!typeof(IEvent).IsAssignableFrom(type) || typeof(IRawEvent).IsAssignableFrom(type))
+                    continue;
+                types.Add(type);
+            }
+        }
+
+        EventTypeNameResolver.Warmup(types);
+        return builder;
+    }
+
+    /// <summary>
+    /// Registers the given event types as this context's catalog.
+    /// </summary>
+    public static BoundedContextBuilder WithEventTypes(
+        this BoundedContextBuilder builder,
+        params Type[] types)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(types);
+        EventTypeNameResolver.Warmup(types);
+        return builder;
     }
 
     private static BoundedContextRegistry GetOrCreateRegistry(IServiceCollection services)

@@ -7,6 +7,7 @@ using LawnDart.EventSourcing.SqlServer;
 using LawnDart.EventStore;
 using LawnDart.Demo.Academy.Projections;
 using LawnDart.Demo.Academy.Showcases;
+using LawnDart.Demo.Academy.Domain.Student.Events;
 using LawnDart.Demo.Academy.EDA;
 using LawnDart.Metadata;
 
@@ -54,7 +55,8 @@ internal class Program
         services.AddSingleton<ITenantContextProvider>(
             new DemoTenantContextProvider("academy-tenant"));
 
-        var academyCtx = services.AddBoundedContext("default");
+        var academyCtx = services.AddBoundedContext("default")
+            .WithEventTypes(typeof(StudentRegistered).Assembly);
         if (useSql)
         {
             var connectionString =

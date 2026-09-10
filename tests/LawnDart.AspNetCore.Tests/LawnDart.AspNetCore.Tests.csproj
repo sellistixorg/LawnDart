@@ -24,6 +24,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\LawnDart.AspNetCore\LawnDart.AspNetCore.csproj" />
+    <ProjectReference Include="..\..\src\LawnDart.Authorization.AspNetCore\LawnDart.Authorization.AspNetCore.csproj" />
     <ProjectReference Include="..\..\src\LawnDart.EventSourcing\LawnDart.EventSourcing.csproj" />
   </ItemGroup>
 

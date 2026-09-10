@@ -122,6 +122,7 @@ public class InMemoryEventStoreAdminTests
 
         Assert.Equal(2L, await store.GetStreamCountAsync(null));
     }
+[EventTypeName("in-memory-event-store-admin-test.test-event")]
 
     private record TestEvent(Guid Id, DateTime Timestamp) : IEvent;
 }

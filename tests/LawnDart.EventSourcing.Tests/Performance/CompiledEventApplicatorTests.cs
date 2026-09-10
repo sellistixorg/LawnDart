@@ -2,6 +2,7 @@ using Xunit;
 using LawnDart.EventSourcing.Performance;
 using System.Diagnostics;
 
+using LawnDart.EventStore;
 namespace LawnDart.EventSourcing.Tests.Performance;
 
 [Collection("CompiledEventApplicator")]
@@ -171,12 +172,14 @@ public class CompiledEventApplicatorTests
 }
 
 // Test types
+[EventTypeName("compiled-event-applicator-tests.test-performance-event")]
 public class TestPerformanceEvent : IEvent
 {
     public Guid Id { get; init; } = Guid.NewGuid();
     public DateTime Timestamp { get; init; } = DateTime.UtcNow;
     public string Value { get; init; } = string.Empty;
 }
+[EventTypeName("compiled-event-applicator-tests.another-test-event")]
 
 public class AnotherTestEvent : IEvent
 {

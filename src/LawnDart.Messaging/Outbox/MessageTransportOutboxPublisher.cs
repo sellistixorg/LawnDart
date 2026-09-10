@@ -1,4 +1,3 @@
-using System.Collections.ObjectModel;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using LawnDart.EventStore;
@@ -18,9 +17,9 @@ namespace LawnDart.Messaging.Outbox;
 /// <see cref="MessageContext.MessageId"/> (this type uses the outbox row id).
 /// </para>
 /// <para>
-/// Event type resolution uses the CLR types supplied at construction (FullName, Name, and
-/// <see cref="EventTypeNameResolver.GetName"/>). SQL Server outbox rows store
-/// <c>event.GetType().FullName</c> today — include those types in the map.
+/// Event type resolution uses the catalog token from
+/// <see cref="EventTypeNameResolver.GetName"/>. FullName and simple name remain
+/// read aliases for older outbox rows.
 /// </para>
 /// </remarks>
 public sealed class MessageTransportOutboxPublisher : IOutboxPublisher
@@ -82,6 +81,12 @@ public sealed class MessageTransportOutboxPublisher : IOutboxPublisher
         }
 
         var metadata = TryReadMetadata(message.Metadata);
+        var headers = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["outbox.streamId"] = message.StreamId,
+            ["outbox.sequencePosition"] = message.SequencePosition.ToString(),
+            ["outbox.eventType"] = message.EventType,
+        };
         var context = new MessageContext
         {
             // Stable id for downstream IInboxStore deduplication.
@@ -91,12 +96,7 @@ public sealed class MessageTransportOutboxPublisher : IOutboxPublisher
             TenantId = metadata?.TenantId,
             UserId = metadata?.UserId,
             EnqueuedAt = message.CreatedAt,
-            Headers = new ReadOnlyDictionary<string, string>(new Dictionary<string, string>
-            {
-                ["outbox.streamId"] = message.StreamId,
-                ["outbox.sequencePosition"] = message.SequencePosition.ToString(),
-                ["outbox.eventType"] = message.EventType,
-            }),
+            Headers = MessageTrace.WithMetadataTraceHeaders(headers, metadata),
         };
 
         await _transport.PublishEventAsync(@event, context, cancellationToken).ConfigureAwait(false);

@@ -8,6 +8,7 @@ using LawnDart.EventSourcing.Performance;
 using LawnDart.Metadata;
 using Xunit;
 
+using LawnDart.EventStore;
 namespace LawnDart.EventSourcing.Tests.Dcb;
 
 public class ClosedHandleDcbDispatchTests
@@ -136,6 +137,7 @@ public class ClosedHandleDcbDispatchTests
     {
         public Guid Id { get; init; } = Guid.NewGuid();
     }
+[EventTypeName("closed-handle-dcb-dispatch-tests.closed-dcb-event")]
 
     private sealed class ClosedDcbEvent : IEvent
     {

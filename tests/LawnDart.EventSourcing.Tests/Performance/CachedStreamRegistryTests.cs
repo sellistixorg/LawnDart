@@ -146,6 +146,7 @@ public class CachedStreamRegistryTests
         // This method deliberately doesn't cache for freshness
     }
 }
+[EventTypeName("cached-stream-registry-tests.test-cache-event")]
 
 public class TestCacheEvent : IEvent
 {

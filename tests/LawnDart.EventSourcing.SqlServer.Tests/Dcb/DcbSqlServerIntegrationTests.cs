@@ -231,6 +231,7 @@ public class DcbSqlServerIntegrationTests : IAsyncLifetime
     }
 
     // Test types
+    [EventTypeName("dcb-sql-server-integration-tests.test-dcb-event")]
     private record TestDcbEvent : IEvent
     {
         public Guid Id { get; init; }

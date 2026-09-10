@@ -33,9 +33,12 @@ public class TestMetadataProvider : IMetadataProvider
         eventMetadata.CorrelationId = commandMetadata.CorrelationId;
         eventMetadata.TenantId = commandMetadata.TenantId;
         eventMetadata.UserId = commandMetadata.UserId;
-        eventMetadata.CausationId = commandMetadata.CorrelationId;
-        eventMetadata.Timestamp = DateTime.UtcNow;
-        
+        eventMetadata.CausationId = commandMetadata.CausationId ?? commandMetadata.CorrelationId;
+        eventMetadata.EventId = @event.Id.ToString();
+        eventMetadata.Timestamp = @event.Timestamp;
+        eventMetadata.TraceId = commandMetadata.TraceId;
+        eventMetadata.SpanId = commandMetadata.SpanId;
+
         return eventMetadata;
     }
 }

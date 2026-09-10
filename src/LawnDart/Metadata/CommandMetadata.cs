@@ -48,6 +48,16 @@ public class CommandMetadata
     /// </summary>
     public string? CausationId { get; set; }
 
+    /// <summary>
+    /// W3C trace id (32 hex characters). Optional on the command envelope.
+    /// </summary>
+    public string? TraceId { get; set; }
+
+    /// <summary>
+    /// W3C span id (16 hex characters). Optional on the command envelope.
+    /// </summary>
+    public string? SpanId { get; set; }
+
     // Authorization Context
     /// <summary>
     /// Who authorized the command (if different from user).

@@ -36,6 +36,9 @@ public class EventQueryMatcherTests
         Assert.True(EventQueryMatcher.Matches(
             se,
             Query.FromItems(QueryItem.ByType("named.tick"))));
+        Assert.False(EventQueryMatcher.Matches(
+            se,
+            Query.FromItems(QueryItem.ByType(typeof(NamedTick).FullName!))));
     }
 
     private sealed class StubRawEvent : IRawEvent

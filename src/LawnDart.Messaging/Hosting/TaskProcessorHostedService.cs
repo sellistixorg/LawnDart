@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -52,7 +53,15 @@ public sealed class TaskProcessorHostedService<TProcessor> : BackgroundService
                 {
                     foreach (var command in commands)
                     {
-                        await _commandDispatcher.DispatchAsync(command, MessageContext.New(), stoppingToken);
+                        var inbound = new MessageContext
+                        {
+                            MessageId = Guid.NewGuid().ToString(),
+                            CorrelationId = activity?.TraceId is { } tid && tid != default
+                                ? tid.ToHexString()
+                                : null,
+                            Headers = MessageTrace.WithCurrentTraceHeaders(null, activity)
+                        };
+                        await _commandDispatcher.DispatchAsync(command, inbound, stoppingToken);
                     }
                 }
                 else if (commands.Count > 0)

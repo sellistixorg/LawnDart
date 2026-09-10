@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using LawnDart.Authorization;
 using System.Security.Claims;
@@ -51,7 +52,7 @@ public class HttpAuthorizationContextProvider : IAuthorizationContextProvider
             AccountId = user.FindFirst("account_id")?.Value,
             AccountEntitlements = user.FindAll("entitlement").Select(c => c.Value).ToList(),
             TransportType = "HTTP",
-            CorrelationId = httpContext.TraceIdentifier
+            CorrelationId = ResolveCorrelationId(httpContext)
         };
         
         // Capture custom headers
@@ -61,5 +62,21 @@ public class HttpAuthorizationContextProvider : IAuthorizationContextProvider
         }
         
         return Task.FromResult<AuthorizationContext?>(context);
+    }
+
+    private static string? ResolveCorrelationId(HttpContext httpContext)
+    {
+        var activity = Activity.Current;
+        if (activity is { IdFormat: ActivityIdFormat.W3C } && activity.TraceId != default)
+            return activity.TraceId.ToHexString();
+
+        if (httpContext.Request.Headers.TryGetValue("traceparent", out var raw))
+        {
+            var value = raw.ToString();
+            if (ActivityContext.TryParse(value, traceState: null, out var parent) && parent != default)
+                return parent.TraceId.ToHexString();
+        }
+
+        return null;
     }
 }

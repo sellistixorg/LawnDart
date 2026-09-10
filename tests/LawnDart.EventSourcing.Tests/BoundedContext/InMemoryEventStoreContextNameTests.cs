@@ -1,5 +1,6 @@
 using LawnDart.EventSourcing.EventStore;
 
+using LawnDart.EventStore;
 namespace LawnDart.EventSourcing.Tests.BoundedContext;
 
 public class InMemoryEventStoreContextNameTests
@@ -45,6 +46,7 @@ public class InMemoryEventStoreContextNameTests
         Assert.Equal(2, await storeA.GetCurrentSequenceAsync());
         Assert.Equal(1, await storeB.GetCurrentSequenceAsync());
     }
+[EventTypeName("in-memory-event-store-context-na.test-event")]
 
     private record TestEvent(Guid Id, DateTime Timestamp) : IEvent;
 }

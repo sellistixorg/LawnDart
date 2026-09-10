@@ -56,7 +56,7 @@ public sealed class ReactorHostedService<TReactor, TEvent> : BackgroundService
             return;
         }
 
-        using var activity = ReactorTelemetry.StartHandle(ReactorTypeName, EventTypeName);
+        using var activity = ReactorTelemetry.StartHandle(ReactorTypeName, EventTypeName, context);
         var start = TimeProvider.System.GetTimestamp();
 
         try

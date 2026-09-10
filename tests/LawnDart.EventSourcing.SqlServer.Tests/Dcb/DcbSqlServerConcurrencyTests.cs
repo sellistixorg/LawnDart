@@ -220,6 +220,7 @@ public sealed class DcbSqlServerConcurrencyTests : IAsyncLifetime
 
         return await Task.WhenAll(tasks);
     }
+[EventTypeName("dcb-sql-server-concurrency-tests.dcb-concurrency-event")]
 
     private sealed record DcbConcurrencyEvent(Guid Id, DateTime Timestamp, int Value) : IEvent;
 }

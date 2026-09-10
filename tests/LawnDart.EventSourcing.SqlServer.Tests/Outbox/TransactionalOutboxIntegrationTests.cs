@@ -312,6 +312,7 @@ public class TransactionalOutboxIntegrationTests : IAsyncLifetime
     }
 
     // Test types
+    [EventTypeName("transactional-outbox-integration.test-event")]
     private record TestEvent : IEvent
     {
         public Guid Id { get; init; }

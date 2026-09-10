@@ -263,6 +263,7 @@ public class SqlServerSubscriptionTests : IAsyncLifetime
     }
 
     private static StubEvent Evt() => new(Guid.NewGuid(), DateTime.UtcNow);
+[EventTypeName("sql-server-subscription-tests.stub-event")]
 
     private sealed record StubEvent(Guid Id, DateTime Timestamp) : IEvent;
 }

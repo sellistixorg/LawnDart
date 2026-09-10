@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using LawnDart.EventStore;
+using LawnDart.Messaging;
 using LawnDart.Metadata;
 
 namespace LawnDart;
@@ -30,12 +33,38 @@ public class DefaultMetadataProvider : IMetadataProvider
     /// <inheritdoc />
     public CommandMetadata CaptureCommandMetadata(object? context = null)
     {
+        var message = context as MessageContext ?? AmbientMessageContext.Current;
+        TryReadTrace(message, out var traceId, out var spanId);
+
+        var correlationId = message?.CorrelationId ?? traceId ?? Guid.NewGuid().ToString();
+
         return new CommandMetadata
         {
             Timestamp = DateTime.UtcNow,
-            CorrelationId = Guid.NewGuid().ToString(),
-            TenantId = _tenantContextProvider?.GetTenantId() // Auto-populate if provider exists
+            CorrelationId = correlationId,
+            CausationId = message?.CausationId,
+            TenantId = message?.TenantId ?? _tenantContextProvider?.GetTenantId(),
+            UserId = message?.UserId,
+            TraceId = traceId,
+            SpanId = spanId
         };
+    }
+
+    private static void TryReadTrace(MessageContext? message, out string? traceId, out string? spanId)
+    {
+        var activity = Activity.Current;
+        if (activity is { IdFormat: ActivityIdFormat.W3C } && activity.TraceId != default)
+        {
+            traceId = activity.TraceId.ToHexString();
+            spanId = activity.SpanId != default ? activity.SpanId.ToHexString() : null;
+            return;
+        }
+
+        if (W3CTraceParent.TryGetIds(message?.Headers, out traceId, out spanId))
+            return;
+
+        traceId = null;
+        spanId = null;
     }
 
     /// <inheritdoc />
@@ -61,9 +90,11 @@ public class DefaultMetadataProvider : IMetadataProvider
 
             // Event-specific
             EventId = @event.Id.ToString(),
-            Timestamp = DateTime.UtcNow,
+            Timestamp = @event.Timestamp,
             SchemaVersion = baseMetadata.SchemaVersion > 0 ? baseMetadata.SchemaVersion : 1,
-            SchemaName = @event.GetType().FullName,
+            SchemaName = EventTypeNameResolver.GetName(@event.GetType()),
+            TraceId = commandMetadata.TraceId ?? baseMetadata.TraceId,
+            SpanId = commandMetadata.SpanId ?? baseMetadata.SpanId,
 
             // Custom metadata
             Custom = commandMetadata.Custom
