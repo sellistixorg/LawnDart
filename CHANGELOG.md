@@ -10,6 +10,8 @@ changes to the public API.
 
 ## [Unreleased]
 
+## [0.3.0-alpha.1] — 2026-09-10
+
 ### Added
 
 - `EventMetadata` and `CommandMetadata` carry `TraceId` and `SpanId` (W3C hex).
