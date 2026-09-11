@@ -14,7 +14,7 @@ dotnet add package LawnDart.EventSourcing --prerelease
 
 A console host also needs `Microsoft.Extensions.DependencyInjection`.
 To work from this repository instead, clone it and add project references
-(see the root [README](../README.md)).
+(see the [repository README](https://github.com/sellistixorg/LawnDart)).
 
 ## 2. Register the host
 

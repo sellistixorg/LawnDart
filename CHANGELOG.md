@@ -10,6 +10,10 @@ changes to the public API.
 
 ## [Unreleased]
 
+### Fixed
+
+- Docs site links no longer point at the repo-root README (that file is not part of the DocFX build).
+
 ## [0.3.0-alpha.1] — 2026-09-10
 
 ### Added

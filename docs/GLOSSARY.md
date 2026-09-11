@@ -127,7 +127,7 @@ domain marker.
 
 **Nine common patterns**  
 The command–event–state matrix. Five cells are hosted; four are planned
-interfaces with no host. See the root [README](../README.md#pattern-matrix).
+interfaces with no host. See the [pattern matrix](OVERVIEW.md).
 
 ## O
 
