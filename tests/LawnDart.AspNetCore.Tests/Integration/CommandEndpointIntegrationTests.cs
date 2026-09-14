@@ -6,7 +6,11 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using LawnDart;
+using LawnDart.AspNetCore;
 using LawnDart.Authorization;
+using LawnDart.EventSourcing;
+using LawnDart.EventStore;
 using Xunit;
 
 namespace LawnDart.AspNetCore.Tests.Integration;
@@ -194,6 +198,13 @@ public class CommandEndpointIntegrationTests : IDisposable
                     webHost.ConfigureServices(services =>
                     {
                         services.AddSingleton<IAuthorizationContextProvider, StubAuthorizationContextProvider>();
+                        services.AddLawnDart(o =>
+                        {
+                            o.RequireTenantId = false;
+                            o.EnableAuthorization = false;
+                        });
+                        services.AddBoundedContext("default")
+                            .WithCommandHandlers<CreateOrderCommandHandler>();
                         services.AddLawnDartHttpCommands(typeof(TestAppFactory).Assembly);
                         services.AddOpenApi();
 

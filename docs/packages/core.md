@@ -15,10 +15,8 @@ Take it first. It does not include an event-store implementation.
 - `IEventStore` — the store **abstraction** (implementations are in other packages)
 - Authorization attributes and `AuthorizationService`
 - `AddLawnDart`, `AddBoundedContext`, `AddLawnDartAuthorization`
-- Hosted pattern contracts (`IReactor`, `IEventProcessor`, `ITaskProcessor`) and
-  planned `[Experimental]` stubs (`ICommandDelegator`, `IDownstreamActivity`,
-  `IEventGenerator`, `IStateTransformer`) — see the matrix below. Implementing
-  a 🔧 type does not register or run it.
+- Hosted pattern contracts (`IReactor`, `IEventProcessor`, `ITaskProcessor`).
+  Four CES cells are roadmap only — no public type yet; see the matrix below.
 - `IProjector` — experimental unused stub; neither host calls it. Not
   the authoring API. Author `ProjectionBase<TView>` plus scope attributes
   for Lightweight. Multi-stream views (including Flywheel) implement
@@ -30,7 +28,7 @@ Take it first. It does not include an event-store implementation.
 | **Event** | Reaction ✅ | Event Processing ✅ | Projection ✅ |
 | **State** | Task Processing ✅ | Event Generator 🔧 | State Transformation 🔧 |
 
-✅ Hosted (runtime, DI, tests) · 🔧 Planned interface — `[Experimental]`, no host yet. Implementing a 🔧 type does not register or run it.
+✅ Hosted (runtime, DI, tests) · 🔧 Roadmap — no public type yet.
 
 ## Registration
 

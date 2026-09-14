@@ -88,8 +88,12 @@ Register the host:
 
 ```csharp
 services.AddLawnDart(o => o.RequireTenantId = false);
-services.AddBoundedContext("default").UseInMemory();
+services.AddBoundedContext("default")
+    .UseInMemory()
+    .WithCommandHandlers<MyHandler>();
 ```
+
+<!-- TODO(RDY-09) -->
 
 Run Academy (zero infrastructure):
 

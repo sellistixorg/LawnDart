@@ -8,7 +8,7 @@ namespace LawnDart.Messaging.Outbox;
 
 /// <summary>
 /// Sample <see cref="IOutboxPublisher"/> that deserializes <see cref="OutboxMessage"/> payloads
-/// and publishes them through <see cref="IMessageTransport"/> (InMemory or Azure Service Bus).
+/// and publishes them through <see cref="IMessageTransport"/> (InMemory in these packages).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -39,7 +39,7 @@ public sealed class MessageTransportOutboxPublisher : IOutboxPublisher
     /// <summary>
     /// Creates a publisher that resolves event CLR types from <paramref name="eventTypes"/>.
     /// </summary>
-    /// <param name="transport">Transport used to publish (e.g. Service Bus or InMemory).</param>
+    /// <param name="transport">Transport used to publish (InMemory in these packages).</param>
     /// <param name="eventTypes">Known event types that may appear in outbox <c>EventType</c> rows.</param>
     /// <param name="jsonOptions">
     /// Optional JSON options. Defaults match SQL Server outbox payload serialization

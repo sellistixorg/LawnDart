@@ -16,7 +16,7 @@ public static class MessagingExtensions
     /// <summary>
     /// Registers core messaging options and the <see cref="IInboxStore"/> placeholder.
     /// Call this once per application, then call a transport-specific extension
-    /// (e.g. <c>AddInMemoryMessaging()</c> or <c>AddServiceBusMessaging()</c>).
+    /// (e.g. <c>AddInMemoryMessaging()</c>).
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="configure">Optional options configurator.</param>

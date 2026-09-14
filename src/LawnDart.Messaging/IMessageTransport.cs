@@ -2,7 +2,8 @@ namespace LawnDart.Messaging;
 
 /// <summary>
 /// Pluggable transport abstraction for publishing and consuming typed messages.
-/// Implementations include InMemory (testing/local dev) and Azure Service Bus (production).
+/// The implementation shipped in these packages is <c>InMemoryMessageTransport</c>
+/// (<c>LawnDart.Messaging.InMemory</c>).
 /// </summary>
 public interface IMessageTransport
 {

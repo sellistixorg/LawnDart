@@ -9,9 +9,15 @@ reference the auth package — claims mapping is additive.
 ## Registration
 
 ```csharp
+ctx.WithCommandHandlers<CreateOrderCommandHandler>();
 services.AddLawnDartHttpCommands(typeof(CreateOrderCommand).Assembly);
 app.MapLawnDartCommands();
 ```
+
+<!-- TODO(RDY-10) -->
+
+`AddLawnDartHttpCommands` records assemblies for routing. Register handlers
+with `WithCommandHandlers<TMarker>()` on the bounded context.
 
 ## Related
 

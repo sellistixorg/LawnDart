@@ -30,7 +30,9 @@ namespace LawnDart.AspNetCore.Tests.Integration
                     o.RequireTenantId = false;
                     o.EnableAuthorization = false;
                 });
-                services.AddBoundedContext("default").UseInMemory();
+                services.AddBoundedContext("default")
+                    .UseInMemory()
+                    .WithCommandHandlers<AppendNoteCommandHandler>();
                 services.AddLawnDartHttpCommands(typeof(AppendNoteCommand).Assembly);
             }, endpoints => endpoints.MapLawnDartCommands());
 
@@ -58,7 +60,9 @@ namespace LawnDart.AspNetCore.Tests.Integration
                     o.RequireTenantId = false;
                     o.EnableAuthorization = false;
                 });
-                services.AddBoundedContext("default").UseInMemory();
+                services.AddBoundedContext("default")
+                    .UseInMemory()
+                    .WithCommandHandlers<TraceNoteCommandHandler>();
                 services.AddLawnDartHttpCommands(typeof(TraceNoteCommand).Assembly);
             }, endpoints => endpoints.MapLawnDartCommands());
 
@@ -101,6 +105,8 @@ namespace LawnDart.AspNetCore.Tests.Integration
 
             Assert.Null(host.Services.GetService<IEventStore>());
             Assert.NotNull(host.Services.GetRequiredKeyedService<IEventStore>("ordering"));
+            Assert.Null(host.Services.GetService<ICommandHandler<OrderingContext.AppendNoteCommand>>());
+            Assert.NotNull(host.Services.GetRequiredKeyedService<ICommandHandler<OrderingContext.AppendNoteCommand>>("ordering"));
 
             var client = host.GetTestClient();
             var id = Guid.NewGuid();

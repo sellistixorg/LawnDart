@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace LawnDart.EventStore;
@@ -61,18 +62,41 @@ public static class BoundedContextExtensions
     }
 
     /// <summary>
+    /// Scans <typeparamref name="TMarker"/>'s assembly for concrete
+    /// <see cref="IEvent"/> types and registers them as this context's catalog.
+    /// Prefer this overload — it is refactor-proof.
+    /// </summary>
+    public static BoundedContextBuilder WithEventTypes<TMarker>(
+        this BoundedContextBuilder builder)
+        => WithEventTypes(builder, typeof(TMarker).Assembly);
+
+    /// <summary>
+    /// Invokes the empty-assembly scan so tests can assert the
+    /// <c>GetCallingAssembly</c> fallback message.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    internal static BoundedContextBuilder WithEventTypesUsingCallingAssembly(
+        this BoundedContextBuilder builder)
+        => WithEventTypes(builder, Array.Empty<Assembly>());
+
+    /// <summary>
     /// Scans assemblies for concrete <see cref="IEvent"/> types and registers them
     /// as this context's event-type catalog. Types must declare
     /// <see cref="EventTypeNameAttribute"/>. Duplicate tokens, abstract types, and
     /// non-events fail closed.
     /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// The scan discovered no concrete <see cref="IEvent"/> types.
+    /// </exception>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static BoundedContextBuilder WithEventTypes(
         this BoundedContextBuilder builder,
         params Assembly[] assemblies)
     {
         ArgumentNullException.ThrowIfNull(builder);
 
-        if (assemblies.Length == 0)
+        var usedCallingAssemblyFallback = assemblies.Length == 0;
+        if (usedCallingAssemblyFallback)
             assemblies = [Assembly.GetCallingAssembly()];
 
         var types = new List<Type>();
@@ -89,6 +113,12 @@ public static class BoundedContextExtensions
             }
         }
 
+        if (types.Count == 0)
+        {
+            throw new InvalidOperationException(
+                FormatZeroEventScanMessage(assemblies, usedCallingAssemblyFallback));
+        }
+
         EventTypeNameResolver.Warmup(types);
         return builder;
     }
@@ -96,14 +126,36 @@ public static class BoundedContextExtensions
     /// <summary>
     /// Registers the given event types as this context's catalog.
     /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// <paramref name="types"/> is empty.
+    /// </exception>
     public static BoundedContextBuilder WithEventTypes(
         this BoundedContextBuilder builder,
         params Type[] types)
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(types);
+        if (types.Length == 0)
+            throw new InvalidOperationException("WithEventTypes was given no event types.");
         EventTypeNameResolver.Warmup(types);
         return builder;
+    }
+
+    private static string FormatZeroEventScanMessage(
+        IReadOnlyList<Assembly> assemblies,
+        bool usedCallingAssemblyFallback)
+    {
+        var names = string.Join(", ", assemblies.Select(a => $"'{a.GetName().Name}'"));
+        var scanned = assemblies.Count == 1
+            ? $"assembly {names}"
+            : $"assemblies {names}";
+
+        if (usedCallingAssemblyFallback)
+        {
+            return $"WithEventTypes scanned {scanned} (chosen by Assembly.GetCallingAssembly() because no assembly was passed) and found no IEvent implementations.";
+        }
+
+        return $"WithEventTypes scanned {scanned} and found no IEvent implementations.";
     }
 
     private static BoundedContextRegistry GetOrCreateRegistry(IServiceCollection services)

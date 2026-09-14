@@ -33,7 +33,7 @@ Typical first path:
 
 - **Core contracts**: `LawnDart` (`AddLawnDart`)
 - **Event-sourcing runtime**: `LawnDart.EventSourcing`
-- **Storage**: `UseInMemory()` (zero infra) or `UseSqlServer(...)` (durable) or others that exist, just not here
+- **Storage**: `UseInMemory()` (zero infra) or `UseSqlServer(...)` (durable)
 - **Projections**: `LawnDart.Projections.Lightweight` via `.WithProjections(...)`
 - **HTTP**: `LawnDart.AspNetCore` plus optional `LawnDart.Authorization.AspNetCore`
 

@@ -44,7 +44,7 @@ These live on `IAggregateRepository` in Core (not `Add*` extensions). Guid overl
 | `UseInMemory` | `LawnDart.EventSourcing` | Process-local store; registers `ICommandDispatcher` (interface lives in Core) |
 | `UseSqlServer` | `LawnDart.EventSourcing.SqlServer` | Durable SQL store |
 | `WithSnapshots` | `LawnDart.EventSourcing.SqlServer` | Optional snapshot store |
-| `WithCommandHandlers` | `LawnDart.EventSourcing` | Scan `ICommandHandler<T>` and register `ICommandDispatcher` (`LawnDart.Messaging` namespace, Core package) |
+| `WithCommandHandlers` / `WithCommandHandlers<TMarker>` | `LawnDart.EventSourcing` | The only handler registrar. Scan `ICommandHandler<T>` and register `ICommandDispatcher` (`LawnDart.Messaging` namespace, Core package) |
 | `WithTagProvider` | `LawnDart.EventSourcing` | Per-context tags |
 
 ## Projections
@@ -71,5 +71,5 @@ These live on `IAggregateRepository` in Core (not `Add*` extensions). Guid overl
 
 | Method | Package | Purpose |
 |---|---|---|
-| `AddLawnDartHttpCommands` | `LawnDart.AspNetCore` | Discover handlers |
+| `AddLawnDartHttpCommands` | `LawnDart.AspNetCore` | Record assemblies for HTTP routing (does not register handlers) |
 | `MapLawnDartCommands` | `LawnDart.AspNetCore` | Map POST endpoints |

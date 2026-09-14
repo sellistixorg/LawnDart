@@ -45,7 +45,7 @@ public class AuthorizationContext
     
     // Transport Context
     /// <summary>
-    /// Type of transport that captured this context (e.g., "HTTP", "ServiceBus", "BackgroundService").
+    /// Type of transport that captured this context (e.g., "HTTP").
     /// </summary>
     public string? TransportType { get; set; }
 

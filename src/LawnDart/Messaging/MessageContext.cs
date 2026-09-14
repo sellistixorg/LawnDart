@@ -37,7 +37,7 @@ public class MessageContext
     public DateTimeOffset EnqueuedAt { get; init; } = DateTimeOffset.UtcNow;
 
     /// <summary>
-    /// Transport type that delivered this message (e.g. "InMemory", "ServiceBus").
+    /// Transport type that delivered this message (e.g. "InMemory").
     /// </summary>
     public string? TransportType { get; init; }
 

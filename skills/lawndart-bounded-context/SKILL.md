@@ -7,7 +7,7 @@ description: Register named LawnDart bounded contexts, keyed stores, and WithCom
 
 ## Frozen surface
 
-1. **App-facing dispatch** is `ICommandHandler<T>` (HTTP, jobs) — `WithCommandHandlers` per context.
+1. **App-facing dispatch** is `ICommandHandler<T>` (HTTP, jobs) — `WithCommandHandlers<TMarker>()` per context.
 2. **Aggregates / DCB** declare closed `Handle(TCommand)`. `HandleCommandAsync` is persistence + authorization.
 3. **Load** by `string streamId` when the stream is not `{type}:{guid}`.
 4. **Projections:** `ProjectionBase<TView>` plus attributes; multi-stream views implement `IMultiStreamEntityResolver`.
@@ -16,20 +16,18 @@ description: Register named LawnDart bounded contexts, keyed stores, and WithCom
 ```csharp
 var orders = services.AddBoundedContext("orders");
 orders.UseInMemory();
-orders.WithCommandHandlers([typeof(PlaceOrderHandler).Assembly]);
+orders.WithCommandHandlers<PlaceOrderHandler>();
 
 var catalog = services.AddBoundedContext("catalog");
 catalog.UseInMemory();
 ```
 
+<!-- TODO(RDY-10) -->
+
 Single-store apps use name `"default"`. Keyed `IEventStore` /
 `IAggregateRepository` / `IDcbRepository` resolve with that name.
-
-For handlers that inject unkeyed `IEventStore`, bridge `"default"`:
-
-```csharp
-services.AddSingleton<IEventStore>(sp =>
-    sp.GetRequiredKeyedService<IEventStore>("default"));
-```
+The `"default"` context also gets unkeyed aliases (store, repositories, and
+handlers) so HTTP can resolve them without a hand-written bridge. Named
+contexts stay keyed-only.
 
 Do not treat contexts as tenants. Tenant IDs belong on stream IDs / metadata.
