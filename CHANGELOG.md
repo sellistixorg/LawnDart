@@ -10,6 +10,10 @@ changes to the public API.
 
 ## [Unreleased]
 
+### Changed
+
+- `AggregateSpec` assertion failures throw `BddSpecAssertionException` instead of `InvalidOperationException`. The new type does not derive from `InvalidOperationException`, so `Assert.ThrowsAsync<InvalidOperationException>(() => spec.RunAsync())` no longer passes when the spec itself failed. `ThenThrows<T>()` now matches derived exception types, not only an exact type.
+
 ### Fixed
 
 - Docs site links no longer point at the repo-root README (that file is not part of the DocFX build).

@@ -12,7 +12,8 @@ Those fields live on the envelope, not on `ICommand` / `IEvent`.
 
 - `LawnDart.Testing`
 - Namespace `LawnDart.Testing.Bdd`
-- Types: `BddTestContext`, `AggregateSpec`, `DcbSpec`, `BddProjectionRunner`
+- Types: `BddTestContext`, `AggregateSpec`, `DcbSpec`, `BddProjectionRunner`,
+  `BddSpecAssertionException`
 
 ## Aggregate spec
 
@@ -49,3 +50,27 @@ domain project. Use xUnit. Canonical proofs:
 `tests/LawnDart.Testing.Tests/Bdd/InMemoryGwtTests.cs`.
 
 These specs match the Eventhesis GWT widget — see [EVENTHESIS.md](../EVENTHESIS.md).
+
+## Exception contract
+
+Spec-internal failures — missing `When`, a `Then*` mismatch, an unexpected
+exception from `When`, or a broken store probe — throw
+`BddSpecAssertionException`. That type does **not** derive from
+`InvalidOperationException`.
+
+Do not wrap `RunAsync()` in
+`Assert.ThrowsAsync<InvalidOperationException>`. A failed spec assertion
+would have passed that test. Use `ThenThrows<T>()` for a domain rule:
+
+- `ThenThrows<T>()` passes when the domain throws `T` or a type derived from `T`.
+- A mismatch throws `BddSpecAssertionException` and names both the expected
+  and actual types.
+- Domain code may still throw `InvalidOperationException` (or
+  `DomainException`, which derives from it). Those remain the When
+  exception; only the spec runner uses `BddSpecAssertionException`.
+
+A store that does not implement `GetCurrentSequenceAsync` or
+`ReadByQueryAsync` throws `NotSupportedException`. The spec treats that as
+a missing capability: sequence baseline becomes `-1`, and the appended-stream
+set is empty. Any other exception from those probes is a broken store and
+surfaces as `BddSpecAssertionException`.
