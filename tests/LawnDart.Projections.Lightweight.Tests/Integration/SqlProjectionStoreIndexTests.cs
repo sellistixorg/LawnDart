@@ -19,7 +19,7 @@ public class SqlProjectionStoreIndexTests : IAsyncLifetime
 
     public SqlProjectionStoreIndexTests()
     {
-        _container = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-latest")
+        _container = new MsSqlBuilder(MsSqlTestImage.Server2022)
             .WithPassword("Test123!")
             .Build();
     }

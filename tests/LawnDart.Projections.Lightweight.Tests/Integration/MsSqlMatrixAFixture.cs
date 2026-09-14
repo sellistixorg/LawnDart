@@ -5,7 +5,7 @@ namespace LawnDart.Projections.Lightweight.Tests.Integration;
 /// <summary>Shared SQL Server container for Matrix A flush/checkpoint e2e (one container per collection).</summary>
 public sealed class MsSqlMatrixAFixture : IAsyncLifetime
 {
-    private readonly MsSqlContainer _container = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-latest")
+    private readonly MsSqlContainer _container = new MsSqlBuilder(MsSqlTestImage.Server2022)
         .WithPassword("MatrixATest1!")
         .Build();
 

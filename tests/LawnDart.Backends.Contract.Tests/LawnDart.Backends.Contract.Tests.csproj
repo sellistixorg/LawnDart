@@ -23,6 +23,11 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <Using Include="LawnDart.TestUtilities" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

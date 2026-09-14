@@ -25,7 +25,7 @@ public class DcbSqlServerIntegrationTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _container = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-latest")
+        _container = new MsSqlBuilder(MsSqlTestImage.Server2022)
             .Build();
 
         await _container.StartAsync();

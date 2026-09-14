@@ -14,6 +14,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="LawnDart.EventSourcing.Tests" />
     <InternalsVisibleTo Include="LawnDart.EventSourcing.SqlServer" />
+    <InternalsVisibleTo Include="LawnDart.EventSourcing.SqlServer.Tests" />
   </ItemGroup>
 
   <ItemGroup>

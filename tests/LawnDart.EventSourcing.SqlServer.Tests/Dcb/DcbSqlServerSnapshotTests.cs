@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using LawnDart;
 using LawnDart.Dcb;
 using LawnDart.EventSourcing.Dcb;
+using LawnDart.EventSourcing.Snapshots;
 using LawnDart.EventSourcing.SqlServer;
 using LawnDart.EventSourcing.SqlServer.EventStore;
 using LawnDart.EventSourcing.SqlServer.Snapshots;
@@ -30,7 +31,7 @@ public sealed class DcbSqlServerSnapshotTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _container = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-latest")
+        _container = new MsSqlBuilder(MsSqlTestImage.Server2022)
             .WithPassword("Test123!")
             .Build();
         await _container.StartAsync();
@@ -64,7 +65,10 @@ public sealed class DcbSqlServerSnapshotTests : IAsyncLifetime
             await _container.DisposeAsync();
     }
 
-    private DcbRepository CreateRepository(IDcbSnapshotStore? snapshots, ISnapshotStrategyResolver? resolver = null)
+    private DcbRepository CreateRepository(
+        IDcbSnapshotStore? snapshots,
+        ISnapshotStrategyResolver? resolver = null,
+        ISnapshotWriteQueue? writeQueue = null)
         => new(
             _eventStore!,
             new TestMetadataProvider(),
@@ -75,7 +79,8 @@ public sealed class DcbSqlServerSnapshotTests : IAsyncLifetime
             logger: null,
             eventSourcingOptions: Options.Create(new EventSourcing.EventSourcingOptions { EnforceDcbTenantIsolation = false }),
             dcbSnapshotStore: snapshots,
-            strategyResolver: resolver);
+            strategyResolver: resolver,
+            snapshotWriteQueue: writeQueue);
 
     [Fact]
     public async Task SaveThenLoad_RoundTripsStateAndPlaintextTags()
@@ -138,14 +143,24 @@ public sealed class DcbSqlServerSnapshotTests : IAsyncLifetime
     {
         var resolver = new SnapshotStrategyResolver();
         resolver.RegisterForDcb<InventoryEntity>(new EventCountSnapshotStrategy(1));
-        var repo = CreateRepository(_snapshotStore, resolver);
+        var queue = new SnapshotWriteQueue();
+        var pump = new SnapshotWriteHostedService(queue);
+        await pump.StartAsync(CancellationToken.None);
+        var repo = CreateRepository(_snapshotStore, resolver, queue);
         var tags = new[] { "product:sku-cmd" };
         var dcbId = DcbSnapshotId.FromLoadTags(tags);
 
-        var entity = await repo.CreateEntityAsync<InventoryEntity>(tags);
-        await repo.HandleCommandAsync(entity, new CountInventory(3), new CommandMetadata { UserId = "u" });
+        try
+        {
+            var entity = await repo.CreateEntityAsync<InventoryEntity>(tags);
+            await repo.HandleCommandAsync(entity, new CountInventory(3), new CommandMetadata { UserId = "u" });
 
-        await WaitForSnapshotAsync(dcbId);
+            await WaitForSnapshotAsync(dcbId);
+        }
+        finally
+        {
+            await pump.StopAsync(CancellationToken.None);
+        }
 
         var storedTags = await _snapshotStore!.LoadDcbSnapshotTagsAsync(dcbId);
         Assert.Equal(tags, storedTags);

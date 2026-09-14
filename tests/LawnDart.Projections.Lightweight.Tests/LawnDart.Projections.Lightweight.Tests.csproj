@@ -28,6 +28,7 @@
     <ProjectReference Include="..\..\src\LawnDart.EventSourcing\LawnDart.EventSourcing.csproj" />
     <ProjectReference Include="..\..\src\LawnDart.EventSourcing.SqlServer\LawnDart.EventSourcing.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\LawnDart\LawnDart.csproj" />
+    <ProjectReference Include="..\LawnDart.TestUtilities\LawnDart.TestUtilities.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -36,6 +37,11 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <Using Include="LawnDart.TestUtilities" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
