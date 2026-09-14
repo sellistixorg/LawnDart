@@ -83,11 +83,6 @@ public record ProjectionDescriptor
     public int InstanceCount { get; init; } = 1;
 
     /// <summary>
-    /// Whether to store views in Redis for fast reads
-    /// </summary>
-    public bool UseRedis { get; init; } = true;
-
-    /// <summary>
     /// Whether to store views in SQL for reliable persistence
     /// </summary>
     public bool UseSql { get; init; } = true;

@@ -1,7 +1,16 @@
 #nullable enable
 *REMOVED*LawnDart.IMessage
+*REMOVED*LawnDart.Patterns.Delegation.ICommandDelegator<TCommand>
+*REMOVED*LawnDart.Patterns.Delegation.ICommandDelegator<TCommand>.DelegateAsync(TCommand command, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<LawnDart.ICommand!>!
+*REMOVED*LawnDart.Patterns.DownstreamActivity.IDownstreamActivity<TTrigger>
+*REMOVED*LawnDart.Patterns.DownstreamActivity.IDownstreamActivity<TTrigger>.ExecuteAsync(TTrigger trigger, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+*REMOVED*LawnDart.Patterns.EventGenerator.IEventGenerator<TState>
+*REMOVED*LawnDart.Patterns.EventGenerator.IEventGenerator<TState>.GenerateAsync(TState state, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IEnumerable<LawnDart.IEvent!>!>!
+*REMOVED*LawnDart.Patterns.StateTransformation.IStateTransformer<TInput, TOutput>
+*REMOVED*LawnDart.Patterns.StateTransformation.IStateTransformer<TInput, TOutput>.TransformAsync(TInput input, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TOutput>!
 static LawnDart.EventStore.BoundedContextExtensions.WithEventTypes(this LawnDart.EventStore.BoundedContextBuilder! builder, params System.Reflection.Assembly![]! assemblies) -> LawnDart.EventStore.BoundedContextBuilder!
 static LawnDart.EventStore.BoundedContextExtensions.WithEventTypes(this LawnDart.EventStore.BoundedContextBuilder! builder, params System.Type![]! types) -> LawnDart.EventStore.BoundedContextBuilder!
+static LawnDart.EventStore.BoundedContextExtensions.WithEventTypes<TMarker>(this LawnDart.EventStore.BoundedContextBuilder! builder) -> LawnDart.EventStore.BoundedContextBuilder!
 static LawnDart.EventStore.EventTypeNameResolver.TryGetDeclaredName(System.Type! type) -> string?
 static LawnDart.EventStore.EventTypeNameResolver.TryResolveType(string! storedName, out System.Type? type) -> bool
 LawnDart.Metadata.CommandMetadata.SpanId.get -> string?

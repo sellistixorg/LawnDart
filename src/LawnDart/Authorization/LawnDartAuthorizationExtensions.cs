@@ -33,8 +33,8 @@ public static class LawnDartAuthorizationExtensions
     /// Adds a composite authorization context provider that tries leaf providers in registration order.
     /// </summary>
     /// <remarks>
-    /// Call after satellite <c>AddHttpAuthorizationContext</c> / <c>AddServiceBusAuthorizationContext</c> /
-    /// <c>AddBackgroundServiceAuthorizationContext</c>. Leaf providers are discovered via
+    /// Call after satellite <c>AddHttpAuthorizationContext</c>
+    /// (<c>LawnDart.Authorization.AspNetCore</c>). Leaf providers are discovered via
     /// <see cref="AuthorizationContextProviderRegistration"/> (not via
     /// <c>GetServices&lt;IAuthorizationContextProvider&gt;()</c>, which would recurse into this composite).
     /// This registration becomes the <see cref="IAuthorizationContextProvider"/> resolved by
@@ -54,8 +54,7 @@ public static class LawnDartAuthorizationExtensions
             {
                 throw new InvalidOperationException(
                     "AddCompositeAuthorizationContext requires at least one leaf provider. " +
-                    "Call AddHttpAuthorizationContext, AddServiceBusAuthorizationContext, and/or " +
-                    "AddBackgroundServiceAuthorizationContext (from the Authorization.* packages) first.");
+                    "Call AddHttpAuthorizationContext (from LawnDart.Authorization.AspNetCore) first.");
             }
 
             return new CompositeAuthorizationContextProvider(leaves);

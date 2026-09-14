@@ -6,25 +6,32 @@ Register event stores and Lightweight projections through a **named bounded cont
 services.AddLawnDart(o => { o.RequireTenantId = false; });
 services.AddInMemoryProjectionStores("default"); // before WithProjections (dev/test)
 
-services.AddBoundedContext("default")
+var ctx = services.AddBoundedContext("default")
     .UseInMemory()
     // or .UseSqlServer(o => { o.ConnectionString = cs; })
-    .WithCommandHandlers([typeof(MyHandler).Assembly])
+    .WithCommandHandlers<MyHandler>()
+    .WithEventTypes<MyEvent>()
     .WithProjections([typeof(MyProjection).Assembly]);
 
+services.AddLawnDartHttpCommands(typeof(MyHandler).Assembly);
+
 var app = builder.Build();
+app.MapLawnDartCommands();
 app.MapProjectionQueries("default");
 ```
+
+<!-- TODO(RDY-10) -->
 
 | Piece | Role |
 |---|---|
 | `AddLawnDart` | Core options, default metadata provider |
 | `AddBoundedContext(name)` | Starts a keyed context (`"default"` for single-store apps) |
 | `UseInMemory` / `UseSqlServer` | Event store + repositories for that name. `UseInMemory` also registers `ICommandDispatcher` (`ContextAwareCommandDispatcher`). |
-| `WithCommandHandlers` | Scans `ICommandHandler<T>` and registers `ICommandDispatcher`. The interface lives in Core (`LawnDart.Messaging` namespace); EventSourcing does not need the Messaging package to register it. |
+| `WithCommandHandlers<TMarker>()` | The only handler registrar. Scans `ICommandHandler<T>` in the marker's assembly and registers `ICommandDispatcher`. The `"default"` context also gets an unkeyed handler alias built through `ContextServiceProvider`. |
+| `WithEventTypes<TMarker>()` | Event catalog for that assembly. A scan that finds no `IEvent` types fails at warmup. |
 | `WithProjections` | Lightweight projection runners (keyed) |
 | `MapProjectionQueries(name)` | HTTP GETs for the keyed projection path |
-| `AddLawnDartHttpCommands` / `MapLawnDartCommands` | HTTP POST command endpoints |
+| `AddLawnDartHttpCommands` / `MapLawnDartCommands` | HTTP routing and authorization only — not handler registration |
 
 Academy is the copy-paste host: `demos/LawnDart.Demo.Academy` (console) and
 `demos/LawnDart.Demo.Academy.WebApi`.

@@ -9,7 +9,7 @@ Use this skill first when wiring a new application on LawnDart packages.
 
 ## Frozen surface
 
-1. **App-facing dispatch** is `ICommandHandler<T>` (HTTP, jobs) — register with `WithCommandHandlers`.
+1. **App-facing dispatch** is `ICommandHandler<T>` (HTTP, jobs) — register with `WithCommandHandlers<TMarker>()`.
 2. **Aggregates / DCB** declare closed `Handle(TCommand)`. `HandleCommandAsync` is persistence + authorization.
 3. **Load** by `string streamId` when the stream is not `{type}:{guid}`.
 4. **Projections:** `ProjectionBase<TView>` plus attributes; multi-stream views implement `IMultiStreamEntityResolver`.
@@ -39,8 +39,11 @@ builder.Services.AddLawnDart(opts =>
 builder.Services.AddInMemoryProjectionStores("default");
 var ctx = builder.Services.AddBoundedContext("default");
 ctx.UseInMemory();
-ctx.WithCommandHandlers([typeof(CreateOrderHandler).Assembly]);
+ctx.WithCommandHandlers<CreateOrderHandler>();
+ctx.WithEventTypes<OrderPlaced>();
 ctx.WithProjections([typeof(OrderSummaryProjection).Assembly]);
 ```
+
+<!-- TODO(RDY-10) -->
 
 Zero-infra reference: `demos/LawnDart.Demo.Academy`.

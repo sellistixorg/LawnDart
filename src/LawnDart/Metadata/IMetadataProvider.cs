@@ -12,7 +12,7 @@ public interface IMetadataProvider
     /// Reads <c>Activity.Current</c> and ambient <c>MessageContext</c> when present;
     /// otherwise mints a correlation id.
     /// </summary>
-    /// <param name="context">Optional context object (e.g., HttpContext, ServiceBusReceivedMessage).</param>
+    /// <param name="context">Optional context object (e.g., HttpContext).</param>
     /// <returns>Command metadata captured from the context.</returns>
     CommandMetadata CaptureCommandMetadata(object? context = null);
 

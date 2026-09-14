@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -8,6 +9,7 @@ using LawnDart.EventSourcing.Dcb;
 using LawnDart.EventSourcing.EventStore;
 using LawnDart.EventStore;
 using Microsoft.Extensions.Options;
+using LawnDart;
 using LawnDart.Aggregates;
 using LawnDart.Authorization;
 using LawnDart.Dcb;
@@ -168,6 +170,24 @@ public static class BoundedContextBuilderExtensions
     // -------------------------------------------------------------------------
 
     /// <summary>
+    /// Scans <typeparamref name="TMarker"/>'s assembly for
+    /// <see cref="ICommandHandler{TCommand}"/> implementations and registers them
+    /// for this context. Prefer this overload — it is refactor-proof.
+    /// </summary>
+    public static BoundedContextBuilder WithCommandHandlers<TMarker>(
+        this BoundedContextBuilder builder)
+        => WithCommandHandlers(builder, typeof(TMarker).Assembly);
+
+    /// <summary>
+    /// Invokes the empty-assembly scan so tests can assert the
+    /// <c>GetCallingAssembly</c> fallback message.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    internal static BoundedContextBuilder WithCommandHandlersUsingCallingAssembly(
+        this BoundedContextBuilder builder)
+        => WithCommandHandlers(builder, Array.Empty<Assembly>());
+
+    /// <summary>
     /// Scans the supplied assemblies for <see cref="ICommandHandler{TCommand}"/>
     /// implementations, registers them as keyed services for this context, and
     /// populates the <see cref="ICommandContextRegistry"/> so that the
@@ -180,16 +200,22 @@ public static class BoundedContextBuilderExtensions
     /// the same assembly across multiple contexts causes duplicate-registration errors.
     /// For multi-context test scenarios use
     /// <see cref="WithCommandHandlers(BoundedContextBuilder, Type[])"/> to specify
-    /// handler types explicitly.
+    /// handler types explicitly. Prefer
+    /// <see cref="WithCommandHandlers{TMarker}(BoundedContextBuilder)"/> in hosts.
     /// </param>
     /// <returns>The builder for further chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The scan discovered no <see cref="ICommandHandler{TCommand}"/> implementations.
+    /// </exception>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static BoundedContextBuilder WithCommandHandlers(
         this BoundedContextBuilder builder,
         params Assembly[] assemblies)
     {
         ArgumentNullException.ThrowIfNull(builder);
 
-        if (assemblies.Length == 0)
+        var usedCallingAssemblyFallback = assemblies.Length == 0;
+        if (usedCallingAssemblyFallback)
             assemblies = [Assembly.GetCallingAssembly()];
 
         var services    = builder.Services;
@@ -197,6 +223,7 @@ public static class BoundedContextBuilderExtensions
         var registry    = GetOrCreateCommandRegistry(services);
 
         var handlerInterface = typeof(ICommandHandler<>);
+        var discovered = 0;
 
         foreach (var assembly in assemblies)
         {
@@ -212,8 +239,19 @@ public static class BoundedContextBuilderExtensions
 
                     var commandType = iface.GetGenericArguments()[0];
                     RegisterHandlerCore(services, contextName, registry, type, commandType);
+                    discovered++;
                 }
             }
+        }
+
+        if (discovered == 0)
+        {
+            throw new InvalidOperationException(
+                FormatZeroScanMessage(
+                    "WithCommandHandlers",
+                    "ICommandHandler<>",
+                    assemblies,
+                    usedCallingAssemblyFallback));
         }
 
         EnsureSharedInfrastructure(services);
@@ -243,6 +281,7 @@ public static class BoundedContextBuilderExtensions
         var contextName  = builder.ContextName;
         var registry     = GetOrCreateCommandRegistry(services);
         var handlerIface = typeof(ICommandHandler<>);
+        var discovered   = 0;
 
         foreach (var type in handlerTypes)
         {
@@ -256,7 +295,16 @@ public static class BoundedContextBuilderExtensions
 
                 var commandType = iface.GetGenericArguments()[0];
                 RegisterHandlerCore(services, contextName, registry, type, commandType);
+                discovered++;
             }
+        }
+
+        if (discovered == 0)
+        {
+            throw new InvalidOperationException(
+                handlerTypes.Length == 0
+                    ? "WithCommandHandlers was given no handler types."
+                    : "WithCommandHandlers was given handler types but found no ICommandHandler<> implementations.");
         }
 
         EnsureSharedInfrastructure(services);
@@ -282,6 +330,8 @@ public static class BoundedContextBuilderExtensions
             (sp, _) => ActivatorUtilities.CreateInstance(
                 new ContextServiceProvider(sp, contextName),
                 handlerImplType));
+
+        TryAddDefaultUnkeyedAliases(services, contextName, closedHandlerInterface);
     }
 
     // -------------------------------------------------------------------------
@@ -308,6 +358,43 @@ public static class BoundedContextBuilderExtensions
             sp.GetRequiredKeyedService<IAggregateRepository>("default"));
         services.TryAddTransient<IDcbRepository>(sp =>
             sp.GetRequiredKeyedService<IDcbRepository>("default"));
+    }
+
+    /// <summary>
+    /// For <c>"default"</c> only: unkeyed <see cref="ICommandHandler{TCommand}"/>
+    /// alias forwarding to the keyed registration built through
+    /// <see cref="ContextServiceProvider"/>. Named contexts stay keyed-only.
+    /// </summary>
+    private static void TryAddDefaultUnkeyedAliases(
+        IServiceCollection services,
+        string contextName,
+        Type closedHandlerInterface)
+    {
+        if (!string.Equals(contextName, "default", StringComparison.Ordinal))
+            return;
+
+        services.TryAddTransient(
+            closedHandlerInterface,
+            sp => sp.GetRequiredKeyedService(closedHandlerInterface, "default"));
+    }
+
+    private static string FormatZeroScanMessage(
+        string api,
+        string kind,
+        IReadOnlyList<Assembly> assemblies,
+        bool usedCallingAssemblyFallback)
+    {
+        var names = string.Join(", ", assemblies.Select(a => $"'{a.GetName().Name}'"));
+        var scanned = assemblies.Count == 1
+            ? $"assembly {names}"
+            : $"assemblies {names}";
+
+        if (usedCallingAssemblyFallback)
+        {
+            return $"{api} scanned {scanned} (chosen by Assembly.GetCallingAssembly() because no assembly was passed) and found no {kind} implementations.";
+        }
+
+        return $"{api} scanned {scanned} and found no {kind} implementations.";
     }
 
 

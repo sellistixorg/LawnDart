@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using LawnDart;
 using LawnDart.Aggregates;
@@ -71,7 +72,7 @@ public sealed class AggregateSpecBuilder<TAggregate>
             var actualTypes = result.EmittedEvents.Select(e => e.GetType()).ToArray();
             if (!actualTypes.SequenceEqual(expectedTypes))
             {
-                throw new InvalidOperationException(
+                throw new BddSpecAssertionException(
                     $"Emitted event types mismatch.{Environment.NewLine}" +
                     $"Expected: [{string.Join(", ", expectedTypes.Select(t => t.Name))}]{Environment.NewLine}" +
                     $"Actual:   [{string.Join(", ", actualTypes.Select(t => t.Name))}]");
@@ -86,7 +87,7 @@ public sealed class AggregateSpecBuilder<TAggregate>
         {
             if (result.EmittedEvents.Count != expectedEvents.Length)
             {
-                throw new InvalidOperationException(
+                throw new BddSpecAssertionException(
                     $"Emitted event count mismatch.{Environment.NewLine}" +
                     $"Expected: {expectedEvents.Length}{Environment.NewLine}" +
                     $"Actual:   {result.EmittedEvents.Count}{Environment.NewLine}" +
@@ -99,7 +100,7 @@ public sealed class AggregateSpecBuilder<TAggregate>
                 var actual = result.EmittedEvents[i];
                 if (expected.GetType() != actual.GetType())
                 {
-                    throw new InvalidOperationException(
+                    throw new BddSpecAssertionException(
                         $"Event type mismatch at index {i}.{Environment.NewLine}" +
                         $"Expected: {expected.GetType().Name}{Environment.NewLine}" +
                         $"Actual:   {actual.GetType().Name}");
@@ -109,7 +110,7 @@ public sealed class AggregateSpecBuilder<TAggregate>
                 var actualJson = JsonSerializer.Serialize(actual, JsonOptions);
                 if (!string.Equals(expectedJson, actualJson, StringComparison.Ordinal))
                 {
-                    throw new InvalidOperationException(
+                    throw new BddSpecAssertionException(
                         $"Event payload mismatch at index {i} ({actual.GetType().Name}).{Environment.NewLine}" +
                         $"Expected: {expectedJson}{Environment.NewLine}" +
                         $"Actual:   {actualJson}");
@@ -147,7 +148,7 @@ public sealed class AggregateSpecBuilder<TAggregate>
                 var reason = string.IsNullOrWhiteSpace(description)
                     ? "Predicate did not uniquely match a single emitted event."
                     : description!;
-                throw new InvalidOperationException(
+                throw new BddSpecAssertionException(
                     $"Expected exactly one matching {typeof(TEvent).Name} event. {reason}{Environment.NewLine}" +
                     $"Matches: {matches.Length}{Environment.NewLine}" +
                     $"Actual:  {Serialize(result.EmittedEvents)}");
@@ -169,7 +170,7 @@ public sealed class AggregateSpecBuilder<TAggregate>
             var actual = result.AppendedStreamIds;
             if (actual.Count != 1 || !actual.Contains(expectedStreamId))
             {
-                throw new InvalidOperationException(
+                throw new BddSpecAssertionException(
                     $"Expected appends to exactly one stream: '{expectedStreamId}'.{Environment.NewLine}" +
                     $"Actual streams written ({actual.Count}): " +
                     $"[{string.Join(", ", actual.OrderBy(s => s, StringComparer.Ordinal))}]");
@@ -193,7 +194,7 @@ public sealed class AggregateSpecBuilder<TAggregate>
             var actual   = result.AppendedStreamIds;
             if (!expected.SetEquals(actual))
             {
-                throw new InvalidOperationException(
+                throw new BddSpecAssertionException(
                     $"Expected appends to streams: [{string.Join(", ", expected.OrderBy(s => s, StringComparer.Ordinal))}]{Environment.NewLine}" +
                     $"Actual streams written:      [{string.Join(", ", actual.OrderBy(s => s, StringComparer.Ordinal))}]");
             }
@@ -228,7 +229,7 @@ public sealed class AggregateSpecBuilder<TAggregate>
     {
         if (_when is null)
         {
-            throw new InvalidOperationException("When(...) must be configured before RunAsync().");
+            throw new BddSpecAssertionException("When(...) must be configured before RunAsync().");
         }
 
         var streamId = $"{typeof(TAggregate).Name}:{_aggregateId}";
@@ -243,9 +244,12 @@ public sealed class AggregateSpecBuilder<TAggregate>
         var deltaReadFromVersion = aggregate.CommittedVersion >= 0 ? aggregate.CommittedVersion + 1 : 0;
 
         // Capture the current global sequence before When so we can detect all stream writes.
-        long baselineSeq;
-        try { baselineSeq = await _context.EventStore.GetCurrentSequenceAsync(cancellationToken).ConfigureAwait(false); }
-        catch { baselineSeq = -1; }
+        // A store with no global sequence is supported; NotSupportedException keeps the -1 fallback.
+        var baselineSeq = await ProbeOrFallbackAsync(
+                () => _context.EventStore.GetCurrentSequenceAsync(cancellationToken),
+                fallback: -1,
+                capabilityName: nameof(IEventStore.GetCurrentSequenceAsync))
+            .ConfigureAwait(false);
 
         Exception? thrown = null;
         try
@@ -258,30 +262,33 @@ public sealed class AggregateSpecBuilder<TAggregate>
         }
 
         // Collect all stream IDs that had events appended during When.
-        IReadOnlySet<string> appendedStreamIds;
-        try
-        {
-            var allNew = await _context.EventStore.ReadByQueryAsync(
-                Query.All(),
-                fromSequencePosition: baselineSeq + 1,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-            appendedStreamIds = allNew.Events
-                .Select(e => e.StreamId)
-                .ToHashSet(StringComparer.Ordinal);
-        }
-        catch { appendedStreamIds = new HashSet<string>(); }
+        // A store without query support degrades to an empty set rather than failing the spec.
+        var appendedStreamIds = await ProbeOrFallbackAsync(
+                async () =>
+                {
+                    var allNew = await _context.EventStore.ReadByQueryAsync(
+                        Query.All(),
+                        fromSequencePosition: baselineSeq + 1,
+                        cancellationToken: cancellationToken).ConfigureAwait(false);
+                    return (IReadOnlySet<string>)allNew.Events
+                        .Select(e => e.StreamId)
+                        .ToHashSet(StringComparer.Ordinal);
+                },
+                fallback: (IReadOnlySet<string>)new HashSet<string>(),
+                capabilityName: nameof(IEventStore.ReadByQueryAsync))
+            .ConfigureAwait(false);
 
         if (_expectedExceptionType is not null)
         {
-            if (thrown is null || thrown.GetType() != _expectedExceptionType)
+            if (thrown is null || !_expectedExceptionType.IsInstanceOfType(thrown))
             {
-                throw new InvalidOperationException(
+                throw new BddSpecAssertionException(
                     $"Expected exception {_expectedExceptionType.Name} but got {(thrown?.GetType().Name ?? "none")}.");
             }
         }
         else if (thrown is not null)
         {
-            throw new InvalidOperationException($"Unexpected exception: {thrown}");
+            throw new BddSpecAssertionException($"Unexpected exception: {thrown}", thrown);
         }
 
         var emitted = await _context.EventStore.ReadStreamAsync(
@@ -294,7 +301,7 @@ public sealed class AggregateSpecBuilder<TAggregate>
             .ConfigureAwait(false);
         if (_expectedVersion.HasValue && finalAggregate.Version != _expectedVersion.Value)
         {
-            throw new InvalidOperationException(
+            throw new BddSpecAssertionException(
                 $"Expected version {_expectedVersion.Value} but was {finalAggregate.Version}.");
         }
 
@@ -322,6 +329,28 @@ public sealed class AggregateSpecBuilder<TAggregate>
 
     private static string Serialize(IReadOnlyList<IEvent> events)
         => JsonSerializer.Serialize(events, JsonOptions);
+
+    private static async Task<T> ProbeOrFallbackAsync<T>(
+        Func<Task<T>> probe,
+        T fallback,
+        string capabilityName)
+    {
+        try
+        {
+            return await probe().ConfigureAwait(false);
+        }
+        catch (NotSupportedException ex)
+        {
+            Debug.WriteLine(
+                $"[LawnDart.Testing.Bdd] {capabilityName} is not supported; using fallback. {ex.Message}");
+            return fallback;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new BddSpecAssertionException(
+                $"Unexpected failure probing {capabilityName}.", ex);
+        }
+    }
 }
 
 public sealed record AggregateSpecResult<TAggregate>(

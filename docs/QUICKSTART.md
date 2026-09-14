@@ -14,7 +14,7 @@ dotnet add package LawnDart.EventSourcing --prerelease
 
 A console host also needs `Microsoft.Extensions.DependencyInjection`.
 To work from this repository instead, clone it and add project references
-(see the root [README](../README.md)).
+(see the [repository README](https://github.com/sellistixorg/LawnDart)).
 
 ## 2. Register the host
 
@@ -22,8 +22,13 @@ To work from this repository instead, clone it and add project references
 services.AddLawnDart(o => o.RequireTenantId = false);
 var ctx = services.AddBoundedContext("default");
 ctx.UseInMemory();
-ctx.WithEventTypes(/* assemblies or explicit IEvent types */);
+ctx.WithEventTypes<CounterCreated>();
 ```
+
+<!-- TODO(RDY-10) -->
+
+HTTP hosts also call `WithCommandHandlers<TMarker>()` on that context, then
+`AddLawnDartHttpCommands` for routing only.
 
 `UseInMemory()` registers keyed `IEventStore`, `IAggregateRepository`, and
 `IDcbRepository` for `"default"`, plus unkeyed aliases so you can resolve

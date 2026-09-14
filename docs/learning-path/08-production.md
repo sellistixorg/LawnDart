@@ -6,7 +6,7 @@ Swap InMemory for SQL Server. Keep the same bounded-context name.
 
 ## Frozen surface
 
-1. **App-facing dispatch** is `ICommandHandler<T>` (HTTP, jobs) via `AddLawnDartHttpCommands` / `MapLawnDartCommands`.
+1. **App-facing dispatch** is `ICommandHandler<T>` (HTTP, jobs) via `WithCommandHandlers<TMarker>()` then `AddLawnDartHttpCommands` / `MapLawnDartCommands`.
 2. **Aggregates / DCB** declare closed `Handle(TCommand)`. `HandleCommandAsync` is persistence + authorization.
 3. **Load** by `string streamId` when the stream is not `{type}:{guid}`.
 4. **Projections:** `ProjectionBase<TView>` plus attributes; multi-stream views implement `IMultiStreamEntityResolver`.
@@ -22,7 +22,7 @@ services.AddBoundedContext("default")
         o.RequireTenantId = false;
         o.EnableOutbox = true;
     })
-    .WithCommandHandlers([typeof(RegisterStudentCommand).Assembly])
+    .WithCommandHandlers<RegisterStudentCommandHandler>()
     .WithProjections([typeof(StudentSummaryProjection).Assembly]);
 
 services.AddLawnDartHttpCommands(typeof(RegisterStudentCommand).Assembly);
@@ -30,6 +30,8 @@ services.AddHttpAuthorizationContext();
 app.MapLawnDartCommands();
 app.MapProjectionQueries("default");
 ```
+
+<!-- TODO(RDY-10) -->
 
 Checklist:
 

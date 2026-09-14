@@ -12,7 +12,7 @@ public static class MessageTransportOutboxPublisherExtensions
     /// <summary>
     /// Registers <see cref="MessageTransportOutboxPublisher"/> as the singleton
     /// <see cref="IOutboxPublisher"/>. Requires an <see cref="IMessageTransport"/>
-    /// (e.g. from <c>AddServiceBusMessaging</c> or <c>AddInMemoryMessaging</c>).
+    /// (e.g. from <c>AddInMemoryMessaging</c>).
     /// </summary>
     /// <param name="services">Service collection.</param>
     /// <param name="eventTypes">

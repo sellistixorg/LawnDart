@@ -30,11 +30,14 @@ Do not put correlation / causation / trace on the payload.
 services.AddLawnDart(o => o.RequireTenantId = false);
 var ctx = services.AddBoundedContext("default");
 ctx.UseInMemory(); // or UseSqlServer(...)
-ctx.WithEventTypes(typeof(SomeEvent).Assembly);
+ctx.WithEventTypes<SomeEvent>();
+ctx.WithCommandHandlers<SomeHandler>();
 ctx.WithProjections(...);
 services.AddLawnDartHttpCommands(typeof(SomeCommand).Assembly);
 app.MapLawnDartCommands();
 ```
+
+<!-- TODO(RDY-10) -->
 
 Keep catalog tokens stable when you hand-write events. Rename only the
 package and extension-method prefixes (`AddLawnDart`,

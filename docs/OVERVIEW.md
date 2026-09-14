@@ -19,10 +19,14 @@ companion that emits slice JSON — it does not generate LawnDart types. There w
 services.AddLawnDart(o => o.RequireTenantId = false);
 var ctx = services.AddBoundedContext("default");
 ctx.UseInMemory(); // or UseSqlServer(...)
+ctx.WithCommandHandlers<SomeHandler>();
+ctx.WithEventTypes<SomeEvent>();
 ctx.WithProjections(...);
 services.AddLawnDartHttpCommands(typeof(SomeCommand).Assembly);
 app.MapLawnDartCommands();
 ```
+
+<!-- TODO(RDY-10) -->
 
 ## Packages (v1 happy path)
 

@@ -19,12 +19,16 @@ Core contracts live in `LawnDart`. The HTTP adapter is
 builder.Services.AddLawnDart(o => o.EnableAuthorization = true);
 builder.Services.AddLawnDartAuthorization();
 builder.Services.AddHttpAuthorizationContext();
+var ctx = builder.Services.AddBoundedContext("default").UseInMemory();
+ctx.WithCommandHandlers<CreateOrderCommandHandler>();
 builder.Services.AddLawnDartHttpCommands(typeof(CreateOrderCommand).Assembly);
 
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapLawnDartCommands();
 ```
+
+<!-- TODO(RDY-10) -->
 
 `HttpAuthorizationContextProvider` reads JWT / user claims. Academy maps
 `Instructor` and `Student` roles to demo permissions in

@@ -10,6 +10,28 @@ changes to the public API.
 
 ## [Unreleased]
 
+## [0.4.0-alpha.1] — 2026-09-14
+
+### Added
+
+- `WithCommandHandlers<TMarker>()` and `WithEventTypes<TMarker>()` register from the marker type's assembly. Prefer these over `Assembly.GetCallingAssembly()` fallbacks.
+
+### Changed
+
+- `AddLawnDartHttpCommands` no longer registers `ICommandHandler<T>`. Register handlers once with `WithCommandHandlers<TMarker>()` (or `WithCommandHandlers`) on the bounded context. The `"default"` context still resolves handlers unkeyed via an alias built through `ContextServiceProvider`. A scan that finds no handlers or event types fails at warmup and names the scanned assembly (and `Assembly.GetCallingAssembly()` when that fallback chose it).
+- `AggregateSpec` assertion failures throw `BddSpecAssertionException` instead of `InvalidOperationException`. The new type does not derive from `InvalidOperationException`, so `Assert.ThrowsAsync<InvalidOperationException>(() => spec.RunAsync())` no longer passes when the spec itself failed. `ThenThrows<T>()` now matches derived exception types, not only an exact type.
+- Messaging and authorization docs name only implementations shipped in these packages: `InMemoryMessageTransport` and `AddHttpAuthorizationContext`. Storage docs name `UseInMemory` and `UseSqlServer` only.
+
+### Removed
+
+- The four unhosted CES interfaces (`ICommandDelegator`, `IDownstreamActivity`, `IEventGenerator`, `IStateTransformer`). They had no host and no implementation. `IProjector<TState>` stays.
+- `ProjectionDescriptor.UseRedis`. It was never read and defaulted to `true`.
+- `MessagingOptions.ServiceBusConnectionString`. It was never read; these packages do not ship a Service Bus transport.
+
+### Fixed
+
+- Docs site links no longer point at the repo-root README (that file is not part of the DocFX build).
+
 ## [0.3.0-alpha.1] — 2026-09-10
 
 ### Added

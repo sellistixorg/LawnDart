@@ -72,11 +72,11 @@ See [DCB_PATTERNS.md](DCB_PATTERNS.md).
 **DcbEntity**  
 Base type for tag-based entities (`DcbEntity` / `DcbEntity<TState>`).
 
-**Delegation**  
-Command → Command. `[Experimental]` planned interface (`ICommandDelegator`); no host yet. Implementing it does not register or run it.
+**Delegation**
+Command → Command. Roadmap cell; no public type and no host yet.
 
-**Downstream Activity**  
-Command → State. `[Experimental]` planned interface (`IDownstreamActivity`); no host yet. `TTrigger` is unconstrained (no `IMessage` marker). Implementing it does not register or run it.
+**Downstream Activity**
+Command → State. Roadmap cell; no public type and no host yet.
 
 ## E
 
@@ -95,8 +95,8 @@ Three times on the envelope, do not mix them:
 - **Commit time** — `EventMetadata.CommitTimestamp`, set only at `AppendAsync`. Lag and ops, not domain queries.
 - **Trace** — `TraceId` / `SpanId` (W3C hex). The Activity clock is not stored as a third `DateTime`.
 
-**Event Generator**  
-State → Event. `[Experimental]` planned interface (`IEventGenerator`); no host yet. Implementing it does not register or run it.
+**Event Generator**
+State → Event. Roadmap cell; no public type and no host yet.
 
 **Event Processing**  
 Event → Event. Transform or enrich events without a command.
@@ -125,9 +125,9 @@ domain marker.
 
 ## N
 
-**Nine common patterns**  
-The command–event–state matrix. Five cells are hosted; four are planned
-interfaces with no host. See the root [README](../README.md#pattern-matrix).
+**Nine common patterns**
+The command–event–state matrix. Five cells are hosted; four are roadmap
+(no public type yet). See the [pattern matrix](OVERVIEW.md).
 
 ## O
 
@@ -155,8 +155,8 @@ Durable event store and projection store.
 **State**  
 Present view: aggregate state, DCB state, or a projection read model.
 
-**State Transformation**  
-State → State. `[Experimental]` planned interface (`IStateTransformer`); no host yet. Implementing it does not register or run it.
+**State Transformation**
+State → State. Roadmap cell; no public type and no host yet.
 
 **Stream ID**  
 Identity of an event stream. See [STREAM_IDS.md](STREAM_IDS.md).

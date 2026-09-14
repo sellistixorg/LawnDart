@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 using LawnDart.Authorization;
 
 namespace LawnDart.AspNetCore;
@@ -14,26 +13,27 @@ namespace LawnDart.AspNetCore;
 public static class LawnDartEndpointExtensions
 {
     /// <summary>
-    /// Scans the provided assemblies for <see cref="ICommandHandler{TCommand}"/> implementations,
-    /// registers them as unkeyed services, and wires up the authorization infrastructure
-    /// required for HTTP command endpoints.
+    /// Records assemblies for HTTP command mapping on the conventional
+    /// <c>"default"</c> context and wires authorization infrastructure.
+    /// Does not register <see cref="ICommandHandler{TCommand}"/> — call
+    /// <c>WithCommandHandlers&lt;TMarker&gt;()</c> on the bounded context.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="assemblies">
-    /// One or more assemblies to scan. Pass the assembly that contains your commands and handlers,
-    /// e.g. <c>typeof(CreateOrderCommand).Assembly</c>.
+    /// One or more assemblies to scan for endpoints. Pass the assembly that contains
+    /// your commands and handlers, e.g. <c>typeof(CreateOrderCommand).Assembly</c>.
     /// </param>
     /// <returns>The service collection for chaining.</returns>
     /// <remarks>
     /// Use this overload for the conventional <c>"default"</c> context. Pair with
-    /// <c>UseInMemory()</c> / <c>UseSqlServer()</c>, which register unkeyed store/repo aliases
-    /// for <c>"default"</c>. Do not also call <c>WithCommandHandlers</c> for the same assembly —
-    /// that would register the same handlers a second time (keyed).
-    /// For a named bounded context, use
+    /// <c>UseInMemory()</c> / <c>UseSqlServer()</c>, which register unkeyed store/repo
+    /// aliases for <c>"default"</c>, and <c>WithCommandHandlers&lt;TMarker&gt;()</c>,
+    /// which is the only handler registrar. For a named bounded context, use
     /// <see cref="AddLawnDartHttpCommands(IServiceCollection, string, Assembly[])"/>.
     /// </remarks>
     /// <example>
     /// <code>
+    /// ctx.WithCommandHandlers&lt;CreateOrderCommand&gt;();
     /// builder.Services.AddLawnDartHttpCommands(typeof(CreateOrderCommand).Assembly);
     /// </code>
     /// </example>
@@ -43,14 +43,15 @@ public static class LawnDartEndpointExtensions
         => AddLawnDartHttpCommandsCore(services, contextName: null, assemblies);
 
     /// <summary>
-    /// Scans the provided assemblies for command endpoints belonging to
-    /// <paramref name="contextName"/>.
+    /// Records assemblies for HTTP command mapping on
+    /// <paramref name="contextName"/>. Does not register
+    /// <see cref="ICommandHandler{TCommand}"/> — call
+    /// <c>WithCommandHandlers&lt;TMarker&gt;()</c> on that bounded context.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="contextName">
-    /// Bounded-context DI key. <c>"default"</c> (or null) registers unkeyed handlers.
-    /// Any other name records assemblies for keyed mapping only — register handlers once
-    /// via <c>WithCommandHandlers</c>.
+    /// Bounded-context DI key. <c>"default"</c> (or null) maps unkeyed handlers
+    /// via the context's unkeyed aliases. Any other name maps keyed handlers.
     /// </param>
     /// <param name="assemblies">Assemblies that contain the commands and handlers.</param>
     /// <returns>The service collection for chaining.</returns>
@@ -65,7 +66,8 @@ public static class LawnDartEndpointExtensions
         string? contextName,
         Assembly[] assemblies)
     {
-        // Routing + authorization infrastructure
+        // Routing + authorization infrastructure. Handlers are registered only by
+        // WithCommandHandlers on the bounded context.
         services.AddRouting();
         services.AddHttpContextAccessor();
         if (!services.Any(d => d.ServiceType == typeof(IAuthorizationContextProvider)))
@@ -74,24 +76,6 @@ public static class LawnDartEndpointExtensions
 
         if (!services.Any(d => d.ServiceType == typeof(IAuthorizationProvider)))
             services.AddSingleton<IAuthorizationProvider, DefaultAuthorizationProvider>();
-
-        // Unkeyed handlers only for default/single-context. Named contexts resolve
-        // keyed handlers registered by WithCommandHandlers — do not register a second copy.
-        if (CommandEndpointRegistrar.IsUnkeyedContext(contextName))
-        {
-            foreach (var assembly in assemblies)
-            {
-                foreach (var handlerType in CommandEndpointRegistrar.DiscoverHandlers(assembly))
-                {
-                    var commandType = CommandEndpointRegistrar.GetCommandType(handlerType);
-                    if (commandType is null)
-                        continue;
-
-                    var serviceType = typeof(ICommandHandler<>).MakeGenericType(commandType);
-                    services.TryAddScoped(serviceType, handlerType);
-                }
-            }
-        }
 
         GetOrCreateAssemblyRegistry(services).Add(contextName, assemblies);
 

@@ -37,8 +37,15 @@ public sealed class BddTestContext : IAsyncDisposable
     /// The in-memory store does not require an event-type catalog.
     /// </remarks>
     public static BddTestContext CreateInMemory()
+        => Create(new InMemoryEventStore());
+
+    /// <summary>
+    /// Builds a context against <paramref name="store"/>. Used by tests that
+    /// need a store with a missing capability or a broken probe.
+    /// </summary>
+    internal static BddTestContext Create(IEventStore store)
     {
-        var store = new InMemoryEventStore();
+        ArgumentNullException.ThrowIfNull(store);
 
         var tenantProvider = new NullTenantContextProvider();
         var metadataProvider = new DefaultMetadataProvider();

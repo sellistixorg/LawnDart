@@ -27,6 +27,8 @@ services.AddLawnDart(o => o.RequireTenantId = false);
 services.AddInMemoryProjectionStores("default");
 services.AddBoundedContext("default")
     .UseInMemory()
+    .WithCommandHandlers<MyHandler>()
+    .WithEventTypes<MyEvent>()
     .WithProjections([typeof(MyProjection).Assembly]);
 
 services.AddInMemoryMessaging();
@@ -34,6 +36,8 @@ services.AddLawnDartHttpCommands(typeof(MyCommand).Assembly);
 app.MapLawnDartCommands();
 app.MapProjectionQueries("default");
 ```
+
+<!-- TODO(RDY-10) -->
 
 Swap `.UseInMemory()` for `.UseSqlServer(...)` and
 `AddInMemoryProjectionStores` for `AddSqlProjectionStores` when you leave
