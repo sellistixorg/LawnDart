@@ -41,7 +41,9 @@ app.MapProjectionQueries("default");
 
 Swap `.UseInMemory()` for `.UseSqlServer(...)` and
 `AddInMemoryProjectionStores` for `AddSqlProjectionStores` when you leave
-dev. The bounded-context name stays the same.
+dev. The bounded-context name stays the same. That swap is verified for
+command dispatch, persist, reload, project, and read-back — not outbox or
+subscriptions. See [BACKEND_SELECTION.md](../BACKEND_SELECTION.md).
 
 ## Frozen surface
 

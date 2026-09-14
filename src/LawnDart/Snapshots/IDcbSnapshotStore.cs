@@ -10,6 +10,10 @@ namespace LawnDart.Snapshots;
 /// The repository must replay delta events (those committed after <see cref="SnapshotInfo.GlobalSequence"/>)
 /// and recompute a fresh marker from those deltas before the next conditional append.
 /// <para>
+/// Snapshot state is captured on the calling thread after a successful append, then
+/// enqueued wait-free for a hosted consumer. The command path never waits on snapshot I/O.
+/// </para>
+/// <para>
 /// The default system-wide strategy is <see cref="NeverSnapshotStrategy"/>, which means
 /// <see cref="SaveDcbSnapshotAsync{TState}"/> is never called unless an explicit
 /// <see cref="ISnapshotStrategy"/> is registered via <see cref="ISnapshotStrategyResolver"/>

@@ -10,6 +10,18 @@ changes to the public API.
 
 ## [Unreleased]
 
+## [0.4.0-alpha.2] — 2026-09-14
+
+### Added
+
+- `UseInMemory()` registers an in-memory `ISnapshotStore` / `IDcbSnapshotStore` (replace-in-place) and an `IOutboxWriter`. In-memory hosts can persist snapshots and run the outbox processor without SQL Server.
+- Third-party stores construct repositories through `EventSourcingRepositories` and register the write path with `AddSnapshotWriteInfrastructure`. The public constructors omit the snapshot write queue; without this seam a custom `Use*` host silently stops writing snapshots.
+- A contract test runs the same application against InMemory and SQL Server (Testcontainers). The swap covers command dispatch, event persistence, aggregate reload, projection materialisation, and read-back. Outbox and subscriptions are not part of that guarantee.
+
+### Changed
+
+- Snapshot writes capture committed state on the calling thread, then enqueue wait-free onto a bounded channel (`DropOldest`). A hosted consumer performs the store I/O. A full channel drops the oldest pending write, increments a drop counter, and degrades `SnapshotWriteHealthCheck`. Store failures increment a failure metric and the same health check. `HandleCommandAsync` never waits on snapshot I/O and is not failed by a drop or a store error.
+
 ## [0.4.0-alpha.1] — 2026-09-14
 
 ### Added

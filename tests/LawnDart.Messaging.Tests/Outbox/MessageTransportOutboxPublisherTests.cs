@@ -170,69 +170,6 @@ public class MessageTransportOutboxPublisherTests
         Assert.IsType<MessageTransportOutboxPublisher>(publisher);
     }
 
-    /// <summary>Minimal in-memory outbox store for processor smoke tests.</summary>
-    private sealed class InMemoryOutboxWriter : IOutboxWriter
-    {
-        private readonly List<OutboxMessage> _messages = new();
-
-        public Task WriteAsync(OutboxMessage message, CancellationToken cancellationToken = default)
-        {
-            _messages.Add(message);
-            return Task.CompletedTask;
-        }
-
-        public Task WriteBatchAsync(IEnumerable<OutboxMessage> messages, CancellationToken cancellationToken = default)
-        {
-            _messages.AddRange(messages);
-            return Task.CompletedTask;
-        }
-
-        public Task<IReadOnlyList<OutboxMessage>> GetUnprocessedAsync(int batchSize, CancellationToken cancellationToken = default)
-        {
-            var unprocessed = _messages
-                .Where(m => m.ProcessedAt is null && m.DeadLetteredAt is null)
-                .OrderBy(m => m.SequencePosition)
-                .Take(batchSize)
-                .ToList();
-            return Task.FromResult<IReadOnlyList<OutboxMessage>>(unprocessed);
-        }
-
-        public Task<IReadOnlyList<OutboxMessage>> GetDeadLetteredAsync(int batchSize, CancellationToken cancellationToken = default)
-        {
-            var dead = _messages
-                .Where(m => m.DeadLetteredAt is not null)
-                .OrderBy(m => m.SequencePosition)
-                .Take(batchSize)
-                .ToList();
-            return Task.FromResult<IReadOnlyList<OutboxMessage>>(dead);
-        }
-
-        public Task MarkAsProcessedAsync(Guid messageId, CancellationToken cancellationToken = default)
-        {
-            var msg = _messages.Single(m => m.Id == messageId);
-            msg.ProcessedAt = DateTime.UtcNow;
-            return Task.CompletedTask;
-        }
-
-        public Task MarkAsDeadLetteredAsync(Guid messageId, CancellationToken cancellationToken = default)
-        {
-            var msg = _messages.Single(m => m.Id == messageId);
-            msg.DeadLetteredAt ??= DateTime.UtcNow;
-            return Task.CompletedTask;
-        }
-
-        public Task RecordFailureAsync(Guid messageId, string error, CancellationToken cancellationToken = default)
-        {
-            var msg = _messages.Single(m => m.Id == messageId);
-            msg.Attempts++;
-            msg.LastError = error;
-            msg.LastAttemptAt = DateTime.UtcNow;
-            return Task.CompletedTask;
-        }
-
-        public Task InitializeSchemaAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
-    }
-
     /// <summary>Exposes <see cref="OutboxProcessor"/> batch processing for tests.</summary>
     private sealed class TestableOutboxProcessor : OutboxProcessor
     {

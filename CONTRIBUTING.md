@@ -110,7 +110,7 @@ generated diffs that the author cannot walk through will be closed.
 | Checklist | Requirement |
 |---|---|
 | Build | `dotnet build` passes |
-| Tests | Unit tests cover the new code. SQL integration tests use `Category=Integration` |
+| Tests | Unit tests cover the new code. SQL integration tests use `Category=Integration`. The InMemory → SQL swap uses `Category=Contract` (SQL leg also `Integration`) |
 | XML docs | Public and protected members have `<summary>` documentation |
 | Demo | User-facing features are reachable from Academy when relevant |
 | Docs | A `docs/` guide is created or updated |

@@ -12,6 +12,7 @@ using LawnDart.EventSourcing.Dcb;
 using LawnDart.EventSourcing.SqlServer.EventStore;
 using LawnDart.EventSourcing.SqlServer.Outbox;
 using LawnDart.EventSourcing.SqlServer.Snapshots;
+using LawnDart.EventSourcing.Snapshots;
 using LawnDart.EventSourcing.Outbox;
 using LawnDart.EventStore;
 using LawnDart.Metadata;
@@ -109,31 +110,14 @@ public static class LawnDartSqlServerExtensions
         services.AddKeyedSingleton<IEventStoreSubscriptions>(contextName,
             (sp, key) => (IEventStoreSubscriptions)sp.GetRequiredKeyedService<IEventStore>(key!));
 
-        // Keyed repositories
-        services.AddKeyedTransient<IAggregateRepository>(contextName, (sp, key) =>
-            new AggregateRepository(
-                sp.GetRequiredKeyedService<IEventStore>(key!),
-                sp.GetRequiredService<IMetadataProvider>(),
-                sp.GetRequiredService<ITenantContextProvider>(),
-                sp.GetRequiredService<IOptions<LawnDartOptions>>(),
-                sp.GetKeyedService<ITagProvider>(key!) ?? sp.GetService<ITagProvider>(),
-                sp.GetService<AuthorizationService>(),
-                sp.GetService<ILogger<AggregateRepository>>(),
-                sp.GetKeyedService<ISnapshotStore>(key!) ?? sp.GetService<ISnapshotStore>(),
-                sp.GetService<ISnapshotStrategyResolver>()));
+        // Keyed repositories — same factory as UseInMemory so a third-party store can match
+        services.AddKeyedTransient<IAggregateRepository>(contextName,
+            (sp, key) => EventSourcingRepositories.CreateAggregateRepository(sp, key!));
 
-        services.AddKeyedTransient<IDcbRepository>(contextName, (sp, key) =>
-            new DcbRepository(
-                sp.GetRequiredKeyedService<IEventStore>(key!),
-                sp.GetRequiredService<IMetadataProvider>(),
-                sp.GetRequiredService<ITenantContextProvider>(),
-                sp.GetRequiredService<IOptions<LawnDartOptions>>(),
-                sp.GetKeyedService<ITagProvider>(key!) ?? sp.GetService<ITagProvider>(),
-                sp.GetService<AuthorizationService>(),
-                sp.GetService<ILogger<DcbRepository>>(),
-                sp.GetService<IOptions<EventSourcingOptions>>(),
-                sp.GetKeyedService<IDcbSnapshotStore>(key!) ?? sp.GetService<IDcbSnapshotStore>(),
-                sp.GetService<ISnapshotStrategyResolver>()));
+        services.AddKeyedTransient<IDcbRepository>(contextName,
+            (sp, key) => EventSourcingRepositories.CreateDcbRepository(sp, key!));
+
+        BoundedContextBuilderExtensions.AddSnapshotWriteInfrastructure(services);
 
         if (string.Equals(contextName, "default", StringComparison.Ordinal))
         {
@@ -228,6 +212,7 @@ public static class LawnDartSqlServerExtensions
         builder.Services.AddKeyedSingleton<ISnapshotAdmin>(contextName,
             (sp, key) => sp.GetRequiredKeyedService<SqlServerSnapshotStore>((string)key!));
         builder.Services.AddSingleton<ISnapshotStrategyResolver>(resolver);
+        BoundedContextBuilderExtensions.EnsureSnapshotWriteInfrastructure(builder.Services);
 
         if (string.Equals(contextName, "default", StringComparison.Ordinal))
         {

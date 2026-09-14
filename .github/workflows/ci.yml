@@ -36,7 +36,7 @@ jobs:
     - name: Test (integration)
       run: >
         dotnet test LawnDart.sln --no-build --configuration Release
-        --verbosity normal --filter "Category=Integration"
+        --verbosity normal --filter "Category=Integration|Category=Contract"
 
     - name: Restore local tools
       run: dotnet tool restore

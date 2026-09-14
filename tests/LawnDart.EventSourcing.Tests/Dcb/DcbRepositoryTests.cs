@@ -7,6 +7,7 @@ using LawnDart.EventSourcing.Dcb;
 using LawnDart.EventSourcing.EventStore;
 using LawnDart.Metadata;
 using LawnDart.Snapshots;
+using LawnDart.EventSourcing.Tests.Snapshots;
 using LawnDart.Tagging;
 using LawnDart.TestUtilities;
 using Xunit;
@@ -418,10 +419,12 @@ public class DcbRepositoryTests
     [Fact]
     public async Task HandleCommandAsync_EventCountStrategy1_WritesSnapshot()
     {
+        await using var pump = new SnapshotWritePump();
+        await pump.StartAsync();
         var snapshotStore = new RecordingDcbSnapshotStore();
         var resolver = new SnapshotStrategyResolver();
         resolver.RegisterForDcb<TestDcbEntity>(new EventCountSnapshotStrategy(1));
-        var repo = CreateRepository(snapshotStore, resolver);
+        var repo = CreateRepository(snapshotStore, resolver, pump.Queue);
 
         var entity = await repo.CreateEntityAsync<TestDcbEntity>(new[] { "order:snap-1" });
         await repo.HandleCommandAsync(entity, new TestCommand { Value = "one" }, new CommandMetadata { UserId = "u" });
@@ -453,10 +456,12 @@ public class DcbRepositoryTests
     [Fact]
     public async Task HandleCommandAsync_EventCountStrategy5_WritesAfterFiveCommands()
     {
+        await using var pump = new SnapshotWritePump();
+        await pump.StartAsync();
         var snapshotStore = new RecordingDcbSnapshotStore();
         var resolver = new SnapshotStrategyResolver();
         resolver.RegisterForDcb<TestDcbEntity>(new EventCountSnapshotStrategy(5));
-        var repo = CreateRepository(snapshotStore, resolver);
+        var repo = CreateRepository(snapshotStore, resolver, pump.Queue);
 
         var entity = await repo.CreateEntityAsync<TestDcbEntity>(new[] { "order:snap-5b" });
         var metadata = new CommandMetadata { UserId = "u" };
@@ -482,10 +487,12 @@ public class DcbRepositoryTests
         for (var i = 0; i < 3; i++)
             entity = await seedRepo.HandleCommandAsync(entity, new TestCommand { Value = $"seed{i}" }, metadata);
 
+        await using var pump = new SnapshotWritePump();
+        await pump.StartAsync();
         var snapshotStore = new RecordingDcbSnapshotStore();
         var resolver = new SnapshotStrategyResolver();
         resolver.RegisterForDcb<TestDcbEntity>(new EventCountSnapshotStrategy(5));
-        var repo = CreateRepository(snapshotStore, resolver);
+        var repo = CreateRepository(snapshotStore, resolver, pump.Queue);
 
         var loaded = await repo.GetOrCreateEntityAsync<TestDcbEntity>(tags);
         Assert.Equal(3, loaded.EventsSinceLastSnapshot);
@@ -501,7 +508,8 @@ public class DcbRepositoryTests
 
     private DcbRepository CreateRepository(
         IDcbSnapshotStore snapshotStore,
-        ISnapshotStrategyResolver resolver)
+        ISnapshotStrategyResolver resolver,
+        LawnDart.EventSourcing.Snapshots.ISnapshotWriteQueue? writeQueue = null)
         => new(
             _eventStore,
             _metadataProvider,
@@ -512,7 +520,8 @@ public class DcbRepositoryTests
             NullLogger<DcbRepository>.Instance,
             null,
             snapshotStore,
-            resolver);
+            resolver,
+            writeQueue);
 
     private sealed class RecordingDcbSnapshotStore : IDcbSnapshotStore
     {

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using LawnDart;
 using LawnDart.Snapshots;
 
@@ -121,6 +122,13 @@ public abstract class AggregateRoot
     public virtual Task TrySaveSnapshotAsync(
         ISnapshotStore store, long globalSequence, CancellationToken ct) =>
         Task.CompletedTask;
+
+    /// <summary>
+    /// Serializes committed state on the calling thread so a later mutation cannot
+    /// tear the snapshot. Base implementation returns <c>null</c>.
+    /// </summary>
+    internal virtual (Type StateType, byte[] Payload, long Version)? TryCaptureCommittedSnapshot() =>
+        null;
 }
 
 /// <summary>
@@ -223,5 +231,8 @@ public abstract partial class AggregateRoot<TState> : AggregateRoot where TState
     public override Task TrySaveSnapshotAsync(
         ISnapshotStore store, long globalSequence, CancellationToken ct) =>
         store.SaveSnapshotAsync<TState>(StreamId, Version, globalSequence, State, ct);
+
+    internal override (Type StateType, byte[] Payload, long Version)? TryCaptureCommittedSnapshot() =>
+        (typeof(TState), JsonSerializer.SerializeToUtf8Bytes(State), Version);
 }
 

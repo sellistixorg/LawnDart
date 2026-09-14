@@ -20,6 +20,8 @@
   href: TAGGING.md
 - name: DCB
   href: DCB_PATTERNS.md
+- name: Snapshots
+  href: SNAPSHOTS.md
 - name: Lightweight projections
   href: LIGHTWEIGHT_PROJECTIONS.md
 - name: EDA

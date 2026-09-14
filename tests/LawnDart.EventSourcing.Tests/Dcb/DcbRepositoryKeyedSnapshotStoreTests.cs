@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using LawnDart;
 using LawnDart.Dcb;
 using LawnDart.EventSourcing.Dcb;
+using LawnDart.EventSourcing.Snapshots;
 using LawnDart.EventStore;
 using LawnDart.Metadata;
 using LawnDart.Snapshots;
@@ -32,12 +33,16 @@ public class DcbRepositoryKeyedSnapshotStoreTests
         services.AddKeyedSingleton<IDcbSnapshotStore>("ordering", recording);
 
         await using var sp = services.BuildServiceProvider();
+        var pump = new SnapshotWriteHostedService(sp.GetRequiredService<ISnapshotWriteQueue>());
+        await pump.StartAsync(CancellationToken.None);
+
         var repo = sp.GetRequiredKeyedService<IDcbRepository>("ordering");
 
         var entity = await repo.CreateEntityAsync<TestDcbEntity>(["product:sku-keyed"]);
         await repo.HandleCommandAsync(entity, new TestCommand { Value = "one" }, new CommandMetadata { UserId = "u" });
 
         await recording.WaitForSaveAsync(TimeSpan.FromSeconds(2));
+        await pump.StopAsync(CancellationToken.None);
         Assert.Equal(1, recording.SaveCount);
         Assert.Equal(DcbSnapshotId.FromLoadTags(["product:sku-keyed"]), recording.LastDcbId);
     }

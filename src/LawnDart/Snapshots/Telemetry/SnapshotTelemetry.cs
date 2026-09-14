@@ -16,7 +16,9 @@ namespace LawnDart.Snapshots.Telemetry;
 ///   <item><c>snapshot.hits_total</c> — Counter(long): successful restores from a snapshot; tags: entity_type, kind</item>
 ///   <item><c>snapshot.misses_total</c> — Counter(long): fallbacks to full replay after a failed restore; tags: entity_type, kind</item>
 ///   <item><c>snapshot.delta_events</c> — Histogram(long): events replayed on top of a restored snapshot; tags: entity_type, kind</item>
-///   <item><c>snapshot.writes_total</c> — Counter(long): fire-and-forget snapshot writes completed; tags: entity_type, kind</item>
+///   <item><c>snapshot.writes_total</c> — Counter(long): queued snapshot writes completed; tags: entity_type, kind</item>
+///   <item><c>snapshot.write_failures_total</c> — Counter(long): snapshot store write failures; tags: entity_type, kind</item>
+///   <item><c>snapshot.write_drops_total</c> — Counter(long): pending writes dropped because the channel was full; tags: entity_type, kind</item>
 ///   <item><c>snapshot.restore_duration_ms</c> — Histogram(double): elapsed time of the restore attempt in milliseconds</item>
 ///   <item><c>snapshot.write_duration_ms</c> — Histogram(double): elapsed time of the snapshot write in milliseconds</item>
 /// </list>
@@ -48,7 +50,17 @@ public static class SnapshotTelemetry
     private static readonly Counter<long> _writes =
         _meter.CreateCounter<long>(
             "snapshot.writes_total",
-            description: "Number of fire-and-forget snapshot writes that completed successfully.");
+            description: "Number of queued snapshot writes that completed successfully.");
+
+    private static readonly Counter<long> _writeFailures =
+        _meter.CreateCounter<long>(
+            "snapshot.write_failures_total",
+            description: "Number of snapshot store write failures observed by the hosted consumer.");
+
+    private static readonly Counter<long> _writeDrops =
+        _meter.CreateCounter<long>(
+            "snapshot.write_drops_total",
+            description: "Number of pending snapshot writes dropped because the channel was full.");
 
     private static readonly Histogram<long> _deltaEvents =
         _meter.CreateHistogram<long>(
@@ -66,7 +78,7 @@ public static class SnapshotTelemetry
         _meter.CreateHistogram<double>(
             "snapshot.write_duration_ms",
             unit: "ms",
-            description: "Elapsed time of the fire-and-forget snapshot write, including serialization and I/O, in milliseconds.");
+            description: "Elapsed time of the queued snapshot write I/O, in milliseconds.");
 
     // ── Recording helpers ─────────────────────────────────────────────────────
 
@@ -101,7 +113,7 @@ public static class SnapshotTelemetry
     }
 
     /// <summary>
-    /// Records a successful fire-and-forget snapshot write.
+    /// Records a successful queued snapshot write.
     /// </summary>
     /// <param name="entityType">Short type name of the aggregate or DCB state.</param>
     /// <param name="kind"><c>aggregate</c> or <c>dcb</c>.</param>
@@ -112,6 +124,18 @@ public static class SnapshotTelemetry
         _writes.Add(1, tags);
         _writeDuration.Record(writeDuration.TotalMilliseconds, tags);
     }
+
+    /// <summary>
+    /// Records a snapshot store write failure. The command path is not failed.
+    /// </summary>
+    public static void RecordWriteFailure(string entityType, string kind)
+        => _writeFailures.Add(1, BuildTags(entityType, kind));
+
+    /// <summary>
+    /// Records a dropped pending snapshot write (channel full, oldest discarded).
+    /// </summary>
+    public static void RecordWriteDrop(string entityType, string kind)
+        => _writeDrops.Add(1, BuildTags(entityType, kind));
 
     private static KeyValuePair<string, object?>[] BuildTags(string entityType, string kind) =>
     [

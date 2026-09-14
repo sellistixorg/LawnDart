@@ -10,6 +10,7 @@ using LawnDart.EventSourcing.Performance;
 using LawnDart.Metadata;
 using LawnDart.Snapshots;
 using LawnDart.Snapshots.Telemetry;
+using LawnDart.EventSourcing.Snapshots;
 using LawnDart.Tagging;
 
 namespace LawnDart.EventSourcing.Dcb;
@@ -30,6 +31,7 @@ public class DcbRepository : IDcbRepository
     private readonly ILogger<DcbRepository>? _logger;
     private readonly IDcbSnapshotStore? _dcbSnapshotStore;
     private readonly ISnapshotStrategyResolver? _strategyResolver;
+    private readonly ISnapshotWriteQueue? _snapshotWriteQueue;
 
     /// <summary>
     /// Initializes a new instance of the DcbRepository.
@@ -45,6 +47,33 @@ public class DcbRepository : IDcbRepository
         IOptions<EventSourcingOptions>? eventSourcingOptions = null,
         IDcbSnapshotStore? dcbSnapshotStore = null,
         ISnapshotStrategyResolver? strategyResolver = null)
+        : this(
+            eventStore,
+            metadataProvider,
+            tenantContextProvider,
+            options,
+            tagProvider,
+            authorizationService,
+            logger,
+            eventSourcingOptions,
+            dcbSnapshotStore,
+            strategyResolver,
+            snapshotWriteQueue: null)
+    {
+    }
+
+    internal DcbRepository(
+        IEventStore eventStore,
+        IMetadataProvider metadataProvider,
+        ITenantContextProvider tenantContextProvider,
+        IOptions<LawnDartOptions> options,
+        ITagProvider? tagProvider,
+        AuthorizationService? authorizationService,
+        ILogger<DcbRepository>? logger,
+        IOptions<EventSourcingOptions>? eventSourcingOptions,
+        IDcbSnapshotStore? dcbSnapshotStore,
+        ISnapshotStrategyResolver? strategyResolver,
+        ISnapshotWriteQueue? snapshotWriteQueue)
     {
         _eventStore = eventStore ?? throw new ArgumentNullException(nameof(eventStore));
         _metadataProvider = metadataProvider ?? throw new ArgumentNullException(nameof(metadataProvider));
@@ -56,6 +85,7 @@ public class DcbRepository : IDcbRepository
         _logger = logger;
         _dcbSnapshotStore = dcbSnapshotStore;
         _strategyResolver = strategyResolver;
+        _snapshotWriteQueue = snapshotWriteQueue;
     }
     
     /// <inheritdoc/>
@@ -483,8 +513,9 @@ public class DcbRepository : IDcbRepository
             _logger?.LogDebug("Handled command {CommandType} on DCB entity {EntityType}", 
                 typeof(TCommand).Name, typeof(TEntity).Name);
 
-            // ── Fire-and-forget DCB snapshot (optional) ─────────────────────────
-            if (_dcbSnapshotStore != null && _strategyResolver != null && sequencePositions.Count > 0)
+            // Capture on this thread, enqueue wait-free. The hosted consumer writes.
+            if (_dcbSnapshotStore != null && _strategyResolver != null && _snapshotWriteQueue != null
+                && sequencePositions.Count > 0)
             {
                 var strategy = _strategyResolver.ResolveForDcb(typeof(TEntity));
                 var globalSeq = sequencePositions[^1];
@@ -499,35 +530,21 @@ public class DcbRepository : IDcbRepository
 
                 if (strategy.ShouldSnapshot(ctx))
                 {
-                    var capturedStore    = _dcbSnapshotStore;
-                    var capturedEntity   = entity;
-                    var capturedId       = dcbId;
-                    var capturedSeq      = globalSeq;
-                    var capturedTypeName = typeof(TEntity).Name;
-                    var capturedTags     = fenceTags.ToArray();
-                    entity.NoteSnapshotWritten(capturedSeq, DateTime.UtcNow);
-                    _ = Task.Run(async () =>
+                    var captured = entity.CaptureCommittedSnapshot();
+                    var capturedTags = fenceTags.ToArray();
+                    entity.NoteSnapshotWritten(globalSeq, DateTime.UtcNow);
+                    _snapshotWriteQueue.TryEnqueue(new SnapshotWriteItem
                     {
-                        var writeSw = Stopwatch.StartNew();
-                        try
-                        {
-                            await capturedStore.SaveDcbSnapshotAsync(
-                                capturedId, capturedSeq, capturedEntity,
-                                consistencyMarker: null,
-                                loadTags: capturedTags,
-                                ct: CancellationToken.None);
-                            writeSw.Stop();
-                            _logger?.LogDebug(
-                                "DCB snapshot written for {DcbId} at global seq {Seq}",
-                                capturedId, capturedSeq);
-                            SnapshotTelemetry.RecordWrite(capturedTypeName, "dcb", writeSw.Elapsed);
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger?.LogWarning(ex,
-                                "Fire-and-forget DCB snapshot write failed for {DcbId}",
-                                capturedId);
-                        }
+                        Kind = "dcb",
+                        EntityType = typeof(TEntity).Name,
+                        Id = dcbId,
+                        Version = captured.Version,
+                        GlobalSequence = globalSeq,
+                        Payload = captured.Payload,
+                        StateType = captured.StateType,
+                        DcbStore = _dcbSnapshotStore,
+                        ConsistencyMarker = entity.ConsistencyMarker,
+                        LoadTags = capturedTags
                     });
                 }
             }

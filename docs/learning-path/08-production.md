@@ -4,6 +4,17 @@
 
 Swap InMemory for SQL Server. Keep the same bounded-context name.
 
+The verified swap is command dispatch, event persistence, aggregate reload,
+projection materialisation, and read-back. **Outbox and subscriptions are not
+covered by that guarantee** — they have their own tests and are not claimed
+by "swap the registration."
+
+You also change projection stores (`AddInMemoryProjectionStores` →
+`AddSqlProjectionStores`) and run schema init (`InitializeSchemaAsync` /
+`InitializeSqlProjectionStoresAsync`). SQL snapshots are opt-in
+(`WithSnapshots`). Academy's `SqlServer` launch profile is the local Windows
+path (`Trusted_Connection=True`); see [BACKEND_SELECTION.md](../BACKEND_SELECTION.md).
+
 ## Frozen surface
 
 1. **App-facing dispatch** is `ICommandHandler<T>` (HTTP, jobs) via `WithCommandHandlers<TMarker>()` then `AddLawnDartHttpCommands` / `MapLawnDartCommands`.

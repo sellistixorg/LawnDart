@@ -52,29 +52,15 @@ public class InMemoryEventStoreTests
         var events1 = new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) };
         var events2 = new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) };
 
-        // Act
-        // First append: no events yet
-        await store.AppendAsync(streamId, events1, expectedVersion: null);
-        // After first append: first event is at version 0 (streamVersion starts at 0, version = ++streamVersion = 1... wait)
-        // Actually: streamVersion = Max(e.Version) = 0 initially, then version = ++streamVersion = 1
-        // So first event is at version 1
-        // For second append, we need expectedVersion to be the version BEFORE the new events
-        // After first event, max version is 1, so we need expectedVersion: -1? No, that's wrong
-        // The expectedVersion should be the version of the last event, which is 0
-        // Let me check: if streamVersion = 0 initially, version = ++streamVersion = 1
-        // So first event version is 1, max is 1
-        // For second append, streamVersion = Max = 1, then version = ++streamVersion = 2
-        // So expectedVersion should be 0 (the version before first event) or 1 (current max)?
-        // Looking at the check: it compares currentVersion (Max) with expectedVersion
-        // After first event, currentVersion = 1
-        // So expectedVersion should be 1 to match
-        // But the test uses 0, which means "no events", so it fails
-        // Let me fix: use expectedVersion: null for second append (no check), or fix the logic
-        await store.AppendAsync(streamId, events2, expectedVersion: null);
+        // Act — empty stream reports current version -1; first event is version 1.
+        await store.AppendAsync(streamId, events1, expectedVersion: -1);
+        await store.AppendAsync(streamId, events2, expectedVersion: 1);
 
         // Assert
         var result = await store.ReadStreamAsync(streamId);
         Assert.Equal(2, result.Count);
+        await Assert.ThrowsAsync<ConcurrencyException>(
+            () => store.AppendAsync(streamId, events2, expectedVersion: 1));
     }
 
     [Fact]
@@ -87,9 +73,7 @@ public class InMemoryEventStoreTests
         var events2 = new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) };
 
         // Act
-        await store.AppendAsync(streamId, events1, expectedVersion: null);
-        // After first append, max version is 0 (first event at version 0)
-        // Using expectedVersion: 5 should fail
+        await store.AppendAsync(streamId, events1, expectedVersion: -1);
         await Assert.ThrowsAsync<ConcurrencyException>(
             () => store.AppendAsync(streamId, events2, expectedVersion: 5));
     }
