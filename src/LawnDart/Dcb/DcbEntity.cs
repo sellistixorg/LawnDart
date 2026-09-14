@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using LawnDart.EventStore;
 
@@ -256,6 +257,12 @@ public abstract class DcbEntity
         LastSnapshotUtc = takenAtUtc;
         EventsSinceLastSnapshot = 0;
     }
+
+    /// <summary>
+    /// Serializes this entity on the calling thread so a later mutation cannot tear the snapshot.
+    /// </summary>
+    internal (Type StateType, byte[] Payload, long Version) CaptureCommittedSnapshot() =>
+        (GetType(), JsonSerializer.SerializeToUtf8Bytes(this, GetType()), LastSequencePosition);
 }
 
 /// <summary>

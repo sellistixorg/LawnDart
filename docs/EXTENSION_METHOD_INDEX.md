@@ -41,9 +41,11 @@ These live on `IAggregateRepository` in Core (not `Add*` extensions). Guid overl
 
 | Method | Package | Purpose |
 |---|---|---|
-| `UseInMemory` | `LawnDart.EventSourcing` | Process-local store; registers `ICommandDispatcher` (interface lives in Core) |
+| `UseInMemory` | `LawnDart.EventSourcing` | Process-local store, snapshot store, and outbox writer; registers `ICommandDispatcher` (interface lives in Core) |
 | `UseSqlServer` | `LawnDart.EventSourcing.SqlServer` | Durable SQL store |
 | `WithSnapshots` | `LawnDart.EventSourcing.SqlServer` | Optional snapshot store |
+| `AddSnapshotWriteInfrastructure` | `LawnDart.EventSourcing` | Snapshot write channel + hosted consumer. `UseInMemory` / `UseSqlServer` already call it; third-party `Use*` methods must |
+| `EventSourcingRepositories.Create*` | `LawnDart.EventSourcing` | Build repositories with the write queue. Do not use the public constructors from a custom store |
 | `WithCommandHandlers` / `WithCommandHandlers<TMarker>` | `LawnDart.EventSourcing` | The only handler registrar. Scan `ICommandHandler<T>` and register `ICommandDispatcher` (`LawnDart.Messaging` namespace, Core package) |
 | `WithTagProvider` | `LawnDart.EventSourcing` | Per-context tags |
 

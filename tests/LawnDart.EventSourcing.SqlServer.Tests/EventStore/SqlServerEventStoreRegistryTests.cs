@@ -19,7 +19,7 @@ public class SqlServerEventStoreRegistryTests : IAsyncLifetime
 
     public SqlServerEventStoreRegistryTests()
     {
-        _sqlContainer = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-latest")
+        _sqlContainer = new MsSqlBuilder(MsSqlTestImage.Server2022)
             .WithPassword("Test123!")
             .Build();
     }

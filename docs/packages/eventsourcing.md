@@ -18,8 +18,9 @@ services.AddBoundedContext("default")
     .WithEventTypes(typeof(SomeEvent).Assembly);
 ```
 
-Registers keyed `IEventStore`, `IAggregateRepository`, and `IDcbRepository`
-for that context name. The `"default"` context also gets unkeyed aliases, so
+Registers keyed `IEventStore`, `IAggregateRepository`, `IDcbRepository`,
+`ISnapshotStore` / `IDcbSnapshotStore`, and `IOutboxWriter` for that context
+name. The `"default"` context also gets unkeyed aliases, so
 `GetRequiredService<IAggregateRepository>()` works without a key.
 
 Append stores the `[EventTypeName]` token, not CLR `FullName`.
@@ -33,6 +34,11 @@ or by `string streamId` when the stream is a custom identity. Prefer
 
 `WithCommandHandlers` scans handler assemblies and registers
 `ICommandDispatcher` (Core). `UseInMemory` registers the same dispatcher.
+
+Snapshot write durability (synchronous capture, wait-free enqueue, drop-oldest,
+health): [SNAPSHOTS.md](../SNAPSHOTS.md). Custom stores use
+`EventSourcingRepositories` and `AddSnapshotWriteInfrastructure` so snapshot
+writes still enqueue.
 
 ## Portable store contract
 

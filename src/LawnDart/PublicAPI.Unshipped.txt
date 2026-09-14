@@ -33,3 +33,5 @@ static LawnDart.Messaging.MessageTrace.Start(System.Diagnostics.ActivitySource! 
 static LawnDart.Messaging.MessageTrace.Tag(System.Diagnostics.Activity? activity, LawnDart.Messaging.MessageContext? context) -> void
 static LawnDart.Messaging.MessageTrace.WithCurrentTraceHeaders(System.Collections.Generic.IReadOnlyDictionary<string!, string!>? existing, System.Diagnostics.Activity? activity = null) -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>!
 static LawnDart.Messaging.MessageTrace.WithMetadataTraceHeaders(System.Collections.Generic.IReadOnlyDictionary<string!, string!>? existing, LawnDart.Metadata.EventMetadata? metadata) -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>!
+static LawnDart.Snapshots.Telemetry.SnapshotTelemetry.RecordWriteDrop(string! entityType, string! kind) -> void
+static LawnDart.Snapshots.Telemetry.SnapshotTelemetry.RecordWriteFailure(string! entityType, string! kind) -> void

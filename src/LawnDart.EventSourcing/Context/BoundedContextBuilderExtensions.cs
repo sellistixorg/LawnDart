@@ -15,7 +15,10 @@ using LawnDart.Authorization;
 using LawnDart.Dcb;
 using LawnDart.Messaging;
 using LawnDart.Metadata;
+using LawnDart.Outbox;
+using LawnDart.EventSourcing.Outbox;
 using LawnDart.Snapshots;
+using LawnDart.EventSourcing.Snapshots;
 using LawnDart.Tagging;
 
 namespace LawnDart.EventSourcing;
@@ -35,11 +38,13 @@ public static class BoundedContextBuilderExtensions
     /// </summary>
     /// <remarks>
     /// All context-specific services (<see cref="IEventStore"/>,
-    /// <see cref="IAggregateRepository"/>, <see cref="IDcbRepository"/>) are registered
-    /// as keyed singletons/scoped services using <see cref="BoundedContextBuilder.ContextName"/>
-    /// as the key. The conventional <c>"default"</c> context also gets unkeyed aliases
-    /// (same instances, <c>TryAdd</c>) so single-context HTTP handlers can inject
-    /// <see cref="IEventStore"/> without a hand-written bridge. Named contexts stay keyed-only.
+    /// <see cref="IAggregateRepository"/>, <see cref="IDcbRepository"/>,
+    /// <see cref="ISnapshotStore"/>, <see cref="IDcbSnapshotStore"/>,
+    /// <see cref="IOutboxWriter"/>) are registered as keyed services using
+    /// <see cref="BoundedContextBuilder.ContextName"/> as the key. The conventional
+    /// <c>"default"</c> context also gets unkeyed aliases (same instances, <c>TryAdd</c>)
+    /// so single-context HTTP handlers can inject <see cref="IEventStore"/> without a
+    /// hand-written bridge. Named contexts stay keyed-only.
     /// </remarks>
     /// <returns>The builder for further chaining.</returns>
     public static BoundedContextBuilder UseInMemory(this BoundedContextBuilder builder)
@@ -57,31 +62,22 @@ public static class BoundedContextBuilderExtensions
         services.AddKeyedSingleton<IEventStoreSubscriptions>(contextName,
             (sp, key) => (IEventStoreSubscriptions)sp.GetRequiredKeyedService<IEventStore>(key!));
 
+        services.AddKeyedSingleton<InMemorySnapshotStore>(contextName, (_, _) => new InMemorySnapshotStore());
+        services.AddKeyedSingleton<ISnapshotStore>(contextName,
+            (sp, key) => sp.GetRequiredKeyedService<InMemorySnapshotStore>((string)key!));
+        services.AddKeyedSingleton<IDcbSnapshotStore>(contextName,
+            (sp, key) => sp.GetRequiredKeyedService<InMemorySnapshotStore>((string)key!));
+        services.AddKeyedSingleton<ISnapshotAdmin>(contextName,
+            (sp, key) => sp.GetRequiredKeyedService<InMemorySnapshotStore>((string)key!));
+
+        services.AddKeyedSingleton<IOutboxWriter>(contextName, (_, _) => new InMemoryOutboxWriter());
+
         // Keyed repositories — transient (scoped not supported for keyed in all scenarios)
         services.AddKeyedTransient<IAggregateRepository>(contextName,
-            (sp, key) => new AggregateRepository(
-                sp.GetRequiredKeyedService<IEventStore>(key!),
-                sp.GetRequiredService<IMetadataProvider>(),
-                sp.GetRequiredService<ITenantContextProvider>(),
-                sp.GetRequiredService<IOptions<LawnDartOptions>>(),
-                sp.GetKeyedService<ITagProvider>(key!) ?? sp.GetService<ITagProvider>(),
-                sp.GetService<AuthorizationService>(),
-                sp.GetService<Microsoft.Extensions.Logging.ILogger<AggregateRepository>>(),
-                sp.GetKeyedService<ISnapshotStore>(key!) ?? sp.GetService<ISnapshotStore>(),
-                sp.GetService<ISnapshotStrategyResolver>()));
+            (sp, key) => EventSourcingRepositories.CreateAggregateRepository(sp, key!));
 
         services.AddKeyedTransient<IDcbRepository>(contextName,
-            (sp, key) => new DcbRepository(
-                sp.GetRequiredKeyedService<IEventStore>(key!),
-                sp.GetRequiredService<IMetadataProvider>(),
-                sp.GetRequiredService<ITenantContextProvider>(),
-                sp.GetRequiredService<IOptions<LawnDartOptions>>(),
-                sp.GetKeyedService<ITagProvider>(key!) ?? sp.GetService<ITagProvider>(),
-                sp.GetService<AuthorizationService>(),
-                sp.GetService<Microsoft.Extensions.Logging.ILogger<DcbRepository>>(),
-                sp.GetService<IOptions<EventSourcingOptions>>(),
-                sp.GetKeyedService<IDcbSnapshotStore>(key!) ?? sp.GetService<IDcbSnapshotStore>(),
-                sp.GetService<ISnapshotStrategyResolver>()));
+            (sp, key) => EventSourcingRepositories.CreateDcbRepository(sp, key!));
 
         TryAddDefaultUnkeyedAliases(services, contextName);
 
@@ -358,6 +354,14 @@ public static class BoundedContextBuilderExtensions
             sp.GetRequiredKeyedService<IAggregateRepository>("default"));
         services.TryAddTransient<IDcbRepository>(sp =>
             sp.GetRequiredKeyedService<IDcbRepository>("default"));
+        services.TryAddSingleton<ISnapshotStore>(sp =>
+            sp.GetRequiredKeyedService<ISnapshotStore>("default"));
+        services.TryAddSingleton<IDcbSnapshotStore>(sp =>
+            sp.GetRequiredKeyedService<IDcbSnapshotStore>("default"));
+        services.TryAddSingleton<ISnapshotAdmin>(sp =>
+            sp.GetRequiredKeyedService<ISnapshotAdmin>("default"));
+        services.TryAddSingleton<IOutboxWriter>(sp =>
+            sp.GetRequiredKeyedService<IOutboxWriter>("default"));
     }
 
     /// <summary>
@@ -413,7 +417,38 @@ public static class BoundedContextBuilderExtensions
         // Startup validator
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IHostedService, ContextStartupValidator>());
+
+        AddSnapshotWriteInfrastructure(services);
     }
+
+    /// <summary>
+    /// Registers the snapshot write channel, hosted consumer, and health check.
+    /// Safe to call more than once. <c>UseInMemory</c>, <c>UseSqlServer</c>, and
+    /// <c>WithSnapshots</c> already call this. Third-party stores should call it
+    /// from their <c>Use*</c> method so repositories created via
+    /// <see cref="EventSourcingRepositories"/> can enqueue.
+    /// </summary>
+    /// <param name="services">The service collection to add the write path to.</param>
+    /// <returns>The same <paramref name="services"/> for chaining.</returns>
+    public static IServiceCollection AddSnapshotWriteInfrastructure(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        services.AddOptions<SnapshotWriteOptions>();
+        services.TryAddSingleton<SnapshotWriteQueue>();
+        services.TryAddSingleton<ISnapshotWriteQueue>(sp => sp.GetRequiredService<SnapshotWriteQueue>());
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IHostedService, SnapshotWriteHostedService>());
+        services.TryAddSingleton(sp =>
+            new SnapshotWriteHealthCheck(sp.GetRequiredService<ISnapshotWriteQueue>()));
+        return services;
+    }
+
+    /// <summary>
+    /// Existing SQL Server call sites keep this name. Forwards to
+    /// <see cref="AddSnapshotWriteInfrastructure"/>.
+    /// </summary>
+    internal static void EnsureSnapshotWriteInfrastructure(IServiceCollection services)
+        => AddSnapshotWriteInfrastructure(services);
 
     private static DefaultCommandContextRegistry GetOrCreateCommandRegistry(IServiceCollection services)
     {

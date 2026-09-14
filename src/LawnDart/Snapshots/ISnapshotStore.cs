@@ -7,8 +7,9 @@ namespace LawnDart.Snapshots;
 /// Snapshots are correctness-optional performance hints. A missing or corrupt snapshot
 /// causes the repository to fall back to full event replay — correctness is never at risk.
 /// <para>
-/// Snapshot writes occur fire-and-forget after a successful append: they are never on the
-/// command hot path. Only read (load) performance is affected by whether a snapshot exists.
+/// Snapshot state is captured on the calling thread after a successful append, then
+/// enqueued wait-free for a hosted consumer. The command path never waits on snapshot I/O.
+/// Only read (load) performance is affected by whether a snapshot exists.
 /// </para>
 /// <para>
 /// The default system-wide strategy is <see cref="NeverSnapshotStrategy"/>, which means

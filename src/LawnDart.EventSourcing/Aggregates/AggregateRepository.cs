@@ -7,6 +7,7 @@ using LawnDart.EventStore;
 using LawnDart.Metadata;
 using LawnDart.Snapshots;
 using LawnDart.Snapshots.Telemetry;
+using LawnDart.EventSourcing.Snapshots;
 using LawnDart.Tagging;
 using LawnDart.EventSourcing.Performance;
 
@@ -27,6 +28,7 @@ public class AggregateRepository : IAggregateRepository
     private readonly ILogger<AggregateRepository>? _logger;
     private readonly ISnapshotStore? _snapshotStore;
     private readonly ISnapshotStrategyResolver? _strategyResolver;
+    private readonly ISnapshotWriteQueue? _snapshotWriteQueue;
 
     public AggregateRepository(
         IEventStore eventStore,
@@ -38,6 +40,31 @@ public class AggregateRepository : IAggregateRepository
         ILogger<AggregateRepository>? logger = null,
         ISnapshotStore? snapshotStore = null,
         ISnapshotStrategyResolver? strategyResolver = null)
+        : this(
+            eventStore,
+            metadataProvider,
+            tenantContextProvider,
+            options,
+            tagProvider,
+            authorizationService,
+            logger,
+            snapshotStore,
+            strategyResolver,
+            snapshotWriteQueue: null)
+    {
+    }
+
+    internal AggregateRepository(
+        IEventStore eventStore,
+        IMetadataProvider metadataProvider,
+        ITenantContextProvider tenantContextProvider,
+        IOptions<LawnDartOptions> options,
+        ITagProvider? tagProvider,
+        AuthorizationService? authorizationService,
+        ILogger<AggregateRepository>? logger,
+        ISnapshotStore? snapshotStore,
+        ISnapshotStrategyResolver? strategyResolver,
+        ISnapshotWriteQueue? snapshotWriteQueue)
     {
         _eventStore = eventStore ?? throw new ArgumentNullException(nameof(eventStore));
         _metadataProvider = metadataProvider ?? throw new ArgumentNullException(nameof(metadataProvider));
@@ -48,6 +75,7 @@ public class AggregateRepository : IAggregateRepository
         _logger = logger;
         _snapshotStore = snapshotStore;
         _strategyResolver = strategyResolver;
+        _snapshotWriteQueue = snapshotWriteQueue;
     }
 
     public Task<T?> GetAsync<T>(Guid id, CancellationToken cancellationToken = default) where T : AggregateRoot, new()
@@ -321,50 +349,38 @@ public class AggregateRepository : IAggregateRepository
             aggregate.StreamId,
             aggregate.Version);
 
-        // ── Fire-and-forget snapshot (optional) ────────────────────────────────
-        // Only attempt when a store and strategy resolver are registered, and the
-        // strategy fires for this aggregate type. The write is entirely off the hot path.
-        if (_snapshotStore != null && _strategyResolver != null)
+        // Capture on this thread, enqueue wait-free. The hosted consumer writes.
+        if (_snapshotStore != null && _strategyResolver != null && _snapshotWriteQueue != null)
         {
             var strategy = _strategyResolver.ResolveForAggregate(aggregate.GetType());
             var globalSequence = appendResult.SequencePositions.Count > 0
                 ? appendResult.SequencePositions[^1]
                 : 0L;
 
-            // Build snapshot context — EventsSinceLastSnapshot is approximated as the
-            // number of events just flushed (conservative: we don't load prior snapshot info here).
             var ctx = new SnapshotContext(
                 StreamId:                 aggregate.StreamId,
                 CurrentVersion:           aggregate.Version,
                 EventsSinceLastSnapshot:  events.Count,
-                LastSnapshotUtc:          null,  // conservative — no prior snapshot info at flush time
+                LastSnapshotUtc:          null,
                 GlobalSequence:           globalSequence);
 
             if (strategy.ShouldSnapshot(ctx))
             {
-                var capturedStore     = _snapshotStore;
-                var capturedAggregate = aggregate;
-                var capturedSeq       = globalSequence;
-                var capturedTypeName  = aggregate.GetType().Name;
-                _ = Task.Run(async () =>
+                var captured = aggregate.TryCaptureCommittedSnapshot();
+                if (captured is { } snap)
                 {
-                    var writeSw = Stopwatch.StartNew();
-                    try
+                    _snapshotWriteQueue.TryEnqueue(new SnapshotWriteItem
                     {
-                        await capturedAggregate.TrySaveSnapshotAsync(capturedStore, capturedSeq, CancellationToken.None);
-                        writeSw.Stop();
-                        _logger?.LogDebug(
-                            "Snapshot written for {StreamId} at version {Version}",
-                            capturedAggregate.StreamId, capturedAggregate.Version);
-                        SnapshotTelemetry.RecordWrite(capturedTypeName, "aggregate", writeSw.Elapsed);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger?.LogWarning(ex,
-                            "Fire-and-forget snapshot write failed for {StreamId}",
-                            capturedAggregate.StreamId);
-                    }
-                });
+                        Kind = "aggregate",
+                        EntityType = aggregate.GetType().Name,
+                        Id = aggregate.StreamId,
+                        Version = snap.Version,
+                        GlobalSequence = globalSequence,
+                        Payload = snap.Payload,
+                        StateType = snap.StateType,
+                        AggregateStore = _snapshotStore
+                    });
+                }
             }
         }
     }

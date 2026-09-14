@@ -46,7 +46,8 @@ jobs:
     - name: Test (integration)
       run: >
         dotnet test LawnDart.sln --no-build --configuration Release
-        --verbosity normal --filter "Category=Integration"
+        --verbosity normal --filter "Category=Integration|Category=Contract"
+        -- RunConfiguration.MaxCpuCount=1
 
     - name: Pack
       run: dotnet pack LawnDart.sln --no-build --configuration Release -o artifacts/nupkg

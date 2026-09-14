@@ -1,9 +1,14 @@
 using Microsoft.Extensions.DependencyInjection;
+using LawnDart;
 using LawnDart.Aggregates;
 using LawnDart.Dcb;
 using LawnDart.EventSourcing.EventStore;
+using LawnDart.EventSourcing.Outbox;
+using LawnDart.EventSourcing.Snapshots;
 using LawnDart.EventStore;
 using LawnDart.Metadata;
+using LawnDart.Outbox;
+using LawnDart.Snapshots;
 using LawnDart.TestUtilities;
 
 namespace LawnDart.EventSourcing.Tests.BoundedContext;
@@ -119,6 +124,16 @@ public class UseInMemoryBuilderTests
         var unkeyedDcb = sp.GetRequiredService<IDcbRepository>();
         Assert.NotNull(keyedDcb);
         Assert.NotNull(unkeyedDcb);
+
+        var keyedSnap = sp.GetRequiredKeyedService<ISnapshotStore>("default");
+        var unkeyedSnap = sp.GetRequiredService<ISnapshotStore>();
+        Assert.Same(keyedSnap, unkeyedSnap);
+        Assert.IsType<InMemorySnapshotStore>(unkeyedSnap);
+
+        var keyedOutbox = sp.GetRequiredKeyedService<IOutboxWriter>("default");
+        var unkeyedOutbox = sp.GetRequiredService<IOutboxWriter>();
+        Assert.Same(keyedOutbox, unkeyedOutbox);
+        Assert.IsType<InMemoryOutboxWriter>(unkeyedOutbox);
     }
 
     [Fact]

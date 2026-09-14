@@ -13,10 +13,13 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="LawnDart.EventSourcing.Tests" />
+    <InternalsVisibleTo Include="LawnDart.EventSourcing.SqlServer" />
+    <InternalsVisibleTo Include="LawnDart.EventSourcing.SqlServer.Tests" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Caching.Memory" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>

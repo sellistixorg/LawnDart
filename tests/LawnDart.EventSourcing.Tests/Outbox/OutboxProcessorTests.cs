@@ -1,7 +1,12 @@
 using Xunit;
+using LawnDart;
 using LawnDart.Outbox;
 using LawnDart.EventSourcing.Outbox;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using LawnDart.EventStore;
+using LawnDart.Metadata;
+using LawnDart.TestUtilities;
 
 namespace LawnDart.EventSourcing.Tests.Outbox;
 
@@ -204,80 +209,35 @@ public class OutboxProcessorTests
         var unprocessed = await writer.GetUnprocessedAsync(10);
         Assert.Empty(unprocessed);
     }
-}
 
-// Test helpers
-public class InMemoryOutboxWriter : IOutboxWriter
-{
-    private readonly List<OutboxMessage> _messages = new();
-
-    public Task InitializeSchemaAsync(CancellationToken cancellationToken = default)
+    [Fact]
+    public async Task ProcessBatch_AgainstUseInMemoryWriter_ProcessesThem()
     {
-        return Task.CompletedTask;
-    }
+        var services = new ServiceCollection();
+        services.AddSingleton<IMetadataProvider>(new DefaultMetadataProvider());
+        services.AddSingleton<ITenantContextProvider>(new TestTenantContextProvider(null));
+        services.Configure<LawnDartOptions>(_ => { });
+        services.AddBoundedContext("default").UseInMemory();
+        var sp = services.BuildServiceProvider();
 
-    public Task WriteAsync(OutboxMessage message, CancellationToken cancellationToken = default)
-    {
-        _messages.Add(message);
-        return Task.CompletedTask;
-    }
-
-    public Task WriteBatchAsync(IEnumerable<OutboxMessage> messages, CancellationToken cancellationToken = default)
-    {
-        _messages.AddRange(messages);
-        return Task.CompletedTask;
-    }
-
-    public Task<IReadOnlyList<OutboxMessage>> GetUnprocessedAsync(int batchSize, CancellationToken cancellationToken = default)
-    {
-        var unprocessed = _messages
-            .Where(m => m.ProcessedAt == null && m.DeadLetteredAt == null)
-            .OrderBy(m => m.SequencePosition)
-            .Take(batchSize)
-            .ToList();
-        return Task.FromResult<IReadOnlyList<OutboxMessage>>(unprocessed);
-    }
-
-    public Task<IReadOnlyList<OutboxMessage>> GetDeadLetteredAsync(int batchSize, CancellationToken cancellationToken = default)
-    {
-        var dead = _messages
-            .Where(m => m.DeadLetteredAt != null)
-            .OrderBy(m => m.SequencePosition)
-            .Take(batchSize)
-            .ToList();
-        return Task.FromResult<IReadOnlyList<OutboxMessage>>(dead);
-    }
-
-    public Task MarkAsProcessedAsync(Guid messageId, CancellationToken cancellationToken = default)
-    {
-        var message = _messages.FirstOrDefault(m => m.Id == messageId);
-        if (message != null)
+        var writer = sp.GetRequiredService<IOutboxWriter>();
+        var publisher = new TestOutboxPublisher();
+        await writer.WriteAsync(new OutboxMessage
         {
-            message.ProcessedAt = DateTime.UtcNow;
-        }
-        return Task.CompletedTask;
-    }
+            Id = Guid.NewGuid(),
+            EventType = "TestEvent",
+            Payload = "{}",
+            Metadata = "{}",
+            CreatedAt = DateTime.UtcNow,
+            StreamId = "stream1",
+            SequencePosition = 1
+        });
 
-    public Task MarkAsDeadLetteredAsync(Guid messageId, CancellationToken cancellationToken = default)
-    {
-        var message = _messages.FirstOrDefault(m => m.Id == messageId);
-        if (message != null && message.DeadLetteredAt is null)
-        {
-            message.DeadLetteredAt = DateTime.UtcNow;
-        }
-        return Task.CompletedTask;
-    }
+        var processor = new TestableOutboxProcessor(writer, publisher);
+        await processor.ProcessBatchPublicAsync(CancellationToken.None);
 
-    public Task RecordFailureAsync(Guid messageId, string error, CancellationToken cancellationToken = default)
-    {
-        var message = _messages.FirstOrDefault(m => m.Id == messageId);
-        if (message != null)
-        {
-            message.Attempts++;
-            message.LastError = error;
-            message.LastAttemptAt = DateTime.UtcNow;
-        }
-        return Task.CompletedTask;
+        Assert.Single(publisher.PublishedMessages);
+        Assert.Empty(await writer.GetUnprocessedAsync(10));
     }
 }
 

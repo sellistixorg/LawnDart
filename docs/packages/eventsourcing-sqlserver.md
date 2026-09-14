@@ -16,8 +16,13 @@ ctx.UseSqlServer(o =>
 });
 ```
 
-Optional `WithSnapshots` and outbox (`EnableOutbox`). Integration tests use
-Testcontainers and are tagged `Category=Integration`.
+Optional `WithSnapshots` and outbox (`EnableOutbox`). Snapshot write
+durability is the same channel + hosted consumer as InMemory; see
+[SNAPSHOTS.md](../SNAPSHOTS.md). Integration tests use Testcontainers and
+are tagged `Category=Integration`. The InMemory → SQL swap contract
+(`Category=Contract`) covers dispatch, persist, reload, project, and
+read-back — not outbox or subscriptions. See
+[BACKEND_SELECTION.md](../BACKEND_SELECTION.md).
 
 InMemory remains the documented default for local work and Academy.
 
