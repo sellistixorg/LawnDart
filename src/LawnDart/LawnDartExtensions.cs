@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using LawnDart.Metadata;
 using LawnDart.Serialization;
 
@@ -16,8 +17,11 @@ public static class LawnDartExtensions
     /// <param name="configure">Optional callback for <see cref="LawnDartOptions"/>.</param>
     /// <returns>The service collection for chaining.</returns>
     /// <remarks>
-    /// Registers default metadata generation using <see cref="DefaultMetadataProvider"/>.
-    /// If no <see cref="ITenantContextProvider"/> is registered, tenant metadata is omitted.
+    /// Registers default metadata generation using <see cref="DefaultMetadataProvider"/>
+    /// and a no-tenant <see cref="AmbientTenantContextProvider"/> so
+    /// <c>IAggregateRepository</c> resolves without a hand-written tenant line.
+    /// Replace the provider with <see cref="AddTenantContextProvider{T}"/> when the
+    /// host is multi-tenant.
     /// </remarks>
     public static IServiceCollection AddLawnDart(
         this IServiceCollection services,
@@ -33,10 +37,11 @@ public static class LawnDartExtensions
             services.Configure<LawnDartOptions>(_ => { });
         }
 
+        services.TryAddSingleton<ITenantContextProvider, AmbientTenantContextProvider>();
+
         // Register default metadata provider if not already registered
         services.AddSingleton<IMetadataProvider>(sp =>
         {
-            // Try to get tenant context provider (optional)
             var tenantProvider = sp.GetService<ITenantContextProvider>();
             return new DefaultMetadataProvider(tenantProvider);
         });

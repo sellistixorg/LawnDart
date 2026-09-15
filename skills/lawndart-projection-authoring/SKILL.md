@@ -22,14 +22,42 @@ not call it. A view that spans stream types implements
 `IMultiStreamEntityResolver` on the handler (the Flywheel multi-stream
 hook).
 
-Academy WebApi examples:
+Excerpt from `samples/Library.Host/LibraryCatalogProjection.cs`.
+`BookCatalogView` is in `samples/Library.Domain/Projections/LibraryProjector.cs`.
 
-- `StudentSummaryProjection` — per-student stream
-- section availability — per-section stream
-- enrollment index — global view
+```csharp
+[SingleStreamProjection("BookCatalog", streamType: "Book")]
+public sealed class LibraryCatalogProjection : ProjectionBase<BookCatalogView>
+{
+    public void Handle(BookAdded e)
+    {
+        State.BookId = e.BookId;
+        State.Title = e.Title;
+        State.Isbn = e.Isbn;
+        State.OnLoan = false;
+        State.BorrowedBy = null;
+    }
 
-Keep projectors deterministic. Do not call the event store from `Apply`.
+    public void Handle(BookBorrowed e)
+    {
+        State.OnLoan = true;
+        State.BorrowedBy = e.MemberName;
+    }
+
+    public void Handle(BookReturned e)
+    {
+        State.OnLoan = false;
+        State.BorrowedBy = null;
+    }
+}
+```
+
+The beginner GWT path uses `LibraryProjector.Apply` with `AndView` (no
+Lightweight host). Lightweight is the production host for the same view
+shape.
+
+Keep projectors deterministic. Do not call the event store from `Handle`.
 Put auth on query endpoints with `ProjectionEndpointAttribute` when the view
 is tenant-scoped.
 
-See `demos/LawnDart.Demo.Academy.WebApi/Projections`.
+See `demos/LawnDart.Demo.Academy.WebApi/Projections` for a larger host.

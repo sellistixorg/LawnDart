@@ -4,7 +4,25 @@ LawnDart snapshots are a **cache of derived state**. The event log is the source
 of truth. A missing, dropped, or corrupt snapshot costs replay time and nothing
 else.
 
-<!-- TODO(RDY-11) replace-in-place, scavenging, strategy defaults -->
+## Retention
+
+Snapshots are **replace-in-place**. One row per stream (`StreamId`) or DCB
+identity (`DcbId`). A write upserts that row. Newest wins. Nothing accumulates,
+so there is nothing to scavenge and no retention setting to configure.
+
+That is a different family from EventStoreDB / Kurrent, where snapshots are
+appended into the log and a scavenge job later reclaims old generations.
+Do not look for those knobs here. They do not exist.
+
+SQL Server: `EventSnapshots` is keyed on `StreamId`; `DcbSnapshots` is keyed
+on `DcbId`. Save is `UPDATE` then `INSERT` if no row. In-memory:
+`InMemorySnapshotStore` replaces the dictionary entry for that key.
+
+Because there is only one generation, a torn or corrupt row overwrites the last
+good snapshot. Load then returns empty and the repository **falls back to full
+replay**. Correctness of the log is never at risk. Load time is. That is why
+the write path captures state on the calling thread at the committed version
+(the durability contract below) instead of serializing a live aggregate later.
 
 ## Durability contract
 
@@ -17,6 +35,9 @@ else.
    caller.
 4. Sustained drops mean the store cannot keep up. That is an operational signal,
    surfaced as one, and the fallback is full replay.
+
+A dropped snapshot costs replay time and nothing else — the log remains the
+source of truth.
 
 `SnapshotWriteHealthCheck` reports **degraded** when the write channel has
 dropped pending work or the store has failed. Register it with the host's
@@ -33,3 +54,29 @@ those omit the write queue and skip every snapshot write. Call
 `AddSnapshotWriteInfrastructure` from the `Use*` method and construct
 repositories with `EventSourcingRepositories.CreateAggregateRepository` /
 `CreateDcbRepository`.
+
+## Strategy defaults
+
+From source, not convention:
+
+| Type | When it writes | Constructor |
+|---|---|---|
+| `NeverSnapshotStrategy` | Never. System-wide default for any type without a registration. | `Instance` singleton |
+| `EventCountSnapshotStrategy` | `EventsSinceLastSnapshot >= threshold` | `int threshold` — must be `> 0`. No default threshold. |
+| `DynamicSnapshotStrategy` | Event-count leg **or** time leg, whichever fires first. The time leg runs only when `LastSnapshotUtc` is set, so the first append does not snapshot immediately. | `int eventThreshold` (`> 0`) and `TimeSpan timeThreshold` (positive). No default pair. |
+
+Unregistered types keep `NeverSnapshotStrategy`. Opt in with `WithSnapshots`:
+
+```csharp
+.WithSnapshots(config =>
+{
+    config.RegisterForAggregate<OrderAggregate>(new EventCountSnapshotStrategy(500));
+    config.RegisterForDcb<InventoryEntity>(new EventCountSnapshotStrategy(500));
+});
+```
+
+`500` in that example is from `SnapshotStrategyResolver`'s remarks, not a
+baked-in default. The strategy types themselves note that upstream benchmarks
+(not in this repository) put the load-vs-replay crossover around 400–1,000
+events for typical state sizes. A threshold below that range can make loads
+slower. Measure against your state type before enabling writes.

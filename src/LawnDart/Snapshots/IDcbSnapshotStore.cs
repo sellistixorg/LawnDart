@@ -4,11 +4,17 @@ namespace LawnDart.Snapshots;
 /// Provides durable snapshot storage for DCB (Dynamic Consistency Boundary) entities.
 /// </summary>
 /// <remarks>
+/// Snapshots are replace-in-place: one row per hashed <c>DcbId</c>, upserted,
+/// newest wins. Nothing accumulates and nothing is scavenged. A missing or
+/// corrupt snapshot falls back to full replay. The log remains the source of
+/// truth.
+/// <para>
 /// DCB snapshots differ from stream snapshots in one critical respect: the
 /// <c>ConsistencyMarker</c> stored alongside the snapshot <b>must never be reused directly</b>
 /// after restore. The consistency boundary may have shifted since the snapshot was taken.
 /// The repository must replay delta events (those committed after <see cref="SnapshotInfo.GlobalSequence"/>)
 /// and recompute a fresh marker from those deltas before the next conditional append.
+/// </para>
 /// <para>
 /// Snapshot state is captured on the calling thread after a successful append, then
 /// enqueued wait-free for a hosted consumer. The command path never waits on snapshot I/O.

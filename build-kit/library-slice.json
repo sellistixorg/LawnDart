@@ -1,0 +1,44 @@
+{
+  "slice": "library-book",
+  "context": "library",
+  "commands": [
+    { "name": "AddBook", "fields": ["BookId", "Title", "Isbn"] },
+    { "name": "BorrowBook", "fields": ["BookId", "MemberName"] },
+    { "name": "ReturnBook", "fields": ["BookId"] }
+  ],
+  "events": [
+    { "name": "BookAdded", "token": "book-added", "fields": ["Id", "Timestamp", "BookId", "Title", "Isbn"] },
+    { "name": "BookBorrowed", "token": "book-borrowed", "fields": ["Id", "Timestamp", "BookId", "MemberName"] },
+    { "name": "BookReturned", "token": "book-returned", "fields": ["Id", "Timestamp", "BookId"] }
+  ],
+  "entity": {
+    "name": "Book",
+    "kind": "aggregate",
+    "state": "BookState",
+    "stateFields": ["BookId", "Exists", "OnLoan", "BorrowedBy"]
+  },
+  "views": [
+    { "name": "BookCatalogView", "fields": ["BookId", "Title", "Isbn", "OnLoan", "BorrowedBy"] },
+    { "name": "BorrowedBookView", "fields": ["BookId", "MemberName"], "removedOn": "BookReturned" }
+  ],
+  "gwt": [
+    {
+      "name": "borrow_emits_event_and_updates_catalog_view",
+      "given": ["BookAdded"],
+      "when": "BorrowBook",
+      "then": ["BookBorrowed", "catalog OnLoan", "BorrowedBooks"]
+    },
+    {
+      "name": "return_clears_loan_and_removes_borrowed_view",
+      "given": ["BookAdded", "BookBorrowed"],
+      "when": "ReturnBook",
+      "then": ["BookReturned", "catalog not OnLoan", "BorrowedBooks empty"]
+    },
+    {
+      "name": "cannot_borrow_when_already_on_loan",
+      "given": ["BookAdded", "BookBorrowed"],
+      "when": "BorrowBook",
+      "then": ["throws InvalidOperationException"]
+    }
+  ]
+}

@@ -15,19 +15,21 @@ v1 backends: **InMemory** and **SQL Server**.
 4. **Projections:** `ProjectionBase<TView>` plus attributes; multi-stream views implement `IMultiStreamEntityResolver`.
 5. **Stores:** `UseInMemory()` / `UseSqlServer(...)` on `AddBoundedContext(name)`.
 
+Excerpt from `samples/Library.Host/LibraryHost.cs` (`AddInMemoryLibrary`):
+
 ```csharp
-services.AddLawnDart(o => o.RequireTenantId = false);
+var ctx = services.AddBoundedContext("default");
+ctx.UseInMemory();
+```
 
-// Local / tests / Academy
-services.AddBoundedContext("default").UseInMemory();
+Excerpt from `samples/Library.Host/LibraryHost.cs` (`AddSqlLibrary`):
 
-// Durable
-services.AddBoundedContext("default")
-    .UseSqlServer(o =>
-    {
-        o.ConnectionString = cs;
-        o.RequireTenantId = false;
-    });
+```csharp
+ctx.UseSqlServer(o =>
+{
+    o.ConnectionString = connectionString;
+    o.RequireTenantId = false;
+});
 ```
 
 Align `RequireTenantId` on `AddLawnDart` and `SqlServerEventStoreOptions`.

@@ -57,10 +57,12 @@ doc and **zero skill changes**.
    - [docs/DI_GRAMMAR.md](../docs/DI_GRAMMAR.md)
    - [docs/HTTP_COMMANDS.md](../docs/HTTP_COMMANDS.md)
    - [docs/testing/BDD_TESTING.md](../docs/testing/BDD_TESTING.md)
-5. Reference slice (lands in `RDY-10`): `samples/Library.Domain` and
-   `samples/Library.Domain.Tests`. Until those projects exist, Academy
-   (`demos/LawnDart.Demo.Academy` / `Academy.WebApi`) is the runnable host,
-   not the excerpt source.
+5. Canonical demo input: [`build-kit/library-slice.json`](../build-kit/library-slice.json).
+   Reference implementation: [`samples/Library.Domain`](../samples/Library.Domain),
+   [`samples/Library.Host`](../samples/Library.Host), and
+   [`samples/Library.Domain.Tests`](../samples/Library.Domain.Tests).
+   Academy (`demos/LawnDart.Demo.Academy` / `Academy.WebApi`) is the
+   runnable host, not the excerpt source.
 
 Supporting material (not required to implement a slice): the
 [learning path](../docs/learning-path/README.md) and per-package pages under
@@ -73,9 +75,28 @@ Supporting material (not required to implement a slice): the
 - Aggregates and DCB entities declare closed `Handle(TCommand)`. Persist with
   `HandleCommandAsync`. Do not implement Delegation, Downstream Activity,
   Event Generator, or State Transformation — those cells are not hosted.
-- After `RDY-10`, every code block in `skills/` and `docs/` is excerpted from
-  the reference slice. Until then, snippets may still be hand-written; edited
-  blocks carry `TODO(RDY-10)`.
+- Every code block in `skills/` is excerpted from the reference slice
+  (`samples/Library.Domain`, `samples/Library.Host`,
+  `samples/Library.Domain.Tests`). Doc blocks still moving under
+  `RDY-09` / `RDY-12` / `RDY-13` may carry `TODO(RDY-10)` until those
+  tickets replace them.
+
+## Pre-demo rehearsal
+
+Do this by hand before any live demo. It is not a CI job.
+
+1. Check out the git tag that matches the LawnDart packages the demo consumes.
+2. Open this file and `build-kit/library-slice.json`. Do not invent types.
+3. Run `dotnet test samples/Library.Domain.Tests`.
+4. Hand the kit (this file, the spec, the seven skills) to an agent and ask
+   it to implement the slice in a throwaway folder. Compare the result to
+   `samples/Library.Domain`. Fix skill wording if the agent is confused;
+   fix the slice if the agent is wrong.
+5. Restore the throwaway folder. Do not commit it.
+
+The one-time “does a breaking API change fail?” proof is recorded in
+[`build-kit/REGRESSION_PROOF.md`](../build-kit/REGRESSION_PROOF.md). Do not
+turn it into a CI job.
 - Consume the LawnDart package version that matches the tag you cloned.
   Patterns pins `LawnDartPackageVersion`; generating from `main` against an
   older pin is the drift this `Targets` line exists to catch.

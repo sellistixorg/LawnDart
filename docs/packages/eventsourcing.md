@@ -36,7 +36,7 @@ or by `string streamId` when the stream is a custom identity. Prefer
 `ICommandDispatcher` (Core). `UseInMemory` registers the same dispatcher.
 
 Snapshot write durability (synchronous capture, wait-free enqueue, drop-oldest,
-health): [SNAPSHOTS.md](../SNAPSHOTS.md). Custom stores use
+health) and replace-in-place retention: [SNAPSHOTS.md](../SNAPSHOTS.md). Custom stores use
 `EventSourcingRepositories` and `AddSnapshotWriteInfrastructure` so snapshot
 writes still enqueue.
 

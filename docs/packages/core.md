@@ -16,19 +16,14 @@ Take it first. It does not include an event-store implementation.
 - Authorization attributes and `AuthorizationService`
 - `AddLawnDart`, `AddBoundedContext`, `AddLawnDartAuthorization`
 - Hosted pattern contracts (`IReactor`, `IEventProcessor`, `ITaskProcessor`).
-  Four CES cells are roadmap only — no public type yet; see the matrix below.
+  Four CES cells are roadmap only — no public type yet.
 - `IProjector` — experimental unused stub; neither host calls it. Not
   the authoring API. Author `ProjectionBase<TView>` plus scope attributes
   for Lightweight. Multi-stream views (including Flywheel) implement
   `IMultiStreamEntityResolver` on that handler.
 
-| From \ To | **Command** | **Event** | **State** |
-|---|---|---|---|
-| **Command** | Delegation 🔧 | Aggregate Root & DCB ✅ | Downstream Activity 🔧 |
-| **Event** | Reaction ✅ | Event Processing ✅ | Projection ✅ |
-| **State** | Task Processing ✅ | Event Generator 🔧 | State Transformation 🔧 |
-
-✅ Hosted (runtime, DI, tests) · 🔧 Roadmap — no public type yet.
+The shapes an event model compiles into — five hosted today — are on the
+[CES matrix](../CES_MATRIX.md).
 
 ## Registration
 

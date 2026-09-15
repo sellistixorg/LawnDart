@@ -7,16 +7,28 @@ Use `LawnDart.Testing` against InMemory. No Docker. Events from
 need the attribute even though `CreateInMemory()` does not call
 `WithEventTypes`.
 
+Excerpted from `samples/Library.Domain.Tests/LibraryBookTests.cs`.
+
 ```csharp
 await using var ctx = BddTestContext.CreateInMemory();
+var bookId = Guid.NewGuid();
 
 await AggregateSpec
-    .For<Counter>(ctx, id)
-    .Given(new CounterCreated(Guid.NewGuid(), DateTime.UtcNow, id))
-    .When(new IncrementCommand(Guid.NewGuid(), id))
-    .ThenEmittedEvent<CounterIncremented>(e => e.CounterId == id)
+    .For<Book>(ctx, bookId)
+    .Given(
+        new BookAdded(Guid.NewGuid(), DateTime.UtcNow, bookId, "Pragmatic Programmer", "978-0135957059"),
+        new BookBorrowed(Guid.NewGuid(), DateTime.UtcNow, bookId, "Jane Doe"))
+    .When(new BorrowBookCommand(Guid.NewGuid(), bookId, "Someone Else"))
+    .ThenThrows<InvalidOperationException>()
+    .AndAssert(result =>
+        Assert.Equal("Book is already on loan.", result.Exception!.Message))
     .RunAsync();
 ```
+
+`ThenThrows<T>()` is the domain-rule assertion. Spec-internal failures throw
+`BddSpecAssertionException`, which does not derive from
+`InvalidOperationException`. Do not wrap `RunAsync()` in
+`Assert.ThrowsAsync<InvalidOperationException>`.
 
 Full guide: [BDD_TESTING.md](../testing/BDD_TESTING.md).
 

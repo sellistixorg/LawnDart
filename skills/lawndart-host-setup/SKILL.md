@@ -29,21 +29,23 @@ Bounded context ≠ multi-tenancy. Multiple contexts = separate event stores.
 
 ## Base registration
 
-```csharp
-builder.Services.AddLawnDart(opts =>
-{
-    opts.RequireTenantId = false;
-    opts.EnableAuthorization = false;
-});
+Excerpt from `samples/Library.Host/LibraryHost.cs` (`AddInMemoryLibrary`):
 
-builder.Services.AddInMemoryProjectionStores("default");
-var ctx = builder.Services.AddBoundedContext("default");
+```csharp
+services.AddLawnDart(o => o.RequireTenantId = false);
+services.AddSingleton<ITenantContextProvider, AmbientTenantContextProvider>();
+services.AddInMemoryProjectionStores("default");
+var ctx = services.AddBoundedContext("default");
 ctx.UseInMemory();
-ctx.WithCommandHandlers<CreateOrderHandler>();
-ctx.WithEventTypes<OrderPlaced>();
-ctx.WithProjections([typeof(OrderSummaryProjection).Assembly]);
+ctx.WithCommandHandlers<BorrowBookHandler>();
+ctx.WithEventTypes<BookAdded>();
+ctx.WithProjections(
+    [typeof(LibraryCatalogProjection).Assembly],
+    opts =>
+    {
+        opts.PollInterval = TimeSpan.FromMilliseconds(200);
+        opts.CheckpointInterval = 100;
+    });
 ```
 
-<!-- TODO(RDY-10) -->
-
-Zero-infra reference: `demos/LawnDart.Demo.Academy`.
+Canonical demo input: `build-kit/library-slice.json`. Academy is a runnable host, not the excerpt source.

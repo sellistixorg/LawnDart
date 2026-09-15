@@ -2,6 +2,10 @@
   href: START_HERE.md
 - name: Overview
   href: OVERVIEW.md
+- name: Why LawnDart
+  href: WHY.md
+- name: CES matrix
+  href: CES_MATRIX.md
 - name: Quickstart
   href: QUICKSTART.md
 - name: Eventhesis

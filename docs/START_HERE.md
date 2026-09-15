@@ -1,8 +1,10 @@
 # Start Here
 
-LawnDart is the in-process .NET runtime for commands, events, and state.
-[Eventhesis](https://eventhesis.com) is an optional modelling canvas that emits
-slice-based event-model JSON. It does not generate LawnDart types.  There will be tooling for that soon.
+LawnDart is the .NET runtime that event-modeled systems compile into.
+
+[Eventhesis](https://eventhesis.com) is one modelling tool that targets
+LawnDart. It emits slice-based event-model JSON. It does not generate LawnDart
+types. You do not need it. See [Why LawnDart](WHY.md).
 
 ## Core mental model
 
@@ -10,17 +12,9 @@ slice-based event-model JSON. It does not generate LawnDart types.  There will b
 - **Event**: immutable fact about what already happened.
 - **State**: current read model used by users and workflows.
 
-Most applications start with the **hosted** cells (✅): aggregate or DCB,
-projection, then optional reactions or task processors. Four cells (🔧) are
-planned interfaces only — no host yet.
-
-| From \ To | **Command** | **Event** | **State** |
-|---|---|---|---|
-| **Command** | Delegation 🔧 | Aggregate Root & DCB ✅ | Downstream Activity 🔧 |
-| **Event** | Reaction ✅ | Event Processing ✅ | Projection ✅ |
-| **State** | Task Processing ✅ | Event Generator 🔧 | State Transformation 🔧 |
-
-✅ Hosted (runtime, DI, tests) · 🔧 Planned interface — `[Experimental]`, no host yet. Implementing a 🔧 type does not register or run it.
+Most applications start with an aggregate or DCB, then a projection, then
+optional reactions. The nine shapes an event model compiles into — five hosted
+today — are on the [CES matrix](CES_MATRIX.md).
 
 Typical first path:
 
@@ -39,7 +33,9 @@ Typical first path:
 
 ## Recommended path
 
-1. [Overview](OVERVIEW.md)
-2. [Quickstart](QUICKSTART.md) (InMemory)
-3. [Learning Path](learning-path/README.md)
-4. [Eventhesis adapter](EVENTHESIS.md)
+1. [Why LawnDart](WHY.md)
+2. [Overview](OVERVIEW.md)
+3. [Quickstart](QUICKSTART.md) (InMemory)
+4. [Learning Path](learning-path/README.md)
+5. [CES matrix](CES_MATRIX.md)
+6. [Eventhesis adapter](EVENTHESIS.md)

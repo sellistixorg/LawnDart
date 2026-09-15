@@ -4,8 +4,10 @@ namespace LawnDart.Snapshots;
 /// Provides durable snapshot storage for stream-based aggregates.
 /// </summary>
 /// <remarks>
-/// Snapshots are correctness-optional performance hints. A missing or corrupt snapshot
-/// causes the repository to fall back to full event replay — correctness is never at risk.
+/// Snapshots are a replace-in-place cache of derived state: one row per
+/// <c>StreamId</c>, upserted, newest wins. Nothing accumulates and nothing is
+/// scavenged. A missing or corrupt snapshot causes the repository to fall back
+/// to full event replay — the log remains the source of truth.
 /// <para>
 /// Snapshot state is captured on the calling thread after a successful append, then
 /// enqueued wait-free for a hosted consumer. The command path never waits on snapshot I/O.

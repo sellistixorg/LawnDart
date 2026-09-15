@@ -12,7 +12,21 @@ changes to the public API.
 
 ### Added
 
+- [Why LawnDart](docs/WHY.md) contrasts LawnDart with Marten, Cratis, and Axon, and names the supported scope as a closed set (InMemory, SQL Server, in-process, `net10.0`).
+- The library domain (`samples/Library.Domain`) is the canonical reference slice: a `Book` aggregate whose decision state (`BookState`) is not the catalog view (`BookCatalogView`), with three given/when/then specs in `samples/Library.Domain.Tests`.
+- `build-kit/library-slice.json` is the canonical demo input. Skills excerpt host and domain snippets from `samples/Library.Domain` and `samples/Library.Host`. CI compiles the slice and runs its GWT tests on every change.
 - `skills/BUILD_KIT.md` is the agent entry point for the in-repo build kit. It declares `Targets LawnDart 0.4`; CI fails if MinVer's major.minor is not that pair. Eventhesis is documented as one adapter over a generic slice spec, not as the kit's definition.
+
+### Changed
+
+- The README, docs site landing, Start Here, and Overview lead with the same sentence: LawnDart is the .NET runtime that event-modeled systems compile into. The README quick start is a complete Counter — command, event, aggregate, `HandleCommandAsync`, and read-back — compiled in CI.
+- Learning-path steps 2–4 teach the library `Book` domain. Snippets are excerpted from `samples/Library.Domain`. The README and Quickstart keep the short Counter.
+- Snapshot docs state replace-in-place retention (one row per stream, no scavenge) and the strategy constructors from source. A dropped or bad snapshot costs replay time; the log stays the source of truth.
+- The command–event–state matrix lives on [CES matrix](docs/CES_MATRIX.md) as the shapes an event model compiles into. Five cells are hosted; four are roadmap with no public type. Other pages link there instead of repeating the grid.
+
+### Fixed
+
+- `AddLawnDart` registers a default `AmbientTenantContextProvider` so `UseInMemory()` can resolve `IAggregateRepository` without a hand-written tenant registration. `RequireTenantId = false` hosts copy-paste as documented.
 
 ## [0.4.0-alpha.2] — 2026-09-14
 
