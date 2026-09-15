@@ -121,4 +121,4 @@ dotnet run --project demos/LawnDart.Demo.Academy.WebApi
 ## Next
 
 - [Learning path](learning-path/README.md)
-- [Eventhesis and LawnDart](EVENTHESIS.md)
+- [Eventhesis adapter](EVENTHESIS.md)

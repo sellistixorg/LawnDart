@@ -33,4 +33,4 @@ Then `AddLawnDart` and `AddBoundedContext("default").UseInMemory()`.
 1. [Start Here](docs/START_HERE.md)
 2. [Quickstart](docs/QUICKSTART.md)
 3. [Learning Path](docs/learning-path/README.md)
-4. [Eventhesis and LawnDart](docs/EVENTHESIS.md)
+4. [Eventhesis adapter](docs/EVENTHESIS.md)

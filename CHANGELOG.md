@@ -10,6 +10,10 @@ changes to the public API.
 
 ## [Unreleased]
 
+### Added
+
+- `skills/BUILD_KIT.md` is the agent entry point for the in-repo build kit. It declares `Targets LawnDart 0.4`; CI fails if MinVer's major.minor is not that pair. Eventhesis is documented as one adapter over a generic slice spec, not as the kit's definition.
+
 ## [0.4.0-alpha.2] — 2026-09-14
 
 ### Added

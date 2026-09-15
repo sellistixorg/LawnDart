@@ -42,4 +42,4 @@ Typical first path:
 1. [Overview](OVERVIEW.md)
 2. [Quickstart](QUICKSTART.md) (InMemory)
 3. [Learning Path](learning-path/README.md)
-4. [Eventhesis and LawnDart](EVENTHESIS.md)
+4. [Eventhesis adapter](EVENTHESIS.md)

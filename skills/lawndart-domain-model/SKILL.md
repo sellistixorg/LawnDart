@@ -8,7 +8,7 @@ description: Author LawnDart commands, events, aggregates, DCB entities, tags, a
 ## Frozen surface
 
 1. **App-facing dispatch** is `ICommandHandler<T>` (HTTP, jobs).
-2. **Aggregates / DCB** declare closed `Handle(TCommand)`. `HandleCommandAsync` is persistence + authorization. Do not write a `HandleAsync<TCommand>` switch on the entity (obsolete).
+2. **Aggregates / DCB** declare closed `Handle(TCommand)`. `HandleCommandAsync` is persistence + authorization. Do not write a per-command async Handle switch on the entity (obsolete).
 3. **Load** with `GetOrCreateAsync<T>(id)` when the stream is `{type}:{guid}`; use `GetOrCreateAsync<T>(streamId)` otherwise.
 4. **Projections:** `ProjectionBase<TView>` plus attributes; multi-stream views implement `IMultiStreamEntityResolver`.
 5. **Stores:** `UseInMemory` / `UseSqlServer` on `AddBoundedContext(name)`.
