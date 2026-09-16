@@ -563,6 +563,51 @@ public class InMemoryEventStoreTests
     }
 
     [Fact]
+    public async Task Read_after_append_is_not_the_same_instance()
+    {
+        var store = new InMemoryEventStore();
+        var evt = new TestEvent(Guid.NewGuid(), DateTime.UtcNow);
+
+        await store.AppendAsync("identity-stream", [evt]);
+        var stored = Assert.Single(await store.ReadStreamAsync("identity-stream"));
+
+        Assert.False(ReferenceEquals(evt, stored.Event));
+        Assert.Equal(evt.Id, stored.Event.Id);
+    }
+
+    [Fact]
+    public async Task Mutating_caller_payload_array_after_log_append_does_not_change_store()
+    {
+        var store = new InMemoryEventStore();
+        var payload = new byte[] { 1, 2, 3 };
+        var metadata = new byte[] { 9, 8, 7 };
+        var envelope = new AppendEvent("tests.inmemory.test-event", payload, metadata);
+
+        await store.AppendAsync("buffer-stream", [envelope]);
+        payload[0] = 99;
+        metadata[0] = 99;
+
+        var recorded = Assert.Single(await ((IEventLog)store).ReadStreamAsync("buffer-stream"));
+        Assert.Equal(new byte[] { 1, 2, 3 }, recorded.Payload.ToArray());
+        Assert.Equal(new byte[] { 9, 8, 7 }, recorded.Metadata.ToArray());
+    }
+
+    [Fact]
+    public async Task Mutating_caller_metadata_after_append_is_not_observable()
+    {
+        var store = new InMemoryEventStore();
+        var metadata = new EventMetadata { UserId = "u-1", Timestamp = DateTime.UtcNow };
+
+        await store.AppendAsync("meta-stream", [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)], metadata: metadata);
+        metadata.UserId = "mutated";
+
+        var stored = Assert.Single(await store.ReadStreamAsync("meta-stream"));
+        Assert.Equal("u-1", stored.Metadata.UserId);
+        Assert.NotSame(metadata, stored.Metadata);
+        Assert.NotNull(stored.Metadata.CommitTimestamp);
+    }
+
+    [Fact]
     public async Task ReadByQueryAsync_WithAliasedTypeFilter_UsesEventTypeAlias()
     {
         var store = new InMemoryEventStore();

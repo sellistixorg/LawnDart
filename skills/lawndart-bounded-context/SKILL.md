@@ -13,16 +13,17 @@ description: Register named LawnDart bounded contexts, keyed stores, and WithCom
 4. **Projections:** `ProjectionBase<TView>` plus attributes; multi-stream views implement `IMultiStreamEntityResolver`.
 5. **Stores:** each context calls `UseInMemory()` / `UseSqlServer(...)`.
 
+Excerpt from `samples/Library.Host/LibraryHost.cs` (`AddTwoContexts`):
+
 ```csharp
-var orders = services.AddBoundedContext("orders");
-orders.UseInMemory();
-orders.WithCommandHandlers<PlaceOrderHandler>();
+var library = services.AddBoundedContext("library");
+library.UseInMemory();
+library.WithCommandHandlers<BorrowBookHandler>();
+library.WithEventTypes<BookAdded>();
 
-var catalog = services.AddBoundedContext("catalog");
-catalog.UseInMemory();
+var other = services.AddBoundedContext("other");
+other.UseInMemory();
 ```
-
-<!-- TODO(RDY-10) -->
 
 Single-store apps use name `"default"`. Keyed `IEventStore` /
 `IAggregateRepository` / `IDcbRepository` resolve with that name.

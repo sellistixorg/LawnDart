@@ -5,7 +5,11 @@ description: Choose and register a LawnDart event store. UseInMemory for zero in
 
 # Event store
 
-v1 backends: **InMemory** and **SQL Server**.
+v1 backends: **InMemory** and **SQL Server**. Both persist recorded frames
+(`IEventLog`: `AppendEvent` in, `RecordedEvent` out). Application code uses
+the typed session (`IEventStore`). InMemory serializes on append — it is
+not an object heap. `IEventSerializer` is `ReadOnlyMemory<byte>` (UTF-8
+JSON by default). Third-party stores implement the log, not the session.
 
 ## Frozen surface
 
@@ -15,19 +19,21 @@ v1 backends: **InMemory** and **SQL Server**.
 4. **Projections:** `ProjectionBase<TView>` plus attributes; multi-stream views implement `IMultiStreamEntityResolver`.
 5. **Stores:** `UseInMemory()` / `UseSqlServer(...)` on `AddBoundedContext(name)`.
 
+Excerpt from `samples/Library.Host/LibraryHost.cs` (`AddInMemoryLibrary`):
+
 ```csharp
-services.AddLawnDart(o => o.RequireTenantId = false);
+var ctx = services.AddBoundedContext("default");
+ctx.UseInMemory();
+```
 
-// Local / tests / Academy
-services.AddBoundedContext("default").UseInMemory();
+Excerpt from `samples/Library.Host/LibraryHost.cs` (`AddSqlLibrary`):
 
-// Durable
-services.AddBoundedContext("default")
-    .UseSqlServer(o =>
-    {
-        o.ConnectionString = cs;
-        o.RequireTenantId = false;
-    });
+```csharp
+ctx.UseSqlServer(o =>
+{
+    o.ConnectionString = connectionString;
+    o.RequireTenantId = false;
+});
 ```
 
 Align `RequireTenantId` on `AddLawnDart` and `SqlServerEventStoreOptions`.

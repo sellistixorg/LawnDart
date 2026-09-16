@@ -2,67 +2,135 @@
 
 **Previous:** [Concepts](01-concepts.md) · **Next:** [Testing](03-testing-your-aggregate.md)
 
+The shortest copy-paste quick start stays on the [README](https://github.com/sellistixorg/LawnDart/blob/main/README.md)
+and [Quickstart](../QUICKSTART.md). This step is the library domain — a
+`Book` with an invariant (`OnLoan`) whose decision state is not the catalog
+view.
+
+Excerpted from `samples/Library.Domain/Commands.cs`, `Events.cs`,
+`BookState.cs`, and `Book.cs`.
+
 ## Types
 
 ```csharp
-public sealed record CreateCounterCommand(Guid Id, Guid CounterId) : ICommand;
-public sealed record IncrementCommand(Guid Id, Guid CounterId) : ICommand;
+public sealed record AddBookCommand(Guid Id, Guid BookId, string Title, string Isbn) : ICommand;
+public sealed record BorrowBookCommand(Guid Id, Guid BookId, string MemberName) : ICommand;
+public sealed record ReturnBookCommand(Guid Id, Guid BookId) : ICommand;
 
-[EventTypeName("counter-created")]
-public sealed record CounterCreated(Guid Id, DateTime Timestamp, Guid CounterId) : IEvent;
+[EventTypeName("book-added")]
+public sealed record BookAdded(
+    Guid Id,
+    DateTime Timestamp,
+    Guid BookId,
+    string Title,
+    string Isbn) : IEvent;
 
-[EventTypeName("counter-incremented")]
-public sealed record CounterIncremented(Guid Id, DateTime Timestamp, Guid CounterId) : IEvent;
+[EventTypeName("book-borrowed")]
+public sealed record BookBorrowed(
+    Guid Id,
+    DateTime Timestamp,
+    Guid BookId,
+    string MemberName) : IEvent;
 
-public sealed class CounterState : IState
+[EventTypeName("book-returned")]
+public sealed record BookReturned(
+    Guid Id,
+    DateTime Timestamp,
+    Guid BookId) : IEvent;
+
+public sealed class BookState : IState
 {
-    public int Value { get; set; }
+    public Guid BookId { get; set; }
+    public bool Exists { get; set; }
+    public bool OnLoan { get; set; }
+    public string? BorrowedBy { get; set; }
 }
 
-public sealed class Counter : AggregateRoot<CounterState>
+public sealed class Book : AggregateRoot<BookState>
 {
-    public void Handle(CreateCounterCommand create) =>
-        Apply(new CounterCreated(Guid.NewGuid(), DateTime.UtcNow, create.CounterId));
+    public void Handle(AddBookCommand cmd)
+    {
+        if (State.Exists)
+            throw new InvalidOperationException("Book already exists.");
 
-    public void Handle(IncrementCommand increment) =>
-        Apply(new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, increment.CounterId));
+        Apply(new BookAdded(Guid.NewGuid(), DateTime.UtcNow, cmd.BookId, cmd.Title, cmd.Isbn));
+    }
+
+    public void Handle(BorrowBookCommand cmd)
+    {
+        if (!State.Exists)
+            throw new InvalidOperationException("Book does not exist.");
+        if (State.OnLoan)
+            throw new InvalidOperationException("Book is already on loan.");
+
+        Apply(new BookBorrowed(Guid.NewGuid(), DateTime.UtcNow, cmd.BookId, cmd.MemberName));
+    }
+
+    public void Handle(ReturnBookCommand cmd)
+    {
+        if (!State.Exists)
+            throw new InvalidOperationException("Book does not exist.");
+        if (!State.OnLoan)
+            throw new InvalidOperationException("Book is not on loan.");
+
+        Apply(new BookReturned(Guid.NewGuid(), DateTime.UtcNow, cmd.BookId));
+    }
 
     protected override void ApplyEventToState(IEvent @event)
     {
-        if (@event is CounterCreated) State.Value = 0;
-        if (@event is CounterIncremented) State.Value++;
+        switch (@event)
+        {
+            case BookAdded e:
+                State.BookId = e.BookId;
+                State.Exists = true;
+                State.OnLoan = false;
+                State.BorrowedBy = null;
+                break;
+            case BookBorrowed e:
+                State.OnLoan = true;
+                State.BorrowedBy = e.MemberName;
+                break;
+            case BookReturned:
+                State.OnLoan = false;
+                State.BorrowedBy = null;
+                break;
+        }
     }
 }
 ```
 
 Keep `Id` and `Timestamp` first on events if you follow the Eventhesis
 field-order convention. Every concrete `IEvent` needs `[EventTypeName]`.
+`BookState` is decision state only — no title, no ISBN. Those live on
+`BookCatalogView` ([step 4](04-reading-state.md)).
 
-## Host and execute
+## Host and dispatch
+
+Excerpted from `samples/Library.Host/LibraryHost.cs` and
+`samples/Library.Domain/Handlers.cs`.
 
 ```csharp
-using Microsoft.Extensions.DependencyInjection;
-using LawnDart;
-using LawnDart.Aggregates;
-using LawnDart.EventSourcing;
-using LawnDart.EventStore;
-
-var services = new ServiceCollection();
 services.AddLawnDart(o => o.RequireTenantId = false);
-services.AddBoundedContext("default")
-    .UseInMemory()
-    .WithEventTypes(typeof(CounterCreated), typeof(CounterIncremented));
-var sp = services.BuildServiceProvider();
+services.AddSingleton<ITenantContextProvider, AmbientTenantContextProvider>();
+var ctx = services.AddBoundedContext("default");
+ctx.UseInMemory();
+ctx.WithCommandHandlers<BorrowBookHandler>();
+ctx.WithEventTypes<BookAdded>();
+```
 
-var repo = sp.GetRequiredService<IAggregateRepository>();
-var id = Guid.NewGuid();
+```csharp
+public sealed class BorrowBookHandler : ICommandHandler<BorrowBookCommand>
+{
+    private readonly IAggregateRepository _books;
 
-var counter = await repo.GetOrCreateAsync<Counter>(id);
-await repo.HandleCommandAsync(counter, new CreateCounterCommand(Guid.NewGuid(), id));
-await repo.HandleCommandAsync(counter, new IncrementCommand(Guid.NewGuid(), id));
+    public BorrowBookHandler(IAggregateRepository books) => _books = books;
 
-var loaded = await repo.GetAsync<Counter>(id);
-Console.WriteLine(loaded!.State.Value); // 1
+    public async Task HandleAsync(BorrowBookCommand command, CancellationToken cancellationToken = default)
+    {
+        var book = await _books.GetOrCreateAsync<Book>(command.BookId, cancellationToken).ConfigureAwait(false);
+        await _books.HandleCommandAsync(book, command, cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+}
 ```
 
 `UseInMemory()` on the `"default"` context registers unkeyed aliases, so
@@ -80,4 +148,5 @@ Aggregates record events with `Apply`. DCB entities use `Emit` (tags).
 `Handle(TCommand)` is authoring; `HandleCommandAsync` is the repository.
 See [Intentional verb differences](../GLOSSARY.md#intentional-verb-differences).
 
-Academy domain: `demos/LawnDart.Demo.Academy/Domain`.
+Reference slice: `samples/Library.Domain`. Runnable host: Academy
+(`demos/LawnDart.Demo.Academy`).

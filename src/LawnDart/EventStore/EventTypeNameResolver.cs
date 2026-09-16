@@ -67,6 +67,8 @@ public static class EventTypeNameResolver
 
     /// <summary>
     /// Resolves a stored type name (catalog token, FullName, or simple name) to a CLR type.
+    /// After the dictionary miss, inherited SQL aliases scan AppDomain FullName /
+    /// AssemblyQualifiedName and undeclared <see cref="EventTypeNameAttribute"/> tokens.
     /// </summary>
     public static bool TryResolveType(string storedName, [NotNullWhen(true)] out Type? type)
     {
@@ -79,8 +81,12 @@ public static class EventTypeNameResolver
         if (NameToType.TryGetValue(storedName, out type))
             return true;
 
-        type = null;
-        return false;
+        type = TryResolveLegacyStoredName(storedName);
+        if (type is null)
+            return false;
+
+        RegisterReadAlias(storedName, type);
+        return true;
     }
 
     /// <summary>
@@ -143,4 +149,95 @@ public static class EventTypeNameResolver
 
         NameToType.AddOrUpdate(name, type, (_, existing) => existing);
     }
+
+    /// <summary>
+    /// Inherited SQL read aliases for older rows stored as CLR FullName,
+    /// AssemblyQualifiedName, or a catalog token that has not been Warmup'd yet.
+    /// </summary>
+    private static Type? TryResolveLegacyStoredName(string typeName)
+    {
+        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            try
+            {
+                var t = assembly.GetType(typeName, throwOnError: false);
+                if (t != null) return t;
+            }
+            catch
+            {
+                // skip unloadable assemblies
+            }
+        }
+
+        var commaIndex = typeName.IndexOf(',');
+        if (commaIndex > 0)
+        {
+            var fullName = typeName[..commaIndex];
+
+            var directType = Type.GetType(typeName, throwOnError: false);
+            if (directType != null) return directType;
+
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                try
+                {
+                    var t = assembly.GetType(fullName, throwOnError: false);
+                    if (t != null) return t;
+
+                    t = Array.Find(assembly.GetTypes(),
+                        x => x.FullName == fullName
+                             || x.AssemblyQualifiedName?.StartsWith(fullName + ",", StringComparison.Ordinal) == true);
+                    if (t != null) return t;
+                }
+                catch (ReflectionTypeLoadException ex)
+                {
+                    if (ex.Types == null) continue;
+                    foreach (var loaded in ex.Types)
+                    {
+                        if (loaded?.FullName == fullName) return loaded;
+                    }
+                }
+                catch
+                {
+                    // skip unloadable assemblies
+                }
+            }
+        }
+
+        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            try
+            {
+                foreach (var candidate in assembly.GetTypes())
+                {
+                    if (!IsCatalogEventType(candidate))
+                        continue;
+
+                    if (string.Equals(TryGetDeclaredName(candidate), typeName, StringComparison.Ordinal))
+                        return candidate;
+                }
+            }
+            catch (ReflectionTypeLoadException ex)
+            {
+                if (ex.Types == null) continue;
+                foreach (var candidate in ex.Types)
+                {
+                    if (candidate is null || !IsCatalogEventType(candidate))
+                        continue;
+
+                    if (string.Equals(TryGetDeclaredName(candidate), typeName, StringComparison.Ordinal))
+                        return candidate;
+                }
+            }
+            catch
+            {
+                // skip unloadable assemblies
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsCatalogEventType(Type type)
+        => typeof(IEvent).IsAssignableFrom(type) && !type.IsAbstract && !type.IsInterface;
 }

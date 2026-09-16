@@ -1,23 +1,25 @@
 using System.Collections.Concurrent;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
-using LawnDart.EventSourcing.Telemetry;
+using LawnDart.EventSourcing.Serialization;
 using LawnDart.EventStore;
 using LawnDart.Metadata;
 
 namespace LawnDart.EventSourcing.EventStore;
 
 /// <summary>
-/// In-memory event store implementation for testing and development.
-/// Implements portable <see cref="IEventStoreSubscriptions"/> (catch-up → seamless live).
+/// In-memory <see cref="IEventLog"/>. Typed <see cref="IEventStore"/> methods
+/// forward to <see cref="EventStoreAdapter"/>.
 /// </summary>
-public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions
+public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventLog, IEventLogSubscriptions
 {
     private readonly ILogger<InMemoryEventStore>? _logger;
-    private readonly Dictionary<string, List<SequencedEvent>> _streams = new();
-    private readonly List<SequencedEvent> _allEvents = new();
+    private readonly EventSession _session;
+    private readonly EventStoreAdapter _adapter;
+    private readonly Dictionary<string, List<RecordedEvent>> _streams = new();
+    private readonly List<RecordedEvent> _allEvents = new();
     private readonly Dictionary<string, StreamMetadata> _streamRegistry = new();
     private readonly ConcurrentDictionary<InMemorySubscriptionHandle, byte> _subscriptions = new();
     private readonly int _subscriptionChannelCapacity;
@@ -38,20 +40,27 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions
     /// </param>
     /// <param name="logger">Optional logger.</param>
     /// <param name="options">Optional in-memory store options (subscription channel capacity).</param>
+    /// <param name="session">
+    /// Typed session used to serialize on append and hydrate on read.
+    /// Defaults to STJ UTF-8 and <see cref="EventTypeCatalog.Shared"/>.
+    /// </param>
     public InMemoryEventStore(
         bool enableRegistry = true,
         string contextName  = "default",
         ILogger<InMemoryEventStore>? logger = null,
-        InMemoryEventStoreOptions? options = null)
+        InMemoryEventStoreOptions? options = null,
+        EventSession? session = null)
     {
         _enableRegistry = enableRegistry;
         ContextName     = string.IsNullOrWhiteSpace(contextName) ? "default" : contextName;
         _logger         = logger;
+        _session        = session ?? new EventSession(new JsonEventSerializer());
         var capacity = options?.SubscriptionChannelCapacity
             ?? InMemoryEventStoreOptions.DefaultSubscriptionChannelCapacity;
         if (capacity < 1)
             throw new ArgumentOutOfRangeException(nameof(options), "SubscriptionChannelCapacity must be at least 1.");
         _subscriptionChannelCapacity = capacity;
+        _adapter = new EventStoreAdapter(this, _session, this, _subscriptionChannelCapacity);
     }
 
     public Task<IReadOnlyList<SequencedEvent>> ReadStreamAsync(
@@ -60,111 +69,23 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions
         long? toVersion = null,
         DateTime? toTimestamp = null,
         CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(streamId))
-            throw new ArgumentException("Stream ID cannot be null or empty", nameof(streamId));
+        => _adapter.ReadStreamAsync(streamId, fromVersion, toVersion, toTimestamp, cancellationToken);
 
-        using var activity = EventStoreTelemetry.StartReadActivity("Stream", streamId);
-        var stopwatch = Stopwatch.StartNew();
-
-        try
-        {
-            lock (_lock)
-            {
-                if (!_streams.TryGetValue(streamId, out var events))
-                {
-                    var emptyResult = Array.Empty<SequencedEvent>();
-                    EventStoreTelemetry.RecordRead("Stream", 0, stopwatch.Elapsed, streamId);
-                    return Task.FromResult<IReadOnlyList<SequencedEvent>>(emptyResult);
-                }
-
-                var result = events
-                    .Where(e => e.Version >= fromVersion
-                        && (!toVersion.HasValue || e.Version <= toVersion.Value)
-                        && (!toTimestamp.HasValue || e.Metadata.Timestamp <= toTimestamp.Value))
-                    .OrderBy(e => e.Version)
-                    .ToList()
-                    .AsReadOnly();
-
-                EventStoreTelemetry.RecordRead("Stream", result.Count, stopwatch.Elapsed, streamId);
-                return Task.FromResult<IReadOnlyList<SequencedEvent>>(result);
-            }
-        }
-        catch (Exception ex)
-        {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            throw;
-        }
-    }
-
-    public async IAsyncEnumerable<SequencedEvent> ReadStreamEnumerableAsync(
+    public IAsyncEnumerable<SequencedEvent> ReadStreamEnumerableAsync(
         string streamId,
         long fromVersion = 0,
         long? toVersion = null,
         DateTime? toTimestamp = null,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(streamId))
-            throw new ArgumentException("Stream ID cannot be null or empty", nameof(streamId));
+        CancellationToken cancellationToken = default)
+        => _adapter.ReadStreamEnumerableAsync(streamId, fromVersion, toVersion, toTimestamp, cancellationToken);
 
-        using var activity = EventStoreTelemetry.StartReadActivity("Stream", streamId);
-
-        List<SequencedEvent> events;
-        lock (_lock)
-        {
-            if (!_streams.TryGetValue(streamId, out var streamEvents))
-            {
-                yield break;
-            }
-            events = streamEvents
-                .Where(e => e.Version >= fromVersion
-                    && (!toVersion.HasValue || e.Version <= toVersion.Value)
-                    && (!toTimestamp.HasValue || e.Metadata.Timestamp <= toTimestamp.Value))
-                .OrderBy(e => e.Version)
-                .ToList();
-        }
-
-        foreach (var evt in events)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            yield return evt;
-        }
-    }
-
-    public async IAsyncEnumerable<SequencedEvent> ReadByQueryStreamAsync(
+    public IAsyncEnumerable<SequencedEvent> ReadByQueryStreamAsync(
         Query query,
         long? fromSequencePosition = null,
         long? toSequencePosition = null,
         DateTime? toTimestamp = null,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
-    {
-        if (query == null)
-            throw new ArgumentNullException(nameof(query));
-
-        List<SequencedEvent> snapshot;
-        lock (_lock)
-        {
-            var events = _allEvents.AsEnumerable();
-
-            if (fromSequencePosition.HasValue)
-                events = events.Where(e => e.SequencePosition >= fromSequencePosition.Value);
-            if (toSequencePosition.HasValue)
-                events = events.Where(e => e.SequencePosition <= toSequencePosition.Value);
-            if (toTimestamp.HasValue)
-                events = events.Where(e => e.Metadata.Timestamp <= toTimestamp.Value);
-
-            if (query.Items.Count > 0)
-                events = events.Where(e => MatchesQuery(e, query));
-
-            snapshot = events.OrderBy(e => e.SequencePosition).ToList();
-        }
-
-        foreach (var evt in snapshot)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            yield return evt;
-        }
-    }
+        CancellationToken cancellationToken = default)
+        => _adapter.ReadByQueryStreamAsync(query, fromSequencePosition, toSequencePosition, toTimestamp, cancellationToken);
 
     public Task<QueryResult> ReadByQueryAsync(
         Query query,
@@ -173,33 +94,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions
         long? toSequencePosition = null,
         DateTime? toTimestamp = null,
         CancellationToken cancellationToken = default)
-    {
-        if (query == null)
-            throw new ArgumentNullException(nameof(query));
-
-        lock (_lock)
-        {
-            var events = _allEvents.AsEnumerable();
-
-            if (fromSequencePosition.HasValue)
-                events = events.Where(e => e.SequencePosition >= fromSequencePosition.Value);
-            if (toSequencePosition.HasValue)
-                events = events.Where(e => e.SequencePosition <= toSequencePosition.Value);
-            if (toTimestamp.HasValue)
-                events = events.Where(e => e.Metadata.Timestamp <= toTimestamp.Value);
-
-            if (query.Items.Count > 0)
-                events = events.Where(e => MatchesQuery(e, query));
-
-            events = events.OrderBy(e => e.SequencePosition);
-
-            if (limit.HasValue)
-                events = events.Take(limit.Value);
-
-            var result = events.ToList().AsReadOnly();
-            return Task.FromResult(new QueryResult(result));
-        }
-    }
+        => _adapter.ReadByQueryAsync(query, fromSequencePosition, limit, toSequencePosition, toTimestamp, cancellationToken);
 
     public Task<AppendResult> AppendAsync(
         string streamId,
@@ -208,101 +103,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions
         EventMetadata? metadata = null,
         IEnumerable<string>? tags = null,
         CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(streamId))
-            throw new ArgumentException("Stream ID cannot be null or empty", nameof(streamId));
-
-        var eventsList = events?.ToList() ?? throw new ArgumentNullException(nameof(events));
-        if (eventsList.Count == 0)
-            throw new ArgumentException("At least one event is required", nameof(events));
-
-        var tagsList = tags?.ToList() ?? new List<string>();
-
-        using var activity = EventStoreTelemetry.StartAppendActivity(streamId, eventsList.Count);
-        var stopwatch = Stopwatch.StartNew();
-        var success = false;
-
-        try
-        {
-            lock (_lock)
-        {
-            // Check expected version for optimistic concurrency
-            if (expectedVersion.HasValue)
-            {
-                var currentVersion = _streams.TryGetValue(streamId, out var existingEvents)
-                    ? existingEvents.Count > 0 ? existingEvents.Max(e => e.Version) : -1
-                    : -1;
-
-                if (currentVersion != expectedVersion.Value)
-                {
-                    throw new ConcurrencyException(
-                        $"Expected version {expectedVersion.Value} but current version is {currentVersion}",
-                        expectedVersion.Value,
-                        currentVersion);
-                }
-            }
-
-            var sequencePositions = new List<long>();
-            var streamVersion = _streams.TryGetValue(streamId, out var streamEvents)
-                ? streamEvents.Count > 0 ? streamEvents.Max(e => e.Version) : 0
-                : 0;
-
-            if (!_streams.ContainsKey(streamId))
-            {
-                _streams[streamId] = new List<SequencedEvent>();
-            }
-
-            foreach (var @event in eventsList)
-            {
-                var version = ++streamVersion;
-                var sequencePosition = _nextSequencePosition++;
-
-                // Create or clone metadata to set CommitTimestamp
-                var eventMetadata = metadata ?? new EventMetadata { EventId = @event.Id.ToString(), Timestamp = @event.Timestamp };
-                // Set CommitTimestamp to actual commit time (now)
-                eventMetadata.CommitTimestamp = DateTime.UtcNow;
-
-                var sequencedEvent = new SequencedEvent(
-                    @event,
-                    sequencePosition,
-                    streamId,
-                    version,
-                    eventMetadata,
-                    tagsList);
-
-                _streams[streamId].Add(sequencedEvent);
-                _allEvents.Add(sequencedEvent);
-                sequencePositions.Add(sequencePosition);
-            }
-
-            // Update stream registry
-            if (_enableRegistry)
-            {
-                UpdateStreamRegistry(streamId, streamVersion, sequencePositions.Last(), eventsList.Count, tagsList);
-            }
-
-            _logger?.LogDebug(
-                "Appended {Count} events to stream {StreamId}, versions {FromVersion}-{ToVersion}",
-                eventsList.Count,
-                streamId,
-                streamVersion - eventsList.Count + 1,
-                streamVersion);
-
-            success = true;
-            EventStoreTelemetry.RecordAppend(streamId, eventsList.Count, stopwatch.Elapsed, success);
-            // ConsistencyMarker is null for the in-memory backend; only hash-based backends populate it.
-            var result = new AppendResult(sequencePositions.AsReadOnly(), null, streamVersion);
-            SignalSubscriptions();
-            return Task.FromResult(result);
-            }
-        }
-        catch (Exception ex)
-        {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            EventStoreTelemetry.RecordAppend(streamId, eventsList.Count, stopwatch.Elapsed, false);
-            throw;
-        }
-    }
+        => _adapter.AppendAsync(streamId, events, expectedVersion, metadata, tags, cancellationToken);
 
     public Task<AppendResult> AppendAsync(
         IEnumerable<IEvent> events,
@@ -310,82 +111,122 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions
         EventMetadata? metadata = null,
         IEnumerable<string>? tags = null,
         CancellationToken cancellationToken = default)
+        => _adapter.AppendAsync(events, condition, metadata, tags, cancellationToken);
+
+    public Task<AppendResult> AppendAsync(
+        string streamId,
+        IEnumerable<AppendEvent> events,
+        long? expectedVersion = null,
+        CancellationToken cancellationToken = default)
     {
-        var eventsList = events?.ToList() ?? throw new ArgumentNullException(nameof(events));
-        if (eventsList.Count == 0)
+        if (string.IsNullOrWhiteSpace(streamId))
+            throw new ArgumentException("Stream ID cannot be null or empty", nameof(streamId));
+
+        var envelopes = events?.ToList() ?? throw new ArgumentNullException(nameof(events));
+        if (envelopes.Count == 0)
             throw new ArgumentException("At least one event is required", nameof(events));
-
-        if (condition == null)
-            throw new ArgumentNullException(nameof(condition));
-
-        var tagsList = tags?.ToList() ?? new List<string>();
 
         lock (_lock)
         {
-            // Check append condition
-            var matchingEvents = _allEvents.AsEnumerable();
-
-            if (condition.After.HasValue)
-            {
-                matchingEvents = matchingEvents.Where(e => e.SequencePosition > condition.After.Value);
-            }
-
-            matchingEvents = matchingEvents.Where(e => MatchesQuery(e, condition.FailIfEventsMatch));
-
-            if (matchingEvents.Any())
-            {
-                throw new ConcurrencyException(
-                    $"Append condition failed: found {matchingEvents.Count()} matching events",
-                    condition.After);
-            }
-
-            // DCB appends use opaque internal stream IDs for parity with the SQL backend.
-            var streamId = BuildDcbStreamId(metadata?.TenantId);
-
-            var sequencePositions = new List<long>();
-
-            foreach (var @event in eventsList)
-            {
-                var sequencePosition = _nextSequencePosition++;
-
-                // Create or clone metadata to set CommitTimestamp
-                var eventMetadata = metadata ?? new EventMetadata { EventId = @event.Id.ToString(), Timestamp = @event.Timestamp };
-                // Set CommitTimestamp to actual commit time (now)
-                eventMetadata.CommitTimestamp = DateTime.UtcNow;
-
-                var sequencedEvent = new SequencedEvent(
-                    @event,
-                    sequencePosition,
-                    streamId,
-                    0, // Version not meaningful for DCB approach
-                    eventMetadata,
-                    tagsList);
-
-                _allEvents.Add(sequencedEvent);
-                sequencePositions.Add(sequencePosition);
-            }
-
-            // Update stream registry for DCB streams
-            if (_enableRegistry)
-            {
-                UpdateStreamRegistry(streamId, 0, sequencePositions.Last(), eventsList.Count, tagsList);
-            }
-
-            _logger?.LogDebug(
-                "Appended {Count} events with DCB condition, sequence positions {FromPosition}-{ToPosition}",
-                eventsList.Count,
-                sequencePositions.FirstOrDefault(),
-                sequencePositions.LastOrDefault());
-
-            // ConsistencyMarker is null for the in-memory backend; only hash-based backends populate it.
-            var result = new AppendResult(sequencePositions.AsReadOnly());
+            var result = AppendFramesToStream(streamId, envelopes, expectedVersion);
             SignalSubscriptions();
             return Task.FromResult(result);
         }
     }
 
-    private static bool MatchesQuery(SequencedEvent sequencedEvent, Query query)
-        => EventQueryMatcher.Matches(sequencedEvent, query);
+    public Task<AppendResult> AppendAsync(
+        IEnumerable<AppendEvent> events,
+        AppendCondition condition,
+        CancellationToken cancellationToken = default)
+    {
+        var envelopes = events?.ToList() ?? throw new ArgumentNullException(nameof(events));
+        if (envelopes.Count == 0)
+            throw new ArgumentException("At least one event is required", nameof(events));
+
+        ArgumentNullException.ThrowIfNull(condition);
+
+        lock (_lock)
+        {
+            var result = AppendFramesDcb(envelopes, condition, TryReadTenantId(envelopes));
+            SignalSubscriptions();
+            return Task.FromResult(result);
+        }
+    }
+
+    async IAsyncEnumerable<RecordedEvent> IEventLog.ReadStreamEnumerableAsync(
+        string streamId,
+        long fromVersion,
+        long? toVersion,
+        DateTime? toCommitTimestamp,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(streamId))
+            throw new ArgumentException("Stream ID cannot be null or empty", nameof(streamId));
+
+        foreach (var frame in SnapshotStream(streamId, fromVersion, toVersion, toCommitTimestamp))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return frame;
+        }
+
+        await Task.CompletedTask.ConfigureAwait(false);
+    }
+
+    Task<IReadOnlyList<RecordedEvent>> IEventLog.ReadStreamAsync(
+        string streamId,
+        long fromVersion,
+        long? toVersion,
+        DateTime? toCommitTimestamp,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(streamId))
+            throw new ArgumentException("Stream ID cannot be null or empty", nameof(streamId));
+
+        return Task.FromResult<IReadOnlyList<RecordedEvent>>(
+            SnapshotStream(streamId, fromVersion, toVersion, toCommitTimestamp));
+    }
+
+    Task<EventLogQueryResult> IEventLog.ReadByQueryAsync(
+        Query query,
+        long? fromSequencePosition,
+        int? limit,
+        long? toSequencePosition,
+        DateTime? toCommitTimestamp,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        var frames = SnapshotQuery(query, fromSequencePosition, toSequencePosition, toCommitTimestamp, limit);
+        return Task.FromResult(new EventLogQueryResult(frames));
+    }
+
+    async IAsyncEnumerable<RecordedEvent> IEventLog.ReadByQueryStreamAsync(
+        Query query,
+        long? fromSequencePosition,
+        long? toSequencePosition,
+        DateTime? toCommitTimestamp,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        foreach (var frame in SnapshotQuery(query, fromSequencePosition, toSequencePosition, toCommitTimestamp, limit: null))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return frame;
+        }
+
+        await Task.CompletedTask.ConfigureAwait(false);
+    }
+
+    Task<long> IEventLog.GetMaxSequencePositionAsync(
+        Query query,
+        long? fromSequencePosition,
+        long? toSequencePosition,
+        DateTime? toCommitTimestamp,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        var frames = SnapshotQuery(query, fromSequencePosition, toSequencePosition, toCommitTimestamp, limit: null);
+        return Task.FromResult(MaxSequence(frames));
+    }
 
     /// <inheritdoc />
     public ISubscriptionHandle Subscribe(
@@ -393,6 +234,14 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions
         long fromSequence,
         EventSubscriptionFilter? filter = null,
         CancellationToken cancellationToken = default)
+        => _adapter.Subscribe(subscriberId, fromSequence, filter, cancellationToken);
+
+    /// <inheritdoc />
+    IEventLogSubscriptionHandle IEventLogSubscriptions.Subscribe(
+        string subscriberId,
+        long fromSequence,
+        EventSubscriptionFilter? filter,
+        CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(subscriberId))
             throw new ArgumentException("Subscriber id is required.", nameof(subscriberId));
@@ -428,7 +277,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions
         {
             while (!ct.IsCancellationRequested && !handle.IsDisposed)
             {
-                List<SequencedEvent> batch;
+                List<RecordedEvent> batch;
                 lock (_lock)
                 {
                     batch = _allEvents
@@ -454,13 +303,13 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions
                     continue;
                 }
 
-                foreach (var evt in batch)
+                foreach (var frame in batch)
                 {
                     if (ct.IsCancellationRequested || handle.IsDisposed)
                         break;
 
-                    await handle.WriteAsync(evt, ct).ConfigureAwait(false);
-                    lastDelivered = evt.SequencePosition;
+                    await handle.WriteAsync(frame, ct).ConfigureAwait(false);
+                    lastDelivered = frame.SequencePosition;
                 }
             }
         }
@@ -514,8 +363,6 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions
             _nextSequencePosition = 1;
         }
     }
-
-    // Stream Registry Implementation
 
     public Task<StreamMetadata?> GetStreamAsync(
         string streamId,
@@ -648,32 +495,182 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions
         long? toSequencePosition = null,
         DateTime? toTimestamp = null,
         CancellationToken cancellationToken = default)
-    {
-        if (query == null)
-            throw new ArgumentNullException(nameof(query));
+        => _adapter.GetMaxSequencePositionAsync(
+            query, fromSequencePosition, toSequencePosition, toTimestamp, cancellationToken);
 
+    private List<RecordedEvent> SnapshotStream(
+        string streamId,
+        long fromVersion,
+        long? toVersion,
+        DateTime? toCommitTimestamp)
+    {
         lock (_lock)
         {
-            var events = _allEvents.AsEnumerable();
+            if (!_streams.TryGetValue(streamId, out var events))
+                return [];
+
+            return events
+                .Where(e => e.StreamVersion >= fromVersion
+                    && (!toVersion.HasValue || e.StreamVersion <= toVersion.Value)
+                    && MatchesCommitTime(e, toCommitTimestamp))
+                .OrderBy(e => e.StreamVersion)
+                .ToList();
+        }
+    }
+
+    private List<RecordedEvent> SnapshotQuery(
+        Query query,
+        long? fromSequencePosition,
+        long? toSequencePosition,
+        DateTime? toCommitTimestamp,
+        int? limit)
+    {
+        lock (_lock)
+        {
+            IEnumerable<RecordedEvent> events = _allEvents;
 
             if (fromSequencePosition.HasValue)
                 events = events.Where(e => e.SequencePosition >= fromSequencePosition.Value);
             if (toSequencePosition.HasValue)
                 events = events.Where(e => e.SequencePosition <= toSequencePosition.Value);
-            if (toTimestamp.HasValue)
-                events = events.Where(e => e.Metadata.Timestamp <= toTimestamp.Value);
+            events = events.Where(e => MatchesCommitTime(e, toCommitTimestamp));
             if (query.Items.Count > 0)
-                events = events.Where(e => MatchesQuery(e, query));
+                events = events.Where(e => EventQueryMatcher.Matches(e, query));
 
-            var max = 0L;
-            foreach (var evt in events)
-            {
-                if (evt.SequencePosition > max)
-                    max = evt.SequencePosition;
-            }
+            events = events.OrderBy(e => e.SequencePosition);
+            if (limit.HasValue)
+                events = events.Take(limit.Value);
 
-            return Task.FromResult(max);
+            return events.ToList();
         }
+    }
+
+    private AppendResult AppendFramesToStream(
+        string streamId,
+        IReadOnlyList<AppendEvent> envelopes,
+        long? expectedVersion)
+    {
+        if (expectedVersion.HasValue)
+        {
+            var currentVersion = _streams.TryGetValue(streamId, out var existingEvents)
+                ? existingEvents.Count > 0 ? existingEvents.Max(e => e.StreamVersion) : -1
+                : -1;
+
+            if (currentVersion != expectedVersion.Value)
+            {
+                throw new ConcurrencyException(
+                    $"Expected version {expectedVersion.Value} but current version is {currentVersion}",
+                    expectedVersion.Value,
+                    currentVersion);
+            }
+        }
+
+        var sequencePositions = new List<long>();
+        var streamVersion = _streams.TryGetValue(streamId, out var streamEvents)
+            ? streamEvents.Count > 0 ? streamEvents.Max(e => e.StreamVersion) : 0
+            : 0;
+
+        if (!_streams.ContainsKey(streamId))
+            _streams[streamId] = [];
+
+        foreach (var envelope in envelopes)
+        {
+            var recorded = Record(envelope, streamId, ++streamVersion);
+            _streams[streamId].Add(recorded);
+            _allEvents.Add(recorded);
+            sequencePositions.Add(recorded.SequencePosition);
+        }
+
+        if (_enableRegistry)
+        {
+            UpdateStreamRegistry(streamId, streamVersion, sequencePositions.Last(), envelopes.Count, UnionTags(envelopes));
+        }
+
+        _logger?.LogDebug(
+            "Appended {Count} events to stream {StreamId}, versions {FromVersion}-{ToVersion}",
+            envelopes.Count,
+            streamId,
+            streamVersion - envelopes.Count + 1,
+            streamVersion);
+
+        return new AppendResult(sequencePositions.AsReadOnly(), null, streamVersion);
+    }
+
+    private AppendResult AppendFramesDcb(
+        IReadOnlyList<AppendEvent> envelopes,
+        AppendCondition condition,
+        string? tenantId)
+    {
+        var matchingEvents = _allEvents.AsEnumerable();
+
+        if (condition.After.HasValue)
+            matchingEvents = matchingEvents.Where(e => e.SequencePosition > condition.After.Value);
+
+        matchingEvents = matchingEvents.Where(e => EventQueryMatcher.Matches(e, condition.FailIfEventsMatch));
+
+        if (matchingEvents.Any())
+        {
+            throw new ConcurrencyException(
+                $"Append condition failed: found {matchingEvents.Count()} matching events",
+                condition.After);
+        }
+
+        var streamId = BuildDcbStreamId(tenantId);
+        var sequencePositions = new List<long>();
+
+        foreach (var envelope in envelopes)
+        {
+            var recorded = Record(envelope, streamId, streamVersion: 0);
+            _allEvents.Add(recorded);
+            sequencePositions.Add(recorded.SequencePosition);
+        }
+
+        if (_enableRegistry)
+        {
+            UpdateStreamRegistry(streamId, 0, sequencePositions.Last(), envelopes.Count, UnionTags(envelopes));
+        }
+
+        _logger?.LogDebug(
+            "Appended {Count} events with DCB condition, sequence positions {FromPosition}-{ToPosition}",
+            envelopes.Count,
+            sequencePositions.FirstOrDefault(),
+            sequencePositions.LastOrDefault());
+
+        return new AppendResult(sequencePositions.AsReadOnly());
+    }
+
+    private RecordedEvent Record(AppendEvent envelope, string streamId, long streamVersion)
+    {
+        var sequencePosition = _nextSequencePosition++;
+        return new RecordedEvent(
+            envelope.EventType,
+            envelope.Payload,
+            streamId,
+            streamVersion,
+            sequencePosition,
+            DateTime.UtcNow,
+            envelope.Metadata,
+            envelope.SchemaVersion,
+            envelope.ContentType,
+            envelope.Tags);
+    }
+
+    private static IReadOnlyList<string> UnionTags(IReadOnlyList<AppendEvent> envelopes)
+        => envelopes.SelectMany(e => e.Tags).Distinct(StringComparer.Ordinal).ToList();
+
+    private static bool MatchesCommitTime(RecordedEvent recorded, DateTime? toCommitTimestamp)
+        => !toCommitTimestamp.HasValue || recorded.CommitTimestamp <= toCommitTimestamp.Value;
+
+    private static long MaxSequence(IEnumerable<RecordedEvent> frames)
+    {
+        var max = 0L;
+        foreach (var frame in frames)
+        {
+            if (frame.SequencePosition > max)
+                max = frame.SequencePosition;
+        }
+
+        return max;
     }
 
     private void UpdateStreamRegistry(
@@ -694,7 +691,6 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions
 
             if (_streamRegistry.TryGetValue(streamId, out var existing))
             {
-                // Update existing
                 existing.CurrentVersion = currentVersion;
                 existing.LastSequencePosition = lastSequencePosition;
                 existing.LastEventAt = now;
@@ -703,12 +699,11 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions
             }
             else
             {
-                // Create new
-                var tenantId = ExtractTenantId(streamId);
+                var extractedTenant = ExtractTenantId(streamId);
                 _streamRegistry[streamId] = new StreamMetadata
                 {
                     StreamId = streamId,
-                    TenantId = tenantId,
+                    TenantId = extractedTenant,
                     AggregateType = aggregateType,
                     AggregateId = aggregateId,
                     CurrentVersion = currentVersion,
@@ -731,5 +726,31 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions
 
     private static string? ExtractTenantId(string streamId)
         => StreamIdParser.ExtractTenantId(streamId);
-}
 
+    private static string? TryReadTenantId(IReadOnlyList<AppendEvent> envelopes)
+    {
+        foreach (var envelope in envelopes)
+        {
+            if (envelope.Metadata.IsEmpty)
+                continue;
+
+            try
+            {
+                using var doc = JsonDocument.Parse(envelope.Metadata);
+                if (doc.RootElement.TryGetProperty("TenantId", out var property)
+                    && property.ValueKind == JsonValueKind.String)
+                {
+                    var value = property.GetString();
+                    if (!string.IsNullOrWhiteSpace(value))
+                        return value;
+                }
+            }
+            catch (JsonException)
+            {
+                // Metadata is opaque JSON to the log; skip unreadable blobs.
+            }
+        }
+
+        return null;
+    }
+}

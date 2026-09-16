@@ -10,14 +10,21 @@ Take it for domain tests. SQL Server integration tests live in the
 
 No host registration. Reference the package from the test project:
 
+Excerpted from `samples/Library.Domain.Tests/LibraryBookTests.cs`:
+
 ```csharp
 await using var ctx = BddTestContext.CreateInMemory();
+var bookId = Guid.NewGuid();
 
 await AggregateSpec
-    .For<Counter>(ctx, id)
-    .Given(new CounterCreated(Guid.NewGuid(), DateTime.UtcNow, id))
-    .When(new IncrementCommand(Guid.NewGuid(), id))
-    .ThenEmittedEvent<CounterIncremented>(e => e.CounterId == id)
+    .For<Book>(ctx, bookId)
+    .Given(
+        new BookAdded(Guid.NewGuid(), DateTime.UtcNow, bookId, "Pragmatic Programmer", "978-0135957059"),
+        new BookBorrowed(Guid.NewGuid(), DateTime.UtcNow, bookId, "Jane Doe"))
+    .When(new BorrowBookCommand(Guid.NewGuid(), bookId, "Someone Else"))
+    .ThenThrows<InvalidOperationException>()
+    .AndAssert(result =>
+        Assert.Equal("Book is already on loan.", result.Exception!.Message))
     .RunAsync();
 ```
 

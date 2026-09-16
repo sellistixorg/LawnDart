@@ -1,9 +1,10 @@
 namespace LawnDart.EventStore;
 
 /// <summary>
-/// Shared DCB <see cref="Query"/> matching for event-store reads and portable subscriptions.
+/// Shared DCB <see cref="Query"/> matching for typed and log reads / subscriptions.
 /// Backends should reuse this helper (or equivalent) so subscription <see cref="EventSubscriptionFilter.ForQuery"/>
-/// stays aligned with <c>ReadByQuery*</c> semantics.
+/// stays aligned with <c>ReadByQuery*</c> semantics. Prefer <see cref="Matches(RecordedEvent, Query)"/>
+/// on the log so a filter does not hydrate a CLR type.
 /// </summary>
 public static class EventQueryMatcher
 {
@@ -17,41 +18,70 @@ public static class EventQueryMatcher
         ArgumentNullException.ThrowIfNull(sequencedEvent);
         ArgumentNullException.ThrowIfNull(query);
 
+        return MatchesCore(
+            sequencedEvent.StreamId,
+            ResolveTypeName(sequencedEvent.Event),
+            sequencedEvent.Tags,
+            query);
+    }
+
+    /// <summary>
+    /// Returns whether <paramref name="recordedEvent"/> matches <paramref name="query"/>
+    /// using the stored family token. Does not hydrate a CLR type.
+    /// </summary>
+    public static bool Matches(RecordedEvent recordedEvent, Query query)
+    {
+        ArgumentNullException.ThrowIfNull(recordedEvent);
+        ArgumentNullException.ThrowIfNull(query);
+
+        return MatchesCore(
+            recordedEvent.StreamId,
+            recordedEvent.EventType,
+            recordedEvent.Tags,
+            query);
+    }
+
+    private static bool MatchesCore(
+        string streamId,
+        string eventTypeName,
+        IReadOnlyList<string> tags,
+        Query query)
+    {
         if (query.Items.Count == 0)
             return true;
 
         foreach (var item in query.Items)
         {
-            if (MatchesItem(sequencedEvent, item))
+            if (MatchesItem(streamId, eventTypeName, tags, item))
                 return true;
         }
 
         return false;
     }
 
-    private static bool MatchesItem(SequencedEvent sequencedEvent, QueryItem item)
+    private static bool MatchesItem(
+        string streamId,
+        string eventTypeName,
+        IReadOnlyList<string> tags,
+        QueryItem item)
     {
         if (item.PartitionFilter != null)
         {
             var pf = item.PartitionFilter;
-            var hash = PartitionHashUtility.GetDeterministicHashCode(sequencedEvent.StreamId);
+            var hash = PartitionHashUtility.GetDeterministicHashCode(streamId);
             var partition = hash % pf.TotalInstances;
             if (partition != pf.NodeInstance)
                 return false;
         }
 
-        if (item.Types is { Count: > 0 })
-        {
-            var eventTypeName = ResolveTypeName(sequencedEvent.Event);
-            if (!item.Types.Contains(eventTypeName))
-                return false;
-        }
+        if (item.Types is { Count: > 0 } && !item.Types.Contains(eventTypeName))
+            return false;
 
         if (item.Tags is { Count: > 0 })
         {
             foreach (var requiredTag in item.Tags)
             {
-                if (!sequencedEvent.Tags.Contains(requiredTag))
+                if (!tags.Contains(requiredTag))
                     return false;
             }
         }
@@ -60,9 +90,9 @@ public static class EventQueryMatcher
     }
 
     /// <summary>
-    /// Prefer the persisted type name on <see cref="IRawEvent"/> (gRPC <c>OpaqueEvent</c> /
-    /// unknown types). CLR <see cref="EventTypeNameResolver"/> would otherwise see
-    /// <c>OpaqueEvent</c> and drop every typed Subscribe match.
+    /// Prefer <see cref="IRawEvent.TypeName"/> (the stored family token).
+    /// <see cref="EventTypeNameResolver.GetName"/> would otherwise see the
+    /// wrapper CLR name and drop typed query / subscribe matches.
     /// </summary>
     private static string ResolveTypeName(IEvent @event) =>
         @event is IRawEvent raw && !string.IsNullOrWhiteSpace(raw.TypeName)

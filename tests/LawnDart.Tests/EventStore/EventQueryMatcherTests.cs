@@ -10,14 +10,21 @@ public class EventQueryMatcherTests
     [Fact]
     public void ByType_matches_IRawEvent_TypeName_not_CLR_name()
     {
-        var raw = new StubRawEvent("test.course-created");
+        var recorded = new RecordedEvent(
+            "test.course-created",
+            ReadOnlyMemory<byte>.Empty,
+            "s",
+            streamVersion: 1,
+            sequencePosition: 1,
+            commitTimestamp: DateTime.UtcNow);
+        var raw = RawRecordedEvent.From(recorded);
         var se = new SequencedEvent(raw, 1, "s", 1, new EventMetadata());
         var query = Query.FromItems(QueryItem.ByType("test.course-created"));
 
         Assert.True(EventQueryMatcher.Matches(se, query));
         Assert.False(EventQueryMatcher.Matches(
             se,
-            Query.FromItems(QueryItem.ByType("OpaqueEvent"))));
+            Query.FromItems(QueryItem.ByType(nameof(RawRecordedEvent)))));
     }
 
     [EventTypeName("named.tick")]
@@ -41,13 +48,22 @@ public class EventQueryMatcherTests
             Query.FromItems(QueryItem.ByType(typeof(NamedTick).FullName!))));
     }
 
-    private sealed class StubRawEvent : IRawEvent
+    [Fact]
+    public void ByType_on_recorded_event_uses_stored_token()
     {
-        public StubRawEvent(string typeName) => TypeName = typeName;
+        var recorded = new RecordedEvent(
+            "named.tick",
+            ReadOnlyMemory<byte>.Empty,
+            "s",
+            streamVersion: 1,
+            sequencePosition: 1,
+            commitTimestamp: DateTime.UtcNow);
 
-        public string TypeName { get; }
-        public byte[] RawPayload { get; } = [];
-        public Guid Id { get; } = Guid.NewGuid();
-        public DateTime Timestamp { get; } = DateTime.UtcNow;
+        Assert.True(EventQueryMatcher.Matches(
+            recorded,
+            Query.FromItems(QueryItem.ByType("named.tick"))));
+        Assert.False(EventQueryMatcher.Matches(
+            recorded,
+            Query.FromItems(QueryItem.ByType("NamedTick"))));
     }
 }

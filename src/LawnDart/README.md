@@ -5,7 +5,7 @@ This is the foundation package — all other LawnDart packages depend on it.
 
 ## What's included
 
-- **`IEventStore`** — the store **interface**. Implementations are `UseInMemory()` in `LawnDart.EventSourcing` and `UseSqlServer()` in `LawnDart.EventSourcing.SqlServer`; they do not ship in this package
+- **`IEventStore`** — the typed session **interface**. Backends implement `IEventLog`; `UseInMemory()` and `UseSqlServer()` live in the EventSourcing packages, not here
 - **`IEvent` / `ICommand` / `IState`** — base interfaces for your domain types
 - **`AggregateRoot`** — base class for aggregate roots; apply events and track uncommitted changes
 - **`IAggregateRepository`** — load and save aggregates against any `IEventStore` implementation
@@ -20,7 +20,8 @@ This is the foundation package — all other LawnDart packages depend on it.
 - **Authorization** — `IAuthorizationProvider`, attributes, `AuthorizationService`
 - **Metadata** — `IMetadataProvider`, `ITenantContextProvider`, `EventMetadata`, `CommandMetadata`
 - **Tagging** — `ITagProvider`, `[Tag]` attribute
-- **Serialization** — `IEventSerializer`, `[PropertyOrder]`
+- **Serialization** — `IEventSerializer` (`ReadOnlyMemory<byte>`), `[PropertyOrder]`
+- **Event session** — `EventSession` maps `IEvent` ↔ `AppendEvent` / `RecordedEvent`
 - **Outbox** — `IOutboxWriter`, `IOutboxPublisher`, `OutboxMessage`
 
 ## Installation

@@ -31,6 +31,11 @@ tags, the append fails with `ConcurrencyException`.
 **AuthorizationContext**  
 User roles, permission claims, and entitlements used by `AuthorizationService`.
 
+**AppendEvent**  
+Caller-supplied log envelope: family token, schema version, content-type,
+payload bytes, UTF-8 JSON metadata bytes, tags. No store-assigned sequence,
+stream version, or commit timestamp.
+
 ## B
 
 **Bounded context**  
@@ -40,11 +45,14 @@ and optional projections. Not the same as multi-tenancy.
 ## C
 
 **Catalog token**  
-Stable kebab-case name stored for an event type (`[EventTypeName]`). Required
-on every concrete `IEvent` that is written. CLR `FullName` is not stored.
-Register types with `WithEventTypes` (or `EventTypeNameResolver.Warmup`).
-Missing attributes and duplicate tokens fail at warmup. Older FullName rows
-still resolve as a read alias.
+Stable kebab-case **family** name stored for an event type (`[EventTypeName]`).
+Required on every concrete `IEvent` that is written. The token does not change
+when the payload shape versions (`SchemaVersion` on the log frame). CLR
+`FullName` is not stored. Register types with `WithEventTypes` (or
+`EventTypeNameResolver.Warmup`). Missing attributes and duplicate tokens fail
+at warmup. Older FullName rows still resolve as a read alias.
+
+See **Event log** / **Event store**.
 
 **Checkpoint**  
 Last processed event position for a projector. InMemory or SQL Server.
@@ -81,9 +89,10 @@ Command → State. Roadmap cell; no public type and no host yet.
 ## E
 
 **Envelope**  
-`EventMetadata` / `CommandMetadata` / `MessageContext`. Source of truth for
-event id, business time, commit time, correlation, causation, `TraceId`,
-`SpanId`, and tenant. `SchemaName` is the catalog token.
+`EventMetadata` / `CommandMetadata` / `MessageContext` on the typed session.
+Source of truth for event id, business time, commit time, correlation,
+causation, `TraceId`, `SpanId`, and tenant. `SchemaName` is the catalog token.
+The durable log does not carry `EventMetadata`; see **AppendEvent**.
 
 **Event**  
 Immutable fact. `IEvent` with `Id` and `Timestamp` first, plus
@@ -91,9 +100,23 @@ Immutable fact. `IEvent` with `Id` and `Timestamp` first, plus
 
 **Event clocks**  
 Three times on the envelope, do not mix them:
-- **Business time** — `IEvent.Timestamp` and `EventMetadata.Timestamp` (same after enrich). `toTimestamp` / time-travel uses this.
-- **Commit time** — `EventMetadata.CommitTimestamp`, set only at `AppendAsync`. Lag and ops, not domain queries.
+- **Business time** — `IEvent.Timestamp` and `EventMetadata.Timestamp` (same after enrich). `IEventStore.toTimestamp` / time-travel uses this.
+- **Commit time** — first-class on `RecordedEvent.CommitTimestamp`; mirrored onto `EventMetadata.CommitTimestamp` by the session. Lag and ops, not domain queries. `IEventLog` may filter `toCommitTimestamp`.
 - **Trace** — `TraceId` / `SpanId` (W3C hex). The Activity clock is not stored as a third `DateTime`.
+
+**Event log**  
+`IEventLog`: schema-dumb durability. Append `AppendEvent`, read `RecordedEvent`.
+Family token, `SchemaVersion`, `ContentType`, payload bytes, metadata JSON
+bytes, tags, stream id/version, global sequence, commit timestamp. No CLR
+event type. Third-party stores implement this. A process that has **not**
+registered event CLR types still appends, filters, and copies frames here.
+Typed hydrate (`EventSession` / `IEventStore`) fails closed on an unknown
+family — it does not invent a stand-in event.
+
+**Event store**  
+`IEventStore`: typed application session over a log. Append/read `IEvent` /
+`SequencedEvent`. Stream registry and live subscriptions hydrate in the
+session. Unchanged for handlers and aggregates.
 
 **Event Generator**
 State → Event. Roadmap cell; no public type and no host yet.
@@ -107,8 +130,15 @@ generate LawnDart types. See [EVENTHESIS.md](EVENTHESIS.md).
 
 ## I
 
+**IRawEvent**  
+`IEvent` that already has a family token and payload bytes. LawnDart's type is
+`RawRecordedEvent`. Not a catalog type and not a typed-hydrate fallback. A
+process without the CLR type uses **Event log**.
+
 **InMemory**  
-Process-local `IEventStore`. Zero infrastructure. Default for Academy and tests.
+Process-local log (`IEventLog`) plus typed session (`IEventStore`). Serializes
+on append; read hydrates a new instance. Not an object heap. Zero
+infrastructure. Default for Academy and tests.
 
 ## L
 
@@ -146,6 +176,15 @@ Event → State. Incremental read model.
 Event → Command. Broker path: `IReactor<TEvent>` (`MessageContext`). DCB
 in-process path: `IDcbReactor` (`EventMetadata`). Not the same contract —
 see **Intentional verb differences**.
+
+**RawRecordedEvent**  
+LawnDart's `IRawEvent`: a `RecordedEvent` viewed as an `IEvent` so typed
+helpers can read the stored family token. Not a hydrate fallback and not a
+catalog type. `OpaqueEvent` / `UnknownEvent` are not LawnDart types.
+
+**RecordedEvent**  
+`AppendEvent` fields plus store-assigned stream id, stream version, global
+sequence, and commit timestamp. Tags as stored.
 
 ## S
 

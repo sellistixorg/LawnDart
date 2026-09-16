@@ -5,9 +5,8 @@ using LawnDart.Serialization;
 namespace LawnDart.EventSourcing.Serialization;
 
 /// <summary>
-/// JSON-based event serializer.
-/// Human-readable, debugging-friendly, and the default serializer.
-/// Does not require PropertyOrderAttribute.
+/// Default session payload codec: System.Text.Json as UTF-8 bytes.
+/// Does not require <c>PropertyOrderAttribute</c>.
 /// </summary>
 public class JsonEventSerializer : IEventSerializer
 {
@@ -26,14 +25,14 @@ public class JsonEventSerializer : IEventSerializer
         };
     }
 
-    public string Serialize(object obj, Type type)
+    public ReadOnlyMemory<byte> Serialize(object obj, Type type)
     {
-        return JsonSerializer.Serialize(obj, type, _options);
+        return JsonSerializer.SerializeToUtf8Bytes(obj, type, _options);
     }
 
-    public object Deserialize(string data, Type type)
+    public object Deserialize(ReadOnlyMemory<byte> data, Type type)
     {
-        return JsonSerializer.Deserialize(data, type, _options)
+        return JsonSerializer.Deserialize(data.Span, type, _options)
             ?? throw new InvalidOperationException($"Failed to deserialize {type.Name}");
     }
 }

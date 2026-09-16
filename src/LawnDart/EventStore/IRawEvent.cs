@@ -1,23 +1,25 @@
 namespace LawnDart.EventStore;
 
 /// <summary>
-/// Marker interface for events that carry a pre-serialized payload and a type name
-/// but do not have their concrete CLR type loaded in the current process.
-/// <para>
-/// Implementations include <c>OpaqueEvent</c> (used on the gRPC server when receiving
-/// events from a remote client) and <c>UnknownEvent</c> (used when reading events whose
-/// type is not registered in the current process).
-/// </para>
-/// <para>
-/// Consumers such as <c>EventProtoMapper</c> should detect this interface and return
-/// <see cref="RawPayload"/> bytes directly without attempting to re-serialize.
-/// </para>
+/// An <see cref="IEvent"/> that already has a family token and payload bytes.
 /// </summary>
+/// <remarks>
+/// LawnDart's implementation is <see cref="RawRecordedEvent"/>. The catalog
+/// rejects <see cref="IRawEvent"/> types. A process that does not have the CLR
+/// event type appends and copies through <see cref="IEventLog"/>; typed hydrate
+/// fails closed. This interface is not a substitute for an unknown-family
+/// hydrate result.
+/// <para>
+/// Typed helpers such as <see cref="EventQueryMatcher"/> use
+/// <see cref="TypeName"/> instead of <c>GetType()</c> so the stored family
+/// token is what queries match.
+/// </para>
+/// </remarks>
 public interface IRawEvent : LawnDart.IEvent
 {
-    /// <summary>The stable event type name as stored on disk.</summary>
+    /// <summary>The family catalog token as stored on the log.</summary>
     string TypeName { get; }
 
-    /// <summary>The raw serialized payload bytes.</summary>
+    /// <summary>The serialized payload bytes. Do not re-serialize this wrapper.</summary>
     byte[] RawPayload { get; }
 }

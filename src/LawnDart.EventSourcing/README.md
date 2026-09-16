@@ -8,8 +8,8 @@ processing.
 
 - **`AggregateRepository`** — load and save aggregates via any `IEventStore`
 - **`DcbRepository`** — Dynamic Consistency Boundary repository
-- **`InMemoryEventStore`** — in-process store + portable subscriptions
-- **`JsonEventSerializer`** — default `IEventSerializer` using `System.Text.Json`
+- **`InMemoryEventStore`** — in-process recorded-event log + portable subscriptions (serialize on append)
+- **`JsonEventSerializer`** — default `IEventSerializer` (STJ UTF-8 bytes)
 - **`UseInMemory()`** — documented default backend on `AddBoundedContext`; registers the in-memory event store, snapshot store, and outbox writer
 - **`InMemorySnapshotStore`** — process-local `ISnapshotStore` / `IDcbSnapshotStore` / `ISnapshotAdmin`
 - **`InMemoryOutboxWriter`** — process-local `IOutboxWriter`

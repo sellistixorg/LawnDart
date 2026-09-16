@@ -28,8 +28,6 @@ app.UseAuthorization();
 app.MapLawnDartCommands();
 ```
 
-<!-- TODO(RDY-10) -->
-
 `HttpAuthorizationContextProvider` reads JWT / user claims. Academy maps
 `Instructor` and `Student` roles to demo permissions in
 `AcademyAuthorizationProvider`.

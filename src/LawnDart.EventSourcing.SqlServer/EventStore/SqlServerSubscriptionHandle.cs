@@ -4,11 +4,12 @@ using LawnDart.EventStore;
 namespace LawnDart.EventSourcing.SqlServer.EventStore;
 
 /// <summary>
-/// Portable subscription handle for <see cref="SqlServerEventStore"/> (poll-backed live).
+/// Log subscription handle for <see cref="SqlServerEventStore"/> (poll-backed live).
+/// Yields frames; the typed adapter hydrates.
 /// </summary>
-internal sealed class SqlServerSubscriptionHandle : ISubscriptionHandle
+internal sealed class SqlServerSubscriptionHandle : IEventLogSubscriptionHandle
 {
-    private readonly Channel<SequencedEvent> _channel;
+    private readonly Channel<RecordedEvent> _channel;
     private readonly Action<SqlServerSubscriptionHandle> _onDispose;
     private readonly CancellationTokenSource _linkedCts;
     private long _lastDelivered;
@@ -27,7 +28,7 @@ internal sealed class SqlServerSubscriptionHandle : ISubscriptionHandle
         FromSequence = fromSequence;
         _onDispose = onDispose;
         _linkedCts = CancellationTokenSource.CreateLinkedTokenSource(externalToken);
-        _channel = Channel.CreateBounded<SequencedEvent>(new BoundedChannelOptions(channelCapacity)
+        _channel = Channel.CreateBounded<RecordedEvent>(new BoundedChannelOptions(channelCapacity)
         {
             FullMode = BoundedChannelFullMode.Wait,
             SingleWriter = true,
@@ -41,7 +42,7 @@ internal sealed class SqlServerSubscriptionHandle : ISubscriptionHandle
 
     public long FromSequence { get; }
 
-    public ChannelReader<SequencedEvent> Events => _channel.Reader;
+    public ChannelReader<RecordedEvent> Events => _channel.Reader;
 
     public long LastDeliveredSequence => Interlocked.Read(ref _lastDelivered);
 
@@ -49,7 +50,7 @@ internal sealed class SqlServerSubscriptionHandle : ISubscriptionHandle
 
     internal bool IsDisposed => Volatile.Read(ref _disposed) != 0;
 
-    internal async ValueTask WriteAsync(SequencedEvent evt, CancellationToken cancellationToken)
+    internal async ValueTask WriteAsync(RecordedEvent evt, CancellationToken cancellationToken)
     {
         await _channel.Writer.WriteAsync(evt, cancellationToken).ConfigureAwait(false);
         Interlocked.Exchange(ref _lastDelivered, evt.SequencePosition);

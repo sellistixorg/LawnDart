@@ -8,7 +8,5 @@ services.AddLawnDartHttpCommands(typeof(SomeCommand).Assembly);
 app.MapLawnDartCommands();
 ```
 
-<!-- TODO(RDY-10) -->
-
 Authorization is additive: add `LawnDart.Authorization.AspNetCore` and call
 `AddLawnDartAuthorization()` + `AddHttpAuthorizationContext()`.

@@ -17,6 +17,13 @@ in-process.
 2. A background publisher reads unpublished rows.
 3. `AddMessageTransportOutboxPublisher` hands payloads to `IMessageTransport`.
 
+The outbox row is a copy of the appended frame: family token, payload and
+metadata as UTF-8 JSON text, plus first-class `SchemaVersion` and
+`ContentType`. The publisher resolves the CLR type through
+`IEventTypeCatalog` (token + schema version). FullName and simple name on
+older rows are the same read aliases as the typed session. Rows written
+before those columns existed read as version `1` and `application/json`.
+
 ```csharp
 services.AddBoundedContext("default")
     .UseSqlServer(o =>

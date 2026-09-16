@@ -1,4 +1,6 @@
 using System.Data;
+using System.Text;
+using System.Text.Json;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 using LawnDart.EventSourcing.SqlServer;
@@ -758,6 +760,90 @@ public class SqlServerEventStoreTests : IAsyncLifetime
 
         var max = await store.GetMaxSequencePositionAsync(Query.FromItems(QueryItem.ByTags("openjson:tag")));
         Assert.Equal(result.Events[0].SequencePosition, max);
+    }
+
+    [Fact]
+    public async Task Log_can_materialize_recorded_event_without_registered_clr_type()
+    {
+        var streamId = "test-tenant:Opaque:log-only";
+        var payload = Encoding.UTF8.GetBytes("""{"kind":"opaque"}""");
+        var metadata = Encoding.UTF8.GetBytes("""{"UserId":"log"}""");
+        var log = (IEventLog)_eventStore!;
+
+        await log.AppendAsync(streamId, [new AppendEvent("foreign-family", payload, metadata, schemaVersion: 1)]);
+
+        var recorded = Assert.Single(await log.ReadStreamAsync(streamId));
+        Assert.Equal("foreign-family", recorded.EventType);
+        Assert.Equal(1, recorded.SchemaVersion);
+        Assert.Equal("application/json", recorded.ContentType);
+        Assert.Equal(payload, recorded.Payload.ToArray());
+        Assert.Equal(metadata, recorded.Metadata.ToArray());
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => _eventStore!.ReadStreamAsync(streamId));
+        Assert.Contains("foreign-family", ex.Message);
+    }
+
+    [Fact]
+    public async Task New_append_writes_payload_to_binary_column()
+    {
+        var streamId = "test-tenant:TestAggregate:binary-column";
+        await _eventStore!.AppendAsync(streamId, [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = new SqlCommand(
+            $"""
+            SELECT EventPayload, EventData, SchemaVersion, ContentType
+            FROM [dbo].[{_tableName}]
+            WHERE StreamId = @StreamId
+            """,
+            connection);
+        command.Parameters.AddWithValue("@StreamId", streamId);
+
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.False(reader.IsDBNull("EventPayload"));
+        Assert.True(reader.IsDBNull("EventData"));
+        Assert.Equal(1, reader.GetInt32("SchemaVersion"));
+        Assert.Equal("application/json", reader.GetString("ContentType"));
+
+        var stored = Assert.Single(await _eventStore.ReadStreamAsync(streamId));
+        Assert.NotNull(stored.Metadata.CommitTimestamp);
+        Assert.Equal(1, stored.Metadata.SchemaVersion);
+    }
+
+    [Fact]
+    public async Task Old_nvarchar_eventdata_row_still_reads()
+    {
+        var streamId = "test-tenant:TestAggregate:legacy-nvarchar";
+        var evt = new TestEvent(Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), new DateTime(2025, 3, 4, 5, 6, 7, DateTimeKind.Utc));
+        var json = JsonSerializer.Serialize(evt);
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = new SqlCommand(
+            $"""
+            INSERT INTO [dbo].[{_tableName}]
+            (StreamId, Version, SequencePosition, EventType, EventData, EventPayload, SchemaVersion, ContentType, Tags, Metadata, Timestamp, PartitionHash)
+            VALUES
+            (@StreamId, 1, 91001, @EventType, @EventData, NULL, 1, 'application/json', '[]', @Metadata, @Timestamp, 0)
+            """,
+            connection);
+        command.Parameters.AddWithValue("@StreamId", streamId);
+        command.Parameters.AddWithValue("@EventType", EventTypeNameResolver.GetName(typeof(TestEvent)));
+        command.Parameters.AddWithValue("@EventData", json);
+        command.Parameters.AddWithValue("@Metadata", "{}");
+        command.Parameters.AddWithValue("@Timestamp", evt.Timestamp);
+        await command.ExecuteNonQueryAsync();
+
+        var stored = Assert.Single(await _eventStore!.ReadStreamAsync(streamId));
+        var read = Assert.IsType<TestEvent>(stored.Event);
+        Assert.Equal(evt.Id, read.Id);
+        Assert.Equal(evt.Timestamp, read.Timestamp);
+
+        var recorded = Assert.Single(await ((IEventLog)_eventStore).ReadStreamAsync(streamId));
+        Assert.Equal(Encoding.UTF8.GetBytes(json), recorded.Payload.ToArray());
+        Assert.True(recorded.Payload.Length > 0);
     }
 
     [EventTypeName("sql-server-event-store-tests.test-event")]

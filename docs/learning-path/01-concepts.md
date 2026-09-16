@@ -2,25 +2,21 @@
 
 **Next:** [Step 2 — First aggregate](02-first-aggregate.md)
 
-## The nine common patterns
+## Command, event, state
 
-Every message-driven system shuffles three kinds of thing: **commands** (intent),
-**events** (facts), and **state** (present view). Those combine into nine
-patterns — the command–event–state matrix. Five are hosted; four are roadmap
-(no public type yet).
+Every message-driven system shuffles three kinds of thing:
 
-| From \ To | **Command** | **Event** | **State** |
-|---|---|---|---|
-| **Command** | Delegation 🔧 | Aggregate Root & DCB ✅ | Downstream Activity 🔧 |
-| **Event** | Reaction ✅ | Event Processing ✅ | Projection ✅ |
-| **State** | Task Processing ✅ | Event Generator 🔧 | State Transformation 🔧 |
+- **Command**: intent to change something in the future.
+- **Event**: immutable fact about what already happened.
+- **State**: current read model used by users and workflows.
 
-✅ Hosted (runtime, DI, tests) · 🔧 Roadmap — no public type yet.
+You do not need all nine From×To combinations on day one. Most apps start
+with aggregate + projection.
 
-You do not need all nine on day one. Most apps start with aggregate + projection
-(both ✅).
+The shapes an event model compiles into — five hosted today — are on the
+[CES matrix](../CES_MATRIX.md).
 
-## What each pattern does
+## What the hosted shapes do
 
 **Aggregate Root (Command → Event)** — A command is checked, then events are
 appended. State is rebuilt by replaying those events.
@@ -29,6 +25,9 @@ appended. State is rebuilt by replaying those events.
 
 **Reaction (Event → Command)** — An event in one slice becomes a command in
 another (choreography).
+
+**Event Processing (Event → Event)** — Transform or enrich events without a
+command. Same host family as reactions (step 6).
 
 **Task Processing (State → Command)** — A poller emits commands from read-model
 conditions (timeouts, SLAs).
@@ -39,9 +38,16 @@ See [DCB_PATTERNS.md](../DCB_PATTERNS.md).
 ## Mental model
 
 ```
-Command → Aggregate / DCB → Events → Event store
+Command → Aggregate / DCB → Events → IEventStore (typed session)
+                                    ↓
+                              IEventLog (recorded frames)
                                     ↓
                          Projector → View store → Query
 ```
+
+`IEventStore` is what handlers and aggregates use. The durable log
+(`IEventLog`) stores recorded events — family token, schema version,
+content-type, payload bytes — not live CLR objects. InMemory serializes
+on append the same way SQL does. Third-party stores implement the log.
 
 [Glossary](../GLOSSARY.md) · [Overview](../OVERVIEW.md)

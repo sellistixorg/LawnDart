@@ -17,29 +17,59 @@ Those fields live on the envelope, not on `ICommand` / `IEvent`.
 
 ## Aggregate spec
 
+Excerpted from `samples/Library.Domain.Tests/LibraryBookTests.cs`:
+
 ```csharp
 await using var ctx = BddTestContext.CreateInMemory();
-var id = Guid.NewGuid();
+var bookId = Guid.NewGuid();
 
-var result = await AggregateSpec
-    .For<Counter>(ctx, id)
-    .Given(new CounterCreated(Guid.NewGuid(), DateTime.UtcNow, id))
-    .When(new IncrementCommand(Guid.NewGuid(), id))
-    .ThenEmittedEvent<CounterIncremented>(e => e.CounterId == id)
-    .AndExpectedVersion(2)
+await AggregateSpec
+    .For<Book>(ctx, bookId)
+    .Given(
+        new BookAdded(Guid.NewGuid(), DateTime.UtcNow, bookId, "Pragmatic Programmer", "978-0135957059"),
+        new BookBorrowed(Guid.NewGuid(), DateTime.UtcNow, bookId, "Jane Doe"))
+    .When(new BorrowBookCommand(Guid.NewGuid(), bookId, "Someone Else"))
+    .ThenThrows<InvalidOperationException>()
+    .AndAssert(result =>
+        Assert.Equal("Book is already on loan.", result.Exception!.Message))
     .RunAsync();
 ```
 
 ## DCB spec
 
+`DcbSpec` uses the same Given / When / Then verbs with tags. The reference
+slice has no DCB entity. The compiled DCB example lives in
+`tests/LawnDart.Testing.Tests/Bdd/InMemoryGwtTests.cs`.
+
+## AndView
+
+`AndView` replays the whole stream (Given + When) through a projector
+`Apply` callback. The callback does not need `LawnDart.Projections.Lightweight`.
+Excerpted from `samples/Library.Domain.Tests/LibraryBookTests.cs`:
+
 ```csharp
 await using var ctx = BddTestContext.CreateInMemory();
-var tags = new[] { $"counter:{id:N}" };
+var bookId = Guid.NewGuid();
+var projector = new LibraryProjector();
 
-await DcbSpec
-    .For<CounterEntity, IncrementCommand>(ctx, tags, new IncrementCommand(Guid.NewGuid(), id))
-    .Given(new CounterCreated(Guid.NewGuid(), DateTime.UtcNow, id), tags)
-    .ThenEmittedEvent<CounterIncremented>(e => e.CounterId == id)
+await AggregateSpec
+    .For<Book>(ctx, bookId)
+    .Given(new BookAdded(Guid.NewGuid(), DateTime.UtcNow, bookId, "A Tale of Two Cities", "ABCD"))
+    .When(new BorrowBookCommand(Guid.NewGuid(), bookId, "Jeremy"))
+    .ThenEmittedEvent<BookBorrowed>(e => e.BookId == bookId && e.MemberName == "Jeremy")
+    .AndExpectedVersion(2)
+    .AndView(r => r.Register(projector.Apply))
+    .AndAssert(result =>
+    {
+        Assert.True(result.Aggregate.State.OnLoan);
+        Assert.Equal("Jeremy", result.Aggregate.State.BorrowedBy);
+
+        var view = projector.GetBook(bookId);
+        Assert.NotNull(view);
+        Assert.Equal("A Tale of Two Cities", view.Title);
+        Assert.True(view.OnLoan);
+        Assert.Single(projector.BorrowedBooks);
+    })
     .RunAsync();
 ```
 
@@ -47,6 +77,7 @@ await DcbSpec
 
 Reference `LawnDart`, `LawnDart.EventSourcing`, `LawnDart.Testing`, plus your
 domain project. Use xUnit. Canonical proofs:
+`samples/Library.Domain.Tests/LibraryBookTests.cs` (reference slice) and
 `tests/LawnDart.Testing.Tests/Bdd/InMemoryGwtTests.cs`.
 
 These specs match the Eventhesis GWT widget — see [EVENTHESIS.md](../EVENTHESIS.md).

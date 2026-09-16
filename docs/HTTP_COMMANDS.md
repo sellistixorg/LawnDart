@@ -35,8 +35,6 @@ builder.Services.AddLawnDartHttpCommands(typeof(CreateOrderCommand).Assembly);
 app.MapLawnDartCommands();
 ```
 
-<!-- TODO(RDY-10) -->
-
 Auth package is optional. Without `LawnDart.Authorization.AspNetCore`, commands
 that have no auth attributes still run. Commands that declare attributes need
 an `IAuthorizationContextProvider` (HTTP claims via `AddHttpAuthorizationContext`).

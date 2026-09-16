@@ -1,6 +1,7 @@
 # LawnDart Academy
 
-Zero-infrastructure showcase of the nine common command–event–state patterns.
+Zero-infrastructure InMemory host. Five CES shapes are hosted today; see the
+[CES matrix](../../docs/CES_MATRIX.md).
 Requires the .NET 10 SDK only. No Docker.
 
 ## Console demo

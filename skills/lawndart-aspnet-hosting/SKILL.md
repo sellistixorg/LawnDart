@@ -13,20 +13,17 @@ description: Map LawnDart HTTP commands and optional HTTP authorization. Registe
 4. **Projections:** `ProjectionBase<TView>` plus attributes; multi-stream views implement `IMultiStreamEntityResolver`. Map GETs with `MapProjectionQueries(name)`.
 5. **Stores:** `UseInMemory` / `UseSqlServer` on `AddBoundedContext(name)`.
 
+Excerpt from `samples/Library.Host/LibraryHost.cs` (`AddInMemoryLibrary` + `MapLibraryHttp`):
+
 ```csharp
-ctx.WithCommandHandlers<RegisterStudentCommandHandler>();
-builder.Services.AddLawnDartHttpCommands(typeof(RegisterStudentCommand).Assembly);
-
-// Optional claims → AuthorizationContext
-builder.Services.AddHttpAuthorizationContext();
-
+ctx.WithCommandHandlers<BorrowBookHandler>();
+services.AddLawnDartHttpCommands(typeof(BorrowBookHandler).Assembly);
+services.AddHttpAuthorizationContext();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapLawnDartCommands();
 app.MapProjectionQueries("default");
 ```
-
-<!-- TODO(RDY-10) -->
 
 `LawnDart.AspNetCore` does not reference `LawnDart.Authorization.AspNetCore`.
 Commands without `[RequiresPermission]` run without a claims provider.
@@ -34,4 +31,4 @@ Commands without `[RequiresPermission]` run without a claims provider.
 Routes: strip `Command`, kebab-case, last namespace segment as group,
 default prefix `api`.
 
-See `docs/HTTP_COMMANDS.md` and `demos/LawnDart.Demo.Academy.WebApi`.
+See `docs/HTTP_COMMANDS.md`.

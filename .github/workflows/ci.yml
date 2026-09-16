@@ -25,6 +25,9 @@ jobs:
     - name: Restore dependencies
       run: dotnet restore LawnDart.sln
 
+    - name: Build kit target version
+      run: python3 tools/check-build-kit-target.py
+
     - name: Build
       run: dotnet build LawnDart.sln --no-restore --configuration Release
 
@@ -33,11 +36,15 @@ jobs:
         dotnet test LawnDart.sln --no-build --configuration Release
         --verbosity normal --filter "Category!=Integration"
 
+    - name: Test reference slice
+      run: >
+        dotnet test samples/Library.Domain.Tests --no-build --configuration Release
+        --verbosity normal
+
     - name: Test (integration)
       run: >
         dotnet test LawnDart.sln --no-build --configuration Release
         --verbosity normal --filter "Category=Integration|Category=Contract"
-        -- RunConfiguration.MaxCpuCount=1
 
     - name: Restore local tools
       run: dotnet tool restore

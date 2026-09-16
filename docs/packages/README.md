@@ -3,10 +3,14 @@
 Nine packages. Take `LawnDart` + `LawnDart.EventSourcing` first; add the
 others when you need a durable store, read models, HTTP, or tests.
 
-The **`IEventStore` interface** lives in core `LawnDart`. Implementations
-live elsewhere: `InMemoryEventStore` in `LawnDart.EventSourcing`,
-`SqlServerEventStore` in `LawnDart.EventSourcing.SqlServer`. Depend on the
-abstraction without taking a backend.
+The **`IEventStore` interface** lives in core `LawnDart`. It is the typed
+session (`IEvent` in, `SequencedEvent` out). Backends implement **`IEventLog`**
+(`AppendEvent` in, `RecordedEvent` out): `InMemoryEventStore` in
+`LawnDart.EventSourcing`, `SqlServerEventStore` in
+`LawnDart.EventSourcing.SqlServer`. Application code depends on the session
+without taking a backend. InMemory serializes on append — it is not an
+object heap. `IEventSerializer` reads and writes `ReadOnlyMemory<byte>`
+(UTF-8 JSON by default).
 
 | Package | Take it when | Registration |
 |---|---|---|
@@ -36,8 +40,6 @@ services.AddLawnDartHttpCommands(typeof(MyCommand).Assembly);
 app.MapLawnDartCommands();
 app.MapProjectionQueries("default");
 ```
-
-<!-- TODO(RDY-10) -->
 
 Swap `.UseInMemory()` for `.UseSqlServer(...)` and
 `AddInMemoryProjectionStores` for `AddSqlProjectionStores` when you leave

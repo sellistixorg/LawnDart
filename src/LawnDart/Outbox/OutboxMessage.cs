@@ -1,3 +1,5 @@
+using LawnDart.EventStore;
+
 namespace LawnDart.Outbox;
 
 /// <summary>
@@ -12,9 +14,25 @@ public class OutboxMessage
     public required Guid Id { get; init; }
     
     /// <summary>
-    /// Event type name (fully qualified type name).
+    /// Family catalog token stored on the appended frame (not a CLR type name).
+    /// Older rows may still hold a FullName or simple name; the publisher
+    /// resolves those aliases the same way as the typed session.
     /// </summary>
     public required string EventType { get; init; }
+
+    /// <summary>
+    /// First-class schema version copied from <c>AppendEvent</c>. Default <c>1</c>.
+    /// Missing or zero on old rows is treated as <c>1</c>. Not read from
+    /// <see cref="Metadata"/>.
+    /// </summary>
+    public int SchemaVersion { get; init; } = 1;
+
+    /// <summary>
+    /// Payload content type copied from <c>AppendEvent</c>. Default
+    /// <c>application/json</c>. Missing or empty on old rows is treated as
+    /// <c>application/json</c>.
+    /// </summary>
+    public string ContentType { get; init; } = AppendEvent.DefaultContentType;
     
     /// <summary>
     /// Serialized event payload (JSON).
