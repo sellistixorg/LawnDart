@@ -28,7 +28,7 @@ not a cross-language runtime.
 
 Supported today:
 
-- **Stores:** InMemory and SQL Server. `IEventStore` is a public extension point.
+- **Stores:** InMemory and SQL Server. The log (`IEventLog`) is recorded events; `IEventStore` is the typed session. Third-party stores implement the log.
 - **Messaging:** in-process.
 - **Runtime:** in-process, `net10.0`, your host, your DI.
 - **Modelling:** aggregates and DCB behind one store contract.

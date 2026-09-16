@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using LawnDart.EventStore;
 using LawnDart.Outbox;
 
 namespace LawnDart.Messaging.Outbox;
@@ -17,7 +18,9 @@ public static class MessageTransportOutboxPublisherExtensions
     /// <param name="services">Service collection.</param>
     /// <param name="eventTypes">
     /// Concrete <see cref="IEvent"/> types that may appear in outbox <c>EventType</c> values
-    /// (typically the same set registered with the event store).
+    /// (typically the same set registered with the event store). When omitted, the
+    /// publisher uses <see cref="IEventTypeCatalog"/> from DI or
+    /// <see cref="EventTypeCatalog.Shared"/>.
     /// </param>
     public static IServiceCollection AddMessageTransportOutboxPublisher(
         this IServiceCollection services,
@@ -30,7 +33,10 @@ public static class MessageTransportOutboxPublisherExtensions
         services.TryAddSingleton<IOutboxPublisher>(sp =>
         {
             var transport = sp.GetRequiredService<IMessageTransport>();
-            return new MessageTransportOutboxPublisher(transport, captured);
+            var catalog = sp.GetService<IEventTypeCatalog>() ?? EventTypeCatalog.Shared;
+            if (captured.Length > 0)
+                return new MessageTransportOutboxPublisher(transport, captured);
+            return new MessageTransportOutboxPublisher(transport, catalog);
         });
 
         return services;

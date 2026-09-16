@@ -57,6 +57,8 @@ public static class BoundedContextBuilderExtensions
         // Keyed IEventStore + IStreamRegistry + portable subscriptions
         services.AddKeyedSingleton<IEventStore>(contextName,
             (_, _) => new InMemoryEventStore(contextName: contextName));
+        services.AddKeyedSingleton<IEventLog>(contextName,
+            (sp, key) => (IEventLog)sp.GetRequiredKeyedService<IEventStore>(key!));
         services.AddKeyedSingleton<IStreamRegistry>(contextName,
             (sp, key) => (IStreamRegistry)sp.GetRequiredKeyedService<IEventStore>(key!));
         services.AddKeyedSingleton<IEventStoreSubscriptions>(contextName,
@@ -346,6 +348,8 @@ public static class BoundedContextBuilderExtensions
 
         services.TryAddSingleton<IEventStore>(sp =>
             sp.GetRequiredKeyedService<IEventStore>("default"));
+        services.TryAddSingleton<IEventLog>(sp =>
+            sp.GetRequiredKeyedService<IEventLog>("default"));
         services.TryAddSingleton<IStreamRegistry>(sp =>
             sp.GetRequiredKeyedService<IStreamRegistry>("default"));
         services.TryAddSingleton<IEventStoreSubscriptions>(sp =>

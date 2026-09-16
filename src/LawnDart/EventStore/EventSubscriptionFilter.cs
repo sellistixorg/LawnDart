@@ -75,6 +75,25 @@ public sealed class EventSubscriptionFilter
             _ => false
         };
     }
+
+    /// <summary>
+    /// Returns whether <paramref name="recordedEvent"/> matches this filter using
+    /// stored stream id / family token / tags. Does not hydrate a CLR type.
+    /// </summary>
+    public bool Matches(RecordedEvent recordedEvent)
+    {
+        ArgumentNullException.ThrowIfNull(recordedEvent);
+
+        return Kind switch
+        {
+            EventSubscriptionScope.All => true,
+            EventSubscriptionScope.Stream =>
+                string.Equals(recordedEvent.StreamId, StreamId, StringComparison.Ordinal),
+            EventSubscriptionScope.Query =>
+                EventQueryMatcher.Matches(recordedEvent, Query!),
+            _ => false
+        };
+    }
 }
 
 /// <summary>

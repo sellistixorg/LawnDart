@@ -2,6 +2,10 @@
 
 LawnDart is the .NET runtime that event-modeled systems compile into.
 
+The durable log is recorded events (`IEventLog`). `IEventStore` is the typed
+session over that log (`IEvent` in, `SequencedEvent` out). Third-party stores
+implement the log, not the session.
+
 The shapes an event model compiles into — five hosted today — are on the
 [CES matrix](CES_MATRIX.md). [Eventhesis](https://eventhesis.com) is one
 modelling tool that targets LawnDart. It emits slice JSON — it does not

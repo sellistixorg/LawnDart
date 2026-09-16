@@ -12,7 +12,7 @@ The seven skills teach LawnDart. They do not name a modelling tool.
 | Skill | Purpose |
 |---|---|
 | `lawndart-host-setup` | Hub: decision tree, packages, registration order |
-| `lawndart-event-store` | `UseInMemory` / `UseSqlServer` |
+| `lawndart-event-store` | `UseInMemory` / `UseSqlServer`. Log is `IEventLog`; app API is `IEventStore`. |
 | `lawndart-bounded-context` | Named contexts and command handlers |
 | `lawndart-domain-model` | Events, commands, aggregates, DCB, stream IDs |
 | `lawndart-lightweight-projections` | `WithProjections`, stores, `MapProjectionQueries` |

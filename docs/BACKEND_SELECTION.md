@@ -10,10 +10,10 @@ LawnDart v1 ships two event-store backends.
 Both register through the same `AddBoundedContext` grammar. The verified swap is
 **command dispatch, event persistence, aggregate reload, projection materialisation,
 and read-back** — one application body, two registrations. Additional backends
-implement `IEventStore` and extend `BoundedContextBuilder`. A third-party store
-must construct repositories with `EventSourcingRepositories` and call
-`AddSnapshotWriteInfrastructure` (see [SNAPSHOTS.md](SNAPSHOTS.md)); the public
-repository constructors omit the write queue.
+implement `IEventLog` (the typed `IEventStore` session is shipped). A
+third-party store must construct repositories with `EventSourcingRepositories`
+and call `AddSnapshotWriteInfrastructure` (see [SNAPSHOTS.md](SNAPSHOTS.md));
+the public repository constructors omit the write queue.
 
 **Outbox and subscriptions are not covered by the swap guarantee.** Those paths
 exist on both backends and have their own tests. Do not treat a green swap
@@ -100,7 +100,11 @@ services.AddBoundedContext("default")
 Use for production-shaped hosts, outbox, and Testcontainers integration tests
 tagged `Category=Integration`. The InMemory → SQL swap contract lives under
 `tests/LawnDart.Backends.Contract.Tests` (`Category=Contract`; the SQL leg is
-also `Category=Integration`).
+also `Category=Integration`). That project also runs the event-log contract:
+same payload on append/read, token and tag query without hydrate, and a host
+that has not registered event CLR types can still read, filter, and copy
+frames. Typed adapter tests sit on the same logs (unknown family and
+content-type mismatch fail closed).
 
 Local unit runs use `--filter Category!=Integration`. CI runs unit tests and
 then `Category=Integration|Category=Contract`. SQL Server tests need Docker

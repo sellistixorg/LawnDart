@@ -1,6 +1,8 @@
 using Xunit;
+using LawnDart.EventStore;
 using LawnDart.Outbox;
 using LawnDart.EventSourcing.SqlServer.Outbox;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging.Abstractions;
 using Testcontainers.MsSql;
 
@@ -309,5 +311,85 @@ public class SqlServerOutboxWriterTests : IAsyncLifetime
         Assert.Equal(poison.Id, dead[0].Id);
         Assert.NotNull(dead[0].DeadLetteredAt);
         Assert.Null(dead[0].ProcessedAt);
+    }
+
+    [Fact]
+    public async Task WriteAsync_PersistsSchemaVersionAndContentType()
+    {
+        var message = new OutboxMessage
+        {
+            Id = Guid.NewGuid(),
+            EventType = "family.order-placed",
+            SchemaVersion = 2,
+            ContentType = "application/json",
+            Payload = """{"Kind":"v2"}""",
+            Metadata = "{}",
+            CreatedAt = DateTime.UtcNow,
+            StreamId = "stream1",
+            SequencePosition = 1
+        };
+
+        await _writer!.WriteAsync(message);
+
+        var read = Assert.Single(await _writer.GetUnprocessedAsync(10));
+        Assert.Equal(2, read.SchemaVersion);
+        Assert.Equal(AppendEvent.DefaultContentType, read.ContentType);
+        Assert.Equal("family.order-placed", read.EventType);
+    }
+
+    [Fact]
+    public async Task GetUnprocessedAsync_OldRowWithoutEnvelopeColumns_ReadsVersion1AndJson()
+    {
+        const string table = "OutboxLegacy";
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using (var create = new SqlCommand($@"
+            CREATE TABLE [dbo].[{table}] (
+                Id UNIQUEIDENTIFIER PRIMARY KEY,
+                EventType NVARCHAR(500) NOT NULL,
+                Payload NVARCHAR(MAX) NOT NULL,
+                Metadata NVARCHAR(MAX) NOT NULL,
+                CreatedAt DATETIME2 NOT NULL,
+                ProcessedAt DATETIME2 NULL,
+                Attempts INT NOT NULL DEFAULT 0,
+                LastError NVARCHAR(MAX) NULL,
+                LastAttemptAt DATETIME2 NULL,
+                StreamId NVARCHAR(500) NOT NULL,
+                SequencePosition BIGINT NOT NULL,
+                DeadLetteredAt DATETIME2 NULL
+            );", connection))
+        {
+            await create.ExecuteNonQueryAsync();
+        }
+
+        var id = Guid.NewGuid();
+        await using (var insert = new SqlCommand($@"
+            INSERT INTO [dbo].[{table}]
+                (Id, EventType, Payload, Metadata, CreatedAt, Attempts, StreamId, SequencePosition)
+            VALUES
+                (@Id, @EventType, @Payload, @Metadata, @CreatedAt, 0, @StreamId, @SequencePosition);",
+            connection))
+        {
+            insert.Parameters.AddWithValue("@Id", id);
+            insert.Parameters.AddWithValue("@EventType", "legacy.event");
+            insert.Parameters.AddWithValue("@Payload", "{}");
+            insert.Parameters.AddWithValue("@Metadata", "{}");
+            insert.Parameters.AddWithValue("@CreatedAt", DateTime.UtcNow);
+            insert.Parameters.AddWithValue("@StreamId", "stream-legacy");
+            insert.Parameters.AddWithValue("@SequencePosition", 1L);
+            await insert.ExecuteNonQueryAsync();
+        }
+
+        var legacyWriter = new SqlServerOutboxWriter(
+            _connectionString!,
+            table,
+            NullLogger<SqlServerOutboxWriter>.Instance);
+        await legacyWriter.InitializeSchemaAsync();
+
+        var read = Assert.Single(await legacyWriter.GetUnprocessedAsync(10));
+        Assert.Equal(id, read.Id);
+        Assert.Equal(1, read.SchemaVersion);
+        Assert.Equal(AppendEvent.DefaultContentType, read.ContentType);
+        Assert.Equal("legacy.event", read.EventType);
     }
 }

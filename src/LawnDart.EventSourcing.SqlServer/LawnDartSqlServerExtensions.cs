@@ -41,8 +41,9 @@ public static class LawnDartSqlServerExtensions
     /// </summary>
     /// <remarks>
     /// All context-specific services (<see cref="IEventStore"/>,
-    /// <see cref="IStreamRegistry"/>, <see cref="IAggregateRepository"/>,
-    /// <see cref="IDcbRepository"/>) are registered as keyed singletons/transients
+    /// <see cref="IEventLog"/>, <see cref="IStreamRegistry"/>,
+    /// <see cref="IAggregateRepository"/>, <see cref="IDcbRepository"/>)
+    /// are registered as keyed singletons/transients
     /// using <see cref="BoundedContextBuilder.ContextName"/> as the DI key.
     /// The conventional <c>"default"</c> context also gets unkeyed aliases (same instances,
     /// <c>TryAdd</c>) so single-context HTTP handlers can inject those types without a
@@ -102,6 +103,9 @@ public static class LawnDartSqlServerExtensions
                 logger);
         });
 
+        services.AddKeyedSingleton<IEventLog>(contextName,
+            (sp, key) => (IEventLog)sp.GetRequiredKeyedService<IEventStore>(key!));
+
         // Keyed stream registry (SqlServerEventStore implements IStreamRegistry)
         services.AddKeyedSingleton<IStreamRegistry>(contextName,
             (sp, key) => (IStreamRegistry)sp.GetRequiredKeyedService<IEventStore>(key!));
@@ -123,6 +127,8 @@ public static class LawnDartSqlServerExtensions
         {
             services.TryAddSingleton<IEventStore>(sp =>
                 sp.GetRequiredKeyedService<IEventStore>("default"));
+            services.TryAddSingleton<IEventLog>(sp =>
+                sp.GetRequiredKeyedService<IEventLog>("default"));
             services.TryAddSingleton<IStreamRegistry>(sp =>
                 sp.GetRequiredKeyedService<IStreamRegistry>("default"));
             services.TryAddSingleton<IEventStoreSubscriptions>(sp =>

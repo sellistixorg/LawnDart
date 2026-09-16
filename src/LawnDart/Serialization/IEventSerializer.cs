@@ -1,32 +1,37 @@
 namespace LawnDart.Serialization;
 
 /// <summary>
-/// Abstraction for event serialization/deserialization.
-/// Allows plugging different serializers (JSON, Protobuf, Avro, etc.)
+/// Session payload codec. The durable log stores these bytes plus
+/// <see cref="ContentType"/>; it does not know CLR event types.
 /// </summary>
+/// <remarks>
+/// One codec per session. The shipped default is UTF-8 JSON
+/// (<c>application/json</c>). Binary codecs (protobuf, Avro, MemoryPack)
+/// return raw payload bytes — not a Base64 string.
+/// Metadata JSON is mapped by <c>EventSession</c>, not by this interface.
+/// </remarks>
 public interface IEventSerializer
 {
     /// <summary>
-    /// Content type identifier (e.g., "application/json", "application/protobuf", "application/avro").
-    /// Stored in database to support format detection during deserialization.
+    /// Content type identifier (e.g. <c>application/json</c>,
+    /// <c>application/protobuf</c>, <c>application/avro</c>).
+    /// Stored on the recorded event.
     /// </summary>
     string ContentType { get; }
 
     /// <summary>
     /// Serialize an object using its runtime type.
-    /// For binary formats, returns Base64-encoded string for SQL Server storage.
     /// </summary>
-    /// <param name="obj">Object to serialize (typically IEvent or ICommand)</param>
-    /// <param name="type">Runtime type of the object</param>
-    /// <returns>Serialized representation (JSON string or Base64-encoded binary)</returns>
-    string Serialize(object obj, Type type);
+    /// <param name="obj">Object to serialize (typically <c>IEvent</c>).</param>
+    /// <param name="type">Runtime type of the object.</param>
+    /// <returns>Owned payload bytes. Callers may treat the memory as a snapshot.</returns>
+    ReadOnlyMemory<byte> Serialize(object obj, Type type);
 
     /// <summary>
-    /// Deserialize an object to the specified type.
-    /// Handles Base64 decoding for binary formats automatically.
+    /// Deserialize payload bytes to the specified type.
     /// </summary>
-    /// <param name="data">Serialized data (JSON string or Base64-encoded binary)</param>
-    /// <param name="type">Target type for deserialization</param>
-    /// <returns>Deserialized object instance</returns>
-    object Deserialize(string data, Type type);
+    /// <param name="data">Serialized payload bytes.</param>
+    /// <param name="type">Target type for deserialization.</param>
+    /// <returns>Deserialized object instance.</returns>
+    object Deserialize(ReadOnlyMemory<byte> data, Type type);
 }

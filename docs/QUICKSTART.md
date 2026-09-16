@@ -30,7 +30,10 @@ HTTP hosts also call `WithCommandHandlers<TMarker>()` on that context, then
 
 `UseInMemory()` registers keyed `IEventStore`, `IAggregateRepository`, and
 `IDcbRepository` for `"default"`, plus unkeyed aliases so you can resolve
-them without a key.
+them without a key. InMemory is a recorded-event log: append serializes
+to bytes, read hydrates a new instance. Application code still uses
+`IEventStore`. Third-party stores implement `IEventLog`. The session codec
+is `IEventSerializer` (`ReadOnlyMemory<byte>`, UTF-8 JSON by default).
 
 ## 3. Handle a command
 

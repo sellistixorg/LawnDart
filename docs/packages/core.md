@@ -12,7 +12,8 @@ Take it first. It does not include an event-store implementation.
 - `EventMetadata` / `CommandMetadata` (`TraceId`, `SpanId`, correlation, causation)
 - `ICommandDispatcher` — routes reactor/processor commands to `ICommandHandler<T>` (same `LawnDart.Messaging` namespace as `MessageContext`)
 - `AggregateRoot<TState>`, `DcbEntity<TState>`, and their repository interfaces
-- `IEventStore` — the store **abstraction** (implementations are in other packages)
+- `IEventStore` — the typed session **abstraction** (`IEvent` in, `SequencedEvent` out)
+- `IEventLog` — the durable log (`AppendEvent` in, `RecordedEvent` out). Third-party stores implement this. `IEventSerializer` is `ReadOnlyMemory<byte>`.
 - Authorization attributes and `AuthorizationService`
 - `AddLawnDart`, `AddBoundedContext`, `AddLawnDartAuthorization`
 - Hosted pattern contracts (`IReactor`, `IEventProcessor`, `ITaskProcessor`).
@@ -40,10 +41,10 @@ unique tokens). In-memory GWT may skip it; writes still need the attribute.
 
 ## Portable store contract
 
-`IEventStore` inherits `IStreamRegistry`. Do not split them. Store
-implementers (InMemory, SQL Server, or a third-party backend) must keep
-these methods and signatures. `IEventStoreSubscriptions` is the portable
-push surface; implement it when the store can deliver a continuous log.
+A third-party backend implements `IEventLog`. LawnDart ships the typed
+`IEventStore` adapter over that log. `IEventStore` inherits `IStreamRegistry`.
+Do not split them. `IEventStoreSubscriptions` is the portable push surface
+for the session; the log has `IEventLogSubscriptions`.
 
 **`IEventStore`**
 

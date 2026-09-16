@@ -1,8 +1,11 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using LawnDart;
 using LawnDart.EventSourcing.Outbox;
+using LawnDart.EventStore;
 using LawnDart.Messaging.InMemory;
 using LawnDart.Messaging.Outbox;
 using LawnDart.Metadata;
@@ -158,6 +161,39 @@ public class MessageTransportOutboxPublisherTests
     }
 
     [Fact]
+    public async Task PublishAsync_UsesCatalogSchemaVersion_NotTokenOnlyMap()
+    {
+        var transport = new InMemoryMessageTransport(NullLogger<InMemoryMessageTransport>.Instance);
+        IEvent? received = null;
+        await transport.SubscribeAsync<OrderPlacedV2>((e, _, _) =>
+        {
+            received = e;
+            return Task.CompletedTask;
+        });
+
+        var catalog = new VersionSelectingCatalog();
+        var publisher = new MessageTransportOutboxPublisher(transport, catalog);
+        var v2 = new OrderPlacedV2(Guid.NewGuid(), DateTime.UtcNow, "order-v2", "note");
+
+        await publisher.PublishAsync(new OutboxMessage
+        {
+            Id = Guid.NewGuid(),
+            EventType = VersionSelectingCatalog.FamilyToken,
+            SchemaVersion = 2,
+            ContentType = AppendEvent.DefaultContentType,
+            Payload = JsonSerializer.Serialize(v2, v2.GetType(), JsonOptions),
+            Metadata = "{}",
+            CreatedAt = DateTime.UtcNow,
+            StreamId = "Order:v2",
+            SequencePosition = 3,
+        });
+
+        var published = Assert.IsType<OrderPlacedV2>(received);
+        Assert.Equal("order-v2", published.OrderId);
+        Assert.Equal("note", published.Note);
+    }
+
+    [Fact]
     public void AddMessageTransportOutboxPublisher_ResolvesFromDi()
     {
         var services = new ServiceCollection();
@@ -187,4 +223,35 @@ public class MessageTransportOutboxPublisherTests
             return (Task)method!.Invoke(this, [cancellationToken])!;
         }
     }
+
+    /// <summary>
+    /// Token-only resolve returns v1. Versioned resolve returns v2 when
+    /// <c>SchemaVersion &gt;= 2</c>. A publisher that still uses a token-only map
+    /// would deserialize the v2 payload as <see cref="OrderPlacedV1"/>.
+    /// </summary>
+    private sealed class VersionSelectingCatalog : IEventTypeCatalog
+    {
+        public const string FamilyToken = "order-placed";
+
+        public string GetName(Type type) => FamilyToken;
+
+        public bool TryResolveType(string storedName, [NotNullWhen(true)] out Type? type)
+            => TryResolveType(storedName, schemaVersion: 1, out type);
+
+        public bool TryResolveType(string storedName, int schemaVersion, [NotNullWhen(true)] out Type? type)
+        {
+            if (!string.Equals(storedName, FamilyToken, StringComparison.Ordinal))
+            {
+                type = null;
+                return false;
+            }
+
+            type = schemaVersion >= 2 ? typeof(OrderPlacedV2) : typeof(OrderPlacedV1);
+            return true;
+        }
+    }
+
+    private sealed record OrderPlacedV1(Guid Id, DateTime Timestamp, string OrderId) : IEvent;
+
+    private sealed record OrderPlacedV2(Guid Id, DateTime Timestamp, string OrderId, string Note) : IEvent;
 }

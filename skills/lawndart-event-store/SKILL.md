@@ -5,7 +5,11 @@ description: Choose and register a LawnDart event store. UseInMemory for zero in
 
 # Event store
 
-v1 backends: **InMemory** and **SQL Server**.
+v1 backends: **InMemory** and **SQL Server**. Both persist recorded frames
+(`IEventLog`: `AppendEvent` in, `RecordedEvent` out). Application code uses
+the typed session (`IEventStore`). InMemory serializes on append — it is
+not an object heap. `IEventSerializer` is `ReadOnlyMemory<byte>` (UTF-8
+JSON by default). Third-party stores implement the log, not the session.
 
 ## Frozen surface
 

@@ -1,7 +1,7 @@
 using System.Data;
-using System.Text.Json;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
+using LawnDart.EventStore;
 using LawnDart.Outbox;
 
 namespace LawnDart.EventSourcing.SqlServer.Outbox;
@@ -79,17 +79,23 @@ public class SqlServerOutboxWriter : IOutboxWriter
     {
         var sql = $@"
             INSERT INTO {_qualifiedTableName} (
-                Id, EventType, Payload, Metadata, CreatedAt, 
+                Id, EventType, SchemaVersion, ContentType, Payload, Metadata, CreatedAt, 
                 Attempts, StreamId, SequencePosition
             )
             VALUES (
-                @Id, @EventType, @Payload, @Metadata, @CreatedAt,
+                @Id, @EventType, @SchemaVersion, @ContentType, @Payload, @Metadata, @CreatedAt,
                 @Attempts, @StreamId, @SequencePosition
             )";
         
         using var command = new SqlCommand(sql, connection, transaction);
         command.Parameters.Add("@Id", SqlDbType.UniqueIdentifier).Value = message.Id;
         command.Parameters.Add("@EventType", SqlDbType.NVarChar, 500).Value = message.EventType;
+        command.Parameters.Add("@SchemaVersion", SqlDbType.Int).Value =
+            EventLogBuffers.NormalizeSchemaVersion(message.SchemaVersion);
+        command.Parameters.Add("@ContentType", SqlDbType.NVarChar, 100).Value =
+            string.IsNullOrWhiteSpace(message.ContentType)
+                ? AppendEvent.DefaultContentType
+                : message.ContentType;
         command.Parameters.Add("@Payload", SqlDbType.NVarChar, -1).Value = message.Payload;
         command.Parameters.Add("@Metadata", SqlDbType.NVarChar, -1).Value = message.Metadata;
         command.Parameters.Add("@CreatedAt", SqlDbType.DateTime2).Value = message.CreatedAt;
@@ -108,7 +114,8 @@ public class SqlServerOutboxWriter : IOutboxWriter
         var sql = $@"
             SELECT TOP (@BatchSize)
                 Id, EventType, Payload, Metadata, CreatedAt, ProcessedAt,
-                Attempts, LastError, LastAttemptAt, StreamId, SequencePosition, DeadLetteredAt
+                Attempts, LastError, LastAttemptAt, StreamId, SequencePosition, DeadLetteredAt,
+                SchemaVersion, ContentType
             FROM {_qualifiedTableName}
             WHERE ProcessedAt IS NULL AND DeadLetteredAt IS NULL
             ORDER BY SequencePosition ASC";
@@ -122,7 +129,8 @@ public class SqlServerOutboxWriter : IOutboxWriter
         var sql = $@"
             SELECT TOP (@BatchSize)
                 Id, EventType, Payload, Metadata, CreatedAt, ProcessedAt,
-                Attempts, LastError, LastAttemptAt, StreamId, SequencePosition, DeadLetteredAt
+                Attempts, LastError, LastAttemptAt, StreamId, SequencePosition, DeadLetteredAt,
+                SchemaVersion, ContentType
             FROM {_qualifiedTableName}
             WHERE DeadLetteredAt IS NOT NULL
             ORDER BY SequencePosition ASC";
@@ -150,22 +158,45 @@ public class SqlServerOutboxWriter : IOutboxWriter
         return messages;
     }
 
-    private static OutboxMessage ReadMessage(SqlDataReader reader) =>
-        new()
+    private static OutboxMessage ReadMessage(SqlDataReader reader)
+    {
+        var schemaOrdinal = reader.GetOrdinal("SchemaVersion");
+        var contentOrdinal = reader.GetOrdinal("ContentType");
+        var schemaVersion = reader.IsDBNull(schemaOrdinal)
+            ? 1
+            : EventLogBuffers.NormalizeSchemaVersion(reader.GetInt32(schemaOrdinal));
+        var contentType = reader.IsDBNull(contentOrdinal)
+            ? AppendEvent.DefaultContentType
+            : reader.GetString(contentOrdinal);
+        if (string.IsNullOrWhiteSpace(contentType))
+            contentType = AppendEvent.DefaultContentType;
+
+        return new()
         {
-            Id = reader.GetGuid(0),
-            EventType = reader.GetString(1),
-            Payload = reader.GetString(2),
-            Metadata = reader.GetString(3),
-            CreatedAt = reader.GetDateTime(4),
-            ProcessedAt = reader.IsDBNull(5) ? null : reader.GetDateTime(5),
-            Attempts = reader.GetInt32(6),
-            LastError = reader.IsDBNull(7) ? null : reader.GetString(7),
-            LastAttemptAt = reader.IsDBNull(8) ? null : reader.GetDateTime(8),
-            StreamId = reader.GetString(9),
-            SequencePosition = reader.GetInt64(10),
-            DeadLetteredAt = reader.IsDBNull(11) ? null : reader.GetDateTime(11)
+            Id = reader.GetGuid(reader.GetOrdinal("Id")),
+            EventType = reader.GetString(reader.GetOrdinal("EventType")),
+            SchemaVersion = schemaVersion,
+            ContentType = contentType,
+            Payload = reader.GetString(reader.GetOrdinal("Payload")),
+            Metadata = reader.GetString(reader.GetOrdinal("Metadata")),
+            CreatedAt = reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
+            ProcessedAt = reader.IsDBNull(reader.GetOrdinal("ProcessedAt"))
+                ? null
+                : reader.GetDateTime(reader.GetOrdinal("ProcessedAt")),
+            Attempts = reader.GetInt32(reader.GetOrdinal("Attempts")),
+            LastError = reader.IsDBNull(reader.GetOrdinal("LastError"))
+                ? null
+                : reader.GetString(reader.GetOrdinal("LastError")),
+            LastAttemptAt = reader.IsDBNull(reader.GetOrdinal("LastAttemptAt"))
+                ? null
+                : reader.GetDateTime(reader.GetOrdinal("LastAttemptAt")),
+            StreamId = reader.GetString(reader.GetOrdinal("StreamId")),
+            SequencePosition = reader.GetInt64(reader.GetOrdinal("SequencePosition")),
+            DeadLetteredAt = reader.IsDBNull(reader.GetOrdinal("DeadLetteredAt"))
+                ? null
+                : reader.GetDateTime(reader.GetOrdinal("DeadLetteredAt"))
         };
+    }
     
     /// <inheritdoc/>
     public async Task MarkAsProcessedAsync(Guid messageId, CancellationToken cancellationToken = default)
@@ -246,6 +277,8 @@ public class SqlServerOutboxWriter : IOutboxWriter
                 CREATE TABLE {_qualifiedTableName} (
                     Id UNIQUEIDENTIFIER PRIMARY KEY,
                     EventType NVARCHAR(500) NOT NULL,
+                    SchemaVersion INT NOT NULL DEFAULT 1,
+                    ContentType NVARCHAR(100) NOT NULL DEFAULT 'application/json',
                     Payload NVARCHAR(MAX) NOT NULL,
                     Metadata NVARCHAR(MAX) NOT NULL,
                     CreatedAt DATETIME2 NOT NULL,
@@ -270,6 +303,20 @@ public class SqlServerOutboxWriter : IOutboxWriter
             AND NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'{_qualifiedTableName}') AND name = 'DeadLetteredAt')
             BEGIN
                 ALTER TABLE {_qualifiedTableName} ADD DeadLetteredAt DATETIME2 NULL;
+            END
+
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = '{_tableName}' AND schema_id = SCHEMA_ID('{_schemaName}'))
+            AND NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'{_qualifiedTableName}') AND name = 'SchemaVersion')
+            BEGIN
+                ALTER TABLE {_qualifiedTableName} ADD SchemaVersion INT NOT NULL
+                    CONSTRAINT [DF_{_tableName}_SchemaVersion] DEFAULT 1;
+            END
+
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = '{_tableName}' AND schema_id = SCHEMA_ID('{_schemaName}'))
+            AND NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'{_qualifiedTableName}') AND name = 'ContentType')
+            BEGIN
+                ALTER TABLE {_qualifiedTableName} ADD ContentType NVARCHAR(100) NOT NULL
+                    CONSTRAINT [DF_{_tableName}_ContentType] DEFAULT 'application/json';
             END";
         
         using var connection = new SqlConnection(_connectionString);

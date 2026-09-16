@@ -1,7 +1,7 @@
 # Library domain — raw append (comparison foil)
 
 This page is **article material**, not the recommended path. The canonical
-reference slice is [`samples/Library.Domain`](../samples/Library.Domain) and
+reference slice is [`samples/Library.Domain`](https://github.com/sellistixorg/LawnDart/tree/main/samples/Library.Domain) and
 its given / when / then specs. Do not imitate this page when adding a slice.
 
 It exists so an article can show both sides of the same book domain: raw

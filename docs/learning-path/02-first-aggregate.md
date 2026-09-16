@@ -2,7 +2,7 @@
 
 **Previous:** [Concepts](01-concepts.md) · **Next:** [Testing](03-testing-your-aggregate.md)
 
-The shortest copy-paste quick start stays on the [README](../../README.md)
+The shortest copy-paste quick start stays on the [README](https://github.com/sellistixorg/LawnDart/blob/main/README.md)
 and [Quickstart](../QUICKSTART.md). This step is the library domain — a
 `Book` with an invariant (`OnLoan`) whose decision state is not the catalog
 view.

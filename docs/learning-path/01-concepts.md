@@ -38,9 +38,16 @@ See [DCB_PATTERNS.md](../DCB_PATTERNS.md).
 ## Mental model
 
 ```
-Command → Aggregate / DCB → Events → Event store
+Command → Aggregate / DCB → Events → IEventStore (typed session)
+                                    ↓
+                              IEventLog (recorded frames)
                                     ↓
                          Projector → View store → Query
 ```
+
+`IEventStore` is what handlers and aggregates use. The durable log
+(`IEventLog`) stores recorded events — family token, schema version,
+content-type, payload bytes — not live CLR objects. InMemory serializes
+on append the same way SQL does. Third-party stores implement the log.
 
 [Glossary](../GLOSSARY.md) · [Overview](../OVERVIEW.md)

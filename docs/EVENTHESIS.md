@@ -5,7 +5,7 @@ LawnDart. It is not the reason the library exists.
 
 The build kit is written against a **generic slice spec** (command, event,
 entity, view, process, GWT, vertical slice). See
-[skills/BUILD_KIT.md](../skills/BUILD_KIT.md).
+[skills/BUILD_KIT.md](https://github.com/sellistixorg/LawnDart/blob/main/skills/BUILD_KIT.md).
 
 This page is the **first modelling-tool adapter**. It maps Eventhesis slice
 JSON onto that spec. Eventhesis does **not** generate LawnDart C# types. A

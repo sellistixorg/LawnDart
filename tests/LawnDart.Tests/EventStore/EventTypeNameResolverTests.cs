@@ -110,6 +110,14 @@ public class EventTypeNameResolverTests
     }
 
     [Fact]
+    public void Warmup_RawRecordedEvent_Throws()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => EventTypeNameResolver.Warmup([typeof(RawRecordedEvent)]));
+        Assert.Contains(nameof(IRawEvent), ex.Message);
+    }
+
+    [Fact]
     public void Warmup_DuplicateToken_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(

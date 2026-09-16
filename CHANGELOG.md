@@ -10,8 +10,13 @@ changes to the public API.
 
 ## [Unreleased]
 
+## [0.4.0-alpha.2] — 2026-09-16
+
 ### Added
 
+- Third-party stores implement `IEventLog` (`AppendEvent` in, `RecordedEvent` out). Application code still uses `IEventStore`; that typed session is unchanged.
+- The InMemory → SQL contract (`Category=Contract`) also covers the event log: the same payload on append/read, token and tag query without hydrate, and a host that has not registered event CLR types.
+- `RawRecordedEvent` implements `IRawEvent` over a recorded frame. A host without the CLR event type appends and copies through `IEventLog`; typed hydrate still fails closed.
 - [Why LawnDart](docs/WHY.md) contrasts LawnDart with Marten, Cratis, and Axon, and names the supported scope as a closed set (InMemory, SQL Server, in-process, `net10.0`).
 - The library domain (`samples/Library.Domain`) is the canonical reference slice: a `Book` aggregate whose decision state (`BookState`) is not the catalog view (`BookCatalogView`), with three given/when/then specs in `samples/Library.Domain.Tests`.
 - `build-kit/library-slice.json` is the canonical demo input. Skills excerpt host and domain snippets from `samples/Library.Domain` and `samples/Library.Host`. CI compiles the slice and runs its GWT tests on every change.
@@ -19,6 +24,13 @@ changes to the public API.
 
 ### Changed
 
+- `IEventSerializer` now reads and writes `ReadOnlyMemory<byte>` (UTF-8 JSON by default). `EventSession` maps `IEvent` to `AppendEvent` and hydrates `RecordedEvent` so a store does not resolve CLR types.
+- InMemory stores recorded events: append serializes, read hydrates a new instance. Mutating an appended event or its metadata is not visible on the next read.
+- SQL Server stores recorded events: new payloads go to `EventPayload` (`VARBINARY`); old `EventData` (`NVARCHAR`) rows still read. `SchemaVersion` is a first-class column. The backend does not resolve CLR types.
+- `IEventStore` is a typed adapter over `IEventLog`. InMemory and SQL Server implement the log; subscriptions hydrate in the adapter. A fail-closed hydrate does not advance the typed cursor.
+- `IRawEvent` docs no longer name `OpaqueEvent` or `UnknownEvent` as LawnDart types. The catalog still rejects `IRawEvent`.
+- SQL Server outbox rows copy the appended frame (family token, UTF-8 payload/metadata text, `SchemaVersion`, and `ContentType`) in the same transaction, instead of re-serializing a CLR event. Existing outbox rows without those columns read as version `1` and `application/json`. The message-transport publisher resolves types through the event catalog (token + schema version), not a private token-only map.
+- Skills, Quickstart, and the package map state that InMemory serializes on append and that third-party stores implement `IEventLog`. `IEventSerializer` is documented as `ReadOnlyMemory<byte>`.
 - The README, docs site landing, Start Here, and Overview lead with the same sentence: LawnDart is the .NET runtime that event-modeled systems compile into. The README quick start is a complete Counter — command, event, aggregate, `HandleCommandAsync`, and read-back — compiled in CI.
 - Learning-path steps 2–4 teach the library `Book` domain. Snippets are excerpted from `samples/Library.Domain`. The README and Quickstart keep the short Counter.
 - Snapshot docs state replace-in-place retention (one row per stream, no scavenge) and the strategy constructors from source. A dropped or bad snapshot costs replay time; the log stays the source of truth.

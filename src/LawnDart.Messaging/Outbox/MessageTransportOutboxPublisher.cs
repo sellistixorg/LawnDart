@@ -17,9 +17,10 @@ namespace LawnDart.Messaging.Outbox;
 /// <see cref="MessageContext.MessageId"/> (this type uses the outbox row id).
 /// </para>
 /// <para>
-/// Event type resolution uses the catalog token from
-/// <see cref="EventTypeNameResolver.GetName"/>. FullName and simple name remain
-/// read aliases for older outbox rows.
+/// Event type resolution uses the scoped <see cref="IEventTypeCatalog"/> with the
+/// row's <see cref="OutboxMessage.SchemaVersion"/>. FullName and simple name remain
+/// read aliases for older outbox rows. This publisher deserializes the stored
+/// version's CLR type; upcast to the current type is not applied yet.
 /// </para>
 /// </remarks>
 public sealed class MessageTransportOutboxPublisher : IOutboxPublisher
@@ -33,29 +34,46 @@ public sealed class MessageTransportOutboxPublisher : IOutboxPublisher
     };
 
     private readonly IMessageTransport _transport;
-    private readonly IReadOnlyDictionary<string, Type> _eventTypes;
+    private readonly IEventTypeCatalog _catalog;
     private readonly JsonSerializerOptions _jsonOptions;
 
     /// <summary>
-    /// Creates a publisher that resolves event CLR types from <paramref name="eventTypes"/>.
+    /// Creates a publisher that resolves event CLR types from <paramref name="catalog"/>.
     /// </summary>
     /// <param name="transport">Transport used to publish (InMemory in these packages).</param>
-    /// <param name="eventTypes">Known event types that may appear in outbox <c>EventType</c> rows.</param>
+    /// <param name="catalog">
+    /// Scoped catalog. Resolve uses family token plus
+    /// <see cref="OutboxMessage.SchemaVersion"/>.
+    /// </param>
     /// <param name="jsonOptions">
     /// Optional JSON options. Defaults match SQL Server outbox payload serialization
     /// (<c>PropertyNameCaseInsensitive</c>, no camelCase rename).
     /// </param>
     public MessageTransportOutboxPublisher(
         IMessageTransport transport,
-        IEnumerable<Type> eventTypes,
+        IEventTypeCatalog catalog,
         JsonSerializerOptions? jsonOptions = null)
     {
         ArgumentNullException.ThrowIfNull(transport);
-        ArgumentNullException.ThrowIfNull(eventTypes);
+        ArgumentNullException.ThrowIfNull(catalog);
 
         _transport = transport;
+        _catalog = catalog;
         _jsonOptions = jsonOptions ?? DefaultJsonOptions;
-        _eventTypes = BuildTypeMap(eventTypes);
+    }
+
+    /// <summary>
+    /// Creates a publisher that warms <paramref name="eventTypes"/> into the shared
+    /// catalog and resolves through that catalog (not a private token map).
+    /// </summary>
+    public MessageTransportOutboxPublisher(
+        IMessageTransport transport,
+        IEnumerable<Type> eventTypes,
+        JsonSerializerOptions? jsonOptions = null)
+        : this(transport, EventTypeCatalog.Shared, jsonOptions)
+    {
+        ArgumentNullException.ThrowIfNull(eventTypes);
+        RegisterKnownTypes(eventTypes);
     }
 
     /// <inheritdoc />
@@ -63,11 +81,14 @@ public sealed class MessageTransportOutboxPublisher : IOutboxPublisher
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        if (!_eventTypes.TryGetValue(message.EventType, out var eventType))
+        var schemaVersion = message.SchemaVersion <= 0 ? 1 : message.SchemaVersion;
+        if (!_catalog.TryResolveType(message.EventType, schemaVersion, out var eventType))
         {
             throw new InvalidOperationException(
-                $"No CLR type registered for outbox EventType '{message.EventType}'. " +
-                "Pass the event types to MessageTransportOutboxPublisher / AddMessageTransportOutboxPublisher.");
+                $"No CLR type registered for outbox EventType '{message.EventType}' " +
+                $"(SchemaVersion {schemaVersion}). " +
+                "Pass event types to MessageTransportOutboxPublisher / AddMessageTransportOutboxPublisher " +
+                "or register an IEventTypeCatalog.");
         }
 
         var deserialized = JsonSerializer.Deserialize(message.Payload, eventType, _jsonOptions)
@@ -117,10 +138,9 @@ public sealed class MessageTransportOutboxPublisher : IOutboxPublisher
         }
     }
 
-    private static IReadOnlyDictionary<string, Type> BuildTypeMap(IEnumerable<Type> eventTypes)
+    private static void RegisterKnownTypes(IEnumerable<Type> eventTypes)
     {
-        var map = new Dictionary<string, Type>(StringComparer.Ordinal);
-
+        var sawType = false;
         foreach (var type in eventTypes)
         {
             if (type is null)
@@ -132,21 +152,12 @@ public sealed class MessageTransportOutboxPublisher : IOutboxPublisher
                     nameof(eventTypes));
             }
 
-            void Add(string? key)
-            {
-                if (string.IsNullOrWhiteSpace(key))
-                    return;
-                map[key] = type;
-            }
-
-            Add(type.FullName);
-            Add(type.Name);
-            Add(EventTypeNameResolver.GetName(type));
+            sawType = true;
+            if (EventTypeNameResolver.TryGetDeclaredName(type) is not null)
+                EventTypeNameResolver.GetName(type);
         }
 
-        if (map.Count == 0)
+        if (!sawType)
             throw new ArgumentException("At least one event type is required.", nameof(eventTypes));
-
-        return map;
     }
 }
