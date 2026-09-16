@@ -37,8 +37,6 @@ app.MapLawnDartCommands();
 app.MapProjectionQueries("default");
 ```
 
-<!-- TODO(RDY-10) -->
-
 Swap `.UseInMemory()` for `.UseSqlServer(...)` and
 `AddInMemoryProjectionStores` for `AddSqlProjectionStores` when you leave
 dev. The bounded-context name stays the same. That swap is verified for

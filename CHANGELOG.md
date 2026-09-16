@@ -23,6 +23,7 @@ changes to the public API.
 - Learning-path steps 2–4 teach the library `Book` domain. Snippets are excerpted from `samples/Library.Domain`. The README and Quickstart keep the short Counter.
 - Snapshot docs state replace-in-place retention (one row per stream, no scavenge) and the strategy constructors from source. A dropped or bad snapshot costs replay time; the log stays the source of truth.
 - The command–event–state matrix lives on [CES matrix](docs/CES_MATRIX.md) as the shapes an event model compiles into. Five cells are hosted; four are roadmap with no public type. Other pages link there instead of repeating the grid.
+- Academy’s README points at the CES matrix instead of implying every From×To cell is hosted.
 
 ### Fixed
 

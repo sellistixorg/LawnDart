@@ -77,9 +77,7 @@ Supporting material (not required to implement a slice): the
   Event Generator, or State Transformation — those cells are not hosted.
 - Every code block in `skills/` is excerpted from the reference slice
   (`samples/Library.Domain`, `samples/Library.Host`,
-  `samples/Library.Domain.Tests`). Doc blocks still moving under
-  `RDY-09` / `RDY-12` / `RDY-13` may carry `TODO(RDY-10)` until those
-  tickets replace them.
+  `samples/Library.Domain.Tests`).
 
 ## Pre-demo rehearsal
 

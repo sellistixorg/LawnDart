@@ -20,8 +20,6 @@ services.AddLawnDartHttpCommands(typeof(SomeCommand).Assembly);
 app.MapLawnDartCommands();
 ```
 
-<!-- TODO(RDY-10) -->
-
 ## Packages (v1 happy path)
 
 | Package | Role |

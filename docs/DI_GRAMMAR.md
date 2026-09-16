@@ -20,8 +20,6 @@ app.MapLawnDartCommands();
 app.MapProjectionQueries("default");
 ```
 
-<!-- TODO(RDY-10) -->
-
 | Piece | Role |
 |---|---|
 | `AddLawnDart` | Core options, default metadata provider |

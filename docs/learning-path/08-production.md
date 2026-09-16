@@ -42,8 +42,6 @@ app.MapLawnDartCommands();
 app.MapProjectionQueries("default");
 ```
 
-<!-- TODO(RDY-10) -->
-
 Checklist:
 
 - [BACKEND_SELECTION.md](../BACKEND_SELECTION.md) — InMemory vs SQL

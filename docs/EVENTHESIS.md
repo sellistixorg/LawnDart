@@ -44,8 +44,6 @@ services.AddLawnDartHttpCommands(typeof(SomeCommand).Assembly);
 app.MapLawnDartCommands();
 ```
 
-<!-- TODO(RDY-10) -->
-
 Keep catalog tokens stable when you hand-write events. Rename only the
 package and extension-method prefixes (`AddLawnDart`,
 `MapLawnDartCommands`, `AddLawnDartAuthorization`).

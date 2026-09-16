@@ -25,8 +25,6 @@ ctx.UseInMemory();
 ctx.WithEventTypes<CounterCreated>();
 ```
 
-<!-- TODO(RDY-10) -->
-
 HTTP hosts also call `WithCommandHandlers<TMarker>()` on that context, then
 `AddLawnDartHttpCommands` for routing only.
 

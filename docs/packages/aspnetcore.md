@@ -14,8 +14,6 @@ services.AddLawnDartHttpCommands(typeof(CreateOrderCommand).Assembly);
 app.MapLawnDartCommands();
 ```
 
-<!-- TODO(RDY-10) -->
-
 `AddLawnDartHttpCommands` records assemblies for routing. Register handlers
 with `WithCommandHandlers<TMarker>()` on the bounded context.
 
