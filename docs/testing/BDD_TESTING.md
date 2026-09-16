@@ -29,7 +29,7 @@ await AggregateSpec
         new BookAdded(Guid.NewGuid(), DateTime.UtcNow, bookId, "Pragmatic Programmer", "978-0135957059"),
         new BookBorrowed(Guid.NewGuid(), DateTime.UtcNow, bookId, "Jane Doe"))
     .When(new BorrowBookCommand(Guid.NewGuid(), bookId, "Someone Else"))
-    .ThenThrows<InvalidOperationException>()
+    .ThenThrows<DomainException>()
     .AndAssert(result =>
         Assert.Equal("Book is already on loan.", result.Exception!.Message))
     .RunAsync();
@@ -93,12 +93,15 @@ Do not wrap `RunAsync()` in
 `Assert.ThrowsAsync<InvalidOperationException>`. A failed spec assertion
 would have passed that test. Use `ThenThrows<T>()` for a domain rule:
 
+- Domain rules throw `DomainException`. HTTP command endpoints map that type
+  to `422 Unprocessable Entity`.
+- `ThenThrows<DomainException>()` is the assertion in the library slice.
 - `ThenThrows<T>()` passes when the domain throws `T` or a type derived from `T`.
+  `DomainException` derives from `InvalidOperationException`, so
+  `ThenThrows<InvalidOperationException>()` still matches — assert the
+  narrower type.
 - A mismatch throws `BddSpecAssertionException` and names both the expected
   and actual types.
-- Domain code may still throw `InvalidOperationException` (or
-  `DomainException`, which derives from it). Those remain the When
-  exception; only the spec runner uses `BddSpecAssertionException`.
 
 A store that does not implement `GetCurrentSequenceAsync` or
 `ReadByQueryAsync` throws `NotSupportedException`. The spec treats that as

@@ -1,3 +1,4 @@
+using LawnDart;
 using LawnDart.Aggregates;
 using LawnDart.Testing.Bdd;
 using Library.Domain;
@@ -78,7 +79,7 @@ public sealed class LibraryBookTests
                 new BookAdded(Guid.NewGuid(), DateTime.UtcNow, bookId, "Pragmatic Programmer", "978-0135957059"),
                 new BookBorrowed(Guid.NewGuid(), DateTime.UtcNow, bookId, "Jane Doe"))
             .When(new BorrowBookCommand(Guid.NewGuid(), bookId, "Someone Else"))
-            .ThenThrows<InvalidOperationException>()
+            .ThenThrows<DomainException>()
             .AndAssert(result =>
                 Assert.Equal("Book is already on loan.", result.Exception!.Message))
             .RunAsync();

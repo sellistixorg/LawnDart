@@ -31,7 +31,7 @@ public sealed class SeatHold : DcbEntity<SeatHoldState>
         if (command is HoldSeatCommand hold)
         {
             if (State.SeatsRemaining <= 0)
-                throw new InvalidOperationException("Section is full.");
+                throw new DomainException("Section is full.");
 
             Emit(
                 new SeatHeld(Guid.NewGuid(), DateTime.UtcNow, hold.StudentId, hold.SectionId),

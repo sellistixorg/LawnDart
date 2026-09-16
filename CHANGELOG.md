@@ -10,6 +10,10 @@ changes to the public API.
 
 ## [Unreleased]
 
+### Changed
+
+- The library `Book` aggregate throws `DomainException` for rule violations. Learning-path and testing docs assert `ThenThrows<DomainException>()`.
+
 ## [0.4.0-alpha.2] — 2026-09-16
 
 ### Added

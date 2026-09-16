@@ -38,9 +38,9 @@ public sealed class Book : AggregateRoot<BookState>
     public void Handle(BorrowBookCommand cmd)
     {
         if (!State.Exists)
-            throw new InvalidOperationException("Book does not exist.");
+            throw new DomainException("Book does not exist.");
         if (State.OnLoan)
-            throw new InvalidOperationException("Book is already on loan.");
+            throw new DomainException("Book is already on loan.");
 
         Apply(new BookBorrowed(Guid.NewGuid(), DateTime.UtcNow, cmd.BookId, cmd.MemberName));
     }
