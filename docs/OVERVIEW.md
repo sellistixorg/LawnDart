@@ -37,6 +37,7 @@ app.MapLawnDartCommands();
 | `LawnDart.AspNetCore` | HTTP command mapping |
 | `LawnDart.Authorization.AspNetCore` | HTTP claims → `AuthorizationContext` |
 | `LawnDart.Testing` | Given / when / then harnesses |
+| `LawnDart.Analyzers` | Optional `LDT*` schema-versioning diagnostics |
 
 Academy + `UseInMemory()` is the zero-infra path. Per-package landing pages:
 [Package map](packages/README.md).

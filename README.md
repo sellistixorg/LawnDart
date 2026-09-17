@@ -140,6 +140,7 @@ Backend choice: [docs/BACKEND_SELECTION.md](docs/BACKEND_SELECTION.md).
 | `LawnDart.AspNetCore` | HTTP command mapping |
 | `LawnDart.Authorization.AspNetCore` | HTTP claims → authorization context |
 | `LawnDart.Testing` | Given / when / then harnesses |
+| `LawnDart.Analyzers` | Optional `LDT*` schema-versioning diagnostics |
 
 Details: [Package map](docs/packages/README.md).
 

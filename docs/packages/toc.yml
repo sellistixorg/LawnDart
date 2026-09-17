@@ -18,3 +18,5 @@
   href: authorization-aspnetcore.md
 - name: Testing
   href: testing.md
+- name: Analyzers
+  href: analyzers.md

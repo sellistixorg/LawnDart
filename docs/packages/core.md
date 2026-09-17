@@ -78,5 +78,6 @@ See [Backend selection](../BACKEND_SELECTION.md).
 ## Related
 
 - [Package map](README.md)
+- [Analyzers](analyzers.md) — optional `LDT*` schema-versioning diagnostics
 - [DI Grammar](../DI_GRAMMAR.md)
 - [Overview](../OVERVIEW.md)

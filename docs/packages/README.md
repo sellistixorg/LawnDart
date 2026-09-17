@@ -1,7 +1,8 @@
 # Package map
 
-Nine packages. Take `LawnDart` + `LawnDart.EventSourcing` first; add the
-others when you need a durable store, read models, HTTP, or tests.
+Ten packages. Take `LawnDart` + `LawnDart.EventSourcing` first; add the
+others when you need a durable store, read models, HTTP, tests, or
+compile-time schema checks.
 
 The **`IEventStore` interface** lives in core `LawnDart`. It is the typed
 session (`IEvent` in, `SequencedEvent` out). Backends implement **`IEventLog`**
@@ -23,6 +24,7 @@ object heap. `IEventSerializer` reads and writes `ReadOnlyMemory<byte>`
 | [`LawnDart.AspNetCore`](aspnetcore.md) | You want HTTP POST → command. | `AddLawnDartHttpCommands` / `MapLawnDartCommands` |
 | [`LawnDart.Authorization.AspNetCore`](authorization-aspnetcore.md) | You want HTTP claims on those commands. | `AddHttpAuthorizationContext()` |
 | [`LawnDart.Testing`](testing.md) | You want given / when / then against InMemory. | `BddTestContext.CreateInMemory()` |
+| [`LawnDart.Analyzers`](analyzers.md) | You want `LDT*` schema-versioning diagnostics at `dotnet build`. | Package reference (optional) |
 
 Happy-path host:
 

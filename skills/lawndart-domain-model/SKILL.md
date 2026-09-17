@@ -109,6 +109,8 @@ remapped `[PropertyOrder]` number) — is expand-contract. Ship readers that
 understand `SchemaVersion` N+1 before any process writes N+1. Old binaries
 fail closed on those newer rows (`EventSchemaTooNewException`) and may keep
 appending the version that was current for them. There is no remote
-downcaster and no skip override. See `docs/EVENT_SCHEMA_VERSIONING.md`.
+downcaster and no skip override. Optional `LawnDart.Analyzers` reports
+`LDT001`–`LDT003` at `dotnet build`; warmup is the runtime authority. See
+`docs/EVENT_SCHEMA_VERSIONING.md`.
 
 See `docs/STREAM_IDS.md`, `docs/TAGGING.md`, `docs/DCB_PATTERNS.md`.
