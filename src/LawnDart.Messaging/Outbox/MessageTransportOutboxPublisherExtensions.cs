@@ -34,9 +34,10 @@ public static class MessageTransportOutboxPublisherExtensions
         {
             var transport = sp.GetRequiredService<IMessageTransport>();
             var catalog = sp.GetService<IEventTypeCatalog>() ?? EventTypeCatalog.Shared;
+            var pipeline = sp.GetService<EventUpcastPipeline>();
             if (captured.Length > 0)
                 return new MessageTransportOutboxPublisher(transport, captured);
-            return new MessageTransportOutboxPublisher(transport, catalog);
+            return new MessageTransportOutboxPublisher(transport, catalog, pipeline);
         });
 
         return services;

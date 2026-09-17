@@ -7,6 +7,7 @@ using LawnDart.EventSourcing.Aggregates;
 using LawnDart.EventSourcing.Context;
 using LawnDart.EventSourcing.Dcb;
 using LawnDart.EventSourcing.EventStore;
+using LawnDart.EventSourcing.Serialization;
 using LawnDart.EventStore;
 using Microsoft.Extensions.Options;
 using LawnDart;
@@ -55,8 +56,15 @@ public static class BoundedContextBuilderExtensions
         var contextName  = builder.ContextName;
 
         // Keyed IEventStore + IStreamRegistry + portable subscriptions
-        services.AddKeyedSingleton<IEventStore>(contextName,
-            (_, _) => new InMemoryEventStore(contextName: contextName));
+        services.AddKeyedSingleton<IEventStore>(contextName, (sp, _) =>
+        {
+            var catalog = sp.GetKeyedService<IEventTypeCatalog>(contextName)
+                ?? EventTypeCatalog.Shared;
+            var pipeline = sp.GetKeyedService<EventUpcastPipeline>(contextName);
+            return new InMemoryEventStore(
+                contextName: contextName,
+                session: new EventSession(new JsonEventSerializer(), catalog, pipeline));
+        });
         services.AddKeyedSingleton<IEventLog>(contextName,
             (sp, key) => (IEventLog)sp.GetRequiredKeyedService<IEventStore>(key!));
         services.AddKeyedSingleton<IStreamRegistry>(contextName,

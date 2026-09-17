@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using LawnDart.Metadata;
@@ -9,9 +10,10 @@ namespace LawnDart.EventStore;
 /// Typed session mapping: <see cref="IEvent"/> ↔ log frames.
 /// </summary>
 /// <remarks>
-/// Serialize on the way in; token-only resolve and deserialize on the way out.
-/// No upcast. Payload codec is <see cref="IEventSerializer"/>; metadata is UTF-8
-/// JSON bytes (<c>application/json</c>), not the payload codec.
+/// Serialize on the way in; resolve <c>(token, SchemaVersion)</c>, deserialize
+/// the stored version's CLR type, then upcast to current. Payload codec is
+/// <see cref="IEventSerializer"/>; metadata is UTF-8 JSON bytes
+/// (<c>application/json</c>), not the payload codec.
 /// <para>
 /// On hydrate, <see cref="EventMetadata.CommitTimestamp"/> and
 /// <see cref="EventMetadata.SchemaVersion"/> are copied from the
@@ -30,18 +32,30 @@ public sealed class EventSession
 
     private readonly IEventSerializer _serializer;
     private readonly IEventTypeCatalog _catalog;
+    private readonly EventUpcastPipeline? _upcast;
 
     /// <param name="serializer">Payload codec for this session (one codec per session).</param>
-    /// <param name="catalog">Token-only catalog. Defaults to <see cref="EventTypeCatalog.Shared"/>.</param>
-    public EventSession(IEventSerializer serializer, IEventTypeCatalog? catalog = null)
+    /// <param name="catalog">Scoped catalog. Defaults to <see cref="EventTypeCatalog.Shared"/>.</param>
+    /// <param name="upcastPipeline">
+    /// Chain from historical types to current. Null still fail-closes when the
+    /// stored type is not this process's current type.
+    /// </param>
+    public EventSession(
+        IEventSerializer serializer,
+        IEventTypeCatalog? catalog = null,
+        EventUpcastPipeline? upcastPipeline = null)
     {
         _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
         _catalog = catalog ?? EventTypeCatalog.Shared;
+        _upcast = upcastPipeline;
     }
 
     /// <summary>
-    /// Maps a typed event to an append envelope. Stamps <c>SchemaVersion = 1</c>
-    /// for existing writers. Does not mutate <paramref name="metadata"/>.
+    /// Maps a typed event to an append envelope. Stamps frame
+    /// <see cref="AppendEvent.SchemaVersion"/> from the current type and mirrors
+    /// it onto <see cref="EventMetadata.SchemaVersion"/> (overwrites a caller
+    /// integer). Rejects a historical CLR type for a family this catalog
+    /// already knows. Does not mutate <paramref name="metadata"/>.
     /// </summary>
     public AppendEvent ToAppendEvent(
         IEvent @event,
@@ -52,43 +66,85 @@ public sealed class EventSession
 
         var type = @event.GetType();
         var token = _catalog.GetName(type);
+        if (_catalog.TryResolveType(token, out var current) && current != type)
+        {
+            throw new InvalidOperationException(
+                $"Cannot append historical event type '{type.FullName}' for family '{token}'. " +
+                $"This process appends only the current type '{current.FullName}'.");
+        }
+
+        var schemaVersion = ReadDeclaredSchemaVersion(type);
         var payload = _serializer.Serialize(@event, type);
-        var envelopeMetadata = SnapshotMetadata(metadata, @event, token);
+        var envelopeMetadata = SnapshotMetadata(metadata, @event, token, schemaVersion);
 
         return new AppendEvent(
             token,
             payload,
             SerializeMetadata(envelopeMetadata),
-            schemaVersion: 1,
+            schemaVersion,
             contentType: _serializer.ContentType,
             tags);
     }
 
     /// <summary>
     /// Hydrates a recorded frame to a typed <see cref="SequencedEvent"/>.
-    /// Token-only resolve; no upcast. Content-type must match this session's
-    /// codec; mismatch fails closed.
+    /// Resolve is family token plus frame <see cref="RecordedEvent.SchemaVersion"/>;
+    /// deserialize that CLR type, then upcast to current.
+    /// Fail-closed cases throw <see cref="EventHydrationException"/>.
+    /// Log and raw copy paths do not use this method.
     /// </summary>
+    /// <exception cref="EventContentTypeMismatchException">Stored content-type does not match this session's codec.</exception>
+    /// <exception cref="EventSchemaTooNewException">Stored version is newer than this process's current type.</exception>
+    /// <exception cref="UnknownEventFamilyException">Family token is not in this process's catalog.</exception>
+    /// <exception cref="EventSchemaNotInCatalogException">Known family, but this version's CLR type is not registered.</exception>
+    /// <exception cref="EventPayloadException">Payload bytes did not deserialize, or an upcaster threw.</exception>
+    /// <exception cref="MissingEventUpcasterException">Historical type is in the catalog but no chain reaches current.</exception>
     public SequencedEvent Hydrate(RecordedEvent recorded)
     {
         ArgumentNullException.ThrowIfNull(recorded);
 
         if (!string.Equals(_serializer.ContentType, recorded.ContentType, StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException(
-                $"Event stored with ContentType '{recorded.ContentType}' but current serializer uses '{_serializer.ContentType}'.");
+            throw new EventContentTypeMismatchException(recorded.ContentType, _serializer.ContentType);
         }
 
-        if (!_catalog.TryResolveType(recorded.EventType, out var type))
+        var schemaVersion = recorded.SchemaVersion <= 0 ? 1 : recorded.SchemaVersion;
+        var token = recorded.EventType;
+        if (!_catalog.TryResolveType(token, schemaVersion, out var type))
+            throw UnresolvedHydration(token, schemaVersion);
+
+        var declared = ReadDeclaredSchemaVersion(type);
+        if (schemaVersion > declared
+            && _catalog.TryResolveType(_catalog.GetName(type), out var current))
         {
-            throw new InvalidOperationException($"Cannot resolve event type: {recorded.EventType}");
+            var currentVersion = ReadDeclaredSchemaVersion(current);
+            if (schemaVersion > currentVersion)
+                throw new EventSchemaTooNewException(_catalog.GetName(type), schemaVersion, currentVersion);
         }
 
-        if (_serializer.Deserialize(recorded.Payload, type) is not IEvent @event)
+        object deserialized;
+        try
         {
-            throw new InvalidOperationException(
-                $"Payload for '{recorded.EventType}' did not deserialize to {nameof(IEvent)} ({type.FullName}).");
+            deserialized = _serializer.Deserialize(recorded.Payload, type);
         }
+        catch (Exception ex) when (ex is not EventHydrationException and not OperationCanceledException)
+        {
+            throw new EventPayloadException(
+                token,
+                schemaVersion,
+                $"Payload for '{token}' (SchemaVersion {schemaVersion}) could not be deserialized as {type.FullName}.",
+                ex);
+        }
+
+        if (deserialized is not IEvent @event)
+        {
+            throw new EventPayloadException(
+                token,
+                schemaVersion,
+                $"Payload for '{token}' (SchemaVersion {schemaVersion}) did not deserialize to {nameof(IEvent)} ({type.FullName}).");
+        }
+
+        @event = UpcastToCurrent(@event, token, schemaVersion);
 
         return new SequencedEvent(
             @event,
@@ -99,7 +155,11 @@ public sealed class EventSession
             recorded.Tags);
     }
 
-    private static EventMetadata SnapshotMetadata(EventMetadata? metadata, IEvent @event, string token)
+    private static EventMetadata SnapshotMetadata(
+        EventMetadata? metadata,
+        IEvent @event,
+        string token,
+        int schemaVersion)
     {
         if (metadata is null)
         {
@@ -108,14 +168,14 @@ public sealed class EventSession
                 EventId = @event.Id.ToString(),
                 Timestamp = @event.Timestamp,
                 SchemaName = token,
-                SchemaVersion = 1
+                SchemaVersion = schemaVersion
             };
         }
 
         var copy = CloneMetadata(metadata);
         if (string.IsNullOrWhiteSpace(copy.SchemaName))
             copy.SchemaName = token;
-        copy.SchemaVersion = 1;
+        copy.SchemaVersion = schemaVersion;
         return copy;
     }
 
@@ -127,10 +187,61 @@ public sealed class EventSession
                 ?? new EventMetadata();
 
         metadata.CommitTimestamp = recorded.CommitTimestamp;
-        metadata.SchemaVersion = recorded.SchemaVersion;
+        metadata.SchemaVersion = recorded.SchemaVersion <= 0 ? 1 : recorded.SchemaVersion;
         if (string.IsNullOrWhiteSpace(metadata.SchemaName))
             metadata.SchemaName = recorded.EventType;
         return metadata;
+    }
+
+    private IEvent UpcastToCurrent(IEvent stored, string token, int schemaVersion)
+    {
+        if (!_catalog.TryResolveType(token, out var current) || current == stored.GetType())
+            return stored;
+
+        if (_upcast is null)
+        {
+            throw new MissingEventUpcasterException(
+                token,
+                schemaVersion,
+                ReadDeclaredSchemaVersion(current));
+        }
+
+        try
+        {
+            return _upcast.UpcastToCurrent(stored);
+        }
+        catch (EventHydrationException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new EventPayloadException(
+                token,
+                schemaVersion,
+                $"Upcast failed for '{token}' (SchemaVersion {schemaVersion}).",
+                ex);
+        }
+    }
+
+    private EventHydrationException UnresolvedHydration(string token, int schemaVersion)
+    {
+        if (_catalog.TryResolveType(token, out var current))
+        {
+            var currentVersion = ReadDeclaredSchemaVersion(current);
+            if (schemaVersion > currentVersion)
+                return new EventSchemaTooNewException(token, schemaVersion, currentVersion);
+
+            return new EventSchemaNotInCatalogException(token, schemaVersion);
+        }
+
+        return new UnknownEventFamilyException(token);
+    }
+
+    private static int ReadDeclaredSchemaVersion(Type type)
+    {
+        var attr = type.GetCustomAttribute<EventTypeNameAttribute>(inherit: false);
+        return attr is { Version: >= 1 } ? attr.Version : 1;
     }
 
     private static EventMetadata CloneMetadata(EventMetadata metadata)

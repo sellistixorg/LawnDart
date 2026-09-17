@@ -3,14 +3,15 @@ using System.Diagnostics.CodeAnalysis;
 namespace LawnDart.EventStore;
 
 /// <summary>
-/// Token-only catalog used by <see cref="EventSession"/>.
+/// Catalog used by <see cref="EventSession"/>: family token plus schema version.
 /// </summary>
 /// <remarks>
-/// Resolve is by family token (and today's FullName / simple-name read aliases).
-/// <see cref="TryResolveType(string, int, out Type)"/> accepts a schema version
-/// so outbox and hydrate can pass it. Versioned catalog rows are not applied
-/// yet. A context should take a scoped instance; do not treat this as a second
-/// process-global dictionary to mutate from tests.
+/// Resolve-on-read is <c>(token, SchemaVersion)</c>. Token-only resolve returns
+/// the family's current type (or a FullName / simple-name / AssemblyQualifiedName
+/// read alias). A context should take a scoped instance from
+/// <see cref="EventTypeCatalog.Materialize"/>; do not treat
+/// <see cref="EventTypeCatalog.Shared"/> as a second process-global dictionary
+/// to mutate from tests.
 /// </remarks>
 public interface IEventTypeCatalog
 {
@@ -18,21 +19,16 @@ public interface IEventTypeCatalog
     string GetName(Type type);
 
     /// <summary>
-    /// Resolves a stored family token (or a read alias) to a CLR type.
+    /// Resolves a stored family token to the current CLR type, or a read alias
+    /// (FullName / simple name / AssemblyQualifiedName) to that type.
     /// </summary>
     bool TryResolveType(string storedName, [NotNullWhen(true)] out Type? type);
 
     /// <summary>
     /// Resolves a stored family token (or a read alias) at
-    /// <paramref name="schemaVersion"/>.
+    /// <paramref name="schemaVersion"/>. Missing or zero version treats as 1.
+    /// A known family with no CLR type for that version returns false.
     /// </summary>
-    /// <remarks>
-    /// The default implementation ignores <paramref name="schemaVersion"/> and
-    /// delegates to <see cref="TryResolveType(string, out Type)"/>. Callers that
-    /// have a stored version (outbox, hydrate) must use this overload so a
-    /// token-only map cannot hide a versioned payload. Versioned catalog rows
-    /// are not applied yet.
-    /// </remarks>
     bool TryResolveType(
         string storedName,
         int schemaVersion,

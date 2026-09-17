@@ -628,11 +628,113 @@ public class InMemoryEventStoreTests
         Assert.Empty(byFullName.Events);
     }
 
+    [Fact]
+    public async Task Append_round_trips_schema_version_one_and_two()
+    {
+        var catalog = EventTypeCatalog.Materialize(
+            [typeof(TestEvent), typeof(SchemaV1), typeof(SchemaCurrent)]);
+        var store = new InMemoryEventStore(
+            session: new EventSession(new LawnDart.EventSourcing.Serialization.JsonEventSerializer(), catalog));
+
+        await store.AppendAsync("stream-v1", [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);
+        await store.AppendAsync("stream-v2", [new SchemaCurrent(Guid.NewGuid(), DateTime.UtcNow, "Ada", "bio")]);
+
+        var typedV1 = Assert.Single(await store.ReadStreamAsync("stream-v1"));
+        Assert.IsType<TestEvent>(typedV1.Event);
+        Assert.Equal(1, typedV1.Metadata.SchemaVersion);
+        Assert.Equal(1, Assert.Single(await ((IEventLog)store).ReadStreamAsync("stream-v1")).SchemaVersion);
+
+        var typedV2 = Assert.Single(await store.ReadStreamAsync("stream-v2"));
+        Assert.IsType<SchemaCurrent>(typedV2.Event);
+        Assert.Equal(2, typedV2.Metadata.SchemaVersion);
+        Assert.Equal(2, Assert.Single(await ((IEventLog)store).ReadStreamAsync("stream-v2")).SchemaVersion);
+    }
+
+    [Fact]
+    public async Task Log_v1_row_typed_read_upcasts_to_current()
+    {
+        var catalog = EventTypeCatalog.Materialize([typeof(SchemaV1), typeof(SchemaCurrent)]);
+        var pipeline = EventUpcastPipeline.Materialize(catalog, [typeof(SchemaV1ToCurrent)]);
+        var serializer = new LawnDart.EventSourcing.Serialization.JsonEventSerializer();
+        var store = new InMemoryEventStore(session: new EventSession(serializer, catalog, pipeline));
+        var v1 = new SchemaV1(Guid.NewGuid(), DateTime.UtcNow, "Ada");
+        var payload = serializer.Serialize(v1, v1.GetType());
+
+        await ((IEventLog)store).AppendAsync(
+            "evolved-stream",
+            [new AppendEvent("tests.inmemory.schema-evolved", payload, schemaVersion: 1)]);
+
+        var recorded = Assert.Single(await ((IEventLog)store).ReadStreamAsync("evolved-stream"));
+        Assert.Equal(1, recorded.SchemaVersion);
+
+        var typed = Assert.Single(await store.ReadStreamAsync("evolved-stream"));
+        var current = Assert.IsType<SchemaCurrent>(typed.Event);
+        Assert.Equal("Ada", current.Name);
+        Assert.Equal("", current.Bio);
+        Assert.Equal(1, typed.Metadata.SchemaVersion);
+    }
+
+    [Fact]
+    public async Task Log_unknown_family_reads_frame_typed_read_fails_closed()
+    {
+        var catalog = EventTypeCatalog.Materialize([typeof(TestEvent)]);
+        var store = new InMemoryEventStore(
+            session: new EventSession(new LawnDart.EventSourcing.Serialization.JsonEventSerializer(), catalog));
+        var payload = """{"kind":"opaque"}"""u8.ToArray();
+        var metadata = """{"UserId":"log"}"""u8.ToArray();
+
+        await ((IEventLog)store).AppendAsync(
+            "opaque-stream",
+            [new AppendEvent("foreign-family", payload, metadata, schemaVersion: 1)]);
+
+        var recorded = Assert.Single(await ((IEventLog)store).ReadStreamAsync("opaque-stream"));
+        Assert.Equal("foreign-family", recorded.EventType);
+        Assert.Equal(payload, recorded.Payload.ToArray());
+
+        var ex = await Assert.ThrowsAsync<UnknownEventFamilyException>(
+            () => store.ReadStreamAsync("opaque-stream"));
+        Assert.Equal("foreign-family", ex.FamilyToken);
+    }
+
+    [Fact]
+    public async Task Log_schema_version_99_reads_frame_typed_read_is_too_new()
+    {
+        var catalog = EventTypeCatalog.Materialize([typeof(TestEvent)]);
+        var store = new InMemoryEventStore(
+            session: new EventSession(new LawnDart.EventSourcing.Serialization.JsonEventSerializer(), catalog));
+        var payload = """{"Id":"00000000-0000-0000-0000-000000000000"}"""u8.ToArray();
+        var metadata = """{"UserId":"log"}"""u8.ToArray();
+
+        await ((IEventLog)store).AppendAsync(
+            "newer-stream",
+            [new AppendEvent("tests.inmemory.test-event", payload, metadata, schemaVersion: 99)]);
+
+        var recorded = Assert.Single(await ((IEventLog)store).ReadStreamAsync("newer-stream"));
+        Assert.Equal(99, recorded.SchemaVersion);
+
+        var ex = await Assert.ThrowsAsync<EventSchemaTooNewException>(
+            () => store.ReadStreamAsync("newer-stream"));
+        Assert.Equal("tests.inmemory.test-event", ex.FamilyToken);
+        Assert.Equal(99, ex.SchemaVersion);
+        Assert.Equal(1, ex.ProcessCurrentVersion);
+    }
+
     [EventTypeName("tests.inmemory.test-event")]
     private record TestEvent(Guid Id, DateTime Timestamp) : IEvent;
     [EventTypeName("tests.inmemory.another-event")]
     private record AnotherEvent(Guid Id, DateTime Timestamp) : IEvent;
     [EventTypeName("tests.inmemory.alias-event")]
     private record AliasedEvent(Guid Id, DateTime Timestamp) : IEvent;
+
+    [EventTypeName("tests.inmemory.schema-evolved", version: 1)]
+    public sealed record SchemaV1(Guid Id, DateTime Timestamp, string Name) : IEvent;
+
+    [EventTypeName("tests.inmemory.schema-evolved", version: 2, current: true)]
+    public sealed record SchemaCurrent(Guid Id, DateTime Timestamp, string Name, string Bio) : IEvent;
+
+    public sealed class SchemaV1ToCurrent : IEventUpcaster<SchemaCurrent, SchemaV1>
+    {
+        public SchemaCurrent Upcast(SchemaV1 source) => new(source.Id, source.Timestamp, source.Name, "");
+    }
 }
 

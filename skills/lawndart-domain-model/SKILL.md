@@ -102,4 +102,13 @@ Do not implement `IProjector` unless you are writing your own
 fold (`IProjector` is experimental). Multi-stream Lightweight views
 implement `IMultiStreamEntityResolver`.
 
+Additive JSON rolls freely: new named properties on the current type do not
+require a `SchemaVersion` bump. A breaking change — renamed meaning, a
+removed required field, or a positional-codec layout change (a reused or
+remapped `[PropertyOrder]` number) — is expand-contract. Ship readers that
+understand `SchemaVersion` N+1 before any process writes N+1. Old binaries
+fail closed on those newer rows (`EventSchemaTooNewException`) and may keep
+appending the version that was current for them. There is no remote
+downcaster and no skip override. See `docs/EVENT_SCHEMA_VERSIONING.md`.
+
 See `docs/STREAM_IDS.md`, `docs/TAGGING.md`, `docs/DCB_PATTERNS.md`.

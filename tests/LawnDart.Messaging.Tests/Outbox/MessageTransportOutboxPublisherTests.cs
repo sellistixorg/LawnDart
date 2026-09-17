@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.DependencyInjection;
@@ -111,7 +110,7 @@ public class MessageTransportOutboxPublisherTests
         var transport = new InMemoryMessageTransport(NullLogger<InMemoryMessageTransport>.Instance);
         var publisher = new MessageTransportOutboxPublisher(transport, [typeof(OrderPlacedEvent)]);
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var ex = await Assert.ThrowsAsync<UnknownEventFamilyException>(() =>
             publisher.PublishAsync(new OutboxMessage
             {
                 Id = Guid.NewGuid(),
@@ -123,7 +122,7 @@ public class MessageTransportOutboxPublisherTests
                 SequencePosition = 1,
             }));
 
-        Assert.Contains("No CLR type registered", ex.Message);
+        Assert.Contains("Missing.Event.Type", ex.Message);
     }
 
     [Fact]
@@ -171,14 +170,14 @@ public class MessageTransportOutboxPublisherTests
             return Task.CompletedTask;
         });
 
-        var catalog = new VersionSelectingCatalog();
+        var catalog = EventTypeCatalog.Materialize([typeof(OrderPlacedV1), typeof(OrderPlacedV2)]);
         var publisher = new MessageTransportOutboxPublisher(transport, catalog);
         var v2 = new OrderPlacedV2(Guid.NewGuid(), DateTime.UtcNow, "order-v2", "note");
 
         await publisher.PublishAsync(new OutboxMessage
         {
             Id = Guid.NewGuid(),
-            EventType = VersionSelectingCatalog.FamilyToken,
+            EventType = "order-placed",
             SchemaVersion = 2,
             ContentType = AppendEvent.DefaultContentType,
             Payload = JsonSerializer.Serialize(v2, v2.GetType(), JsonOptions),
@@ -191,6 +190,40 @@ public class MessageTransportOutboxPublisherTests
         var published = Assert.IsType<OrderPlacedV2>(received);
         Assert.Equal("order-v2", published.OrderId);
         Assert.Equal("note", published.Note);
+    }
+
+    [Fact]
+    public async Task PublishAsync_V1Row_UpcastsToCurrent()
+    {
+        var transport = new InMemoryMessageTransport(NullLogger<InMemoryMessageTransport>.Instance);
+        IEvent? received = null;
+        await transport.SubscribeAsync<OrderPlacedV2>((e, _, _) =>
+        {
+            received = e;
+            return Task.CompletedTask;
+        });
+
+        var catalog = EventTypeCatalog.Materialize([typeof(OrderPlacedV1), typeof(OrderPlacedV2)]);
+        var pipeline = EventUpcastPipeline.Materialize(catalog, [typeof(OrderPlacedV1ToV2)]);
+        var publisher = new MessageTransportOutboxPublisher(transport, catalog, pipeline);
+        var v1 = new OrderPlacedV1(Guid.NewGuid(), DateTime.UtcNow, "order-v1");
+
+        await publisher.PublishAsync(new OutboxMessage
+        {
+            Id = Guid.NewGuid(),
+            EventType = "order-placed",
+            SchemaVersion = 1,
+            ContentType = AppendEvent.DefaultContentType,
+            Payload = JsonSerializer.Serialize(v1, v1.GetType(), JsonOptions),
+            Metadata = "{}",
+            CreatedAt = DateTime.UtcNow,
+            StreamId = "Order:v1",
+            SequencePosition = 4,
+        });
+
+        var published = Assert.IsType<OrderPlacedV2>(received);
+        Assert.Equal("order-v1", published.OrderId);
+        Assert.Equal("", published.Note);
     }
 
     [Fact]
@@ -224,34 +257,15 @@ public class MessageTransportOutboxPublisherTests
         }
     }
 
-    /// <summary>
-    /// Token-only resolve returns v1. Versioned resolve returns v2 when
-    /// <c>SchemaVersion &gt;= 2</c>. A publisher that still uses a token-only map
-    /// would deserialize the v2 payload as <see cref="OrderPlacedV1"/>.
-    /// </summary>
-    private sealed class VersionSelectingCatalog : IEventTypeCatalog
+    [EventTypeName("order-placed", version: 1)]
+    public sealed record OrderPlacedV1(Guid Id, DateTime Timestamp, string OrderId) : IEvent;
+
+    [EventTypeName("order-placed", version: 2, current: true)]
+    public sealed record OrderPlacedV2(Guid Id, DateTime Timestamp, string OrderId, string Note) : IEvent;
+
+    public sealed class OrderPlacedV1ToV2 : IEventUpcaster<OrderPlacedV2, OrderPlacedV1>
     {
-        public const string FamilyToken = "order-placed";
-
-        public string GetName(Type type) => FamilyToken;
-
-        public bool TryResolveType(string storedName, [NotNullWhen(true)] out Type? type)
-            => TryResolveType(storedName, schemaVersion: 1, out type);
-
-        public bool TryResolveType(string storedName, int schemaVersion, [NotNullWhen(true)] out Type? type)
-        {
-            if (!string.Equals(storedName, FamilyToken, StringComparison.Ordinal))
-            {
-                type = null;
-                return false;
-            }
-
-            type = schemaVersion >= 2 ? typeof(OrderPlacedV2) : typeof(OrderPlacedV1);
-            return true;
-        }
+        public OrderPlacedV2 Upcast(OrderPlacedV1 source)
+            => new(source.Id, source.Timestamp, source.OrderId, "");
     }
-
-    private sealed record OrderPlacedV1(Guid Id, DateTime Timestamp, string OrderId) : IEvent;
-
-    private sealed record OrderPlacedV2(Guid Id, DateTime Timestamp, string OrderId, string Note) : IEvent;
 }

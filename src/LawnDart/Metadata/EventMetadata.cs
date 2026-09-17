@@ -11,8 +11,9 @@ namespace LawnDart.Metadata;
 /// <item><description><b>Business time</b> — <c>IEvent.Timestamp</c> and
 /// <see cref="Timestamp"/> are the same after enrich. Time-travel
 /// (<c>toTimestamp</c>) uses this value.</description></item>
-/// <item><description><b>Commit time</b> — <see cref="CommitTimestamp"/> is set only
-/// at <c>AppendAsync</c>. Used for lag, not domain queries.</description></item>
+/// <item><description><b>Commit time</b> — first-class on the recorded
+/// event; <see cref="CommitTimestamp"/> is a session mirror. Used for lag,
+/// not domain queries.</description></item>
 /// <item><description><b>Trace</b> — <see cref="TraceId"/> / <see cref="SpanId"/>
 /// (W3C hex). The Activity clock is not stored as a third <see cref="DateTime"/>.</description></item>
 /// </list>
@@ -93,15 +94,18 @@ public partial class EventMetadata
     public DateTime Timestamp { get; set; } = DateTime.UtcNow;
 
     /// <summary>
-    /// When event was committed to the event store (system/infrastructure time).
-    /// Set automatically by the event store during AppendAsync.
-    /// Used for measuring projection lag and system performance.
+    /// When the event was committed (system/infrastructure time).
+    /// Compatibility mirror of <c>RecordedEvent.CommitTimestamp</c> written by
+    /// the typed session on hydrate. The frame is authority. Used for lag, not
+    /// domain queries. Stored metadata JSON is not required to contain this.
     /// </summary>
     public DateTime? CommitTimestamp { get; set; }
 
     // Schema
     /// <summary>
-    /// Event schema version.
+    /// Event schema version. Compatibility mirror of the log-frame
+    /// <c>SchemaVersion</c> written by the typed session on append and hydrate.
+    /// The frame / SQL column is authority. Missing or zero on old rows is 1.
     /// </summary>
     public int SchemaVersion { get; set; } = 1;
 

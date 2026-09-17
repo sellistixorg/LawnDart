@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
+using LawnDart.EventSourcing.Serialization;
 using LawnDart.EventSourcing.SqlServer;
 using LawnDart.EventSourcing.SqlServer.EventStore;
 using LawnDart.EventStore;
@@ -779,7 +780,7 @@ public class SqlServerEventStoreTests : IAsyncLifetime
         Assert.Equal(payload, recorded.Payload.ToArray());
         Assert.Equal(metadata, recorded.Metadata.ToArray());
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => _eventStore!.ReadStreamAsync(streamId));
+        var ex = await Assert.ThrowsAsync<UnknownEventFamilyException>(() => _eventStore!.ReadStreamAsync(streamId));
         Assert.Contains("foreign-family", ex.Message);
     }
 
@@ -846,6 +847,44 @@ public class SqlServerEventStoreTests : IAsyncLifetime
         Assert.True(recorded.Payload.Length > 0);
     }
 
+    [Fact]
+    public async Task Append_round_trips_schema_version_one_and_two()
+    {
+        var catalog = EventTypeCatalog.Materialize(
+            [typeof(TestEvent), typeof(SchemaV1), typeof(SchemaCurrent)]);
+        var store = new SqlServerEventStore(
+            _connectionString!,
+            tableName: _tableName,
+            options: new SqlServerEventStoreOptions { RequireTenantId = false },
+            session: new EventSession(new JsonEventSerializer(), catalog));
+        await store.InitializeSchemaAsync();
+
+        var streamV1 = "test-tenant:Schema:v1";
+        var streamV2 = "test-tenant:Schema:v2";
+        await store.AppendAsync(streamV1, [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);
+        await store.AppendAsync(streamV2, [new SchemaCurrent(Guid.NewGuid(), DateTime.UtcNow, "Ada", "bio")]);
+
+        var typedV1 = Assert.Single(await store.ReadStreamAsync(streamV1));
+        Assert.IsType<TestEvent>(typedV1.Event);
+        Assert.Equal(1, typedV1.Metadata.SchemaVersion);
+        Assert.Equal(1, Assert.Single(await ((IEventLog)store).ReadStreamAsync(streamV1)).SchemaVersion);
+
+        var typedV2 = Assert.Single(await store.ReadStreamAsync(streamV2));
+        Assert.IsType<SchemaCurrent>(typedV2.Event);
+        Assert.Equal(2, typedV2.Metadata.SchemaVersion);
+        Assert.Equal(2, Assert.Single(await ((IEventLog)store).ReadStreamAsync(streamV2)).SchemaVersion);
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = new SqlCommand(
+            $"""
+            SELECT SchemaVersion FROM [dbo].[{_tableName}] WHERE StreamId = @StreamId
+            """,
+            connection);
+        command.Parameters.AddWithValue("@StreamId", streamV2);
+        Assert.Equal(2, (int)(await command.ExecuteScalarAsync())!);
+    }
+
     [EventTypeName("sql-server-event-store-tests.test-event")]
     private record TestEvent(Guid Id, DateTime Timestamp) : IEvent;
     [EventTypeName("sql-server-event-store-tests.another-event")]
@@ -854,5 +893,11 @@ public class SqlServerEventStoreTests : IAsyncLifetime
     private record EventWithProperties(Guid Id, DateTime Timestamp, string ProductId, int Quantity) : IEvent;
     [EventTypeName("tests.sql.alias-event")]
     private record SqlAliasedEvent(Guid Id, DateTime Timestamp) : IEvent;
+
+    [EventTypeName("sql-server-event-store-tests.schema-evolved", version: 1)]
+    private record SchemaV1(Guid Id, DateTime Timestamp, string Name) : IEvent;
+
+    [EventTypeName("sql-server-event-store-tests.schema-evolved", version: 2, current: true)]
+    private record SchemaCurrent(Guid Id, DateTime Timestamp, string Name, string Bio) : IEvent;
 }
 

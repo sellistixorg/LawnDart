@@ -48,9 +48,21 @@ and optional projections. Not the same as multi-tenancy.
 Stable kebab-case **family** name stored for an event type (`[EventTypeName]`).
 Required on every concrete `IEvent` that is written. The token does not change
 when the payload shape versions (`SchemaVersion` on the log frame). CLR
-`FullName` is not stored. Register types with `WithEventTypes` (or
-`EventTypeNameResolver.Warmup`). Missing attributes and duplicate tokens fail
-at warmup. Older FullName rows still resolve as a read alias.
+`FullName` is not stored. `GetName` returns the family token, not
+`author-registered.v2`.
+
+`WithEventTypes` calls `EventTypeCatalog.Materialize` and registers that
+**scoped immutable** catalog on the bounded context. Resolve-on-read is
+`(token, SchemaVersion)` → CLR type. One-arg `[EventTypeName("token")]` is
+version 1 and implicitly current when it is the only type for that family. A
+family with two or more types needs exactly one `current: true`. Duplicate
+`(token, version)` or two currents fail at materialize. Older FullName /
+simple-name / AssemblyQualifiedName rows still resolve as read aliases.
+`EventTypeNameResolver` is a process-wide compatibility wrapper, not the
+context catalog. Current CLR type keeps the domain name; historical is
+`AuthorRegisteredV1`. Historical versions reach current through
+`IEventUpcaster<TTo, TFrom>` registered with `WithUpcasters`. See
+[Event schema versioning](EVENT_SCHEMA_VERSIONING.md).
 
 See **Event log** / **Event store**.
 
@@ -59,9 +71,8 @@ Last processed event position for a projector. InMemory or SQL Server.
 
 **Command**  
 Intent to change the future. `ICommand` with a `Guid Id` idempotency key.
-Commands can be rejected; events cannot. `ICommand` does not inherit a
-shared `IMessage` marker. Correlation, causation, and W3C trace are not
-command payload fields.
+Commands can be rejected; events cannot. Correlation, causation, and W3C
+trace are not command payload fields.
 
 **ConcurrencyException**  
 Expected stream version or DCB `AppendCondition` was not satisfied.
@@ -96,7 +107,7 @@ The durable log does not carry `EventMetadata`; see **AppendEvent**.
 
 **Event**  
 Immutable fact. `IEvent` with `Id` and `Timestamp` first, plus
-`[EventTypeName]`. `IEvent` does not inherit a shared `IMessage` marker.
+`[EventTypeName]`.
 
 **Event clocks**  
 Three times on the envelope, do not mix them:
@@ -150,8 +161,7 @@ In-process projection host (`LawnDart.Projections.Lightweight`).
 **MessageContext**  
 Inbound transport envelope (HTTP, messaging). `ContextAwareCommandDispatcher`
 publishes it on `AmbientMessageContext` and continues `traceparent` before
-`HandleAsync`. `IMessageTransport` is unchanged; there is no `IMessage`
-domain marker.
+`HandleAsync`.
 
 ## N
 
@@ -187,6 +197,17 @@ catalog type. `OpaqueEvent` / `UnknownEvent` are not LawnDart types.
 sequence, and commit timestamp. Tags as stored.
 
 ## S
+
+**SchemaVersion**  
+Integer on the log frame (`AppendEvent` / `RecordedEvent` / SQL column).
+Identifies which CLR type in a family to deserialize. Not a Chronicle
+"generation". The typed session stamps it from the current CLR type on
+append. `EventMetadata.SchemaVersion` is a compatibility mirror written
+by the session (append and hydrate). The frame is authority. Missing or
+zero on old rows treats as `1`. The catalog resolves
+`(token, SchemaVersion)`; the token stays the family name.
+See [Event schema versioning](EVENT_SCHEMA_VERSIONING.md)
+(including [deploy](EVENT_SCHEMA_VERSIONING.md#deploy)).
 
 **SQL Server**  
 Durable event store and projection store.
