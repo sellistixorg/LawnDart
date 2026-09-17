@@ -51,15 +51,15 @@ when the payload shape versions (`SchemaVersion` on the log frame). CLR
 `FullName` is not stored. `GetName` returns the family token, not
 `author-registered.v2`.
 
-`WithEventTypes` calls `EventTypeCatalog.Materialize` and registers that
-**scoped immutable** catalog on the bounded context. Resolve-on-read is
-`(token, SchemaVersion)` → CLR type. One-arg `[EventTypeName("token")]` is
-version 1 and implicitly current when it is the only type for that family. A
-family with two or more types needs exactly one `current: true`. Duplicate
-`(token, version)` or two currents fail at materialize. Older FullName /
-simple-name / AssemblyQualifiedName rows still resolve as read aliases.
-`EventTypeNameResolver` is a process-wide compatibility wrapper, not the
-context catalog. Current CLR type keeps the domain name; historical is
+`WithEventTypes` is mandatory. It calls `EventTypeCatalog.Materialize` and
+registers that **scoped immutable** catalog on the bounded context. A host
+that skips it fails at startup. Resolve-on-read is `(token, SchemaVersion)`
+→ CLR type. One-arg `[EventTypeName("token")]` is version 1 and implicitly
+current when it is the only type for that family. A family with two or more
+types needs exactly one `current: true`. Duplicate `(token, version)` or two
+currents fail at materialize. An unknown token fails closed; there is no
+FullName / simple-name / AssemblyQualifiedName alias and no process-wide
+resolver. Current CLR type keeps the domain name; historical is
 `AuthorRegisteredV1`. Historical versions reach current through
 `IEventUpcaster<TTo, TFrom>` registered with `WithUpcasters`. Optional
 `LawnDart.Analyzers` reports `LDT001`–`LDT003` for the same rules at

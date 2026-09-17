@@ -20,6 +20,7 @@ public class DispatcherMessageContextTests
         services.Configure<LawnDartOptions>(_ => { });
         services.AddBoundedContext("ordering")
             .UseInMemory()
+            .WithEventTypes(typeof(TickApplied))
             .WithCommandHandlers([typeof(CaptureHandler)]);
 
         var sp = services.BuildServiceProvider();
@@ -62,6 +63,7 @@ public class DispatcherMessageContextTests
         });
         services.AddBoundedContext("wiring-w6")
             .UseInMemory()
+            .WithEventTypes(typeof(TickApplied))
             .WithCommandHandlers([typeof(TickHandler)]);
 
         var sp = services.BuildServiceProvider();

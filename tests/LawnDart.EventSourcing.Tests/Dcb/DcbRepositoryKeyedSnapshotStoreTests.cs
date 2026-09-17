@@ -29,7 +29,7 @@ public class DcbRepositoryKeyedSnapshotStoreTests
         services.AddSingleton<ITenantContextProvider>(new TestTenantContextProvider("test-tenant"));
         services.Configure<LawnDartOptions>(_ => { });
         services.AddSingleton<ISnapshotStrategyResolver>(resolver);
-        services.AddBoundedContext("ordering").UseInMemory();
+        services.AddBoundedContext("ordering").UseInMemory().WithEventTypes(typeof(TestEvent));
         services.AddKeyedSingleton<IDcbSnapshotStore>("ordering", recording);
 
         await using var sp = services.BuildServiceProvider();

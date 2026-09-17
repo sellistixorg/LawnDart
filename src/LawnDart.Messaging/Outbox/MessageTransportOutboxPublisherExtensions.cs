@@ -19,8 +19,8 @@ public static class MessageTransportOutboxPublisherExtensions
     /// <param name="eventTypes">
     /// Concrete <see cref="IEvent"/> types that may appear in outbox <c>EventType</c> values
     /// (typically the same set registered with the event store). When omitted, the
-    /// publisher uses <see cref="IEventTypeCatalog"/> from DI or
-    /// <see cref="EventTypeCatalog.Shared"/>.
+    /// publisher uses <see cref="IEventTypeCatalog"/> from DI. When omitted
+    /// and no catalog is registered, registration fails at resolve.
     /// </param>
     public static IServiceCollection AddMessageTransportOutboxPublisher(
         this IServiceCollection services,
@@ -33,10 +33,13 @@ public static class MessageTransportOutboxPublisherExtensions
         services.TryAddSingleton<IOutboxPublisher>(sp =>
         {
             var transport = sp.GetRequiredService<IMessageTransport>();
-            var catalog = sp.GetService<IEventTypeCatalog>() ?? EventTypeCatalog.Shared;
             var pipeline = sp.GetService<EventUpcastPipeline>();
             if (captured.Length > 0)
                 return new MessageTransportOutboxPublisher(transport, captured);
+            var catalog = sp.GetService<IEventTypeCatalog>()
+                ?? throw new InvalidOperationException(
+                    "AddMessageTransportOutboxPublisher requires WithEventTypes " +
+                    "(or an IEventTypeCatalog in DI), or pass event types to this method.");
             return new MessageTransportOutboxPublisher(transport, catalog, pipeline);
         });
 

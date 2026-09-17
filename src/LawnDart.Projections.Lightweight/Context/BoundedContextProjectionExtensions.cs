@@ -69,8 +69,12 @@ public static class BoundedContextProjectionExtensions
         // Hot read cache keyed per bounded context.
         services.AddKeyedSingleton<IProjectionReadCache>(contextName, (_, _) => new ProjectionReadCache(options));
 
+        var catalog = builder.EventCatalog
+            ?? throw new InvalidOperationException(
+                "WithProjections requires WithEventTypes first on this bounded context.");
+
         // Scan and register projection runners
-        var registrations = ProjectionScanner.Scan(assemblies);
+        var registrations = ProjectionScanner.Scan(catalog, assemblies);
 
         // Accumulate registrations into the shared IReadOnlyList<ProjectionRegistration>
         // (AddLightweightProjections already handles this for the non-keyed path; here we
@@ -101,7 +105,8 @@ public static class BoundedContextProjectionExtensions
                     sp.GetRequiredKeyedService<IPartitioningService>(contextName),
                     opts,
                     sp.GetService<ILogger<LightweightProjectionRunnerService>>(),
-                    sp.GetRequiredKeyedService<IProjectionReadCache>(contextName)),
+                    sp.GetRequiredKeyedService<IProjectionReadCache>(contextName),
+                    catalog),
                 sp.GetService<ILogger<BoundedContextProjectionRunnerManager>>(),
                 sp.GetRequiredKeyedService<LawnDart.EventStore.IEventStore>(contextName),
                 opts);

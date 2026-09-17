@@ -46,13 +46,13 @@ Application code keeps `IEventStore`. Signatures:
 
 Every concrete `IEvent` that is written needs `[EventTypeName]`. Prefer
 kebab-case (`author-registered`). The token does not change across
-versions. CLR `FullName` is not stored; older FullName /
-AssemblyQualifiedName SQL rows still resolve as read aliases.
+versions. CLR `FullName` is not stored. An old FullName /
+AssemblyQualifiedName token fails closed.
 
-`WithEventTypes` calls `EventTypeCatalog.Materialize` and registers that
-**scoped immutable** catalog on the bounded context. Two contexts do not
-share a mutable global catalog. `EventTypeNameResolver` remains a
-process-wide compatibility wrapper for hosts that skip `WithEventTypes`.
+`WithEventTypes` is mandatory. It calls `EventTypeCatalog.Materialize` and
+registers that **scoped immutable** catalog on the bounded context. A host
+that skips it fails at startup. Two contexts do not share a catalog; the
+same token may map to different CLR types in each.
 
 ## One type
 

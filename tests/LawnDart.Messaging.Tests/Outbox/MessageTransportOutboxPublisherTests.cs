@@ -43,7 +43,7 @@ public class MessageTransportOutboxPublisherTests
         await publisher.PublishAsync(new OutboxMessage
         {
             Id = outboxId,
-            EventType = typeof(OrderPlacedEvent).FullName!,
+            EventType = EventTypeCatalog.TryGetDeclaredName(typeof(OrderPlacedEvent))!,
             Payload = JsonSerializer.Serialize(evt, evt.GetType(), JsonOptions),
             Metadata = JsonSerializer.Serialize(new EventMetadata
             {
@@ -84,7 +84,7 @@ public class MessageTransportOutboxPublisherTests
         await publisher.PublishAsync(new OutboxMessage
         {
             Id = Guid.NewGuid(),
-            EventType = typeof(OrderPlacedEvent).FullName!,
+            EventType = EventTypeCatalog.TryGetDeclaredName(typeof(OrderPlacedEvent))!,
             Payload = JsonSerializer.Serialize(evt, evt.GetType(), JsonOptions),
             Metadata = JsonSerializer.Serialize(new EventMetadata
             {
@@ -143,7 +143,7 @@ public class MessageTransportOutboxPublisherTests
         await writer.WriteAsync(new OutboxMessage
         {
             Id = Guid.NewGuid(),
-            EventType = typeof(OrderPlacedEvent).FullName!,
+            EventType = EventTypeCatalog.TryGetDeclaredName(typeof(OrderPlacedEvent))!,
             Payload = JsonSerializer.Serialize(evt, evt.GetType(), JsonOptions),
             Metadata = "{}",
             CreatedAt = DateTime.UtcNow,

@@ -80,7 +80,7 @@ public sealed class SequenceGapEventStore : IEventStore
     }
 
     private static bool MatchesQuery(Query query, SequencedEvent se)
-        => EventQueryMatcher.Matches(se, query);
+        => EventQueryMatcher.Matches(se, query, EventTypeCatalog.Materialize([]));
 
     public Task<AppendResult> AppendAsync(
         string streamId,

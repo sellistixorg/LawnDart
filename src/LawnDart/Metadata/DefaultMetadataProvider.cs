@@ -12,13 +12,14 @@ namespace LawnDart;
 public class DefaultMetadataProvider : IMetadataProvider
 {
     private readonly ITenantContextProvider? _tenantContextProvider;
+    private readonly IEventTypeCatalog? _catalog;
 
     /// <summary>
     /// Initializes a new instance of DefaultMetadataProvider.
     /// </summary>
     public DefaultMetadataProvider()
+        : this(tenantContextProvider: null, catalog: null)
     {
-        _tenantContextProvider = null;
     }
 
     /// <summary>
@@ -26,8 +27,20 @@ public class DefaultMetadataProvider : IMetadataProvider
     /// </summary>
     /// <param name="tenantContextProvider">Optional tenant context provider for auto-populating tenant ID.</param>
     public DefaultMetadataProvider(ITenantContextProvider? tenantContextProvider)
+        : this(tenantContextProvider, catalog: null)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of DefaultMetadataProvider with tenant context
+    /// and the scoped event-type catalog used for <see cref="EventMetadata.SchemaName"/>.
+    /// </summary>
+    public DefaultMetadataProvider(
+        ITenantContextProvider? tenantContextProvider,
+        IEventTypeCatalog? catalog)
     {
         _tenantContextProvider = tenantContextProvider;
+        _catalog = catalog;
     }
 
     /// <inheritdoc />
@@ -92,7 +105,7 @@ public class DefaultMetadataProvider : IMetadataProvider
             EventId = @event.Id.ToString(),
             Timestamp = @event.Timestamp,
             SchemaVersion = baseMetadata.SchemaVersion > 0 ? baseMetadata.SchemaVersion : 1,
-            SchemaName = EventTypeNameResolver.GetName(@event.GetType()),
+            SchemaName = ResolveSchemaName(@event.GetType()),
             TraceId = commandMetadata.TraceId ?? baseMetadata.TraceId,
             SpanId = commandMetadata.SpanId ?? baseMetadata.SpanId,
 
@@ -100,6 +113,12 @@ public class DefaultMetadataProvider : IMetadataProvider
             Custom = commandMetadata.Custom
         };
     }
+
+    private string ResolveSchemaName(Type eventType)
+        => _catalog?.GetName(eventType)
+           ?? EventTypeCatalog.TryGetDeclaredName(eventType)
+           ?? throw new InvalidOperationException(
+               $"Event type '{eventType.FullName}' must declare [EventTypeName(\"kebab-token\")].");
 }
 
 

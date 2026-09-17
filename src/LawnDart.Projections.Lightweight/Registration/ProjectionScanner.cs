@@ -26,6 +26,15 @@ public static class ProjectionScanner
     /// <see cref="LawnDart.Projections.Sdk.ProjectionBase{TView}"/>.
     /// </exception>
     public static IReadOnlyList<ProjectionRegistration> Scan(params Assembly[] assemblies)
+        => Scan(catalog: null, assemblies);
+
+    /// <summary>
+    /// Scans the provided assemblies and returns all discovered projection registrations,
+    /// resolving event-type tokens through <paramref name="catalog"/>.
+    /// </summary>
+    public static IReadOnlyList<ProjectionRegistration> Scan(
+        IEventTypeCatalog? catalog,
+        params Assembly[] assemblies)
     {
         var results = new List<ProjectionRegistration>();
 
@@ -36,7 +45,7 @@ public static class ProjectionScanner
                 if (!type.IsClass || type.IsAbstract)
                     continue;
 
-                var registration = TryBuildRegistration(type);
+                var registration = TryBuildRegistration(type, catalog);
                 if (registration is not null)
                     results.Add(registration);
             }
@@ -55,6 +64,12 @@ public static class ProjectionScanner
     /// not a lightweight projection.
     /// </returns>
     public static ProjectionRegistration? TryBuildRegistration(Type type)
+        => TryBuildRegistration(type, catalog: null);
+
+    /// <summary>
+    /// Attempts to build a <see cref="ProjectionRegistration"/> from a single type.
+    /// </summary>
+    public static ProjectionRegistration? TryBuildRegistration(Type type, IEventTypeCatalog? catalog)
     {
         var endpoint = type.GetCustomAttribute<ProjectionEndpointAttribute>();
 
@@ -111,7 +126,7 @@ public static class ProjectionScanner
                 version: dcb.Version,
                 kind: ProjectionKind.Dcb,
                 tenantScope: dcb.TenantScope,
-                dcbQueryTypes: NormalizeDcbQueryTypeNames(type.Assembly, dcb.QueryTypes),
+                dcbQueryTypes: NormalizeDcbQueryTypeNames(type.Assembly, dcb.QueryTypes, catalog),
                 endpoint: endpoint,
                 declaredAsLatest: dcb.IsLatest,
                 deprecationDateIso: dcb.DeprecationDateIso);
@@ -132,7 +147,7 @@ public static class ProjectionScanner
 
             var queryTypes = msp.EventTypes.Length > 0
                 ? (IReadOnlyList<string>)msp.EventTypes
-                    .Select(t => LawnDart.EventStore.EventTypeNameResolver.GetName(t))
+                    .Select(t => ResolveEventTypeName(t, catalog))
                     .ToArray()
                 : Array.Empty<string>();
 
@@ -223,24 +238,30 @@ public static class ProjectionScanner
     }
 
     /// <summary>
-    /// Maps <see cref="DcbProjectionAttribute"/> string tokens to stable names understood by
-    /// <see cref="EventTypeNameResolver"/> and <see cref="IEventStore.ReadByQueryStreamAsync"/> filters.
+    /// Maps <see cref="DcbProjectionAttribute"/> string tokens to catalog tokens
+    /// understood by <see cref="IEventStore.ReadByQueryStreamAsync"/> filters.
     /// </summary>
     /// <remarks>
     /// Attributes often use short CLR type names (e.g. <c>"OrderPlaced"</c>).  The in-memory and
-    /// persisted event stores match on <see cref="EventTypeNameResolver.GetName(Type)"/> (catalog
-    /// token).  When a token contains no <c>'.'</c>, resolve it against the handler
-    /// assembly's exported <see cref="IEvent"/> types by simple name; if ambiguous, fail fast.
+    /// persisted event stores match on <see cref="IEventTypeCatalog.GetName"/>.  When a token
+    /// contains no <c>'.'</c>, resolve it against the handler assembly's exported
+    /// <see cref="IEvent"/> types by simple name; if ambiguous, fail fast.
     /// </remarks>
-    private static IReadOnlyList<string> NormalizeDcbQueryTypeNames(Assembly assembly, string[] queryTokens)
+    private static IReadOnlyList<string> NormalizeDcbQueryTypeNames(
+        Assembly assembly,
+        string[] queryTokens,
+        IEventTypeCatalog? catalog)
     {
         if (queryTokens.Length == 0)
             return Array.Empty<string>();
 
-        return queryTokens.Select(t => NormalizeDcbQueryTypeName(assembly, t)).ToArray();
+        return queryTokens.Select(t => NormalizeDcbQueryTypeName(assembly, t, catalog)).ToArray();
     }
 
-    private static string NormalizeDcbQueryTypeName(Assembly assembly, string queryToken)
+    private static string NormalizeDcbQueryTypeName(
+        Assembly assembly,
+        string queryToken,
+        IEventTypeCatalog? catalog)
     {
         if (string.IsNullOrWhiteSpace(queryToken))
             throw new InvalidOperationException("DcbProjection query type token cannot be empty.");
@@ -263,7 +284,7 @@ public static class ProjectionScanner
         }
 
         if (matches.Length == 1)
-            return EventTypeNameResolver.GetName(matches[0]);
+            return ResolveEventTypeName(matches[0], catalog);
 
         if (matches.Length > 1)
         {
@@ -298,4 +319,10 @@ public static class ProjectionScanner
         }
         return null;
     }
+
+    private static string ResolveEventTypeName(Type type, IEventTypeCatalog? catalog)
+        => catalog?.GetName(type)
+           ?? EventTypeCatalog.TryGetDeclaredName(type)
+           ?? throw new InvalidOperationException(
+               $"Event type '{type.FullName}' must declare [EventTypeName(\"kebab-token\")].");
 }

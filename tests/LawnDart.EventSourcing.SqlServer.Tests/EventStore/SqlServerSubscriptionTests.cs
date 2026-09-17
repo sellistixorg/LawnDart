@@ -208,7 +208,8 @@ public class SqlServerSubscriptionTests : IAsyncLifetime
                 o.RequireTenantId = false;
                 o.SchemaName = "di_default";
                 o.SqlSubscriptionPollInterval = TimeSpan.FromMilliseconds(50);
-            });
+            })
+            .WithEventTypes(typeof(CatalogPlaceholderEvent));
 
         await using var sp = services.BuildServiceProvider();
         var store = (SqlServerEventStore)sp.GetRequiredKeyedService<IEventStore>("default");

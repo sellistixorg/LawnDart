@@ -44,8 +44,9 @@ public class EventTypeNameResolverTests
     [Fact]
     public void GetName_WithoutAttribute_Throws()
     {
+        var catalog = EventTypeCatalog.Materialize([]);
         var ex = Assert.Throws<InvalidOperationException>(
-            () => EventTypeNameResolver.GetName(typeof(EventWithoutAttribute)));
+            () => catalog.GetName(typeof(EventWithoutAttribute)));
         Assert.Contains("EventTypeName", ex.Message);
         Assert.Contains("FullName is not stored", ex.Message);
     }
@@ -53,14 +54,15 @@ public class EventTypeNameResolverTests
     [Fact]
     public void GetName_WithAttribute_ReturnsAttributeValue()
     {
-        var name = EventTypeNameResolver.GetName(typeof(EventWithAlias));
-        Assert.Equal("my-stable-alias", name);
+        var catalog = EventTypeCatalog.Materialize([typeof(EventWithAlias)]);
+        Assert.Equal("my-stable-alias", catalog.GetName(typeof(EventWithAlias)));
     }
 
     [Fact]
     public void GetName_WithAttribute_DoesNotReturnFullName()
     {
-        var name = EventTypeNameResolver.GetName(typeof(EventWithAlias));
+        var catalog = EventTypeCatalog.Materialize([typeof(EventWithAlias)]);
+        var name = catalog.GetName(typeof(EventWithAlias));
         Assert.NotEqual(typeof(EventWithAlias).FullName, name);
         Assert.NotEqual(typeof(EventWithAlias).Name, name);
     }
@@ -68,107 +70,83 @@ public class EventTypeNameResolverTests
     [Fact]
     public void GetName_ChildOfAttributedParent_Throws_WhenChildHasNoAttribute()
     {
+        var catalog = EventTypeCatalog.Materialize([]);
         Assert.Throws<InvalidOperationException>(
-            () => EventTypeNameResolver.GetName(typeof(ChildEvent)));
-    }
-
-    [Fact]
-    public void GetName_CalledMultipleTimes_ReturnsSameStringReference()
-    {
-        var name1 = EventTypeNameResolver.GetName(typeof(EventWithAlias));
-        var name2 = EventTypeNameResolver.GetName(typeof(EventWithAlias));
-        Assert.Same(name1, name2);
+            () => catalog.GetName(typeof(ChildEvent)));
     }
 
     [Fact]
     public void TryGetDeclaredName_ReturnsTokenOrNull()
     {
-        Assert.Equal("my-stable-alias", EventTypeNameResolver.TryGetDeclaredName(typeof(EventWithAlias)));
-        Assert.Null(EventTypeNameResolver.TryGetDeclaredName(typeof(EventWithoutAttribute)));
-        Assert.Null(EventTypeNameResolver.TryGetDeclaredName(typeof(ChildEvent)));
+        Assert.Equal("my-stable-alias", EventTypeCatalog.TryGetDeclaredName(typeof(EventWithAlias)));
+        Assert.Null(EventTypeCatalog.TryGetDeclaredName(typeof(EventWithoutAttribute)));
+        Assert.Null(EventTypeCatalog.TryGetDeclaredName(typeof(ChildEvent)));
     }
 
     [Fact]
-    public void Warmup_ThenGetName_UsesToken_NotFullName()
-    {
-        EventTypeNameResolver.Warmup([typeof(EventWithAlias)]);
-        Assert.Equal("my-stable-alias", EventTypeNameResolver.GetName(typeof(EventWithAlias)));
-    }
-
-    [Fact]
-    public void Warmup_MissingAttribute_Throws()
+    public void Materialize_MissingAttribute_Throws()
     {
         Assert.Throws<InvalidOperationException>(
-            () => EventTypeNameResolver.Warmup([typeof(EventWithoutAttribute)]));
+            () => EventTypeCatalog.Materialize([typeof(EventWithoutAttribute)]));
     }
 
     [Fact]
-    public void Warmup_NonEvent_Throws()
+    public void Materialize_NonEvent_Throws()
     {
         Assert.Throws<InvalidOperationException>(
-            () => EventTypeNameResolver.Warmup([typeof(string)]));
+            () => EventTypeCatalog.Materialize([typeof(string)]));
     }
 
     [Fact]
-    public void Warmup_RawRecordedEvent_Throws()
+    public void Materialize_RawRecordedEvent_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(
-            () => EventTypeNameResolver.Warmup([typeof(RawRecordedEvent)]));
+            () => EventTypeCatalog.Materialize([typeof(RawRecordedEvent)]));
         Assert.Contains(nameof(IRawEvent), ex.Message);
     }
 
     [Fact]
-    public void Warmup_DuplicateToken_Throws()
+    public void Materialize_DuplicateToken_Throws()
     {
         var ex = Assert.Throws<InvalidOperationException>(
-            () => EventTypeNameResolver.Warmup([typeof(DupA), typeof(DupB)]));
+            () => EventTypeCatalog.Materialize([typeof(DupA), typeof(DupB)]));
         Assert.Contains("dup-token", ex.Message);
     }
 
     [Fact]
-    public void Warmup_EmptyList_DoesNotThrow()
+    public void Materialize_EmptyList_DoesNotThrow()
     {
-        var ex = Record.Exception(() => EventTypeNameResolver.Warmup(Array.Empty<Type>()));
+        var ex = Record.Exception(() => EventTypeCatalog.Materialize([]));
         Assert.Null(ex);
     }
 
     [Fact]
-    public void TryResolveType_AfterWarmup_ResolvesTokenAndFullNameAlias()
+    public void TryResolveType_ResolvesToken_NotFullNameOrSimpleName()
     {
-        EventTypeNameResolver.Warmup([typeof(EventWithAlias)]);
+        var catalog = EventTypeCatalog.Materialize([typeof(EventWithAlias)]);
 
-        Assert.True(EventTypeNameResolver.TryResolveType("my-stable-alias", out var byToken));
+        Assert.True(catalog.TryResolveType("my-stable-alias", out var byToken));
         Assert.Equal(typeof(EventWithAlias), byToken);
 
-        Assert.True(EventTypeNameResolver.TryResolveType(typeof(EventWithAlias).FullName!, out var byFullName));
-        Assert.Equal(typeof(EventWithAlias), byFullName);
-
-        Assert.True(EventTypeNameResolver.TryResolveType(nameof(EventWithAlias), out var byName));
-        Assert.Equal(typeof(EventWithAlias), byName);
+        Assert.False(catalog.TryResolveType(typeof(EventWithAlias).FullName!, out _));
+        Assert.False(catalog.TryResolveType(nameof(EventWithAlias), out _));
     }
 
     [Fact]
-    public void TryResolveType_AfterWarmup_UsesSchemaVersion()
+    public void TryResolveType_UsesSchemaVersion()
     {
-        EventTypeNameResolver.Warmup([typeof(EventWithAlias)]);
+        var catalog = EventTypeCatalog.Materialize([typeof(EventWithAlias)]);
 
-        Assert.True(EventTypeNameResolver.TryResolveType("my-stable-alias", 1, out var v1));
+        Assert.True(catalog.TryResolveType("my-stable-alias", 1, out var v1));
         Assert.Equal(typeof(EventWithAlias), v1);
-        Assert.False(EventTypeNameResolver.TryResolveType("my-stable-alias", 2, out _));
+        Assert.False(catalog.TryResolveType("my-stable-alias", 2, out _));
     }
 
     [Fact]
-    public void WriteName_IsCatalogToken_FullNameIsReadAliasOnly()
+    public void FullNameToken_FailsClosed()
     {
-        EventTypeNameResolver.Warmup([typeof(EventWithAlias)]);
-
-        var written = EventTypeNameResolver.GetName(typeof(EventWithAlias));
-        Assert.Equal("my-stable-alias", written);
-        Assert.NotEqual(typeof(EventWithAlias).FullName, written);
-
-        Assert.True(EventTypeNameResolver.TryResolveType(typeof(EventWithAlias).FullName!, out var aliased));
-        Assert.Equal(typeof(EventWithAlias), aliased);
-        Assert.Equal(written, EventTypeNameResolver.GetName(aliased));
+        var catalog = EventTypeCatalog.Materialize([typeof(EventWithAlias)]);
+        Assert.False(catalog.TryResolveType(typeof(EventWithAlias).FullName!, 1, out _));
     }
 
     [Fact]
@@ -192,7 +170,9 @@ public class EventTypeNameResolverTests
     {
         var services = new ServiceCollection();
         services.AddBoundedContext("catalog-test-ok").WithEventTypes(typeof(EventWithAlias));
-        Assert.True(EventTypeNameResolver.TryResolveType("my-stable-alias", out var type));
+        using var sp = services.BuildServiceProvider();
+        var catalog = sp.GetRequiredKeyedService<IEventTypeCatalog>("catalog-test-ok");
+        Assert.True(catalog.TryResolveType("my-stable-alias", out var type));
         Assert.Equal(typeof(EventWithAlias), type);
     }
 }

@@ -62,7 +62,7 @@ public class ProjectionScannerTests
 
         Assert.Equal(ProjectionKind.Dcb, dcb.Kind);
         Assert.Contains(
-            EventTypeNameResolver.GetName(typeof(Helpers.CounterIncremented)),
+            EventTypeCatalog.TryGetDeclaredName(typeof(Helpers.CounterIncremented))!,
             dcb.DcbQueryTypes);
     }
 

@@ -270,7 +270,7 @@ public class SqlServerEventStoreTests : IAsyncLifetime
         };
 
         await _eventStore!.AppendAsync(streamId, events);
-        var query = Query.FromItems(QueryItem.ByType(EventTypeNameResolver.GetName(typeof(TestEvent))));
+        var query = Query.FromItems(QueryItem.ByType(EventTypeCatalog.TryGetDeclaredName(typeof(TestEvent))!));
 
         // Act
         var result = await _eventStore.ReadByQueryAsync(query);
@@ -309,7 +309,7 @@ public class SqlServerEventStoreTests : IAsyncLifetime
         var lastPosition = positions1.SequencePositions[0];
 
         // Create condition that checks for TestEvent but only AFTER the first position
-        var query = Query.FromItems(QueryItem.ByType(EventTypeNameResolver.GetName(typeof(TestEvent))));
+        var query = Query.FromItems(QueryItem.ByType(EventTypeCatalog.TryGetDeclaredName(typeof(TestEvent))!));
         var condition = AppendCondition.FailIfMatches(query, after: lastPosition);
 
         // Act - Should succeed because events1 is at lastPosition (not after it)
@@ -332,7 +332,7 @@ public class SqlServerEventStoreTests : IAsyncLifetime
         var lastPosition = positions1.SequencePositions[0];
 
         // Create condition that checks for TestEvent but only after first position
-        var query = Query.FromItems(QueryItem.ByType(EventTypeNameResolver.GetName(typeof(TestEvent))));
+        var query = Query.FromItems(QueryItem.ByType(EventTypeCatalog.TryGetDeclaredName(typeof(TestEvent))!));
         var condition = AppendCondition.FailIfMatches(query, after: lastPosition);
 
         // Append second event AFTER the position (should cause failure when we try to append events3)
@@ -571,7 +571,7 @@ public class SqlServerEventStoreTests : IAsyncLifetime
         });
 
         var result = await _eventStore.ReadByQueryAsync(
-            Query.FromItems(QueryItem.ByType(EventTypeNameResolver.GetName(typeof(SqlAliasedEvent)))));
+            Query.FromItems(QueryItem.ByType(EventTypeCatalog.TryGetDeclaredName(typeof(SqlAliasedEvent))!)));
 
         Assert.Single(result.Events);
         Assert.IsType<SqlAliasedEvent>(result.Events[0].Event);
@@ -831,7 +831,7 @@ public class SqlServerEventStoreTests : IAsyncLifetime
             """,
             connection);
         command.Parameters.AddWithValue("@StreamId", streamId);
-        command.Parameters.AddWithValue("@EventType", EventTypeNameResolver.GetName(typeof(TestEvent)));
+        command.Parameters.AddWithValue("@EventType", EventTypeCatalog.TryGetDeclaredName(typeof(TestEvent))!);
         command.Parameters.AddWithValue("@EventData", json);
         command.Parameters.AddWithValue("@Metadata", "{}");
         command.Parameters.AddWithValue("@Timestamp", evt.Timestamp);

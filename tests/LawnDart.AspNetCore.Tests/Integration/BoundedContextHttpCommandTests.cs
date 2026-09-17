@@ -32,6 +32,7 @@ namespace LawnDart.AspNetCore.Tests.Integration
                 });
                 services.AddBoundedContext("default")
                     .UseInMemory()
+                    .WithEventTypes(typeof(NoteAppended))
                     .WithCommandHandlers<AppendNoteCommandHandler>();
                 services.AddLawnDartHttpCommands(typeof(AppendNoteCommand).Assembly);
             }, endpoints => endpoints.MapLawnDartCommands());
@@ -62,6 +63,7 @@ namespace LawnDart.AspNetCore.Tests.Integration
                 });
                 services.AddBoundedContext("default")
                     .UseInMemory()
+                    .WithEventTypes(typeof(TraceNoteAppended))
                     .WithCommandHandlers<TraceNoteCommandHandler>();
                 services.AddLawnDartHttpCommands(typeof(TraceNoteCommand).Assembly);
             }, endpoints => endpoints.MapLawnDartCommands());
@@ -99,6 +101,7 @@ namespace LawnDart.AspNetCore.Tests.Integration
                 });
                 services.AddBoundedContext("ordering")
                     .UseInMemory()
+                    .WithEventTypes(typeof(OrderingContext.NoteAppended))
                     .WithCommandHandlers([typeof(OrderingContext.AppendNoteCommandHandler)]);
                 services.AddLawnDartHttpCommands("ordering", typeof(OrderingContext.AppendNoteCommandHandler).Assembly);
             }, endpoints => endpoints.MapLawnDartCommands("ordering"));

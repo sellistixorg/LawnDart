@@ -49,7 +49,7 @@ public class AdHocProjectionBuilderTests
             projectionName: "CounterDcbFeed",
             kind: ProjectionKind.Dcb,
             tenantScope: TenantScope.SystemGlobal,
-            dcbQueryTypes: [EventTypeNameResolver.GetName(typeof(CounterIncremented))])];
+            dcbQueryTypes: [EventTypeCatalog.TryGetDeclaredName(typeof(CounterIncremented))!])];
 
     private static IReadOnlyList<ProjectionRegistration> MultiStreamRegistrations() =>
         [new ProjectionRegistration(
@@ -59,8 +59,8 @@ public class AdHocProjectionBuilderTests
             kind: ProjectionKind.MultiStream,
             tenantScope: TenantScope.TenantScoped,
             dcbQueryTypes: [
-                EventTypeNameResolver.GetName(typeof(OrderCreatedLocal)),
-                EventTypeNameResolver.GetName(typeof(ShipmentDispatchedLocal))])];
+                EventTypeCatalog.TryGetDeclaredName(typeof(OrderCreatedLocal))!,
+                EventTypeCatalog.TryGetDeclaredName(typeof(ShipmentDispatchedLocal))!])];
 
     private static CounterView Deserialize(TimeTravelResult result) =>
         JsonSerializer.Deserialize<CounterView>(result.ViewJson, ProjectionViewJson.Read)!;

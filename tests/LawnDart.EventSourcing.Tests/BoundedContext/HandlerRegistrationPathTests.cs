@@ -19,6 +19,7 @@ public class HandlerRegistrationPathTests
 
         services.AddBoundedContext("default")
             .UseInMemory()
+            .WithEventTypes(typeof(CatalogPlaceholderEvent))
             .WithCommandHandlers([typeof(WithCommandHandlersAndDispatcherTests.RepositoryCapturingHandler)]);
 
         var unkeyed = services.Single(d =>
@@ -46,6 +47,7 @@ public class HandlerRegistrationPathTests
 
         services.AddBoundedContext("ordering")
             .UseInMemory()
+            .WithEventTypes(typeof(CatalogPlaceholderEvent))
             .WithCommandHandlers([typeof(WithCommandHandlersAndDispatcherTests.CreateOrderHandler)]);
 
         var sp = services.BuildServiceProvider();
@@ -64,6 +66,7 @@ public class HandlerRegistrationPathTests
 
         services.AddBoundedContext("default")
             .UseInMemory()
+            .WithEventTypes(typeof(CatalogPlaceholderEvent))
             .WithCommandHandlers<WithCommandHandlersAndDispatcherTests.CreateOrderHandler>();
 
         var sp = services.BuildServiceProvider();

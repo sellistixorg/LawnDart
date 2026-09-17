@@ -210,8 +210,8 @@ public class GlobalProjectionMultiNodeTests
             kind: ProjectionKind.MultiStream,
             tenantScope: TenantScope.TenantGlobal,
             dcbQueryTypes: [
-                EventTypeNameResolver.GetName(typeof(OrderCreatedLocal)),
-                EventTypeNameResolver.GetName(typeof(ShipmentDispatchedLocal))],
+                EventTypeCatalog.TryGetDeclaredName(typeof(OrderCreatedLocal))!,
+                EventTypeCatalog.TryGetDeclaredName(typeof(ShipmentDispatchedLocal))!],
             endpoint: new ProjectionEndpointAttribute("/api/views/fulfillment/{orderId}"));
 
         // Find an entity id owned by node 0 only

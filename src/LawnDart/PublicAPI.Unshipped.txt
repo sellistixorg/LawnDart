@@ -47,3 +47,20 @@ LawnDart.EventStore.UnregisteredEventCodecException.Mime.get -> string!
 LawnDart.EventStore.UnregisteredEventCodecException.UnregisteredEventCodecException(string! mime) -> void
 LawnDart.Outbox.OutboxMessage.CodecId.get -> byte
 LawnDart.Outbox.OutboxMessage.CodecId.init -> void
+*REMOVED*LawnDart.EventStore.EventTypeCatalog.EventTypeCatalog() -> void
+*REMOVED*LawnDart.EventStore.EventTypeNameResolver
+*REMOVED*LawnDart.EventStore.EventSession.EventSession(LawnDart.Serialization.IEventSerializer! serializer, LawnDart.EventStore.IEventTypeCatalog? catalog = null, LawnDart.EventStore.EventUpcastPipeline? upcastPipeline = null) -> void
+*REMOVED*LawnDart.EventStore.EventSubscriptionFilter.Matches(LawnDart.EventStore.SequencedEvent! sequencedEvent) -> bool
+*REMOVED*static LawnDart.EventStore.EventQueryMatcher.Matches(LawnDart.EventStore.SequencedEvent! sequencedEvent, LawnDart.EventStore.Query! query) -> bool
+*REMOVED*static LawnDart.EventStore.EventTypeCatalog.Shared.get -> LawnDart.EventStore.EventTypeCatalog!
+*REMOVED*static LawnDart.EventStore.EventTypeNameResolver.GetName(System.Type! type) -> string!
+*REMOVED*static LawnDart.EventStore.EventTypeNameResolver.TryGetDeclaredName(System.Type! type) -> string?
+*REMOVED*static LawnDart.EventStore.EventTypeNameResolver.TryResolveType(string! storedName, out System.Type? type) -> bool
+*REMOVED*static LawnDart.EventStore.EventTypeNameResolver.TryResolveType(string! storedName, int schemaVersion, out System.Type? type) -> bool
+*REMOVED*static LawnDart.EventStore.EventTypeNameResolver.Warmup(System.Collections.Generic.IEnumerable<System.Type!>! types) -> void
+LawnDart.DefaultMetadataProvider.DefaultMetadataProvider(LawnDart.Metadata.ITenantContextProvider? tenantContextProvider, LawnDart.EventStore.IEventTypeCatalog? catalog) -> void
+LawnDart.EventStore.BoundedContextBuilder.EventCatalog.get -> LawnDart.EventStore.EventTypeCatalog?
+LawnDart.EventStore.EventSession.EventSession(LawnDart.Serialization.IEventSerializer! serializer, LawnDart.EventStore.IEventTypeCatalog! catalog, LawnDart.EventStore.EventUpcastPipeline? upcastPipeline = null) -> void
+LawnDart.EventStore.EventSubscriptionFilter.Matches(LawnDart.EventStore.SequencedEvent! sequencedEvent, LawnDart.EventStore.IEventTypeCatalog! catalog) -> bool
+static LawnDart.EventStore.EventQueryMatcher.Matches(LawnDart.EventStore.SequencedEvent! sequencedEvent, LawnDart.EventStore.Query! query, LawnDart.EventStore.IEventTypeCatalog! catalog) -> bool
+static LawnDart.EventStore.EventTypeCatalog.TryGetDeclaredName(System.Type! type) -> string?

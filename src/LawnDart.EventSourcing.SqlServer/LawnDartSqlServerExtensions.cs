@@ -73,6 +73,8 @@ public static class LawnDartSqlServerExtensions
                 $"ConnectionString must be set in the SqlServerEventStoreOptions configure action " +
                 $"for bounded context '{contextName}'.");
 
+        services.AddKeyedSingleton(contextName, LawnDart.EventSourcing.Context.EventStoreContextMarker.Instance);
+
         // Ensure a JSON serializer is available
         services.TryAddSingleton<IEventSerializer, JsonEventSerializer>();
 
@@ -89,7 +91,7 @@ public static class LawnDartSqlServerExtensions
         {
             var serializer  = sp.GetRequiredService<IEventSerializer>();
             var catalog     = sp.GetKeyedService<IEventTypeCatalog>(contextName)
-                ?? EventTypeCatalog.Shared;
+                ?? throw new InvalidOperationException(BoundedContextExtensions.MissingEventTypesMessage(contextName));
             var pipeline    = sp.GetKeyedService<EventUpcastPipeline>(contextName);
             var session     = new EventSession(serializer, catalog, pipeline);
             var outbox      = options.EnableOutbox

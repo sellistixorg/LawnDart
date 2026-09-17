@@ -43,7 +43,7 @@ public class EventSessionJsonTests
 
     private sealed class IsolatedCatalog : IEventTypeCatalog
     {
-        public string GetName(Type type) => EventTypeNameResolver.TryGetDeclaredName(type)
+        public string GetName(Type type) => EventTypeCatalog.TryGetDeclaredName(type)
             ?? throw new InvalidOperationException(type.FullName);
 
         public bool TryResolveType(string storedName, [NotNullWhen(true)] out Type? type)

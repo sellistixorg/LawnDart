@@ -7,29 +7,14 @@ namespace LawnDart.EventStore;
 /// Immutable event-type catalog: family token plus <c>SchemaVersion</c> to CLR type.
 /// </summary>
 /// <remarks>
-/// Call <see cref="Materialize"/> at context start. The parameterless constructor
-/// and <see cref="Shared"/> delegate to <see cref="EventTypeNameResolver"/> so
-/// hosts that have not called <c>WithEventTypes</c> still resolve through the
-/// process-wide compatibility wrapper. Two materialized catalogs do not share
-/// maps.
+/// Call <see cref="Materialize"/> at context start and register that instance
+/// with <c>WithEventTypes</c>. The catalog is per bounded context. There is no
+/// process-wide resolver, no Shared instance, and no FullName / simple-name /
+/// AssemblyQualifiedName read alias. An unknown token fails closed.
 /// </remarks>
 public sealed class EventTypeCatalog : IEventTypeCatalog
 {
-    /// <summary>
-    /// Process-wide adapter over <see cref="EventTypeNameResolver"/>. Prefer a
-    /// catalog from <see cref="Materialize"/> registered on the bounded context.
-    /// </summary>
-    public static EventTypeCatalog Shared { get; } = new();
-
-    private readonly CatalogMaps? _maps;
-
-    /// <summary>
-    /// Process-wide compatibility wrapper over <see cref="EventTypeNameResolver"/>.
-    /// </summary>
-    public EventTypeCatalog()
-    {
-        _maps = null;
-    }
+    private readonly CatalogMaps _maps;
 
     private EventTypeCatalog(CatalogMaps maps)
     {
@@ -43,23 +28,31 @@ public sealed class EventTypeCatalog : IEventTypeCatalog
     /// One-arg <c>[EventTypeName("token")]</c> is version 1 and implicitly
     /// current when it is the only type for that family. A family with two
     /// or more types needs exactly one <c>current: true</c>. Duplicate
-    /// <c>(token, version)</c> or two current types fail closed. FullName,
-    /// simple name, and AssemblyQualifiedName are registered as read aliases.
+    /// <c>(token, version)</c> or two current types fail closed.
     /// </remarks>
     public static EventTypeCatalog Materialize(IEnumerable<Type> types)
         => new(CatalogMaps.Build(types));
 
+    /// <summary>
+    /// Returns the declared family token when <paramref name="type"/> has
+    /// <see cref="EventTypeNameAttribute"/>; otherwise <c>null</c>.
+    /// Does not throw and does not use a FullName fallback.
+    /// </summary>
+    public static string? TryGetDeclaredName(Type type)
+    {
+        ArgumentNullException.ThrowIfNull(type);
+        var attr = type.GetCustomAttribute<EventTypeNameAttribute>(inherit: false);
+        return string.IsNullOrWhiteSpace(attr?.Name) ? null : attr.Name;
+    }
+
     /// <inheritdoc />
     public string GetName(Type type)
     {
-        if (_maps is null)
-            return EventTypeNameResolver.GetName(type);
-
         ArgumentNullException.ThrowIfNull(type);
         if (_maps.TypeToToken.TryGetValue(type, out var token))
             return token;
 
-        return EventTypeNameResolver.TryGetDeclaredName(type)
+        return TryGetDeclaredName(type)
             ?? throw new InvalidOperationException(
                 $"Event type '{type.FullName}' must declare [EventTypeName(\"kebab-token\")]. " +
                 "CLR FullName is not stored.");
@@ -68,27 +61,18 @@ public sealed class EventTypeCatalog : IEventTypeCatalog
     /// <inheritdoc />
     public bool TryResolveType(string storedName, [NotNullWhen(true)] out Type? type)
     {
-        if (_maps is null)
-            return EventTypeNameResolver.TryResolveType(storedName, out type);
-
         if (string.IsNullOrWhiteSpace(storedName))
         {
             type = null;
             return false;
         }
 
-        if (_maps.CurrentByToken.TryGetValue(storedName, out type))
-            return true;
-
-        return _maps.Aliases.TryGetValue(storedName, out type);
+        return _maps.CurrentByToken.TryGetValue(storedName, out type);
     }
 
     /// <inheritdoc />
     public bool TryResolveType(string storedName, int schemaVersion, [NotNullWhen(true)] out Type? type)
     {
-        if (_maps is null)
-            return EventTypeNameResolver.TryResolveType(storedName, schemaVersion, out type);
-
         if (string.IsNullOrWhiteSpace(storedName))
         {
             type = null;
@@ -96,35 +80,14 @@ public sealed class EventTypeCatalog : IEventTypeCatalog
         }
 
         var version = schemaVersion <= 0 ? 1 : schemaVersion;
-        if (_maps.TokenVersionToType.TryGetValue((storedName, version), out type))
-            return true;
-
-        if (_maps.FamilyTokens.Contains(storedName))
-        {
-            type = null;
-            return false;
-        }
-
-        return _maps.Aliases.TryGetValue(storedName, out type);
-    }
-
-    internal void InstallIntoProcessResolver()
-    {
-        if (_maps is null)
-            return;
-
-        EventTypeNameResolver.Install(_maps);
+        return _maps.TokenVersionToType.TryGetValue((storedName, version), out type);
     }
 
     /// <summary>
-    /// Families from a <see cref="Materialize"/> catalog. Shared / parameterless
-    /// catalogs have no snapshot (empty).
+    /// Families from a <see cref="Materialize"/> catalog.
     /// </summary>
     internal IEnumerable<FamilySnapshot> EnumerateFamilies()
     {
-        if (_maps is null)
-            yield break;
-
         foreach (var token in _maps.FamilyTokens)
         {
             var current = _maps.CurrentByToken[token];
@@ -146,7 +109,7 @@ public sealed class EventTypeCatalog : IEventTypeCatalog
         token = null!;
         version = 0;
         current = null!;
-        if (_maps is null || type is null)
+        if (type is null)
             return false;
 
         if (!_maps.TypeToToken.TryGetValue(type, out token!))
@@ -155,6 +118,28 @@ public sealed class EventTypeCatalog : IEventTypeCatalog
         version = _maps.TypeToVersion[type];
         current = _maps.CurrentByToken[token];
         return true;
+    }
+
+    internal static void ValidateCatalogType(Type type)
+    {
+        if (!type.IsClass || type.IsAbstract || type.IsGenericTypeDefinition)
+        {
+            throw new InvalidOperationException(
+                $"Event catalog type '{type.FullName}' must be a concrete class.");
+        }
+
+        if (!typeof(IEvent).IsAssignableFrom(type) || typeof(IRawEvent).IsAssignableFrom(type))
+        {
+            throw new InvalidOperationException(
+                $"Event catalog type '{type.FullName}' must be a concrete {nameof(IEvent)} " +
+                $"(not {nameof(IRawEvent)}).");
+        }
+
+        if (TryGetDeclaredName(type) is null)
+        {
+            throw new InvalidOperationException(
+                $"Event type '{type.FullName}' must declare [EventTypeName(\"kebab-token\")].");
+        }
     }
 
     internal readonly record struct FamilySnapshot(
@@ -169,7 +154,6 @@ public sealed class EventTypeCatalog : IEventTypeCatalog
         public Dictionary<Type, int> TypeToVersion { get; } = new();
         public Dictionary<(string Token, int Version), Type> TokenVersionToType { get; } = new();
         public Dictionary<string, Type> CurrentByToken { get; } = new(StringComparer.Ordinal);
-        public Dictionary<string, Type> Aliases { get; } = new(StringComparer.Ordinal);
         public HashSet<string> FamilyTokens { get; } = new(StringComparer.Ordinal);
 
         public static CatalogMaps Build(IEnumerable<Type> types)
@@ -185,7 +169,7 @@ public sealed class EventTypeCatalog : IEventTypeCatalog
                 if (!seenTypes.Add(type))
                     continue;
 
-                EventTypeNameResolver.ValidateCatalogType(type);
+                ValidateCatalogType(type);
                 var attr = type.GetCustomAttribute<EventTypeNameAttribute>(inherit: false)
                     ?? throw new InvalidOperationException(
                         $"Event type '{type.FullName}' must declare [EventTypeName(\"kebab-token\")].");
@@ -244,21 +228,10 @@ public sealed class EventTypeCatalog : IEventTypeCatalog
                     maps.TypeToToken[member.Type] = member.Token;
                     maps.TypeToVersion[member.Type] = member.Version;
                     maps.TokenVersionToType[(member.Token, member.Version)] = member.Type;
-                    RegisterAlias(maps.Aliases, member.Type.FullName, member.Type);
-                    RegisterAlias(maps.Aliases, member.Type.Name, member.Type);
-                    RegisterAlias(maps.Aliases, member.Type.AssemblyQualifiedName, member.Type);
                 }
             }
 
             return maps;
-        }
-
-        private static void RegisterAlias(Dictionary<string, Type> aliases, string? name, Type type)
-        {
-            if (string.IsNullOrWhiteSpace(name))
-                return;
-
-            aliases.TryAdd(name, type);
         }
 
         private readonly record struct Registration(Type Type, string Token, int Version, bool Current);

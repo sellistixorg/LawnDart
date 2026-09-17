@@ -23,7 +23,8 @@ public class SqlServerMultiContextRegistrationTests
                 {
                     opt.ConnectionString = FakeConnectionString;
                     opt.SchemaName       = "ordering";
-                });
+                })
+                .WithEventTypes(typeof(CatalogPlaceholderEvent));
 
         var sp = services.BuildServiceProvider();
 
@@ -43,14 +44,16 @@ public class SqlServerMultiContextRegistrationTests
                 {
                     opt.ConnectionString = FakeConnectionString;
                     opt.SchemaName       = "ordering";
-                });
+                })
+                .WithEventTypes(typeof(CatalogPlaceholderEvent));
 
         services.AddBoundedContext("catalog")
                 .UseSqlServer(opt =>
                 {
                     opt.ConnectionString = FakeConnectionString;
                     opt.SchemaName       = "catalog";
-                });
+                })
+                .WithEventTypes(typeof(CatalogPlaceholderEvent));
 
         var sp = services.BuildServiceProvider();
 
@@ -68,9 +71,11 @@ public class SqlServerMultiContextRegistrationTests
         var services = new ServiceCollection();
 
         services.AddBoundedContext("ordering")
-                .UseSqlServer(opt => { opt.ConnectionString = FakeConnectionString; opt.SchemaName = "ordering"; });
+                .UseSqlServer(opt => { opt.ConnectionString = FakeConnectionString; opt.SchemaName = "ordering"; })
+                .WithEventTypes(typeof(CatalogPlaceholderEvent));
         services.AddBoundedContext("catalog")
-                .UseSqlServer(opt => { opt.ConnectionString = FakeConnectionString; opt.SchemaName = "catalog"; });
+                .UseSqlServer(opt => { opt.ConnectionString = FakeConnectionString; opt.SchemaName = "catalog"; })
+                .WithEventTypes(typeof(CatalogPlaceholderEvent));
 
         var sp       = services.BuildServiceProvider();
         var contexts = sp.GetServices<IBoundedContextEventStore>().ToList();
@@ -86,9 +91,11 @@ public class SqlServerMultiContextRegistrationTests
         var services = new ServiceCollection();
 
         services.AddBoundedContext("ordering")
-                .UseSqlServer(opt => { opt.ConnectionString = FakeConnectionString; opt.SchemaName = "ordering"; });
+                .UseSqlServer(opt => { opt.ConnectionString = FakeConnectionString; opt.SchemaName = "ordering"; })
+                .WithEventTypes(typeof(CatalogPlaceholderEvent));
         services.AddBoundedContext("catalog")
-                .UseSqlServer(opt => { opt.ConnectionString = FakeConnectionString; opt.SchemaName = "catalog"; });
+                .UseSqlServer(opt => { opt.ConnectionString = FakeConnectionString; opt.SchemaName = "catalog"; })
+                .WithEventTypes(typeof(CatalogPlaceholderEvent));
 
         var sp       = services.BuildServiceProvider();
         var registry = sp.GetRequiredService<IBoundedContextRegistry>();
@@ -115,9 +122,11 @@ public class SqlServerMultiContextRegistrationTests
 
         // Same database but different schemas
         services.AddBoundedContext("ordering")
-                .UseSqlServer(opt => { opt.ConnectionString = FakeConnectionString; opt.SchemaName = "ordering"; });
+                .UseSqlServer(opt => { opt.ConnectionString = FakeConnectionString; opt.SchemaName = "ordering"; })
+                .WithEventTypes(typeof(CatalogPlaceholderEvent));
         services.AddBoundedContext("context2")
-                .UseSqlServer(opt => { opt.ConnectionString = FakeConnectionString; opt.SchemaName = "context2"; });
+                .UseSqlServer(opt => { opt.ConnectionString = FakeConnectionString; opt.SchemaName = "context2"; })
+                .WithEventTypes(typeof(CatalogPlaceholderEvent));
 
         // Building the provider should not throw
         var sp = services.BuildServiceProvider();

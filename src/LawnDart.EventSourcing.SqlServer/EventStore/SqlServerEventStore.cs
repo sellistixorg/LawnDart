@@ -61,7 +61,9 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         ILogger<SqlServerEventStore>? logger = null,
         EventSession? session = null)
     {
-        _session = session ?? new EventSession(serializer ?? new JsonEventSerializer());
+        _session = session ?? new EventSession(
+            serializer ?? new JsonEventSerializer(),
+            new WriteThroughEventTypeCatalog());
         _options = options ?? new SqlServerEventStoreOptions();
         _adapter = new EventStoreAdapter(this, _session, this, _options.SubscriptionChannelCapacity);
         _tableName = tableName ?? throw new ArgumentNullException(nameof(tableName));

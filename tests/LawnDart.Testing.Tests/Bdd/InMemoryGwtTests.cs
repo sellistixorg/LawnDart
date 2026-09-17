@@ -11,7 +11,7 @@ public sealed class InMemoryGwtTests
     [Fact]
     public async Task aggregate_spec_given_when_then_on_in_memory()
     {
-        await using var ctx = BddTestContext.CreateInMemory();
+        await using var ctx = BddTestContext.CreateInMemory(typeof(CounterCreated), typeof(CounterIncremented));
         var id = Guid.NewGuid();
 
         var result = await AggregateSpec
@@ -29,7 +29,7 @@ public sealed class InMemoryGwtTests
     [Fact]
     public async Task aggregate_spec_envelope_causation_and_stable_correlation()
     {
-        await using var ctx = BddTestContext.CreateInMemory();
+        await using var ctx = BddTestContext.CreateInMemory(typeof(CounterCreated), typeof(CounterIncremented));
         var id = Guid.NewGuid();
         var command = new DoubleIncrementCommand(Guid.NewGuid(), id);
 
@@ -65,7 +65,7 @@ public sealed class InMemoryGwtTests
     [Fact]
     public async Task dcb_spec_given_when_then_on_in_memory()
     {
-        await using var ctx = BddTestContext.CreateInMemory();
+        await using var ctx = BddTestContext.CreateInMemory(typeof(CounterCreated), typeof(CounterIncremented));
         var id = Guid.NewGuid();
         var tags = new[] { $"counter:{id:N}" };
 

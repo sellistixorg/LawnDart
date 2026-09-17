@@ -170,8 +170,8 @@ public class InMemorySubscriptionTests
         services.AddSingleton<ITenantContextProvider>(new TestTenantContextProvider(null));
         services.Configure<LawnDartOptions>(_ => { });
 
-        services.AddBoundedContext("ordering").UseInMemory();
-        services.AddBoundedContext("catalog").UseInMemory();
+        services.AddBoundedContext("ordering").UseInMemory().WithEventTypes(typeof(TestEvent));
+        services.AddBoundedContext("catalog").UseInMemory().WithEventTypes(typeof(TestEvent));
 
         await using var sp = services.BuildServiceProvider();
         var orderingSubs = sp.GetRequiredKeyedService<IEventStoreSubscriptions>("ordering");
@@ -201,7 +201,7 @@ public class InMemorySubscriptionTests
         services.AddSingleton<IMetadataProvider>(new DefaultMetadataProvider());
         services.AddSingleton<ITenantContextProvider>(new TestTenantContextProvider(null));
         services.Configure<LawnDartOptions>(_ => { });
-        services.AddBoundedContext("default").UseInMemory();
+        services.AddBoundedContext("default").UseInMemory().WithEventTypes(typeof(TestEvent));
 
         await using var sp = services.BuildServiceProvider();
         var keyed = sp.GetRequiredKeyedService<IEventStoreSubscriptions>("default");

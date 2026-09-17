@@ -61,9 +61,10 @@ public sealed class EventSubscriptionFilter
     /// <summary>
     /// Returns whether <paramref name="sequencedEvent"/> matches this filter.
     /// </summary>
-    public bool Matches(SequencedEvent sequencedEvent)
+    public bool Matches(SequencedEvent sequencedEvent, IEventTypeCatalog catalog)
     {
         ArgumentNullException.ThrowIfNull(sequencedEvent);
+        ArgumentNullException.ThrowIfNull(catalog);
 
         return Kind switch
         {
@@ -71,7 +72,7 @@ public sealed class EventSubscriptionFilter
             EventSubscriptionScope.Stream =>
                 string.Equals(sequencedEvent.StreamId, StreamId, StringComparison.Ordinal),
             EventSubscriptionScope.Query =>
-                EventQueryMatcher.Matches(sequencedEvent, Query!),
+                EventQueryMatcher.Matches(sequencedEvent, Query!, catalog),
             _ => false
         };
     }

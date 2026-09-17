@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using LawnDart.EventStore;
@@ -16,6 +17,7 @@ namespace LawnDart.EventSourcing.Context;
 /// <para>
 /// Current checks:
 /// <list type="bullet">
+///   <item>Every context with an event store has <c>WithEventTypes</c>.</item>
 ///   <item>No command type is associated with more than one context.</item>
 ///   <item>In multi-context applications, every registered command type has a handler.</item>
 /// </list>
@@ -25,16 +27,19 @@ public sealed class ContextStartupValidator : IHostedService
 {
     private readonly IBoundedContextRegistry _contextRegistry;
     private readonly ICommandContextRegistry _commandRegistry;
+    private readonly IServiceProvider _services;
     private readonly ILogger<ContextStartupValidator> _logger;
 
     /// <summary>Initializes a new <see cref="ContextStartupValidator"/>.</summary>
     public ContextStartupValidator(
         IBoundedContextRegistry contextRegistry,
         ICommandContextRegistry commandRegistry,
+        IServiceProvider services,
         ILogger<ContextStartupValidator> logger)
     {
         _contextRegistry = contextRegistry ?? throw new ArgumentNullException(nameof(contextRegistry));
         _commandRegistry = commandRegistry ?? throw new ArgumentNullException(nameof(commandRegistry));
+        _services        = services        ?? throw new ArgumentNullException(nameof(services));
         _logger          = logger          ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -58,6 +63,18 @@ public sealed class ContextStartupValidator : IHostedService
             "ContextStartupValidator: validating {ContextCount} bounded context(s) [{ContextNames}]",
             contextNames.Count,
             string.Join(", ", contextNames));
+
+        foreach (var contextName in contextNames)
+        {
+            if (_services.GetKeyedService<EventStoreContextMarker>(contextName) is null)
+                continue;
+
+            if (_services.GetKeyedService<IEventTypeCatalog>(contextName) is null)
+            {
+                throw new InvalidOperationException(
+                    BoundedContextExtensions.MissingEventTypesMessage(contextName));
+            }
+        }
 
         // Verify every registered context has at least one command handler when using
         // multi-context mode, so developers notice forgotten WithCommandHandlers() calls early.

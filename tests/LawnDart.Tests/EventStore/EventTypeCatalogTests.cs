@@ -85,16 +85,13 @@ public class EventTypeCatalogTests
     }
 
     [Fact]
-    public void Materialize_ResolvesFullNameSimpleNameAndAssemblyQualifiedNameAliases()
+    public void Materialize_FullNameSimpleNameAndAssemblyQualifiedName_FailClosed()
     {
         var catalog = EventTypeCatalog.Materialize([typeof(LegacyRegistered)]);
 
-        Assert.True(catalog.TryResolveType(typeof(LegacyRegistered).FullName!, 1, out var byFullName));
-        Assert.Equal(typeof(LegacyRegistered), byFullName);
-        Assert.True(catalog.TryResolveType(nameof(LegacyRegistered), 1, out var byName));
-        Assert.Equal(typeof(LegacyRegistered), byName);
-        Assert.True(catalog.TryResolveType(typeof(LegacyRegistered).AssemblyQualifiedName!, 1, out var byAqn));
-        Assert.Equal(typeof(LegacyRegistered), byAqn);
+        Assert.False(catalog.TryResolveType(typeof(LegacyRegistered).FullName!, 1, out _));
+        Assert.False(catalog.TryResolveType(nameof(LegacyRegistered), 1, out _));
+        Assert.False(catalog.TryResolveType(typeof(LegacyRegistered).AssemblyQualifiedName!, 1, out _));
     }
 
     [Fact]
@@ -108,8 +105,6 @@ public class EventTypeCatalogTests
         Assert.True(books.TryResolveType("book-registered", 1, out _));
         Assert.False(books.TryResolveType("author-registered", 1, out _));
 
-        EventTypeNameResolver.Warmup([typeof(BookRegistered)]);
-        Assert.True(EventTypeNameResolver.TryResolveType("book-registered", 1, out _));
         Assert.False(authors.TryResolveType("book-registered", 1, out _));
     }
 
@@ -125,14 +120,34 @@ public class EventTypeCatalogTests
         var books = sp.GetRequiredKeyedService<IEventTypeCatalog>("books");
 
         Assert.NotSame(authors, books);
-        Assert.NotSame(authors, EventTypeCatalog.Shared);
         Assert.True(authors.TryResolveType("author-registered", 1, out var authorType));
         Assert.Equal(typeof(LegacyRegistered), authorType);
         Assert.False(authors.TryResolveType("book-registered", 1, out _));
         Assert.False(books.TryResolveType("author-registered", 1, out _));
+    }
 
-        EventTypeNameResolver.Warmup([typeof(BookRegistered)]);
-        Assert.False(authors.TryResolveType("book-registered", 1, out _));
+    [EventTypeName("shared-token")]
+    private sealed record AuthorsShared(Guid Id, DateTime Timestamp) : IEvent;
+
+    [EventTypeName("shared-token")]
+    private sealed record BooksShared(Guid Id, DateTime Timestamp, string Title) : IEvent;
+
+    [Fact]
+    public void WithEventTypes_TwoContexts_SameToken_DifferentTypes()
+    {
+        var services = new ServiceCollection();
+        services.AddBoundedContext("authors").WithEventTypes(typeof(AuthorsShared));
+        services.AddBoundedContext("books").WithEventTypes(typeof(BooksShared));
+
+        using var sp = services.BuildServiceProvider();
+        var authors = sp.GetRequiredKeyedService<IEventTypeCatalog>("authors");
+        var books = sp.GetRequiredKeyedService<IEventTypeCatalog>("books");
+
+        Assert.True(authors.TryResolveType("shared-token", out var authorType));
+        Assert.Equal(typeof(AuthorsShared), authorType);
+        Assert.True(books.TryResolveType("shared-token", out var bookType));
+        Assert.Equal(typeof(BooksShared), bookType);
+        Assert.NotEqual(authorType, bookType);
     }
 
     [Fact]

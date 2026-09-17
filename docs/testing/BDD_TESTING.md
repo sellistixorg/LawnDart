@@ -2,8 +2,9 @@
 
 `LawnDart.Testing` runs Given / When / Then specs against `UseInMemory()`.
 
-Events used in `Given` / `When` must declare `[EventTypeName]`. In-memory GWT
-does not call `WithEventTypes`; the attribute is enough for writes. After
+Events used in `Given` / `When` must declare `[EventTypeName]`. Pass those
+types to `BddTestContext.CreateInMemory(...)` so the spec has a scoped
+catalog (the same warmup a host does with `WithEventTypes`). After
 `RunAsync`, `result.EmittedSequencedEvents` carries envelope `CausationId`
 (the command id when the caller left it unset) and a stable `CorrelationId`.
 Those fields live on the envelope, not on `ICommand` / `IEvent`.
@@ -20,7 +21,8 @@ Those fields live on the envelope, not on `ICommand` / `IEvent`.
 Excerpted from `samples/Library.Domain.Tests/LibraryBookTests.cs`:
 
 ```csharp
-await using var ctx = BddTestContext.CreateInMemory();
+await using var ctx = BddTestContext.CreateInMemory(
+    typeof(BookAdded), typeof(BookBorrowed), typeof(BookReturned));
 var bookId = Guid.NewGuid();
 
 await AggregateSpec
@@ -48,7 +50,8 @@ slice has no DCB entity. The compiled DCB example lives in
 Excerpted from `samples/Library.Domain.Tests/LibraryBookTests.cs`:
 
 ```csharp
-await using var ctx = BddTestContext.CreateInMemory();
+await using var ctx = BddTestContext.CreateInMemory(
+    typeof(BookAdded), typeof(BookBorrowed), typeof(BookReturned));
 var bookId = Guid.NewGuid();
 var projector = new LibraryProjector();
 

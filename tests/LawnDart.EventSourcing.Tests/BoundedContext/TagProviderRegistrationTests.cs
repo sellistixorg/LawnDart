@@ -54,6 +54,7 @@ public class TagProviderRegistrationTests
 
         services.AddBoundedContext("alpha")
             .UseInMemory()
+            .WithEventTypes(typeof(CatalogPlaceholderEvent))
             .WithTagProvider<AlphaTagProvider>();
 
         var sp = services.BuildServiceProvider();
@@ -70,10 +71,12 @@ public class TagProviderRegistrationTests
 
         services.AddBoundedContext("alpha")
             .UseInMemory()
+            .WithEventTypes(typeof(CatalogPlaceholderEvent))
             .WithTagProvider<AlphaTagProvider>();
 
         services.AddBoundedContext("beta")
             .UseInMemory()
+            .WithEventTypes(typeof(CatalogPlaceholderEvent))
             .WithTagProvider<BetaTagProvider>();
 
         var sp = services.BuildServiceProvider();
@@ -96,6 +99,7 @@ public class TagProviderRegistrationTests
 
         services.AddBoundedContext("alpha")
             .UseInMemory()
+            .WithEventTypes(typeof(CatalogPlaceholderEvent))
             .WithTagProvider(instance);
 
         var sp = services.BuildServiceProvider();
@@ -113,6 +117,7 @@ public class TagProviderRegistrationTests
 
         services.AddBoundedContext("alpha")
             .UseInMemory()
+            .WithEventTypes(typeof(CatalogPlaceholderEvent))
             .WithTagProvider(_ => new AlphaTagProvider());
 
         var sp = services.BuildServiceProvider();
@@ -129,7 +134,7 @@ public class TagProviderRegistrationTests
     {
         var services = BaseServices();
 
-        services.AddBoundedContext("alpha").UseInMemory();
+        services.AddBoundedContext("alpha").UseInMemory().WithEventTypes(typeof(CatalogPlaceholderEvent));
         services.AddTagProvider<AlphaTagProvider>("alpha");
 
         var sp = services.BuildServiceProvider();
@@ -165,10 +170,12 @@ public class TagProviderRegistrationTests
 
         services.AddBoundedContext("alpha")
             .UseInMemory()
+            .WithEventTypes(typeof(CatalogPlaceholderEvent))
             .WithTagProvider<AlphaTagProvider>();       // context-specific
 
         services.AddBoundedContext("beta")
-            .UseInMemory();                             // no context-specific → uses global
+            .UseInMemory()
+            .WithEventTypes(typeof(CatalogPlaceholderEvent));                             // no context-specific → uses global
 
         var sp = services.BuildServiceProvider();
 
@@ -190,7 +197,7 @@ public class TagProviderRegistrationTests
     public void TagProvider_NoRegistration_ReturnsNull()
     {
         var services = BaseServices();
-        services.AddBoundedContext("alpha").UseInMemory();
+        services.AddBoundedContext("alpha").UseInMemory().WithEventTypes(typeof(CatalogPlaceholderEvent));
 
         var sp = services.BuildServiceProvider();
 
@@ -208,6 +215,7 @@ public class TagProviderRegistrationTests
 
         services.AddBoundedContext("alpha")
             .UseInMemory()
+            .WithEventTypes(typeof(CatalogPlaceholderEvent))
             .WithTagProvider<AlphaTagProvider>();
 
         var sp = services.BuildServiceProvider();

@@ -35,18 +35,18 @@ public sealed class EventSession
     private readonly EventUpcastPipeline? _upcast;
 
     /// <param name="serializer">Payload codec for this session (one codec per session).</param>
-    /// <param name="catalog">Scoped catalog. Defaults to <see cref="EventTypeCatalog.Shared"/>.</param>
+    /// <param name="catalog">Scoped catalog from <c>WithEventTypes</c> / <see cref="EventTypeCatalog.Materialize"/>.</param>
     /// <param name="upcastPipeline">
     /// Chain from historical types to current. Null still fail-closes when the
     /// stored type is not this process's current type.
     /// </param>
     public EventSession(
         IEventSerializer serializer,
-        IEventTypeCatalog? catalog = null,
+        IEventTypeCatalog catalog,
         EventUpcastPipeline? upcastPipeline = null)
     {
         _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
-        _catalog = catalog ?? EventTypeCatalog.Shared;
+        _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         _upcast = upcastPipeline;
     }
 

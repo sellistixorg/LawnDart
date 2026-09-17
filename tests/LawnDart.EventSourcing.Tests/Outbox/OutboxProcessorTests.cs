@@ -217,7 +217,7 @@ public class OutboxProcessorTests
         services.AddSingleton<IMetadataProvider>(new DefaultMetadataProvider());
         services.AddSingleton<ITenantContextProvider>(new TestTenantContextProvider(null));
         services.Configure<LawnDartOptions>(_ => { });
-        services.AddBoundedContext("default").UseInMemory();
+        services.AddBoundedContext("default").UseInMemory().WithEventTypes(typeof(CatalogPlaceholderEvent));
         var sp = services.BuildServiceProvider();
 
         var writer = sp.GetRequiredService<IOutboxWriter>();

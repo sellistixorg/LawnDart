@@ -96,6 +96,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
     private readonly IPartitioningService _partitioningService;
     private readonly LightweightProjectionOptions _options;
     private readonly IProjectionReadCache? _readCache;
+    private readonly IEventTypeCatalog? _catalog;
     private readonly ILogger<LightweightProjectionRunnerService> _logger;
     private readonly IEventStoreSubscriptions? _subscriptions;
     private LightweightProjectionSharedPipe? _sharedPipe;
@@ -184,6 +185,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
     /// <param name="options">Runner configuration.</param>
     /// <param name="logger">Optional logger.</param>
     /// <param name="readCache">Optional hot read cache; updated on apply.</param>
+    /// <param name="catalog">Scoped event-type catalog for live type filters.</param>
     public LightweightProjectionRunnerService(
         ProjectionRegistration registration,
         IEventStore eventStore,
@@ -192,7 +194,8 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
         IPartitioningService partitioningService,
         LightweightProjectionOptions options,
         ILogger<LightweightProjectionRunnerService>? logger = null,
-        IProjectionReadCache? readCache = null)
+        IProjectionReadCache? readCache = null,
+        IEventTypeCatalog? catalog = null)
     {
         _registration       = registration        ?? throw new ArgumentNullException(nameof(registration));
         _eventStore         = eventStore          ?? throw new ArgumentNullException(nameof(eventStore));
@@ -202,6 +205,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
         _options            = options             ?? throw new ArgumentNullException(nameof(options));
         _logger             = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<LightweightProjectionRunnerService>.Instance;
         _readCache          = readCache;
+        _catalog            = catalog;
         _subscriptions      = eventStore as IEventStoreSubscriptions;
     }
 
@@ -707,12 +711,18 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
             return _registration.DcbQueryTypes;
 
         var names = GetCompiledHandlers().Keys
-            .Select(EventTypeNameResolver.GetName)
+            .Select(ResolveEventTypeName)
             .Where(n => !string.IsNullOrWhiteSpace(n))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
         return names;
     }
+
+    private string ResolveEventTypeName(Type type)
+        => _catalog?.GetName(type)
+           ?? EventTypeCatalog.TryGetDeclaredName(type)
+           ?? throw new InvalidOperationException(
+               $"Event type '{type.FullName}' must declare [EventTypeName(\"kebab-token\")].");
 
     private EventSubscriptionFilter BuildLiveSubscriptionFilter()
     {
