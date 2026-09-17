@@ -17,5 +17,5 @@ One-arg `[EventTypeName("token")]` is not a diagnostic. Warmup is the
 runtime authority if the analyzer and catalog drift. Positioning §3 is
 reopened only for these versioning rules.
 
-See the [package README](../../src/LawnDart.Analyzers/README.md) and
-[Event schema versioning](../EVENT_SCHEMA_VERSIONING.md).
+See the [package README](https://github.com/sellistixorg/LawnDart/blob/main/src/LawnDart.Analyzers/README.md)
+and [Event schema versioning](../EVENT_SCHEMA_VERSIONING.md).
