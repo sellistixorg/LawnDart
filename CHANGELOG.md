@@ -10,6 +10,12 @@ changes to the public API.
 
 ## [Unreleased]
 
+## [0.4.0-alpha.6] — 2026-09-17
+
+### Added
+
+- `LawnDart.Analyzers` reports event schema versioning mistakes at `dotnet build`: two currents for one token (`LDT001`), a multi-type family with no `current: true` (`LDT002`), and an incomplete upcaster chain (`LDT003`). One-arg `[EventTypeName("token")]` is not a diagnostic. Warmup is still the runtime authority.
+
 ## [0.4.0-alpha.5] — 2026-09-16
 
 ### Fixed

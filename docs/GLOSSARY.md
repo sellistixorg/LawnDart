@@ -61,7 +61,9 @@ simple-name / AssemblyQualifiedName rows still resolve as read aliases.
 `EventTypeNameResolver` is a process-wide compatibility wrapper, not the
 context catalog. Current CLR type keeps the domain name; historical is
 `AuthorRegisteredV1`. Historical versions reach current through
-`IEventUpcaster<TTo, TFrom>` registered with `WithUpcasters`. See
+`IEventUpcaster<TTo, TFrom>` registered with `WithUpcasters`. Optional
+`LawnDart.Analyzers` reports `LDT001`–`LDT003` for the same rules at
+compile time; warmup is the runtime authority. See
 [Event schema versioning](EVENT_SCHEMA_VERSIONING.md).
 
 See **Event log** / **Event store**.

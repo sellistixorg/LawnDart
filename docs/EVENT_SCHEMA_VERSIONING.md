@@ -125,8 +125,11 @@ var ctx = services.AddBoundedContext("default")
 
 `EventUpcastPipeline.Materialize` / `WithUpcasters` fails if any historical
 version in the catalog cannot reach current. That warmup is the runtime
-authority. Compile-time `LDT` diagnostics for the same rules land in a
-later analyzer package; a green analyzer is not a substitute for warmup.
+authority. `LawnDart.Analyzers` reports the same rules at `dotnet build`
+(`LDT001` two currents, `LDT002` multi-type family with no `current: true`,
+`LDT003` incomplete upcaster chain). One-arg `[EventTypeName("token")]` is
+not a diagnostic. Positioning §3 is reopened only for these versioning
+analyzers. A green analyzer is not a substitute for warmup.
 
 Typed hydrate (`IEventStore` / `EventSession` / outbox publish) deserializes
 the stored version, then applies that chain. The value on

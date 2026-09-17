@@ -144,7 +144,7 @@ When adding a new source package:
 Package versions are derived from git tags by [MinVer](https://github.com/adamralph/minver).
 Do not set `<Version>` in the project files.
 
-All nine packages version in lockstep. To cut a release:
+All ten packages version in lockstep. To cut a release:
 
 1. Move `CHANGELOG.md` entries from `## [Unreleased]` into a dated heading
    matching the tag (without the `v` prefix).
