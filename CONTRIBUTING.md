@@ -124,8 +124,8 @@ generated diffs that the author cannot walk through will be closed.
 - File-scoped namespaces.
 - xUnit for all tests. Use `WaitForAsync` for eventual-consistency assertions.
 - Runtime dependencies are limited to `Microsoft.Extensions.*`,
-  `Microsoft.AspNetCore.*`, `Microsoft.Data.SqlClient`, `OpenTelemetry`, and
-  `MemoryPack`. Open an issue before adding any new third-party runtime
+  `Microsoft.AspNetCore.*`, `Microsoft.Data.SqlClient`, and
+  `OpenTelemetry`. Open an issue before adding any new third-party runtime
   dependency, and add the version to `Directory.Packages.props` rather than the
   individual `.csproj`.
 

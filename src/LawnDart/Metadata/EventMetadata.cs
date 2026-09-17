@@ -1,5 +1,3 @@
-using MemoryPack;
-
 namespace LawnDart.Metadata;
 
 /// <summary>
@@ -18,8 +16,7 @@ namespace LawnDart.Metadata;
 /// (W3C hex). The Activity clock is not stored as a third <see cref="DateTime"/>.</description></item>
 /// </list>
 /// </remarks>
-[MemoryPackable]
-public partial class EventMetadata
+public class EventMetadata
 {
     // Identity (inherited from command)
     /// <summary>
@@ -122,7 +119,6 @@ public partial class EventMetadata
 
     /// <summary>
     /// W3C trace id (32 hex characters). Inherited from the command envelope.
-    /// Appended last so MemoryPack ordinals of existing members stay stable.
     /// </summary>
     public string? TraceId { get; set; }
 

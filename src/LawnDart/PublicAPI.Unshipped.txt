@@ -1,15 +1,4 @@
 #nullable enable
-*REMOVED*LawnDart.IMessage
-*REMOVED*LawnDart.Patterns.Delegation.ICommandDelegator<TCommand>
-*REMOVED*LawnDart.Patterns.Delegation.ICommandDelegator<TCommand>.DelegateAsync(TCommand command, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<LawnDart.ICommand!>!
-*REMOVED*LawnDart.Patterns.DownstreamActivity.IDownstreamActivity<TTrigger>
-*REMOVED*LawnDart.Patterns.DownstreamActivity.IDownstreamActivity<TTrigger>.ExecuteAsync(TTrigger trigger, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-*REMOVED*LawnDart.Patterns.EventGenerator.IEventGenerator<TState>
-*REMOVED*LawnDart.Patterns.EventGenerator.IEventGenerator<TState>.GenerateAsync(TState state, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IEnumerable<LawnDart.IEvent!>!>!
-*REMOVED*LawnDart.Patterns.StateTransformation.IStateTransformer<TInput, TOutput>
-*REMOVED*LawnDart.Patterns.StateTransformation.IStateTransformer<TInput, TOutput>.TransformAsync(TInput input, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TOutput>!
-*REMOVED*LawnDart.Serialization.IEventSerializer.Deserialize(string! data, System.Type! type) -> object!
-*REMOVED*LawnDart.Serialization.IEventSerializer.Serialize(object! obj, System.Type! type) -> string!
 *REMOVED*LawnDart.EventStore.AppendEvent.AppendEvent(string! eventType, System.ReadOnlyMemory<byte> payload, System.ReadOnlyMemory<byte> metadata = default(System.ReadOnlyMemory<byte>), int schemaVersion = 1, string! contentType = "application/json", System.Collections.Generic.IEnumerable<string!>? tags = null) -> void
 *REMOVED*LawnDart.EventStore.AppendEvent.ContentType.get -> string!
 *REMOVED*const LawnDart.EventStore.AppendEvent.DefaultContentType = "application/json" -> string!

@@ -49,7 +49,6 @@ services.AddTenantContextProvider<MyTenantContextProvider>();
 
 ## Package dependencies
 
-- [`MemoryPack`](https://github.com/Cysharp/MemoryPack)
 - `Microsoft.Extensions.DependencyInjection`
 - `Microsoft.Extensions.Logging.Abstractions`
 - `Microsoft.Extensions.Options`
