@@ -146,8 +146,7 @@ Guid overloads build `{type}:{id}` (or `{tenant}:{type}:{id}`). If the stream
 is a custom ID, use `GetOrCreateAsync<T>(streamId)` instead.
 
 Do not load the store yourself. Use `GetAsync` / `GetOrCreateAsync` and
-`HandleCommandAsync`. Do not call `SetStreamId`, `SetVersion`,
-`SetCommittedVersion`, or `ReplayEvents` from application code.
+`HandleCommandAsync`.
 
 Aggregates record events with `Apply`. DCB entities use `Emit` (tags).
 `Handle(TCommand)` is authoring; `HandleCommandAsync` is the repository.

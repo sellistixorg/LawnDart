@@ -21,7 +21,7 @@ your host, on your DI, on `net10.0`. There is no LawnDart server.
 
 ## Not a JVM platform
 
-[Axon](https://axoniq.io) is a JVM platform. LawnDart is a .NET library. It is
+[Axon](https://axoniq.io) is a JVM platform. LawnDart is a .NET library and framework. It is
 not a cross-language runtime.
 
 ## Closed set
@@ -33,7 +33,7 @@ Supported today:
 - **Runtime:** in-process, `net10.0`, your host, your DI.
 - **Modelling:** aggregates and DCB behind one store contract.
 
-That set is the product, not a teaser for a larger one.
+That set is the product.
 
 ## A separate store on the same contract
 

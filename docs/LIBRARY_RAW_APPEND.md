@@ -105,7 +105,7 @@ public static BookSnapshot FoldBook(IReadOnlyList<SequencedEvent> history)
 
 ## Project the same read model
 
-No `Task.Delay`. Push the stream through the slice’s projector:
+Push the stream through the slice’s projector:
 
 ```csharp
 var projector = new LibraryProjector();
@@ -116,6 +116,3 @@ var view = projector.GetBook(bookId);
 Console.WriteLine($"Catalog: {view?.Title} OnLoan={view?.OnLoan}");
 Console.WriteLine($"Borrowed count: {projector.BorrowedBooks.Count}");
 ```
-
-Do not lead the README with this page. Do not add a first-lesson reactor
-here — `IReactor<TEvent>` is learning-path step 6.

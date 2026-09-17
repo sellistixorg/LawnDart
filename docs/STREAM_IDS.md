@@ -31,8 +31,6 @@ var streamId = $"{accountId}:InboundShipment:{planId:N}:{shipmentId}";
 var shipment = await repo.GetOrCreateAsync<InboundShipmentAggregate>(streamId);
 ```
 
-Do not call `SetStreamId` / `ReplayEvents` / `SetCommittedVersion` yourself.
-
 ## DCB
 
 DCB reads by **tags**, not by guessing every stream. Appends still land in an
