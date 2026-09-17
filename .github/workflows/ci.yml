@@ -42,9 +42,15 @@ jobs:
         --verbosity normal
 
     - name: Test (integration)
-      run: >
-        dotnet test LawnDart.sln --no-build --configuration Release
-        --verbosity normal --filter "Category=Integration|Category=Contract"
+      run: |
+        for proj in \
+          tests/LawnDart.EventSourcing.SqlServer.Tests \
+          tests/LawnDart.Projections.Lightweight.Tests \
+          tests/LawnDart.Backends.Contract.Tests
+        do
+          dotnet test "$proj" --no-build --configuration Release --verbosity normal \
+            --filter "Category=Integration|Category=Contract"
+        done
 
     - name: Restore local tools
       run: dotnet tool restore

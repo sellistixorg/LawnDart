@@ -107,7 +107,8 @@ frames. Typed adapter tests sit on the same logs (unknown family and
 content-type mismatch fail closed).
 
 Local unit runs use `--filter Category!=Integration`. CI runs unit tests and
-then `Category=Integration|Category=Contract`. SQL Server tests need Docker
+then `Category=Integration|Category=Contract` on the SQL Server, Lightweight,
+and backend-contract test projects. SQL Server tests need Docker
 (Testcontainers). In-process projection harnesses under `tests/.../Integration`
 use the same trait so they stay out of the local unit job.
 

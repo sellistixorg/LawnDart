@@ -10,6 +10,12 @@ changes to the public API.
 
 ## [Unreleased]
 
+## [0.4.0-alpha.5] — 2026-09-16
+
+### Fixed
+
+- CI and release run `Category=Integration|Category=Contract` on the SQL Server, Lightweight, and backend-contract test projects instead of the whole solution, so a passing filtered run is not failed by assemblies with no matching tests.
+
 ## [0.4.0-alpha.4] — 2026-09-16
 
 ### Added
