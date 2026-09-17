@@ -15,6 +15,7 @@ changes to the public API.
 - Log frames (`AppendEvent`, `RecordedEvent`, `OutboxMessage`) store a codec id (`byte`) instead of a MIME string. `IEventSerializer.ContentType` is still the plugin name; `EventCodec` maps it to the id. `0` is rejected; `255` is opaque and does not hydrate on the typed path.
 - The event-type catalog is per bounded context and `WithEventTypes` is required. There is no process-wide resolver and no FullName / simple-name read alias. An unknown token fails closed.
 - The core `LawnDart` package no longer depends on MemoryPack. `EventMetadata` is System.Text.Json only. MemoryPack remains an optional session codec (`EventCodec` id `2`) for event payloads.
+- SQL Server stores one `EventData` (`VARBINARY`) payload and a `CodecId` (`TINYINT`). `SchemaVersion` and `CodecId` have no column defaults. Opening an older events table throws and names drop-and-recreate. A `{table}_Readable` view is created for SSMS.
 
 ## [0.4.0-alpha.6] — 2026-09-17
 

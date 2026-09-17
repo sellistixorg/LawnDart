@@ -13,7 +13,7 @@ namespace LawnDart.EventSourcing.SqlServer.EventStore;
 internal static class DcbQuerySql
 {
     internal const string EventColumns =
-        "e.StreamId, e.Version, e.SequencePosition, e.EventType, e.EventData, e.EventPayload, e.SchemaVersion, e.ContentType, e.Tags, e.Metadata, e.Timestamp";
+        "e.StreamId, e.Version, e.SequencePosition, e.EventType, e.EventData, e.SchemaVersion, e.CodecId, e.Tags, e.Metadata, e.Timestamp";
 
     internal enum Mode
     {

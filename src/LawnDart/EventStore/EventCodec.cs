@@ -161,8 +161,8 @@ public static class EventCodec
     }
 
     /// <summary>
-    /// MIME for a SQL <c>ContentType</c> column that still exists until the
-    /// payload-layout ticket. Fail-closed when the id has no plugin name.
+    /// MIME for the outbox <c>ContentType</c> column that remains until the
+    /// outbox payload-layout ticket. Fail-closed when the id has no plugin name.
     /// </summary>
     internal static string RequireMime(byte id)
     {
