@@ -19,13 +19,14 @@ await AggregateSpec
         new BookAdded(Guid.NewGuid(), DateTime.UtcNow, bookId, "Pragmatic Programmer", "978-0135957059"),
         new BookBorrowed(Guid.NewGuid(), DateTime.UtcNow, bookId, "Jane Doe"))
     .When(new BorrowBookCommand(Guid.NewGuid(), bookId, "Someone Else"))
-    .ThenThrows<InvalidOperationException>()
+    .ThenThrows<DomainException>()
     .AndAssert(result =>
         Assert.Equal("Book is already on loan.", result.Exception!.Message))
     .RunAsync();
 ```
 
-`ThenThrows<T>()` is the domain-rule assertion. Spec-internal failures throw
+Rule violations throw `DomainException`. `ThenThrows<T>()` is the
+domain-rule assertion. Spec-internal failures throw
 `BddSpecAssertionException`, which does not derive from
 `InvalidOperationException`. Do not wrap `RunAsync()` in
 `Assert.ThrowsAsync<InvalidOperationException>`.

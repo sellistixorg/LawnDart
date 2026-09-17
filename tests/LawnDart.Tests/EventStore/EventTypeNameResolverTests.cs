@@ -148,6 +148,16 @@ public class EventTypeNameResolverTests
     }
 
     [Fact]
+    public void TryResolveType_AfterWarmup_UsesSchemaVersion()
+    {
+        EventTypeNameResolver.Warmup([typeof(EventWithAlias)]);
+
+        Assert.True(EventTypeNameResolver.TryResolveType("my-stable-alias", 1, out var v1));
+        Assert.Equal(typeof(EventWithAlias), v1);
+        Assert.False(EventTypeNameResolver.TryResolveType("my-stable-alias", 2, out _));
+    }
+
+    [Fact]
     public void WriteName_IsCatalogToken_FullNameIsReadAliasOnly()
     {
         EventTypeNameResolver.Warmup([typeof(EventWithAlias)]);

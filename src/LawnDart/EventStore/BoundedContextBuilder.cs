@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace LawnDart.EventStore;
 
@@ -25,6 +26,10 @@ public sealed class BoundedContextBuilder
 
     /// <summary>The service collection that builder methods should register into.</summary>
     public IServiceCollection Services { get; }
+
+    internal EventTypeCatalog? EventCatalog { get; set; }
+
+    internal EventUpcastPipeline? UpcastPipeline { get; set; }
 
     internal BoundedContextBuilder(string contextName, IServiceCollection services)
     {
@@ -82,8 +87,9 @@ public static class BoundedContextExtensions
     /// <summary>
     /// Scans assemblies for concrete <see cref="IEvent"/> types and registers them
     /// as this context's event-type catalog. Types must declare
-    /// <see cref="EventTypeNameAttribute"/>. Duplicate tokens, abstract types, and
-    /// non-events fail closed.
+    /// <see cref="EventTypeNameAttribute"/>. Duplicate <c>(token, version)</c>,
+    /// two current types, a multi-type family with no <c>current: true</c>,
+    /// abstract types, and non-events fail closed.
     /// </summary>
     /// <exception cref="InvalidOperationException">
     /// The scan discovered no concrete <see cref="IEvent"/> types.
@@ -119,7 +125,7 @@ public static class BoundedContextExtensions
                 FormatZeroEventScanMessage(assemblies, usedCallingAssemblyFallback));
         }
 
-        EventTypeNameResolver.Warmup(types);
+        RegisterCatalog(builder, types);
         return builder;
     }
 
@@ -137,8 +143,110 @@ public static class BoundedContextExtensions
         ArgumentNullException.ThrowIfNull(types);
         if (types.Length == 0)
             throw new InvalidOperationException("WithEventTypes was given no event types.");
-        EventTypeNameResolver.Warmup(types);
+        RegisterCatalog(builder, types);
         return builder;
+    }
+
+    /// <summary>
+    /// Scans <typeparamref name="TMarker"/>'s assembly for concrete
+    /// <see cref="IEventUpcaster{TTo, TFrom}"/> types and builds this
+    /// context's upcast pipeline. Prefer this overload — it is refactor-proof.
+    /// Call <see cref="WithEventTypes(BoundedContextBuilder, Type[])"/> first.
+    /// </summary>
+    public static BoundedContextBuilder WithUpcasters<TMarker>(
+        this BoundedContextBuilder builder)
+        => WithUpcasters(builder, typeof(TMarker).Assembly);
+
+    /// <summary>
+    /// Scans assemblies for concrete <see cref="IEventUpcaster{TTo, TFrom}"/>
+    /// types and builds this context's upcast pipeline. Every historical
+    /// catalog version must reach current. There is no downcast API and no
+    /// AppDomain sweep. Call <see cref="WithEventTypes(BoundedContextBuilder, Assembly[])"/> first.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public static BoundedContextBuilder WithUpcasters(
+        this BoundedContextBuilder builder,
+        params Assembly[] assemblies)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        if (assemblies.Length == 0)
+            assemblies = [Assembly.GetCallingAssembly()];
+
+        var types = new List<Type>();
+        foreach (var assembly in assemblies)
+        {
+            ArgumentNullException.ThrowIfNull(assembly);
+            foreach (var type in assembly.GetExportedTypes())
+            {
+                if (!type.IsClass || type.IsAbstract || type.IsGenericTypeDefinition)
+                    continue;
+                if (!ImplementsUpcaster(type))
+                    continue;
+                types.Add(type);
+            }
+        }
+
+        RegisterPipeline(builder, types);
+        return builder;
+    }
+
+    /// <summary>
+    /// Registers the given upcaster types as this context's pipeline.
+    /// Call <see cref="WithEventTypes(BoundedContextBuilder, Type[])"/> first.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// <paramref name="types"/> is empty.
+    /// </exception>
+    public static BoundedContextBuilder WithUpcasters(
+        this BoundedContextBuilder builder,
+        params Type[] types)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(types);
+        if (types.Length == 0)
+            throw new InvalidOperationException("WithUpcasters was given no upcaster types.");
+        RegisterPipeline(builder, types);
+        return builder;
+    }
+
+    private static void RegisterCatalog(BoundedContextBuilder builder, IReadOnlyCollection<Type> types)
+    {
+        var catalog = EventTypeCatalog.Materialize(types);
+        catalog.InstallIntoProcessResolver();
+        builder.EventCatalog = catalog;
+        builder.Services.AddKeyedSingleton<IEventTypeCatalog>(builder.ContextName, catalog);
+        if (string.Equals(builder.ContextName, "default", StringComparison.Ordinal))
+            builder.Services.TryAddSingleton<IEventTypeCatalog>(catalog);
+    }
+
+    private static void RegisterPipeline(BoundedContextBuilder builder, IReadOnlyCollection<Type> types)
+    {
+        var catalog = builder.EventCatalog
+            ?? throw new InvalidOperationException(
+                "WithUpcasters requires WithEventTypes first on this bounded context.");
+        if (builder.UpcastPipeline is not null)
+        {
+            throw new InvalidOperationException(
+                $"WithUpcasters has already been called for context '{builder.ContextName}'.");
+        }
+
+        var pipeline = EventUpcastPipeline.Materialize(catalog, types);
+        builder.UpcastPipeline = pipeline;
+        builder.Services.AddKeyedSingleton(builder.ContextName, pipeline);
+        if (string.Equals(builder.ContextName, "default", StringComparison.Ordinal))
+            builder.Services.TryAddSingleton(pipeline);
+    }
+
+    private static bool ImplementsUpcaster(Type type)
+    {
+        foreach (var iface in type.GetInterfaces())
+        {
+            if (iface.IsGenericType && iface.GetGenericTypeDefinition() == typeof(IEventUpcaster<,>))
+                return true;
+        }
+
+        return false;
     }
 
     private static string FormatZeroEventScanMessage(

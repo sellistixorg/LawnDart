@@ -18,7 +18,7 @@ Academy is a reference host, not generated output.
 
 | Eventhesis | Generic spec | Typical LawnDart implementation |
 |---|---|---|
-| Command | Command | `ICommand` + aggregate / DCB handler. There is no `IMessage` marker. |
+| Command | Command | `ICommand` + aggregate / DCB handler. |
 | Event | Event | `IEvent` (`Id`, `Timestamp` first if you use the Eventhesis field-order convention) plus `[EventTypeName("kebab-token")]`. Correlation, causation, and W3C trace live on the envelope (`EventMetadata` / `CommandMetadata`), not the payload. |
 | Entity | Entity | `AggregateRoot<TState>` or `DcbEntity<TState>` declaring `Handle(TCommand)` |
 | View | View | A read model. Lightweight host: `ProjectionBase<TView>` + scope attributes + `IMultiStreamEntityResolver` when multi-stream. Or your own projector against `IEventStore`. `IProjector` is experimental and unused — neither host calls it. |
@@ -44,8 +44,10 @@ services.AddLawnDartHttpCommands(typeof(SomeCommand).Assembly);
 app.MapLawnDartCommands();
 ```
 
-Keep catalog tokens stable when you hand-write events. Rename only the
-package and extension-method prefixes (`AddLawnDart`,
+Keep catalog tokens stable when you hand-write events. Additive JSON
+keeps the same `SchemaVersion`; a breaking shape change keeps the token
+and bumps the integer. See [Event schema versioning](EVENT_SCHEMA_VERSIONING.md).
+Rename only the package and extension-method prefixes (`AddLawnDart`,
 `MapLawnDartCommands`, `AddLawnDartAuthorization`).
 
 Academy (`demos/LawnDart.Demo.Academy`) is a reference InMemory host with

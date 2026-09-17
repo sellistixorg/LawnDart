@@ -11,7 +11,7 @@ Eight steps from first command to a production-shaped host.
 | 5 | [DCB patterns](05-dcb-patterns.md) | When one aggregate is not enough |
 | 6 | [Reactions](06-reactions.md) | `IReactor`, `IEventProcessor`, `ITaskProcessor` |
 | 7 | [Testing EDA](07-testing-eda.md) | Reactor harness, inbox deduplication |
-| 8 | [Production](08-production.md) | SQL Server, outbox, HTTP auth |
+| 8 | [Production](08-production.md) | SQL Server, outbox, HTTP auth, schema deploy |
 
 **Prerequisites:** .NET 10 SDK, basic C# records and dependency injection.
 

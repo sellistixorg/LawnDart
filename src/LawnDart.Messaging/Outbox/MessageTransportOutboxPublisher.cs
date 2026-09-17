@@ -1,14 +1,17 @@
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using LawnDart.EventStore;
 using LawnDart.Metadata;
 using LawnDart.Outbox;
+using LawnDart.Serialization;
 
 namespace LawnDart.Messaging.Outbox;
 
 /// <summary>
-/// Sample <see cref="IOutboxPublisher"/> that deserializes <see cref="OutboxMessage"/> payloads
-/// and publishes them through <see cref="IMessageTransport"/> (InMemory in these packages).
+/// Sample <see cref="IOutboxPublisher"/> that hydrates <see cref="OutboxMessage"/>
+/// rows through <see cref="EventSession"/> and publishes them through
+/// <see cref="IMessageTransport"/> (InMemory in these packages).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -17,10 +20,9 @@ namespace LawnDart.Messaging.Outbox;
 /// <see cref="MessageContext.MessageId"/> (this type uses the outbox row id).
 /// </para>
 /// <para>
-/// Event type resolution uses the scoped <see cref="IEventTypeCatalog"/> with the
-/// row's <see cref="OutboxMessage.SchemaVersion"/>. FullName and simple name remain
-/// read aliases for older outbox rows. This publisher deserializes the stored
-/// version's CLR type; upcast to the current type is not applied yet.
+/// Hydrate uses the scoped catalog (token + <see cref="OutboxMessage.SchemaVersion"/>)
+/// and the same upcast chain as typed store reads. There is no private deserialize
+/// of the event payload.
 /// </para>
 /// </remarks>
 public sealed class MessageTransportOutboxPublisher : IOutboxPublisher
@@ -34,11 +36,11 @@ public sealed class MessageTransportOutboxPublisher : IOutboxPublisher
     };
 
     private readonly IMessageTransport _transport;
-    private readonly IEventTypeCatalog _catalog;
+    private readonly EventSession _session;
     private readonly JsonSerializerOptions _jsonOptions;
 
     /// <summary>
-    /// Creates a publisher that resolves event CLR types from <paramref name="catalog"/>.
+    /// Creates a publisher that hydrates through <paramref name="catalog"/>.
     /// </summary>
     /// <param name="transport">Transport used to publish (InMemory in these packages).</param>
     /// <param name="catalog">
@@ -53,27 +55,38 @@ public sealed class MessageTransportOutboxPublisher : IOutboxPublisher
         IMessageTransport transport,
         IEventTypeCatalog catalog,
         JsonSerializerOptions? jsonOptions = null)
+        : this(transport, catalog, upcastPipeline: null, jsonOptions)
+    {
+    }
+
+    /// <summary>
+    /// Creates a publisher that hydrates through <paramref name="catalog"/> and
+    /// upcasts historical rows to the current type.
+    /// </summary>
+    public MessageTransportOutboxPublisher(
+        IMessageTransport transport,
+        IEventTypeCatalog catalog,
+        EventUpcastPipeline? upcastPipeline,
+        JsonSerializerOptions? jsonOptions = null)
     {
         ArgumentNullException.ThrowIfNull(transport);
         ArgumentNullException.ThrowIfNull(catalog);
 
-        _transport = transport;
-        _catalog = catalog;
         _jsonOptions = jsonOptions ?? DefaultJsonOptions;
+        _transport = transport;
+        _session = new EventSession(new OptionsEventSerializer(_jsonOptions), catalog, upcastPipeline);
     }
 
     /// <summary>
-    /// Creates a publisher that warms <paramref name="eventTypes"/> into the shared
-    /// catalog and resolves through that catalog (not a private token map).
+    /// Creates a publisher that materializes <paramref name="eventTypes"/> into
+    /// an isolated catalog and hydrates through that catalog (not a private token map).
     /// </summary>
     public MessageTransportOutboxPublisher(
         IMessageTransport transport,
         IEnumerable<Type> eventTypes,
         JsonSerializerOptions? jsonOptions = null)
-        : this(transport, EventTypeCatalog.Shared, jsonOptions)
+        : this(transport, MaterializeRequired(eventTypes), upcastPipeline: null, jsonOptions)
     {
-        ArgumentNullException.ThrowIfNull(eventTypes);
-        RegisterKnownTypes(eventTypes);
     }
 
     /// <inheritdoc />
@@ -81,26 +94,24 @@ public sealed class MessageTransportOutboxPublisher : IOutboxPublisher
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        var schemaVersion = message.SchemaVersion <= 0 ? 1 : message.SchemaVersion;
-        if (!_catalog.TryResolveType(message.EventType, schemaVersion, out var eventType))
-        {
-            throw new InvalidOperationException(
-                $"No CLR type registered for outbox EventType '{message.EventType}' " +
-                $"(SchemaVersion {schemaVersion}). " +
-                "Pass event types to MessageTransportOutboxPublisher / AddMessageTransportOutboxPublisher " +
-                "or register an IEventTypeCatalog.");
-        }
+        var payload = Encoding.UTF8.GetBytes(message.Payload);
+        var metadataBytes = string.IsNullOrWhiteSpace(message.Metadata)
+            ? ReadOnlyMemory<byte>.Empty
+            : Encoding.UTF8.GetBytes(message.Metadata);
+        var recorded = new RecordedEvent(
+            message.EventType,
+            payload,
+            message.StreamId,
+            streamVersion: 0,
+            sequencePosition: message.SequencePosition,
+            commitTimestamp: message.CreatedAt,
+            metadataBytes,
+            message.SchemaVersion,
+            string.IsNullOrWhiteSpace(message.ContentType)
+                ? AppendEvent.DefaultContentType
+                : message.ContentType);
 
-        var deserialized = JsonSerializer.Deserialize(message.Payload, eventType, _jsonOptions)
-            ?? throw new InvalidOperationException(
-                $"Failed to deserialize outbox payload for EventType '{message.EventType}'.");
-
-        if (deserialized is not IEvent @event)
-        {
-            throw new InvalidOperationException(
-                $"Deserialized type '{eventType.FullName}' does not implement {nameof(IEvent)}.");
-        }
-
+        var sequenced = _session.Hydrate(recorded);
         var metadata = TryReadMetadata(message.Metadata);
         var headers = new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -120,7 +131,7 @@ public sealed class MessageTransportOutboxPublisher : IOutboxPublisher
             Headers = MessageTrace.WithMetadataTraceHeaders(headers, metadata),
         };
 
-        await _transport.PublishEventAsync(@event, context, cancellationToken).ConfigureAwait(false);
+        await _transport.PublishEventAsync(sequenced.Event, context, cancellationToken).ConfigureAwait(false);
     }
 
     private EventMetadata? TryReadMetadata(string metadataJson)
@@ -138,26 +149,28 @@ public sealed class MessageTransportOutboxPublisher : IOutboxPublisher
         }
     }
 
-    private static void RegisterKnownTypes(IEnumerable<Type> eventTypes)
+    private static EventTypeCatalog MaterializeRequired(IEnumerable<Type> eventTypes)
     {
-        var sawType = false;
-        foreach (var type in eventTypes)
-        {
-            if (type is null)
-                throw new ArgumentException("Event type list must not contain null entries.", nameof(eventTypes));
-            if (!typeof(IEvent).IsAssignableFrom(type) || type.IsAbstract || type.IsInterface)
-            {
-                throw new ArgumentException(
-                    $"Type '{type.FullName}' must be a concrete {nameof(IEvent)} implementation.",
-                    nameof(eventTypes));
-            }
-
-            sawType = true;
-            if (EventTypeNameResolver.TryGetDeclaredName(type) is not null)
-                EventTypeNameResolver.GetName(type);
-        }
-
-        if (!sawType)
+        ArgumentNullException.ThrowIfNull(eventTypes);
+        var list = eventTypes as IReadOnlyCollection<Type> ?? eventTypes.ToArray();
+        if (list.Count == 0)
             throw new ArgumentException("At least one event type is required.", nameof(eventTypes));
+        return EventTypeCatalog.Materialize(list);
+    }
+
+    private sealed class OptionsEventSerializer : IEventSerializer
+    {
+        private readonly JsonSerializerOptions _options;
+
+        public OptionsEventSerializer(JsonSerializerOptions options) => _options = options;
+
+        public string ContentType => AppendEvent.DefaultContentType;
+
+        public ReadOnlyMemory<byte> Serialize(object obj, Type type)
+            => JsonSerializer.SerializeToUtf8Bytes(obj, type, _options);
+
+        public object Deserialize(ReadOnlyMemory<byte> data, Type type)
+            => JsonSerializer.Deserialize(data.Span, type, _options)
+               ?? throw new InvalidOperationException($"Failed to deserialize {type.Name}");
     }
 }

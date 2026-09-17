@@ -209,10 +209,32 @@ override LawnDart.EventStore.EventLogQueryResult.Equals(object? obj) -> bool
 override LawnDart.EventStore.EventLogQueryResult.GetHashCode() -> int
 override LawnDart.EventStore.EventLogQueryResult.ToString() -> string!
 LawnDart.EventStore.EventQueryMatcher
+LawnDart.EventStore.EventContentTypeMismatchException
+LawnDart.EventStore.EventContentTypeMismatchException.EventContentTypeMismatchException(string! storedContentType, string! sessionContentType) -> void
+LawnDart.EventStore.EventContentTypeMismatchException.SessionContentType.get -> string!
+LawnDart.EventStore.EventContentTypeMismatchException.StoredContentType.get -> string!
+LawnDart.EventStore.EventHydrationException
+LawnDart.EventStore.EventHydrationException.FamilyToken.get -> string?
+LawnDart.EventStore.EventHydrationException.SchemaVersion.get -> int?
+LawnDart.EventStore.EventPayloadException
+LawnDart.EventStore.EventPayloadException.EventPayloadException(string! familyToken, int schemaVersion, string! message, System.Exception? innerException = null) -> void
+LawnDart.EventStore.EventSchemaNotInCatalogException
+LawnDart.EventStore.EventSchemaNotInCatalogException.EventSchemaNotInCatalogException(string! familyToken, int schemaVersion) -> void
+LawnDart.EventStore.EventSchemaTooNewException
+LawnDart.EventStore.EventSchemaTooNewException.EventSchemaTooNewException(string! familyToken, int storedVersion, int processCurrentVersion) -> void
+LawnDart.EventStore.EventSchemaTooNewException.ProcessCurrentVersion.get -> int
+LawnDart.EventStore.MissingEventUpcasterException
+LawnDart.EventStore.MissingEventUpcasterException.FromVersion.get -> int
+LawnDart.EventStore.MissingEventUpcasterException.MissingEventUpcasterException(string! familyToken, int fromVersion, int toVersion) -> void
+LawnDart.EventStore.MissingEventUpcasterException.ToVersion.get -> int
+LawnDart.EventStore.UnknownEventFamilyException
+LawnDart.EventStore.UnknownEventFamilyException.UnknownEventFamilyException(string! familyToken) -> void
 LawnDart.EventStore.EventSession
-LawnDart.EventStore.EventSession.EventSession(LawnDart.Serialization.IEventSerializer! serializer, LawnDart.EventStore.IEventTypeCatalog? catalog = null) -> void
+LawnDart.EventStore.EventSession.EventSession(LawnDart.Serialization.IEventSerializer! serializer, LawnDart.EventStore.IEventTypeCatalog? catalog = null, LawnDart.EventStore.EventUpcastPipeline? upcastPipeline = null) -> void
 LawnDart.EventStore.EventSession.Hydrate(LawnDart.EventStore.RecordedEvent! recorded) -> LawnDart.EventStore.SequencedEvent!
 LawnDart.EventStore.EventSession.ToAppendEvent(LawnDart.IEvent! event, LawnDart.Metadata.EventMetadata? metadata = null, System.Collections.Generic.IEnumerable<string!>? tags = null) -> LawnDart.EventStore.AppendEvent!
+LawnDart.EventStore.EventUpcastPipeline
+LawnDart.EventStore.EventUpcastPipeline.UpcastToCurrent(LawnDart.IEvent! stored) -> LawnDart.IEvent!
 LawnDart.EventStore.EventStoreAdapter
 LawnDart.EventStore.EventStoreAdapter.AppendAsync(string! streamId, System.Collections.Generic.IEnumerable<LawnDart.IEvent!>! events, long? expectedVersion = null, LawnDart.Metadata.EventMetadata? metadata = null, System.Collections.Generic.IEnumerable<string!>? tags = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<LawnDart.EventStore.AppendResult!>!
 LawnDart.EventStore.EventStoreAdapter.AppendAsync(System.Collections.Generic.IEnumerable<LawnDart.IEvent!>! events, LawnDart.EventStore.AppendCondition! condition, LawnDart.Metadata.EventMetadata? metadata = null, System.Collections.Generic.IEnumerable<string!>? tags = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<LawnDart.EventStore.AppendResult!>!
@@ -242,8 +264,11 @@ LawnDart.EventStore.EventSubscriptionScope.All = 0 -> LawnDart.EventStore.EventS
 LawnDart.EventStore.EventSubscriptionScope.Query = 2 -> LawnDart.EventStore.EventSubscriptionScope
 LawnDart.EventStore.EventSubscriptionScope.Stream = 1 -> LawnDart.EventStore.EventSubscriptionScope
 LawnDart.EventStore.EventTypeNameAttribute
+LawnDart.EventStore.EventTypeNameAttribute.Current.get -> bool
 LawnDart.EventStore.EventTypeNameAttribute.EventTypeNameAttribute(string! name) -> void
+LawnDart.EventStore.EventTypeNameAttribute.EventTypeNameAttribute(string! name, int version, bool current = false) -> void
 LawnDart.EventStore.EventTypeNameAttribute.Name.get -> string!
+LawnDart.EventStore.EventTypeNameAttribute.Version.get -> int
 LawnDart.EventStore.EventTypeNameResolver
 LawnDart.EventStore.EventTypeCatalog
 LawnDart.EventStore.EventTypeCatalog.EventTypeCatalog() -> void
@@ -287,6 +312,8 @@ LawnDart.EventStore.IEventTypeCatalog
 LawnDart.EventStore.IEventTypeCatalog.GetName(System.Type! type) -> string!
 LawnDart.EventStore.IEventTypeCatalog.TryResolveType(string! storedName, out System.Type? type) -> bool
 LawnDart.EventStore.IEventTypeCatalog.TryResolveType(string! storedName, int schemaVersion, out System.Type? type) -> bool
+LawnDart.EventStore.IEventUpcaster<TTo, TFrom>
+LawnDart.EventStore.IEventUpcaster<TTo, TFrom>.Upcast(TFrom! source) -> TTo!
 LawnDart.EventStore.IRawEvent
 LawnDart.EventStore.IRawEvent.RawPayload.get -> byte[]!
 LawnDart.EventStore.IRawEvent.TypeName.get -> string!
@@ -712,17 +739,23 @@ static LawnDart.EventStore.BoundedContextExtensions.AddBoundedContext(this Micro
 static LawnDart.EventStore.BoundedContextExtensions.WithEventTypes(this LawnDart.EventStore.BoundedContextBuilder! builder, params System.Reflection.Assembly![]! assemblies) -> LawnDart.EventStore.BoundedContextBuilder!
 static LawnDart.EventStore.BoundedContextExtensions.WithEventTypes(this LawnDart.EventStore.BoundedContextBuilder! builder, params System.Type![]! types) -> LawnDart.EventStore.BoundedContextBuilder!
 static LawnDart.EventStore.BoundedContextExtensions.WithEventTypes<TMarker>(this LawnDart.EventStore.BoundedContextBuilder! builder) -> LawnDart.EventStore.BoundedContextBuilder!
+static LawnDart.EventStore.BoundedContextExtensions.WithUpcasters(this LawnDart.EventStore.BoundedContextBuilder! builder, params System.Reflection.Assembly![]! assemblies) -> LawnDart.EventStore.BoundedContextBuilder!
+static LawnDart.EventStore.BoundedContextExtensions.WithUpcasters(this LawnDart.EventStore.BoundedContextBuilder! builder, params System.Type![]! types) -> LawnDart.EventStore.BoundedContextBuilder!
+static LawnDart.EventStore.BoundedContextExtensions.WithUpcasters<TMarker>(this LawnDart.EventStore.BoundedContextBuilder! builder) -> LawnDart.EventStore.BoundedContextBuilder!
 static LawnDart.EventStore.EventLogQueryResult.operator !=(LawnDart.EventStore.EventLogQueryResult? left, LawnDart.EventStore.EventLogQueryResult? right) -> bool
 static LawnDart.EventStore.EventLogQueryResult.operator ==(LawnDart.EventStore.EventLogQueryResult? left, LawnDart.EventStore.EventLogQueryResult? right) -> bool
 static LawnDart.EventStore.EventQueryMatcher.Matches(LawnDart.EventStore.RecordedEvent! recordedEvent, LawnDart.EventStore.Query! query) -> bool
 static LawnDart.EventStore.EventQueryMatcher.Matches(LawnDart.EventStore.SequencedEvent! sequencedEvent, LawnDart.EventStore.Query! query) -> bool
+static LawnDart.EventStore.EventTypeCatalog.Materialize(System.Collections.Generic.IEnumerable<System.Type!>! types) -> LawnDart.EventStore.EventTypeCatalog!
 static LawnDart.EventStore.EventTypeCatalog.Shared.get -> LawnDart.EventStore.EventTypeCatalog!
+static LawnDart.EventStore.EventUpcastPipeline.Materialize(LawnDart.EventStore.EventTypeCatalog! catalog, System.Collections.Generic.IEnumerable<System.Type!>! upcasterTypes) -> LawnDart.EventStore.EventUpcastPipeline!
 static LawnDart.EventStore.EventSubscriptionFilter.All() -> LawnDart.EventStore.EventSubscriptionFilter!
 static LawnDart.EventStore.EventSubscriptionFilter.ForQuery(LawnDart.EventStore.Query! query) -> LawnDart.EventStore.EventSubscriptionFilter!
 static LawnDart.EventStore.EventSubscriptionFilter.ForStream(string! streamId) -> LawnDart.EventStore.EventSubscriptionFilter!
 static LawnDart.EventStore.EventTypeNameResolver.GetName(System.Type! type) -> string!
 static LawnDart.EventStore.EventTypeNameResolver.TryGetDeclaredName(System.Type! type) -> string?
 static LawnDart.EventStore.EventTypeNameResolver.TryResolveType(string! storedName, out System.Type? type) -> bool
+static LawnDart.EventStore.EventTypeNameResolver.TryResolveType(string! storedName, int schemaVersion, out System.Type? type) -> bool
 static LawnDart.EventStore.EventTypeNameResolver.Warmup(System.Collections.Generic.IEnumerable<System.Type!>! types) -> void
 static LawnDart.EventStore.PartitionFilter.operator !=(LawnDart.EventStore.PartitionFilter? left, LawnDart.EventStore.PartitionFilter? right) -> bool
 static LawnDart.EventStore.PartitionFilter.operator ==(LawnDart.EventStore.PartitionFilter? left, LawnDart.EventStore.PartitionFilter? right) -> bool

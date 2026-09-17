@@ -8,7 +8,7 @@ public sealed class Book : AggregateRoot<BookState>
     public void Handle(AddBookCommand cmd)
     {
         if (State.Exists)
-            throw new InvalidOperationException("Book already exists.");
+            throw new DomainException("Book already exists.");
 
         Apply(new BookAdded(Guid.NewGuid(), DateTime.UtcNow, cmd.BookId, cmd.Title, cmd.Isbn));
     }
@@ -16,9 +16,9 @@ public sealed class Book : AggregateRoot<BookState>
     public void Handle(BorrowBookCommand cmd)
     {
         if (!State.Exists)
-            throw new InvalidOperationException("Book does not exist.");
+            throw new DomainException("Book does not exist.");
         if (State.OnLoan)
-            throw new InvalidOperationException("Book is already on loan.");
+            throw new DomainException("Book is already on loan.");
 
         Apply(new BookBorrowed(Guid.NewGuid(), DateTime.UtcNow, cmd.BookId, cmd.MemberName));
     }
@@ -26,9 +26,9 @@ public sealed class Book : AggregateRoot<BookState>
     public void Handle(ReturnBookCommand cmd)
     {
         if (!State.Exists)
-            throw new InvalidOperationException("Book does not exist.");
+            throw new DomainException("Book does not exist.");
         if (!State.OnLoan)
-            throw new InvalidOperationException("Book is not on loan.");
+            throw new DomainException("Book is not on loan.");
 
         Apply(new BookReturned(Guid.NewGuid(), DateTime.UtcNow, cmd.BookId));
     }

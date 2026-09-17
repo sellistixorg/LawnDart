@@ -42,9 +42,23 @@ app.MapLawnDartCommands();
 app.MapProjectionQueries("default");
 ```
 
+## Schema deploy
+
+Additive JSON rolls freely: new named properties on the current type do not
+require a `SchemaVersion` bump. A breaking change — renamed meaning, a
+removed required field, or a positional-codec layout change (a reused or
+remapped `[PropertyOrder]` number) — is expand-contract. Ship readers that
+understand `SchemaVersion` N+1 before any process writes N+1. Old binaries
+fail closed on those newer rows (`EventSchemaTooNewException`) and may keep
+appending the version that was current for them. There is no remote
+downcaster and no skip override.
+
+See [Event schema versioning](../EVENT_SCHEMA_VERSIONING.md).
+
 Checklist:
 
 - [BACKEND_SELECTION.md](../BACKEND_SELECTION.md) — InMemory vs SQL
 - [OUTBOX_PATTERN.md](../OUTBOX_PATTERN.md) — durable publish
 - [AUTHORIZATION.md](../AUTHORIZATION.md) — HTTP claims
 - [HTTP_COMMANDS.md](../HTTP_COMMANDS.md) — POST mapping
+- [EVENT_SCHEMA_VERSIONING.md](../EVENT_SCHEMA_VERSIONING.md) — family tokens, upcast, expand-contract

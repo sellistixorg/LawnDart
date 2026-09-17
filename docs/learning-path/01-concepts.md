@@ -50,4 +50,8 @@ Command → Aggregate / DCB → Events → IEventStore (typed session)
 content-type, payload bytes — not live CLR objects. InMemory serializes
 on append the same way SQL does. Third-party stores implement the log.
 
+When a payload shape changes, keep the family token and follow
+[event schema versioning](../EVENT_SCHEMA_VERSIONING.md) (expand-contract
+deploy is on [step 8](08-production.md)).
+
 [Glossary](../GLOSSARY.md) · [Overview](../OVERVIEW.md)

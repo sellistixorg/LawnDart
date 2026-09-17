@@ -11,6 +11,15 @@ the typed session (`IEventStore`). InMemory serializes on append — it is
 not an object heap. `IEventSerializer` is `ReadOnlyMemory<byte>` (UTF-8
 JSON by default). Third-party stores implement the log, not the session.
 
+Additive JSON rolls freely: new named properties on the current type do not
+require a `SchemaVersion` bump. A breaking change — renamed meaning, a
+removed required field, or a positional-codec layout change (a reused or
+remapped `[PropertyOrder]` number) — is expand-contract. Ship readers that
+understand `SchemaVersion` N+1 before any process writes N+1. Old binaries
+fail closed on those newer rows (`EventSchemaTooNewException`) and may keep
+appending the version that was current for them. There is no remote
+downcaster and no skip override. See `docs/EVENT_SCHEMA_VERSIONING.md`.
+
 ## Frozen surface
 
 1. **App-facing dispatch** is `ICommandHandler<T>` (HTTP, jobs).

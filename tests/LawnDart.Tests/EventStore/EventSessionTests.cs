@@ -78,7 +78,7 @@ public class EventSessionTests
         {
             UserId = "u-1",
             CommitTimestamp = null,
-            SchemaVersion = 1
+            SchemaVersion = 99
         }, StjEventSerializer.Options);
         var commit = new DateTime(2026, 9, 16, 12, 0, 0, DateTimeKind.Utc);
 
@@ -90,7 +90,7 @@ public class EventSessionTests
             sequencePosition: 42,
             commitTimestamp: commit,
             blob,
-            schemaVersion: 2);
+            schemaVersion: 1);
 
         var sequenced = session.Hydrate(recorded);
 
@@ -100,7 +100,7 @@ public class EventSessionTests
         var hydrated = Assert.IsType<AuthorRegistered>(sequenced.Event);
         Assert.Equal("Ada", hydrated.Name);
         Assert.Equal(commit, sequenced.Metadata.CommitTimestamp);
-        Assert.Equal(2, sequenced.Metadata.SchemaVersion);
+        Assert.Equal(1, sequenced.Metadata.SchemaVersion);
         Assert.Equal("u-1", sequenced.Metadata.UserId);
         Assert.NotNull(sequenced.Metadata.CommitTimestamp);
     }
@@ -143,9 +143,12 @@ public class EventSessionTests
             commitTimestamp: DateTime.UtcNow,
             contentType: "application/avro");
 
-        var ex = Assert.Throws<InvalidOperationException>(() => session.Hydrate(recorded));
+        var ex = Assert.Throws<EventContentTypeMismatchException>(() => session.Hydrate(recorded));
+        Assert.Equal("application/avro", ex.StoredContentType);
+        Assert.Equal("application/json", ex.SessionContentType);
         Assert.Contains("application/avro", ex.Message);
         Assert.DoesNotContain("migration tool", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.IsAssignableFrom<EventHydrationException>(ex);
     }
 
     [Fact]
@@ -161,9 +164,72 @@ public class EventSessionTests
             sequencePosition: 1,
             commitTimestamp: DateTime.UtcNow);
 
-        var ex = Assert.Throws<InvalidOperationException>(() => session.Hydrate(recorded));
+        var ex = Assert.Throws<UnknownEventFamilyException>(() => session.Hydrate(recorded));
+        Assert.Equal("foreign-family", ex.FamilyToken);
         Assert.Contains("foreign-family", ex.Message);
         Assert.DoesNotContain(nameof(RawRecordedEvent), ex.Message, StringComparison.Ordinal);
+        Assert.Contains("skip override", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Hydrate_SchemaVersionNewerThanProcess_ThrowsTooNew()
+    {
+        var catalog = EventTypeCatalog.Materialize([typeof(AuthorRegistered)]);
+        var session = new EventSession(new StjEventSerializer(), catalog);
+        var recorded = new RecordedEvent(
+            "author-registered",
+            Encoding.UTF8.GetBytes("""{"Id":"00000000-0000-0000-0000-000000000000"}"""),
+            "s",
+            streamVersion: 1,
+            sequencePosition: 1,
+            commitTimestamp: DateTime.UtcNow,
+            schemaVersion: 99);
+
+        var ex = Assert.Throws<EventSchemaTooNewException>(() => session.Hydrate(recorded));
+        Assert.Equal("author-registered", ex.FamilyToken);
+        Assert.Equal(99, ex.SchemaVersion);
+        Assert.Equal(1, ex.ProcessCurrentVersion);
+        Assert.Contains("skip override", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Hydrate_KnownFamilyMissingHistoricalType_ThrowsNotInCatalog()
+    {
+        var catalog = EventTypeCatalog.Materialize([typeof(AuthorEvolved)]);
+        var session = new EventSession(new StjEventSerializer(), catalog);
+        var recorded = new RecordedEvent(
+            "author-evolved",
+            Encoding.UTF8.GetBytes("""{"Id":"00000000-0000-0000-0000-000000000000"}"""),
+            "s",
+            streamVersion: 1,
+            sequencePosition: 1,
+            commitTimestamp: DateTime.UtcNow,
+            schemaVersion: 1);
+
+        var ex = Assert.Throws<EventSchemaNotInCatalogException>(() => session.Hydrate(recorded));
+        Assert.Equal("author-evolved", ex.FamilyToken);
+        Assert.Equal(1, ex.SchemaVersion);
+        Assert.Contains("skip override", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Hydrate_MalformedPayload_ThrowsPayloadException()
+    {
+        var catalog = EventTypeCatalog.Materialize([typeof(AuthorRegistered)]);
+        var session = new EventSession(new StjEventSerializer(), catalog);
+        var recorded = new RecordedEvent(
+            "author-registered",
+            Encoding.UTF8.GetBytes("not-json"),
+            "s",
+            streamVersion: 1,
+            sequencePosition: 1,
+            commitTimestamp: DateTime.UtcNow,
+            schemaVersion: 1);
+
+        var ex = Assert.Throws<EventPayloadException>(() => session.Hydrate(recorded));
+        Assert.Equal("author-registered", ex.FamilyToken);
+        Assert.Equal(1, ex.SchemaVersion);
+        Assert.NotNull(ex.InnerException);
     }
 
     [Fact]
@@ -175,7 +241,7 @@ public class EventSessionTests
         var evt = new AuthorRegistered(Guid.NewGuid(), DateTime.UtcNow, "Ada");
 
         var append = session.ToAppendEvent(evt, new EventMetadata { UserId = "u-1" });
-        Assert.Equal(0, catalog.ResolveCalls);
+        Assert.Equal(1, catalog.ResolveCalls);
 
         var recorded = log.Commit("authors-1", append);
         Assert.Equal(0, log.TypeResolves);
@@ -183,14 +249,183 @@ public class EventSessionTests
 
         var sequenced = session.Hydrate(recorded);
 
-        Assert.Equal(1, catalog.ResolveCalls);
+        Assert.Equal(3, catalog.ResolveCalls);
         Assert.Equal(0, log.TypeResolves);
         Assert.IsType<AuthorRegistered>(sequenced.Event);
         Assert.Equal(recorded.CommitTimestamp, sequenced.Metadata.CommitTimestamp);
     }
 
+    [Fact]
+    public void ToAppendEvent_HistoricalType_Throws()
+    {
+        var catalog = EventTypeCatalog.Materialize([typeof(AuthorEvolvedV1), typeof(AuthorEvolved)]);
+        var session = new EventSession(new StjEventSerializer(), catalog);
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            session.ToAppendEvent(new AuthorEvolvedV1(Guid.NewGuid(), DateTime.UtcNow, "Ada")));
+
+        Assert.Contains("historical", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("author-evolved", ex.Message);
+        Assert.Contains(nameof(AuthorEvolved), ex.Message);
+    }
+
+    [Fact]
+    public void ToAppendEvent_CurrentType_StillAppends()
+    {
+        var catalog = EventTypeCatalog.Materialize([typeof(AuthorEvolvedV1), typeof(AuthorEvolved)]);
+        var session = new EventSession(new StjEventSerializer(), catalog);
+
+        var append = session.ToAppendEvent(new AuthorEvolved(Guid.NewGuid(), DateTime.UtcNow, "Ada", "bio"));
+
+        Assert.Equal("author-evolved", append.EventType);
+        Assert.Equal(2, append.SchemaVersion);
+    }
+
+    [Fact]
+    public void ToAppendEvent_stamps_frame_and_metadata_from_declared_version()
+    {
+        var catalog = EventTypeCatalog.Materialize([typeof(AuthorEvolvedV1), typeof(AuthorEvolved)]);
+        var session = new EventSession(new StjEventSerializer(), catalog);
+        var caller = new EventMetadata { SchemaVersion = 99, UserId = "u-1" };
+
+        var append = session.ToAppendEvent(
+            new AuthorEvolved(Guid.NewGuid(), DateTime.UtcNow, "Ada", "bio"),
+            caller);
+
+        Assert.Equal(2, append.SchemaVersion);
+        var stored = JsonSerializer.Deserialize<EventMetadata>(append.Metadata.Span, StjEventSerializer.Options);
+        Assert.Equal(2, stored!.SchemaVersion);
+        Assert.Equal(99, caller.SchemaVersion);
+        Assert.Equal("u-1", stored.UserId);
+    }
+
+    [Fact]
+    public void Hydrate_v1_without_pipeline_throws_missing_upcaster()
+    {
+        var catalog = EventTypeCatalog.Materialize([typeof(AuthorEvolvedV1), typeof(AuthorEvolved)]);
+        var session = new EventSession(new StjEventSerializer(), catalog);
+        var v1 = new AuthorEvolvedV1(Guid.NewGuid(), DateTime.UtcNow, "Ada");
+        var recorded = new RecordedEvent(
+            "author-evolved",
+            new StjEventSerializer().Serialize(v1, v1.GetType()),
+            "authors-1",
+            streamVersion: 1,
+            sequencePosition: 1,
+            commitTimestamp: DateTime.UtcNow,
+            schemaVersion: 1);
+
+        var ex = Assert.Throws<MissingEventUpcasterException>(() => session.Hydrate(recorded));
+        Assert.Equal("author-evolved", ex.FamilyToken);
+        Assert.Equal(1, ex.FromVersion);
+        Assert.Equal(2, ex.ToVersion);
+        Assert.Contains("skip override", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Hydrate_upcaster_throw_is_payload_exception()
+    {
+        var catalog = EventTypeCatalog.Materialize([typeof(AuthorEvolvedV1), typeof(AuthorEvolved)]);
+        var pipeline = EventUpcastPipeline.Materialize(catalog, [typeof(ThrowingAuthorUpcaster)]);
+        var session = new EventSession(new StjEventSerializer(), catalog, pipeline);
+        var v1 = new AuthorEvolvedV1(Guid.NewGuid(), DateTime.UtcNow, "Ada");
+        var recorded = new RecordedEvent(
+            "author-evolved",
+            new StjEventSerializer().Serialize(v1, v1.GetType()),
+            "authors-1",
+            streamVersion: 1,
+            sequencePosition: 1,
+            commitTimestamp: DateTime.UtcNow,
+            schemaVersion: 1);
+
+        var ex = Assert.Throws<EventPayloadException>(() => session.Hydrate(recorded));
+        Assert.Contains("Upcast failed", ex.Message);
+        Assert.IsType<InvalidOperationException>(ex.InnerException);
+    }
+
+    [Fact]
+    public void Hydrate_uses_frame_schema_version_not_metadata_blob()
+    {
+        var catalog = EventTypeCatalog.Materialize([typeof(AuthorEvolvedV1), typeof(AuthorEvolved)]);
+        var pipeline = EventUpcastPipeline.Materialize(catalog, [typeof(AuthorEvolvedV1ToCurrent)]);
+        var session = new EventSession(new StjEventSerializer(), catalog, pipeline);
+        var v1 = new AuthorEvolvedV1(Guid.NewGuid(), DateTime.UtcNow, "Ada");
+        var payload = new StjEventSerializer().Serialize(v1, v1.GetType());
+        var blob = JsonSerializer.SerializeToUtf8Bytes(new EventMetadata
+        {
+            SchemaVersion = 2,
+            UserId = "u-1"
+        }, StjEventSerializer.Options);
+
+        var recorded = new RecordedEvent(
+            "author-evolved",
+            payload,
+            "authors-1",
+            streamVersion: 1,
+            sequencePosition: 1,
+            commitTimestamp: DateTime.UtcNow,
+            blob,
+            schemaVersion: 1);
+
+        var sequenced = session.Hydrate(recorded);
+
+        var current = Assert.IsType<AuthorEvolved>(sequenced.Event);
+        Assert.Equal("Ada", current.Name);
+        Assert.Equal("", current.Bio);
+        Assert.Equal(1, sequenced.Metadata.SchemaVersion);
+        Assert.Equal("u-1", sequenced.Metadata.UserId);
+    }
+
+    [Fact]
+    public void Hydrate_uses_frame_commit_timestamp_not_metadata_blob()
+    {
+        var catalog = MapCatalog.For<AuthorRegistered>("author-registered");
+        var session = new EventSession(new StjEventSerializer(), catalog);
+        var evt = new AuthorRegistered(Guid.NewGuid(), DateTime.UtcNow, "Ada");
+        var blobTime = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var frameTime = new DateTime(2026, 9, 16, 18, 0, 0, DateTimeKind.Utc);
+        var blob = JsonSerializer.SerializeToUtf8Bytes(new EventMetadata
+        {
+            CommitTimestamp = blobTime,
+            SchemaVersion = 7
+        }, StjEventSerializer.Options);
+
+        var recorded = new RecordedEvent(
+            "author-registered",
+            new StjEventSerializer().Serialize(evt, evt.GetType()),
+            "s",
+            streamVersion: 1,
+            sequencePosition: 1,
+            commitTimestamp: frameTime,
+            blob,
+            schemaVersion: 1);
+
+        var sequenced = session.Hydrate(recorded);
+
+        Assert.Equal(frameTime, sequenced.Metadata.CommitTimestamp);
+        Assert.Equal(1, sequenced.Metadata.SchemaVersion);
+        Assert.NotEqual(blobTime, sequenced.Metadata.CommitTimestamp);
+    }
+
     [EventTypeName("author-registered")]
     private sealed record AuthorRegistered(Guid Id, DateTime Timestamp, string Name) : IEvent;
+
+    [EventTypeName("author-evolved", version: 1)]
+    public sealed record AuthorEvolvedV1(Guid Id, DateTime Timestamp, string Name) : IEvent;
+
+    [EventTypeName("author-evolved", version: 2, current: true)]
+    public sealed record AuthorEvolved(Guid Id, DateTime Timestamp, string Name, string Bio) : IEvent;
+
+    public sealed class AuthorEvolvedV1ToCurrent : IEventUpcaster<AuthorEvolved, AuthorEvolvedV1>
+    {
+        public AuthorEvolved Upcast(AuthorEvolvedV1 source)
+            => new(source.Id, source.Timestamp, source.Name, "");
+    }
+
+    public sealed class ThrowingAuthorUpcaster : IEventUpcaster<AuthorEvolved, AuthorEvolvedV1>
+    {
+        public AuthorEvolved Upcast(AuthorEvolvedV1 source)
+            => throw new InvalidOperationException("upcaster boom");
+    }
 
     private sealed class StjEventSerializer : IEventSerializer
     {

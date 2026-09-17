@@ -10,7 +10,25 @@ changes to the public API.
 
 ## [Unreleased]
 
-## [0.4.0-alpha.2] — 2026-09-16
+## [0.4.0-alpha.4] — 2026-09-16
+
+### Added
+
+- `EventTypeCatalog.Materialize` builds a scoped immutable catalog. Typed resolve is family token plus `SchemaVersion`. `[EventTypeName(token, version: n, current: false)]` marks a historical or current schema. One-arg `[EventTypeName("token")]` is still version 1 and implicitly current when it is the only type for that family.
+- [Event schema versioning](docs/EVENT_SCHEMA_VERSIONING.md) is the consumer guide: family tokens, first-class `SchemaVersion`, upcast on read, the fail-closed matrix, expand-contract deploy, and how to implement `IEventLog`.
+- Typed reads throw dedicated `EventHydrationException` types when the stored version is newer than this process, the family is unknown, a historical type is missing, the content-type does not match, or the payload will not deserialize. Log and raw copy paths still return the frame. Lightweight projections back off five seconds on a stuck sequence; there is no skip override.
+- `IEventUpcaster<TTo, TFrom>` and `WithUpcasters` register an upcast chain (v1 → v2 → v3). Warmup fails if any historical version cannot reach current. There is no downcast API.
+
+### Changed
+
+- `WithEventTypes` registers that catalog per bounded context. Two contexts do not share a mutable global catalog. `EventTypeNameResolver` remains a process-wide compatibility wrapper.
+- Typed append rejects a historical CLR type for a family the catalog already knows. This process writes only its current type. The log still accepts frames from older binaries.
+- Typed append stamps `SchemaVersion` on the log frame from the current CLR type and mirrors it onto `EventMetadata`. Hydrate reads the frame, not the metadata blob. Missing or zero version is `1`.
+- Typed hydrate deserializes the stored version's CLR type, then upcasts to this process's current type. A missing hop throws `MissingEventUpcasterException`. The outbox publisher uses the same `EventSession` path. Log and raw copy still return the stored frame.
+- The library `Book` aggregate throws `DomainException` for rule violations. Learning-path and testing docs assert `ThenThrows<DomainException>()`.
+- Docs no longer mention the removed `IMessage` marker. Commands are `ICommand`; events are `IEvent`.
+
+## [0.4.0-alpha.3] — 2026-09-16
 
 ### Added
 

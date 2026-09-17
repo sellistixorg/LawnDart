@@ -38,9 +38,9 @@ public sealed class Book : AggregateRoot<BookState>
     public void Handle(BorrowBookCommand cmd)
     {
         if (!State.Exists)
-            throw new InvalidOperationException("Book does not exist.");
+            throw new DomainException("Book does not exist.");
         if (State.OnLoan)
-            throw new InvalidOperationException("Book is already on loan.");
+            throw new DomainException("Book is already on loan.");
 
         Apply(new BookBorrowed(Guid.NewGuid(), DateTime.UtcNow, cmd.BookId, cmd.MemberName));
     }
@@ -101,5 +101,14 @@ projector (`LibraryProjector` in `samples/Library.Domain/Projections`).
 Do not implement `IProjector` unless you are writing your own
 fold (`IProjector` is experimental). Multi-stream Lightweight views
 implement `IMultiStreamEntityResolver`.
+
+Additive JSON rolls freely: new named properties on the current type do not
+require a `SchemaVersion` bump. A breaking change — renamed meaning, a
+removed required field, or a positional-codec layout change (a reused or
+remapped `[PropertyOrder]` number) — is expand-contract. Ship readers that
+understand `SchemaVersion` N+1 before any process writes N+1. Old binaries
+fail closed on those newer rows (`EventSchemaTooNewException`) and may keep
+appending the version that was current for them. There is no remote
+downcaster and no skip override. See `docs/EVENT_SCHEMA_VERSIONING.md`.
 
 See `docs/STREAM_IDS.md`, `docs/TAGGING.md`, `docs/DCB_PATTERNS.md`.

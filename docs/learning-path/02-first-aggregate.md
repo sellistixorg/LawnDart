@@ -51,7 +51,7 @@ public sealed class Book : AggregateRoot<BookState>
     public void Handle(AddBookCommand cmd)
     {
         if (State.Exists)
-            throw new InvalidOperationException("Book already exists.");
+            throw new DomainException("Book already exists.");
 
         Apply(new BookAdded(Guid.NewGuid(), DateTime.UtcNow, cmd.BookId, cmd.Title, cmd.Isbn));
     }
@@ -59,9 +59,9 @@ public sealed class Book : AggregateRoot<BookState>
     public void Handle(BorrowBookCommand cmd)
     {
         if (!State.Exists)
-            throw new InvalidOperationException("Book does not exist.");
+            throw new DomainException("Book does not exist.");
         if (State.OnLoan)
-            throw new InvalidOperationException("Book is already on loan.");
+            throw new DomainException("Book is already on loan.");
 
         Apply(new BookBorrowed(Guid.NewGuid(), DateTime.UtcNow, cmd.BookId, cmd.MemberName));
     }
@@ -69,9 +69,9 @@ public sealed class Book : AggregateRoot<BookState>
     public void Handle(ReturnBookCommand cmd)
     {
         if (!State.Exists)
-            throw new InvalidOperationException("Book does not exist.");
+            throw new DomainException("Book does not exist.");
         if (!State.OnLoan)
-            throw new InvalidOperationException("Book is not on loan.");
+            throw new DomainException("Book is not on loan.");
 
         Apply(new BookReturned(Guid.NewGuid(), DateTime.UtcNow, cmd.BookId));
     }
@@ -99,8 +99,13 @@ public sealed class Book : AggregateRoot<BookState>
 }
 ```
 
+Rule violations throw `DomainException`. HTTP command endpoints map that
+type to `422 Unprocessable Entity`.
+
 Keep `Id` and `Timestamp` first on events if you follow the Eventhesis
 field-order convention. Every concrete `IEvent` needs `[EventTypeName]`.
+The token is a family name; versioning is
+[Event schema versioning](../EVENT_SCHEMA_VERSIONING.md).
 `BookState` is decision state only — no title, no ISBN. Those live on
 `BookCatalogView` ([step 4](04-reading-state.md)).
 

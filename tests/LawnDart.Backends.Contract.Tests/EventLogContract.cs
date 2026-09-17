@@ -117,7 +117,7 @@ internal static class EventLogContract
         var adapter = new EventStoreAdapter(
             log,
             new EventSession(new JsonEventSerializer(), MapCatalog.For<ContractTick>("log-contract.tick")));
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => adapter.ReadStreamAsync(streamId));
+        var ex = await Assert.ThrowsAsync<UnknownEventFamilyException>(() => adapter.ReadStreamAsync(streamId));
         Assert.Contains(ForeignFamily, ex.Message);
     }
 
@@ -134,7 +134,7 @@ internal static class EventLogContract
         var adapter = new EventStoreAdapter(
             log,
             new EventSession(new JsonEventSerializer(), MapCatalog.For<ContractTick>("log-contract.tick")));
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => adapter.ReadStreamAsync(streamId));
+        var ex = await Assert.ThrowsAsync<EventContentTypeMismatchException>(() => adapter.ReadStreamAsync(streamId));
         Assert.Contains("application/x-custom", ex.Message);
         Assert.DoesNotContain("migration tool", ex.Message, StringComparison.OrdinalIgnoreCase);
     }

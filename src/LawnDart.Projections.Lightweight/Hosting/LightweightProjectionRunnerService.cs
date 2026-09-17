@@ -57,6 +57,14 @@ namespace LawnDart.Projections.Lightweight.Hosting;
 /// advance the cursor.
 /// </para>
 /// <para>
+/// <strong>Fail-closed typed reads</strong><br/>
+/// <see cref="EventHydrationException"/> (newer schema, unknown family, missing
+/// historical type, content-type mismatch, bad payload, missing upcaster) does not
+/// skip the sequence. The runner logs the stuck position and waits
+/// <see cref="FailClosedBackoff"/>. There is no runtime override; deploy the
+/// missing type or upcaster.
+/// </para>
+/// <para>
 /// <strong>Checkpointing</strong><br/>
 /// After processing every <see cref="LightweightProjectionOptions.CheckpointInterval"/> events
 /// all dirty views are written to <see cref="IViewStore"/> first, then the global checkpoint
@@ -75,6 +83,12 @@ namespace LawnDart.Projections.Lightweight.Hosting;
 /// </remarks>
 public sealed class LightweightProjectionRunnerService : BackgroundService
 {
+    /// <summary>
+    /// Delay after a typed fail-closed read so a stuck sequence does not hot-loop.
+    /// There is no skip override; deploy the missing type or upcaster.
+    /// </summary>
+    internal static readonly TimeSpan FailClosedBackoff = TimeSpan.FromSeconds(5);
+
     private readonly ProjectionRegistration _registration;
     private readonly IEventStore _eventStore;
     private readonly IViewStore _viewStore;
@@ -598,6 +612,14 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
             {
                 break;
             }
+            catch (EventHydrationException ex)
+            {
+                _logger.LogError(ex,
+                    "[{Projection}] Fail-closed event at or after sequence {Sequence}; backing off {Backoff}. " +
+                    "Deploy the missing type or upcaster. There is no skip override.",
+                    DisplayName, lastPosition + 1, FailClosedBackoff);
+                await Task.Delay(FailClosedBackoff, stoppingToken);
+            }
             catch (Exception ex)
             {
                 // Subscribe drain updates the cursor before a flush can throw. Keep that
@@ -607,9 +629,9 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
                 eventsSinceCheckpoint = Math.Max(eventsSinceCheckpoint, cursor.EventsSinceCheckpoint);
                 _lastAppliedSequence = lastPosition;
                 _logger.LogError(ex,
-                    "[{Projection}] Error in poll loop; backing off 5 s",
-                    DisplayName);
-                await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+                    "[{Projection}] Error in poll loop; backing off {Backoff}",
+                    DisplayName, FailClosedBackoff);
+                await Task.Delay(FailClosedBackoff, stoppingToken);
             }
         }
 
@@ -1578,6 +1600,10 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
             }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (EventHydrationException)
         {
             throw;
         }

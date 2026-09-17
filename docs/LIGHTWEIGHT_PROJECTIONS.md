@@ -40,7 +40,9 @@ hook (Flywheel and other Lightweight hosts).
 
 `IProjector` is experimental and unused (`ProjectAsync`). This host does
 not discover or call it. You may hand-roll a projector against
-`IEventStore` instead of using Lightweight.
+`IEventStore` instead of using Lightweight. Live poll, rebuild, and
+time-travel replay use that store's typed session, so historical rows
+arrive as the current CLR type after upcast.
 
 ## Checkpoints
 

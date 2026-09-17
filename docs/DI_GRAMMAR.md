@@ -11,6 +11,7 @@ var ctx = services.AddBoundedContext("default")
     // or .UseSqlServer(o => { o.ConnectionString = cs; })
     .WithCommandHandlers<MyHandler>()
     .WithEventTypes<MyEvent>()
+    .WithUpcasters<MyUpcaster>() // when a family has historical types
     .WithProjections([typeof(MyProjection).Assembly]);
 
 services.AddLawnDartHttpCommands(typeof(MyHandler).Assembly);
@@ -27,6 +28,7 @@ app.MapProjectionQueries("default");
 | `UseInMemory` / `UseSqlServer` | Event store + repositories for that name. `UseInMemory` also registers `ICommandDispatcher` (`ContextAwareCommandDispatcher`). |
 | `WithCommandHandlers<TMarker>()` | The only handler registrar. Scans `ICommandHandler<T>` in the marker's assembly and registers `ICommandDispatcher`. The `"default"` context also gets an unkeyed handler alias built through `ContextServiceProvider`. |
 | `WithEventTypes<TMarker>()` | Event catalog for that assembly. A scan that finds no `IEvent` types fails at warmup. |
+| `WithUpcasters<TMarker>()` | Upcast hops for that assembly. Required when a family has historical types. Incomplete chain fails at warmup. |
 | `WithProjections` | Lightweight projection runners (keyed) |
 | `MapProjectionQueries(name)` | HTTP GETs for the keyed projection path |
 | `AddLawnDartHttpCommands` / `MapLawnDartCommands` | HTTP routing and authorization only — not handler registration |

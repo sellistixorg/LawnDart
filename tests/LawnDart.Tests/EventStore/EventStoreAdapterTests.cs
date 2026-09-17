@@ -91,7 +91,7 @@ public class EventStoreAdapterTests
         var first = await handle.Events.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
         Assert.IsType<AuthorRegistered>(first.Event);
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        var ex = await Assert.ThrowsAsync<UnknownEventFamilyException>(async () =>
         {
             await foreach (var _ in handle.Events.ReadAllAsync())
             {

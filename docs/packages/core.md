@@ -7,8 +7,8 @@ Take it first. It does not include an event-store implementation.
 
 ## What you get
 
-- `ICommand`, `IEvent`, `IState` — no empty `IMessage` marker
-- `[EventTypeName]` catalog tokens and `WithEventTypes` / `EventTypeNameResolver`
+- `ICommand`, `IEvent`, `IState`
+- `[EventTypeName]` family tokens, `WithEventTypes` / `EventTypeCatalog.Materialize`, and `WithUpcasters` / `IEventUpcaster<TTo, TFrom>`. See [Event schema versioning](../EVENT_SCHEMA_VERSIONING.md).
 - `EventMetadata` / `CommandMetadata` (`TraceId`, `SpanId`, correlation, causation)
 - `ICommandDispatcher` — routes reactor/processor commands to `ICommandHandler<T>` (same `LawnDart.Messaging` namespace as `MessageContext`)
 - `AggregateRoot<TState>`, `DcbEntity<TState>`, and their repository interfaces
@@ -36,8 +36,9 @@ services.AddBoundedContext("default")
 
 `AddBoundedContext` only starts the named context. Pair it with
 `UseInMemory()` or `UseSqlServer(...)` from an EventSourcing package.
-`WithEventTypes` registers the event catalog (required `[EventTypeName]`,
-unique tokens). In-memory GWT may skip it; writes still need the attribute.
+`WithEventTypes` materializes a scoped catalog (required `[EventTypeName]`;
+one-arg is version 1 and implicitly current when it is the only type for
+that family). In-memory GWT may skip it; writes still need the attribute.
 
 ## Portable store contract
 

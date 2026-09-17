@@ -88,6 +88,10 @@ public static class LawnDartSqlServerExtensions
         services.AddKeyedSingleton<IEventStore>(contextName, (sp, key) =>
         {
             var serializer  = sp.GetRequiredService<IEventSerializer>();
+            var catalog     = sp.GetKeyedService<IEventTypeCatalog>(contextName)
+                ?? EventTypeCatalog.Shared;
+            var pipeline    = sp.GetKeyedService<EventUpcastPipeline>(contextName);
+            var session     = new EventSession(serializer, catalog, pipeline);
             var outbox      = options.EnableOutbox
                 ? sp.GetRequiredKeyedService<IOutboxWriter>(key!)
                 : null;
@@ -100,7 +104,8 @@ public static class LawnDartSqlServerExtensions
                 options.EnableStreamRegistry && options.AutoMaintainRegistry,
                 options,
                 outbox,
-                logger);
+                logger,
+                session);
         });
 
         services.AddKeyedSingleton<IEventLog>(contextName,
