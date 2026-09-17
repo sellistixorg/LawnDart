@@ -1,8 +1,9 @@
 namespace LawnDart.Serialization;
 
 /// <summary>
-/// Session payload codec. The durable log stores these bytes plus
-/// <see cref="ContentType"/>; it does not know CLR event types.
+/// Session payload codec. The durable log stores these bytes plus the
+/// <c>EventCodec</c> id for <see cref="ContentType"/>; it does not know CLR
+/// event types.
 /// </summary>
 /// <remarks>
 /// One codec per session. The shipped default is UTF-8 JSON
@@ -13,9 +14,10 @@ namespace LawnDart.Serialization;
 public interface IEventSerializer
 {
     /// <summary>
-    /// Content type identifier (e.g. <c>application/json</c>,
+    /// Plugin identity (e.g. <c>application/json</c>,
     /// <c>application/protobuf</c>, <c>application/avro</c>).
-    /// Stored on the recorded event.
+    /// Mapped to a frame <c>byte</c> via <c>EventCodec.IdFor</c>. Not stored
+    /// as a MIME string on the log.
     /// </summary>
     string ContentType { get; }
 

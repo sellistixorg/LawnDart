@@ -107,9 +107,7 @@ public sealed class MessageTransportOutboxPublisher : IOutboxPublisher
             commitTimestamp: message.CreatedAt,
             metadataBytes,
             message.SchemaVersion,
-            string.IsNullOrWhiteSpace(message.ContentType)
-                ? AppendEvent.DefaultContentType
-                : message.ContentType);
+            message.CodecId);
 
         var sequenced = _session.Hydrate(recorded);
         var metadata = TryReadMetadata(message.Metadata);
@@ -164,7 +162,7 @@ public sealed class MessageTransportOutboxPublisher : IOutboxPublisher
 
         public OptionsEventSerializer(JsonSerializerOptions options) => _options = options;
 
-        public string ContentType => AppendEvent.DefaultContentType;
+        public string ContentType => EventCodec.JsonMime;
 
         public ReadOnlyMemory<byte> Serialize(object obj, Type type)
             => JsonSerializer.SerializeToUtf8Bytes(obj, type, _options);

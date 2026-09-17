@@ -93,9 +93,7 @@ public class SqlServerOutboxWriter : IOutboxWriter
         command.Parameters.Add("@SchemaVersion", SqlDbType.Int).Value =
             EventLogBuffers.NormalizeSchemaVersion(message.SchemaVersion);
         command.Parameters.Add("@ContentType", SqlDbType.NVarChar, 100).Value =
-            string.IsNullOrWhiteSpace(message.ContentType)
-                ? AppendEvent.DefaultContentType
-                : message.ContentType;
+            EventCodec.RequireMime(message.CodecId);
         command.Parameters.Add("@Payload", SqlDbType.NVarChar, -1).Value = message.Payload;
         command.Parameters.Add("@Metadata", SqlDbType.NVarChar, -1).Value = message.Metadata;
         command.Parameters.Add("@CreatedAt", SqlDbType.DateTime2).Value = message.CreatedAt;
@@ -166,17 +164,17 @@ public class SqlServerOutboxWriter : IOutboxWriter
             ? 1
             : EventLogBuffers.NormalizeSchemaVersion(reader.GetInt32(schemaOrdinal));
         var contentType = reader.IsDBNull(contentOrdinal)
-            ? AppendEvent.DefaultContentType
+            ? EventCodec.JsonMime
             : reader.GetString(contentOrdinal);
         if (string.IsNullOrWhiteSpace(contentType))
-            contentType = AppendEvent.DefaultContentType;
+            contentType = EventCodec.JsonMime;
 
         return new()
         {
             Id = reader.GetGuid(reader.GetOrdinal("Id")),
             EventType = reader.GetString(reader.GetOrdinal("EventType")),
             SchemaVersion = schemaVersion,
-            ContentType = contentType,
+            CodecId = EventCodec.IdFor(contentType),
             Payload = reader.GetString(reader.GetOrdinal("Payload")),
             Metadata = reader.GetString(reader.GetOrdinal("Metadata")),
             CreatedAt = reader.GetDateTime(reader.GetOrdinal("CreatedAt")),

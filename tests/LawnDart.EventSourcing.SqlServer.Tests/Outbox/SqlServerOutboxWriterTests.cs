@@ -321,7 +321,7 @@ public class SqlServerOutboxWriterTests : IAsyncLifetime
             Id = Guid.NewGuid(),
             EventType = "family.order-placed",
             SchemaVersion = 2,
-            ContentType = "application/json",
+            CodecId = EventCodec.Json,
             Payload = """{"Kind":"v2"}""",
             Metadata = "{}",
             CreatedAt = DateTime.UtcNow,
@@ -333,7 +333,7 @@ public class SqlServerOutboxWriterTests : IAsyncLifetime
 
         var read = Assert.Single(await _writer.GetUnprocessedAsync(10));
         Assert.Equal(2, read.SchemaVersion);
-        Assert.Equal(AppendEvent.DefaultContentType, read.ContentType);
+        Assert.Equal(EventCodec.Json, read.CodecId);
         Assert.Equal("family.order-placed", read.EventType);
     }
 
@@ -389,7 +389,7 @@ public class SqlServerOutboxWriterTests : IAsyncLifetime
         var read = Assert.Single(await legacyWriter.GetUnprocessedAsync(10));
         Assert.Equal(id, read.Id);
         Assert.Equal(1, read.SchemaVersion);
-        Assert.Equal(AppendEvent.DefaultContentType, read.ContentType);
+        Assert.Equal(EventCodec.Json, read.CodecId);
         Assert.Equal("legacy.event", read.EventType);
     }
 }

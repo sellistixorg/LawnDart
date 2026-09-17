@@ -10,3 +10,40 @@
 *REMOVED*LawnDart.Patterns.StateTransformation.IStateTransformer<TInput, TOutput>.TransformAsync(TInput input, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TOutput>!
 *REMOVED*LawnDart.Serialization.IEventSerializer.Deserialize(string! data, System.Type! type) -> object!
 *REMOVED*LawnDart.Serialization.IEventSerializer.Serialize(object! obj, System.Type! type) -> string!
+*REMOVED*LawnDart.EventStore.AppendEvent.AppendEvent(string! eventType, System.ReadOnlyMemory<byte> payload, System.ReadOnlyMemory<byte> metadata = default(System.ReadOnlyMemory<byte>), int schemaVersion = 1, string! contentType = "application/json", System.Collections.Generic.IEnumerable<string!>? tags = null) -> void
+*REMOVED*LawnDart.EventStore.AppendEvent.ContentType.get -> string!
+*REMOVED*const LawnDart.EventStore.AppendEvent.DefaultContentType = "application/json" -> string!
+*REMOVED*LawnDart.EventStore.EventContentTypeMismatchException.EventContentTypeMismatchException(string! storedContentType, string! sessionContentType) -> void
+*REMOVED*LawnDart.EventStore.EventContentTypeMismatchException.SessionContentType.get -> string!
+*REMOVED*LawnDart.EventStore.EventContentTypeMismatchException.StoredContentType.get -> string!
+*REMOVED*LawnDart.EventStore.RecordedEvent.ContentType.get -> string!
+*REMOVED*LawnDart.EventStore.RecordedEvent.RecordedEvent(string! eventType, System.ReadOnlyMemory<byte> payload, string! streamId, long streamVersion, long sequencePosition, System.DateTime commitTimestamp, System.ReadOnlyMemory<byte> metadata = default(System.ReadOnlyMemory<byte>), int schemaVersion = 1, string! contentType = "application/json", System.Collections.Generic.IEnumerable<string!>? tags = null) -> void
+*REMOVED*LawnDart.Outbox.OutboxMessage.ContentType.get -> string!
+*REMOVED*LawnDart.Outbox.OutboxMessage.ContentType.init -> void
+LawnDart.EventStore.AppendEvent.AppendEvent(string! eventType, System.ReadOnlyMemory<byte> payload, System.ReadOnlyMemory<byte> metadata = default(System.ReadOnlyMemory<byte>), int schemaVersion = 1, byte codecId = 1, System.Collections.Generic.IEnumerable<string!>? tags = null) -> void
+LawnDart.EventStore.AppendEvent.CodecId.get -> byte
+LawnDart.EventStore.EventCodec
+const LawnDart.EventStore.EventCodec.Avro = 3 -> byte
+const LawnDart.EventStore.EventCodec.AvroMime = "application/avro" -> string!
+static LawnDart.EventStore.EventCodec.IdFor(string! mime) -> byte
+const LawnDart.EventStore.EventCodec.Json = 1 -> byte
+const LawnDart.EventStore.EventCodec.JsonMime = "application/json" -> string!
+const LawnDart.EventStore.EventCodec.MemoryPack = 2 -> byte
+const LawnDart.EventStore.EventCodec.MemoryPackMime = "application/vnd.lawndart.memorypack" -> string!
+const LawnDart.EventStore.EventCodec.Opaque = 255 -> byte
+const LawnDart.EventStore.EventCodec.Protobuf = 4 -> byte
+const LawnDart.EventStore.EventCodec.ProtobufMime = "application/protobuf" -> string!
+static LawnDart.EventStore.EventCodec.Register(byte id, string! mime) -> void
+static LawnDart.EventStore.EventCodec.TryGetMime(byte id, out string? mime) -> bool
+const LawnDart.EventStore.EventCodec.UserRangeEnd = 254 -> byte
+const LawnDart.EventStore.EventCodec.UserRangeStart = 64 -> byte
+LawnDart.EventStore.EventContentTypeMismatchException.EventContentTypeMismatchException(byte storedCodecId, byte sessionCodecId) -> void
+LawnDart.EventStore.EventContentTypeMismatchException.SessionCodecId.get -> byte
+LawnDart.EventStore.EventContentTypeMismatchException.StoredCodecId.get -> byte
+LawnDart.EventStore.RecordedEvent.CodecId.get -> byte
+LawnDart.EventStore.RecordedEvent.RecordedEvent(string! eventType, System.ReadOnlyMemory<byte> payload, string! streamId, long streamVersion, long sequencePosition, System.DateTime commitTimestamp, System.ReadOnlyMemory<byte> metadata = default(System.ReadOnlyMemory<byte>), int schemaVersion = 1, byte codecId = 1, System.Collections.Generic.IEnumerable<string!>? tags = null) -> void
+LawnDart.EventStore.UnregisteredEventCodecException
+LawnDart.EventStore.UnregisteredEventCodecException.Mime.get -> string!
+LawnDart.EventStore.UnregisteredEventCodecException.UnregisteredEventCodecException(string! mime) -> void
+LawnDart.Outbox.OutboxMessage.CodecId.get -> byte
+LawnDart.Outbox.OutboxMessage.CodecId.init -> void

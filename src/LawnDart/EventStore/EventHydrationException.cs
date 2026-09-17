@@ -84,23 +84,24 @@ public sealed class EventSchemaNotInCatalogException : EventHydrationException
 }
 
 /// <summary>
-/// Stored payload content-type does not match this session's codec.
+/// Stored payload codec id does not match this session's codec.
 /// </summary>
 public sealed class EventContentTypeMismatchException : EventHydrationException
 {
-    /// <summary>Content-type on the recorded frame.</summary>
-    public string StoredContentType { get; }
+    /// <summary>Codec id on the recorded frame.</summary>
+    public byte StoredCodecId { get; }
 
-    /// <summary>Content-type of the session codec.</summary>
-    public string SessionContentType { get; }
+    /// <summary>Codec id of the session serializer.</summary>
+    public byte SessionCodecId { get; }
 
-    /// <summary>Creates the exception.</summary>
-    public EventContentTypeMismatchException(string storedContentType, string sessionContentType)
+    /// <summary>Creates the exception. The message formats MIMEs through <see cref="EventCodec"/>.</summary>
+    public EventContentTypeMismatchException(byte storedCodecId, byte sessionCodecId)
         : base(
-            $"Event stored with ContentType '{storedContentType}' but current serializer uses '{sessionContentType}'.")
+            $"Event stored with codec id {storedCodecId} ({EventCodec.Describe(storedCodecId)}) " +
+            $"but current serializer uses codec id {sessionCodecId} ({EventCodec.Describe(sessionCodecId)}).")
     {
-        StoredContentType = storedContentType;
-        SessionContentType = sessionContentType;
+        StoredCodecId = storedCodecId;
+        SessionCodecId = sessionCodecId;
     }
 }
 

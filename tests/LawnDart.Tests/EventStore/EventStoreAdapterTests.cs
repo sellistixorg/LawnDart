@@ -34,7 +34,7 @@ public class EventStoreAdapterTests
             commitTimestamp: new DateTime(2026, 9, 16, 12, 0, 0, DateTimeKind.Utc),
             envelope.Metadata,
             envelope.SchemaVersion,
-            envelope.ContentType,
+            envelope.CodecId,
             envelope.Tags));
         logHandle.Complete();
 
@@ -71,7 +71,7 @@ public class EventStoreAdapterTests
             commitTimestamp: DateTime.UtcNow,
             envelope.Metadata,
             envelope.SchemaVersion,
-            envelope.ContentType,
+            envelope.CodecId,
             envelope.Tags));
         logHandle.Write(new RecordedEvent(
             "no-such-family",
@@ -82,7 +82,7 @@ public class EventStoreAdapterTests
             commitTimestamp: DateTime.UtcNow,
             Encoding.UTF8.GetBytes("{}"),
             schemaVersion: 1,
-            contentType: "application/json"));
+            codecId: EventCodec.Json));
         logHandle.Complete();
 
         var adapter = new EventStoreAdapter(log, session, (IEventLogSubscriptions)log);

@@ -9,7 +9,7 @@ current type. `GetName` returns the family token, not `author-registered.v2`.
 
 `IEventLog` is the durable log: append `AppendEvent`, read `RecordedEvent`.
 Each frame carries the family token, first-class `SchemaVersion`,
-`ContentType`, payload bytes, UTF-8 JSON metadata bytes, tags, stream
+`CodecId`, payload bytes, UTF-8 JSON metadata bytes, tags, stream
 id/version, global sequence, and commit timestamp. The log does not
 resolve CLR types.
 
@@ -27,7 +27,7 @@ run a server-side migrator.
 
 A third-party backend implements `IEventLog`, not `IEventStore`.
 
-- Append `AppendEvent`: family token, `SchemaVersion`, `ContentType`,
+- Append `AppendEvent`: family token, `SchemaVersion`, `CodecId`,
   payload bytes, UTF-8 JSON metadata bytes, tags. Snapshot payload and
   metadata; do not retain the caller's arrays.
 - Return `RecordedEvent` with store-assigned stream id, stream version,
@@ -159,7 +159,7 @@ frame.
 | Stored `SchemaVersion` newer than this process's current for a known family | `EventSchemaTooNewException` |
 | Unknown family token | `UnknownEventFamilyException` |
 | Known family, historical CLR type not in this catalog | `EventSchemaNotInCatalogException` |
-| Stored content-type ≠ session codec | `EventContentTypeMismatchException` |
+| Stored codec id ≠ session codec | `EventContentTypeMismatchException` |
 | Payload will not deserialize as the stored type | `EventPayloadException` |
 | Historical type present, no upcaster to current | `MissingEventUpcasterException` |
 

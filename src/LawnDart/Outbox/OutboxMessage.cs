@@ -28,11 +28,10 @@ public class OutboxMessage
     public int SchemaVersion { get; init; } = 1;
 
     /// <summary>
-    /// Payload content type copied from <c>AppendEvent</c>. Default
-    /// <c>application/json</c>. Missing or empty on old rows is treated as
-    /// <c>application/json</c>.
+    /// Payload codec id copied from <c>AppendEvent</c>. Default
+    /// <see cref="EventCodec.Json"/>. MIME is not stored on the message.
     /// </summary>
-    public string ContentType { get; init; } = AppendEvent.DefaultContentType;
+    public byte CodecId { get; init; } = EventCodec.Json;
     
     /// <summary>
     /// Serialized event payload (JSON).

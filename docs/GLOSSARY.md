@@ -119,7 +119,7 @@ Three times on the envelope, do not mix them:
 
 **Event log**  
 `IEventLog`: schema-dumb durability. Append `AppendEvent`, read `RecordedEvent`.
-Family token, `SchemaVersion`, `ContentType`, payload bytes, metadata JSON
+Family token, `SchemaVersion`, `CodecId`, payload bytes, metadata JSON
 bytes, tags, stream id/version, global sequence, commit timestamp. No CLR
 event type. Third-party stores implement this. A process that has **not**
 registered event CLR types still appends, filters, and copies frames here.

@@ -10,6 +10,10 @@ changes to the public API.
 
 ## [Unreleased]
 
+### Changed
+
+- Log frames (`AppendEvent`, `RecordedEvent`, `OutboxMessage`) store a codec id (`byte`) instead of a MIME string. `IEventSerializer.ContentType` is still the plugin name; `EventCodec` maps it to the id. `0` is rejected; `255` is opaque and does not hydrate on the typed path.
+
 ## [0.4.0-alpha.6] — 2026-09-17
 
 ### Added

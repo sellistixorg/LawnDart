@@ -651,7 +651,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
             DateTime.UtcNow,
             envelope.Metadata,
             envelope.SchemaVersion,
-            envelope.ContentType,
+            envelope.CodecId,
             envelope.Tags);
     }
 

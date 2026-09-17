@@ -719,6 +719,21 @@ public class InMemoryEventStoreTests
         Assert.Equal(1, ex.ProcessCurrentVersion);
     }
 
+    [Fact]
+    public async Task Log_persists_codec_id_without_a_mime_literal()
+    {
+        var store = new InMemoryEventStore();
+        await ((IEventLog)store).AppendAsync(
+            "codec-r2",
+            [new AppendEvent("family", new byte[] { 1 }, codecId: EventCodec.MemoryPack)]);
+
+        var recorded = Assert.Single(await ((IEventLog)store).ReadStreamAsync("codec-r2"));
+        Assert.Equal(EventCodec.MemoryPack, recorded.CodecId);
+        Assert.Equal(typeof(byte), recorded.CodecId.GetType());
+        Assert.DoesNotContain("application/vnd.lawndart.memorypack", recorded.CodecId.ToString());
+        Assert.DoesNotContain("application/json", recorded.CodecId.ToString());
+    }
+
     [EventTypeName("tests.inmemory.test-event")]
     private record TestEvent(Guid Id, DateTime Timestamp) : IEvent;
     [EventTypeName("tests.inmemory.another-event")]

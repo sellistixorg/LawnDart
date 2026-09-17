@@ -277,7 +277,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                 parameters.Add(new SqlParameter(eventDataParam, DBNull.Value));
                 parameters.Add(PayloadParameter(eventPayloadParam, envelope.Payload));
                 parameters.Add(new SqlParameter(schemaVersionParam, envelope.SchemaVersion));
-                parameters.Add(new SqlParameter(contentTypeParam, envelope.ContentType));
+                parameters.Add(new SqlParameter(contentTypeParam, EventCodec.RequireMime(envelope.CodecId)));
                 parameters.Add(new SqlParameter(tagsParam, tagsJson));
                 parameters.Add(new SqlParameter(metadataParam, (object?)metadataText ?? DBNull.Value));
                 parameters.Add(new SqlParameter(timestampParam, commitTimestamp));
@@ -354,10 +354,11 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         var payload = CoalescePayload(reader);
 
         var contentType = reader.IsDBNull(reader.GetOrdinal("ContentType"))
-            ? AppendEvent.DefaultContentType
+            ? EventCodec.JsonMime
             : reader.GetString("ContentType");
         if (string.IsNullOrWhiteSpace(contentType))
-            contentType = AppendEvent.DefaultContentType;
+            contentType = EventCodec.JsonMime;
+        var codecId = EventCodec.IdFor(contentType);
 
         var schemaVersion = 1;
         var schemaOrdinal = reader.GetOrdinal("SchemaVersion");
@@ -385,7 +386,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
             commitTimestamp,
             metadataBytes,
             schemaVersion,
-            contentType,
+            codecId,
             tags);
     }
 
@@ -1332,7 +1333,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                 Id = Guid.NewGuid(),
                 EventType = envelope.EventType,
                 SchemaVersion = envelope.SchemaVersion,
-                ContentType = envelope.ContentType,
+                CodecId = envelope.CodecId,
                 Payload = payloadText,
                 Metadata = metadataText,
                 StreamId = streamId,
@@ -1356,7 +1357,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
             command.Parameters.AddWithValue("@Id", outboxMessage.Id);
             command.Parameters.AddWithValue("@EventType", outboxMessage.EventType);
             command.Parameters.AddWithValue("@SchemaVersion", outboxMessage.SchemaVersion);
-            command.Parameters.AddWithValue("@ContentType", outboxMessage.ContentType);
+            command.Parameters.AddWithValue("@ContentType", EventCodec.RequireMime(outboxMessage.CodecId));
             command.Parameters.AddWithValue("@Payload", outboxMessage.Payload);
             command.Parameters.AddWithValue("@Metadata", outboxMessage.Metadata);
             command.Parameters.AddWithValue("@CreatedAt", outboxMessage.CreatedAt);

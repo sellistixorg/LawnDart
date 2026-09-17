@@ -776,7 +776,7 @@ public class SqlServerEventStoreTests : IAsyncLifetime
         var recorded = Assert.Single(await log.ReadStreamAsync(streamId));
         Assert.Equal("foreign-family", recorded.EventType);
         Assert.Equal(1, recorded.SchemaVersion);
-        Assert.Equal("application/json", recorded.ContentType);
+        Assert.Equal(EventCodec.Json, recorded.CodecId);
         Assert.Equal(payload, recorded.Payload.ToArray());
         Assert.Equal(metadata, recorded.Metadata.ToArray());
 

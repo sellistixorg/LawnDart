@@ -57,4 +57,8 @@ public sealed class SqlServerEventLogContractTests : IAsyncLifetime
     [Fact]
     public Task TypedAdapter_ContentTypeMismatch_FailsClosed()
         => EventLogContract.TypedAdapter_ContentTypeMismatch_FailsClosedAsync(Log);
+
+    [Fact]
+    public Task Append_CodecId2_ReadsCodecId2()
+        => EventLogContract.Append_CodecId2_ReadsCodecId2Async(Log);
 }

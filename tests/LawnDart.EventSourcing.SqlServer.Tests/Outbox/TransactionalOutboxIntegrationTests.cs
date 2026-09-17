@@ -119,7 +119,7 @@ public class TransactionalOutboxIntegrationTests : IAsyncLifetime
 
         Assert.Equal(recorded.EventType, outbox.EventType);
         Assert.Equal(recorded.SchemaVersion, outbox.SchemaVersion);
-        Assert.Equal(recorded.ContentType, outbox.ContentType);
+        Assert.Equal(recorded.CodecId, outbox.CodecId);
         Assert.Equal(System.Text.Encoding.UTF8.GetString(recorded.Payload.Span), outbox.Payload);
         Assert.Equal(System.Text.Encoding.UTF8.GetString(recorded.Metadata.Span), outbox.Metadata);
         Assert.Equal("transactional-outbox-integration.test-event", outbox.EventType);
@@ -387,14 +387,14 @@ public class TransactionalOutboxIntegrationTests : IAsyncLifetime
             payload,
             metadata,
             schemaVersion: 2,
-            contentType: AppendEvent.DefaultContentType);
+            codecId: EventCodec.Json);
 
         await eventStore.AppendAsync("test-tenant:LogOutbox:v2", [envelope]);
 
         var outbox = Assert.Single(await outboxWriter.GetUnprocessedAsync(10));
         Assert.Equal("log-outbox.foreign-family", outbox.EventType);
         Assert.Equal(2, outbox.SchemaVersion);
-        Assert.Equal(AppendEvent.DefaultContentType, outbox.ContentType);
+        Assert.Equal(EventCodec.Json, outbox.CodecId);
         Assert.Equal("""{"Kind":"v2"}""", outbox.Payload);
     }
 

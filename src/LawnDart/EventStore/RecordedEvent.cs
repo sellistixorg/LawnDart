@@ -22,8 +22,11 @@ public sealed class RecordedEvent
     /// <summary>First-class schema version on the frame. Not read from <see cref="Metadata"/>.</summary>
     public int SchemaVersion { get; }
 
-    /// <summary>Payload codec identifier as stored.</summary>
-    public string ContentType { get; }
+    /// <summary>
+    /// Payload codec id as stored. Default <see cref="EventCodec.Json"/>.
+    /// <c>0</c> is rejected. MIME is not stored on the frame.
+    /// </summary>
+    public byte CodecId { get; }
 
     /// <summary>Serialized event payload. Owned snapshot.</summary>
     public ReadOnlyMemory<byte> Payload { get; }
@@ -57,7 +60,7 @@ public sealed class RecordedEvent
     /// <param name="commitTimestamp">Store-assigned commit time.</param>
     /// <param name="metadata">UTF-8 JSON metadata bytes. Copied on construct.</param>
     /// <param name="schemaVersion">Frame schema version. Default <c>1</c>; <c>0</c> becomes <c>1</c>.</param>
-    /// <param name="contentType">Payload content type. Default <see cref="AppendEvent.DefaultContentType"/>.</param>
+    /// <param name="codecId">Payload codec id. Default <see cref="EventCodec.Json"/>. <c>0</c> is rejected.</param>
     /// <param name="tags">Tags as stored. Copied on construct.</param>
     public RecordedEvent(
         string eventType,
@@ -68,12 +71,12 @@ public sealed class RecordedEvent
         DateTime commitTimestamp,
         ReadOnlyMemory<byte> metadata = default,
         int schemaVersion = 1,
-        string contentType = AppendEvent.DefaultContentType,
+        byte codecId = EventCodec.Json,
         IEnumerable<string>? tags = null)
     {
         EventType = EventLogBuffers.RequireEventType(eventType);
         SchemaVersion = EventLogBuffers.NormalizeSchemaVersion(schemaVersion);
-        ContentType = EventLogBuffers.RequireContentType(contentType);
+        CodecId = EventLogBuffers.RequireCodecId(codecId);
         Payload = EventLogBuffers.Snapshot(payload);
         Metadata = EventLogBuffers.Snapshot(metadata);
         Tags = EventLogBuffers.SnapshotTags(tags);
