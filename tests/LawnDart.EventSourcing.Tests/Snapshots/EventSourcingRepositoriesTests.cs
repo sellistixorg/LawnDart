@@ -36,7 +36,7 @@ public class EventSourcingRepositoriesTests
             o.RequireTenantId = false;
             o.EnableAuthorization = false;
         });
-        services.AddBoundedContext("default").UseInMemory();
+        services.AddBoundedContext("default").UseInMemory().WithEventTypes(typeof(Ticked));
         services.AddSingleton<ISnapshotStrategyResolver>(_ =>
         {
             var resolver = new SnapshotStrategyResolver();

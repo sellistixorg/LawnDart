@@ -85,8 +85,7 @@ public sealed class BorrowBookHandler : ICommandHandler<BorrowBookCommand>
 
 Stream IDs: `{tenant}:{type}:{id}`. Tags for DCB: `type:{id}`.
 Load with `GetOrCreateAsync<T>(id)` when that shape holds; use
-`GetOrCreateAsync<T>(streamId)` for custom IDs. Do not call `SetStreamId`
-or `ReplayEvents` in app code.
+`GetOrCreateAsync<T>(streamId)` for custom IDs.
 
 DCB when a rule spans identities — `DcbEntity` + `IDcbRepository`, not two
 aggregates plus a distributed transaction. Aggregates `Apply` events; DCB

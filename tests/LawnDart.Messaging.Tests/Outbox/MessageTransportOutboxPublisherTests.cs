@@ -43,8 +43,10 @@ public class MessageTransportOutboxPublisherTests
         await publisher.PublishAsync(new OutboxMessage
         {
             Id = outboxId,
-            EventType = typeof(OrderPlacedEvent).FullName!,
-            Payload = JsonSerializer.Serialize(evt, evt.GetType(), JsonOptions),
+            EventType = EventTypeCatalog.TryGetDeclaredName(typeof(OrderPlacedEvent))!,
+            SchemaVersion = 1,
+            CodecId = EventCodec.Json,
+            Payload = JsonSerializer.SerializeToUtf8Bytes(evt, evt.GetType(), JsonOptions),
             Metadata = JsonSerializer.Serialize(new EventMetadata
             {
                 CorrelationId = "corr-1",
@@ -84,8 +86,10 @@ public class MessageTransportOutboxPublisherTests
         await publisher.PublishAsync(new OutboxMessage
         {
             Id = Guid.NewGuid(),
-            EventType = typeof(OrderPlacedEvent).FullName!,
-            Payload = JsonSerializer.Serialize(evt, evt.GetType(), JsonOptions),
+            EventType = EventTypeCatalog.TryGetDeclaredName(typeof(OrderPlacedEvent))!,
+            SchemaVersion = 1,
+            CodecId = EventCodec.Json,
+            Payload = JsonSerializer.SerializeToUtf8Bytes(evt, evt.GetType(), JsonOptions),
             Metadata = JsonSerializer.Serialize(new EventMetadata
             {
                 TraceId = "0af7651916cd43dd8448eb211c80319c",
@@ -115,7 +119,7 @@ public class MessageTransportOutboxPublisherTests
             {
                 Id = Guid.NewGuid(),
                 EventType = "Missing.Event.Type",
-                Payload = "{}",
+                Payload = "{}"u8.ToArray(),
                 Metadata = "{}",
                 CreatedAt = DateTime.UtcNow,
                 StreamId = "s",
@@ -143,8 +147,10 @@ public class MessageTransportOutboxPublisherTests
         await writer.WriteAsync(new OutboxMessage
         {
             Id = Guid.NewGuid(),
-            EventType = typeof(OrderPlacedEvent).FullName!,
-            Payload = JsonSerializer.Serialize(evt, evt.GetType(), JsonOptions),
+            EventType = EventTypeCatalog.TryGetDeclaredName(typeof(OrderPlacedEvent))!,
+            SchemaVersion = 1,
+            CodecId = EventCodec.Json,
+            Payload = JsonSerializer.SerializeToUtf8Bytes(evt, evt.GetType(), JsonOptions),
             Metadata = "{}",
             CreatedAt = DateTime.UtcNow,
             StreamId = "Order:99",
@@ -179,8 +185,8 @@ public class MessageTransportOutboxPublisherTests
             Id = Guid.NewGuid(),
             EventType = "order-placed",
             SchemaVersion = 2,
-            ContentType = AppendEvent.DefaultContentType,
-            Payload = JsonSerializer.Serialize(v2, v2.GetType(), JsonOptions),
+            CodecId = EventCodec.Json,
+            Payload = JsonSerializer.SerializeToUtf8Bytes(v2, v2.GetType(), JsonOptions),
             Metadata = "{}",
             CreatedAt = DateTime.UtcNow,
             StreamId = "Order:v2",
@@ -213,8 +219,8 @@ public class MessageTransportOutboxPublisherTests
             Id = Guid.NewGuid(),
             EventType = "order-placed",
             SchemaVersion = 1,
-            ContentType = AppendEvent.DefaultContentType,
-            Payload = JsonSerializer.Serialize(v1, v1.GetType(), JsonOptions),
+            CodecId = EventCodec.Json,
+            Payload = JsonSerializer.SerializeToUtf8Bytes(v1, v1.GetType(), JsonOptions),
             Metadata = "{}",
             CreatedAt = DateTime.UtcNow,
             StreamId = "Order:v1",

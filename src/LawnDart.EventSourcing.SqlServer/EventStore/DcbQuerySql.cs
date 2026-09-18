@@ -5,15 +5,15 @@ using LawnDart.EventStore;
 namespace LawnDart.EventSourcing.SqlServer.EventStore;
 
 /// <summary>
-/// Builds DCB <see cref="Query"/> SQL. When the EventTags table is enabled, tag items
-/// are driven from that clustered index (seek + intersection join) rather than a
-/// correlated <c>EXISTS</c> from <c>Events</c>. OPENJSON remains the fallback when
-/// <c>UseEventTagsTable</c> is false.
+/// Builds DCB <see cref="Query"/> SQL. Tag items are driven from the
+/// <c>EventTags</c> clustered index (seek + intersection join).
+/// Type items are <c>EventTypeId IN (...)</c> from the store cache.
+/// <c>Events.Tags</c> is a read projection and is never filtered.
 /// </summary>
 internal static class DcbQuerySql
 {
     internal const string EventColumns =
-        "e.StreamId, e.Version, e.SequencePosition, e.EventType, e.EventData, e.EventPayload, e.SchemaVersion, e.ContentType, e.Tags, e.Metadata, e.Timestamp";
+        "e.StreamId, e.Version, e.SequencePosition, e.EventTypeId, e.EventData, e.SchemaVersion, e.CodecId, e.Tags, e.Metadata, e.Timestamp";
 
     internal enum Mode
     {
@@ -21,19 +21,24 @@ internal static class DcbQuerySql
         MaxSequence
     }
 
-    internal readonly record struct Result(string Sql, List<SqlParameter> Parameters);
+    internal readonly record struct Result(string Sql, List<SqlParameter> Parameters, bool ShortCircuited = false)
+    {
+        public static Result Empty { get; } = new("", [], ShortCircuited: true);
+    }
 
     public static Result Build(
         string qTable,
         string qTags,
-        bool useEventTagsTable,
         Query query,
+        Func<string, int?> resolveTypeId,
         long? fromSequencePosition,
         long? toSequencePosition,
         DateTime? toTimestamp,
         int? limit,
         Mode mode)
     {
+        ArgumentNullException.ThrowIfNull(resolveTypeId);
+
         var parameters = new List<SqlParameter>();
         AddWindowParameters(parameters, fromSequencePosition, toSequencePosition, toTimestamp);
 
@@ -46,7 +51,16 @@ internal static class DcbQuerySql
 
         var sources = new List<ItemSource>(items.Count);
         for (var i = 0; i < items.Count; i++)
-            sources.Add(BuildItemSource(qTable, qTags, useEventTagsTable, items[i], i, fromSequencePosition, toSequencePosition, toTimestamp, parameters));
+        {
+            var source = BuildItemSource(
+                qTable, qTags, items[i], i, resolveTypeId,
+                fromSequencePosition, toSequencePosition, toTimestamp, parameters);
+            if (source is { } built)
+                sources.Add(built);
+        }
+
+        if (sources.Count == 0)
+            return Result.Empty;
 
         string sql;
         if (sources.Count == 1)
@@ -109,29 +123,45 @@ internal static class DcbQuerySql
         string SequenceColumn,
         bool IncludesEvents);
 
-    private static ItemSource BuildItemSource(
+    private static ItemSource? BuildItemSource(
         string qTable,
         string qTags,
-        bool useEventTagsTable,
         QueryItem item,
         int itemIndex,
+        Func<string, int?> resolveTypeId,
         long? fromSequencePosition,
         long? toSequencePosition,
         DateTime? toTimestamp,
         List<SqlParameter> parameters)
     {
+        IReadOnlyList<int>? typeIds = null;
+        if (item.Types is { Count: > 0 })
+        {
+            var ids = new List<int>(item.Types.Count);
+            foreach (var token in item.Types)
+            {
+                var id = resolveTypeId(token);
+                if (id.HasValue)
+                    ids.Add(id.Value);
+            }
+
+            if (ids.Count == 0)
+                return null;
+
+            typeIds = ids;
+        }
+
         var hasTags = item.Tags is { Count: > 0 };
-        var driveFromTags = useEventTagsTable && hasTags;
-        var needsEvents = item.Types is { Count: > 0 }
+        var needsEvents = typeIds is { Count: > 0 }
             || item.PartitionFilter != null
             || toTimestamp.HasValue
-            || !driveFromTags;
+            || !hasTags;
 
         var from = new StringBuilder();
         var where = new StringBuilder("WHERE 1=1");
         string seqColumn;
 
-        if (driveFromTags)
+        if (hasTags)
         {
             var tags = item.Tags!;
             from.Append(qTags).Append(" et").Append(itemIndex).Append("_0");
@@ -155,7 +185,7 @@ internal static class DcbQuerySql
             {
                 from.Append(" INNER JOIN ").Append(qTable).Append(" e ON e.SequencePosition = et")
                     .Append(itemIndex).Append("_0.GlobalSequencePosition");
-                AppendEventPredicates(where, item, itemIndex, toTimestamp, parameters);
+                AppendEventPredicates(where, typeIds, item, itemIndex, toTimestamp, parameters);
                 seqColumn = "e.SequencePosition";
             }
         }
@@ -166,31 +196,11 @@ internal static class DcbQuerySql
             if (toTimestamp.HasValue)
                 where.Append(" AND e.Timestamp <= @ToTimestamp");
 
-            if (hasTags)
-            {
-                for (var j = 0; j < item.Tags!.Count; j++)
-                {
-                    var paramName = $"@Tag{itemIndex}_{j}";
-                    if (useEventTagsTable)
-                    {
-                        where.Append(" AND EXISTS (SELECT 1 FROM ").Append(qTags)
-                            .Append(" et WHERE et.GlobalSequencePosition = e.SequencePosition AND et.Tag = ")
-                            .Append(paramName).Append(')');
-                    }
-                    else
-                    {
-                        where.Append(" AND EXISTS (SELECT 1 FROM OPENJSON(e.Tags) WHERE value = ")
-                            .Append(paramName).Append(')');
-                    }
-                    parameters.Add(new SqlParameter(paramName, item.Tags[j]));
-                }
-            }
-
-            AppendTypeAndPartition(where, item, itemIndex, parameters);
+            AppendTypeAndPartition(where, typeIds, item, itemIndex, parameters);
             seqColumn = "e.SequencePosition";
         }
 
-        return new ItemSource(from.ToString(), where.ToString(), seqColumn, needsEvents || !driveFromTags);
+        return new ItemSource(from.ToString(), where.ToString(), seqColumn, needsEvents || !hasTags);
     }
 
     private static string ComposeSingle(
@@ -221,7 +231,6 @@ internal static class DcbQuerySql
         }
         else
         {
-            // Tag-only source (MAX path): join Events for payload columns.
             sql = $"""
                 SELECT {EventColumns}
                 FROM {source.FromClause}
@@ -300,6 +309,7 @@ internal static class DcbQuerySql
 
     private static void AppendEventPredicates(
         StringBuilder where,
+        IReadOnlyList<int>? typeIds,
         QueryItem item,
         int itemIndex,
         DateTime? toTimestamp,
@@ -307,27 +317,27 @@ internal static class DcbQuerySql
     {
         if (toTimestamp.HasValue)
             where.Append(" AND e.Timestamp <= @ToTimestamp");
-        AppendTypeAndPartition(where, item, itemIndex, parameters);
+        AppendTypeAndPartition(where, typeIds, item, itemIndex, parameters);
     }
 
     private static void AppendTypeAndPartition(
         StringBuilder where,
+        IReadOnlyList<int>? typeIds,
         QueryItem item,
         int itemIndex,
         List<SqlParameter> parameters)
     {
-        if (item.Types is { Count: > 0 })
+        if (typeIds is { Count: > 0 })
         {
-            var typeConditions = new List<string>(item.Types.Count);
-            for (var j = 0; j < item.Types.Count; j++)
+            var names = new string[typeIds.Count];
+            for (var j = 0; j < typeIds.Count; j++)
             {
                 var paramName = $"@Type{itemIndex}_{j}";
-                var paramNamePrefix = $"@TypePrefix{itemIndex}_{j}";
-                typeConditions.Add($"(e.EventType = {paramName} OR e.EventType LIKE {paramNamePrefix})");
-                parameters.Add(new SqlParameter(paramName, item.Types[j]));
-                parameters.Add(new SqlParameter(paramNamePrefix, item.Types[j] + ",%"));
+                names[j] = paramName;
+                parameters.Add(new SqlParameter(paramName, typeIds[j]));
             }
-            where.Append(" AND (").Append(string.Join(" OR ", typeConditions)).Append(')');
+
+            where.Append(" AND e.EventTypeId IN (").Append(string.Join(", ", names)).Append(')');
         }
 
         if (item.PartitionFilter != null)

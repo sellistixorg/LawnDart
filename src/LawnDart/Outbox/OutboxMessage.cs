@@ -15,29 +15,25 @@ public class OutboxMessage
     
     /// <summary>
     /// Family catalog token stored on the appended frame (not a CLR type name).
-    /// Older rows may still hold a FullName or simple name; the publisher
-    /// resolves those aliases the same way as the typed session.
     /// </summary>
     public required string EventType { get; init; }
 
     /// <summary>
-    /// First-class schema version copied from <c>AppendEvent</c>. Default <c>1</c>.
-    /// Missing or zero on old rows is treated as <c>1</c>. Not read from
-    /// <see cref="Metadata"/>.
+    /// First-class schema version copied from <c>AppendEvent</c>. The session
+    /// stamps this; the column has no default.
     /// </summary>
     public int SchemaVersion { get; init; } = 1;
 
     /// <summary>
-    /// Payload content type copied from <c>AppendEvent</c>. Default
-    /// <c>application/json</c>. Missing or empty on old rows is treated as
-    /// <c>application/json</c>.
+    /// Payload codec id copied from <c>AppendEvent</c>. MIME is not stored
+    /// on the message. The column has no default.
     /// </summary>
-    public string ContentType { get; init; } = AppendEvent.DefaultContentType;
+    public byte CodecId { get; init; } = EventCodec.Json;
     
     /// <summary>
-    /// Serialized event payload (JSON).
+    /// Serialized event payload bytes, copied from the appended frame.
     /// </summary>
-    public required string Payload { get; init; }
+    public required ReadOnlyMemory<byte> Payload { get; init; }
     
     /// <summary>
     /// Serialized event metadata (JSON).

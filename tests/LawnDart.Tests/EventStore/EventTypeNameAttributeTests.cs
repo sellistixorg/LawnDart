@@ -60,9 +60,8 @@ public class EventTypeNameAttributeTests
     [Fact]
     public void Warmup_OneArgType_StillSucceeds()
     {
-        var ex = Record.Exception(() => EventTypeNameResolver.Warmup([typeof(LegacyCurrent)]));
-        Assert.Null(ex);
-        Assert.Equal("author-registered", EventTypeNameResolver.GetName(typeof(LegacyCurrent)));
+        var catalog = EventTypeCatalog.Materialize([typeof(LegacyCurrent)]);
+        Assert.Equal("author-registered", catalog.GetName(typeof(LegacyCurrent)));
     }
 
     [EventTypeName("author-registered")]

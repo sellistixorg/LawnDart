@@ -33,11 +33,15 @@ public sealed class BddTestContext : IAsyncDisposable
     /// <summary>
     /// Creates a fresh InMemory-backed test context. Primary GWT host.
     /// </summary>
-    /// <remarks>
-    /// The in-memory store does not require an event-type catalog.
-    /// </remarks>
-    public static BddTestContext CreateInMemory()
-        => Create(new InMemoryEventStore());
+    /// <param name="eventTypes">
+    /// Event types to materialize into this spec's catalog. Required for typed
+    /// hydrate of Given events and emitted events.
+    /// </param>
+    public static BddTestContext CreateInMemory(params Type[] eventTypes)
+        => Create(new InMemoryEventStore(
+            session: new EventSession(
+                new LawnDart.EventSourcing.Serialization.JsonEventSerializer(),
+                EventTypeCatalog.Materialize(eventTypes))));
 
     /// <summary>
     /// Builds a context against <paramref name="store"/>. Used by tests that

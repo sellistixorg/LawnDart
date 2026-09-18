@@ -92,7 +92,7 @@ public class InMemoryEventStoreTests
         };
 
         await store.AppendAsync(streamId, events);
-        var query = Query.FromItems(QueryItem.ByType(EventTypeNameResolver.GetName(typeof(TestEvent))));
+        var query = Query.FromItems(QueryItem.ByType(EventTypeCatalog.TryGetDeclaredName(typeof(TestEvent))!));
 
         // Act
         var result = await store.ReadByQueryAsync(query);
@@ -148,7 +148,7 @@ public class InMemoryEventStoreTests
         var events2 = new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) };
 
         await store.AppendAsync(streamId, events1);
-        var query = Query.FromItems(QueryItem.ByType(EventTypeNameResolver.GetName(typeof(TestEvent))));
+        var query = Query.FromItems(QueryItem.ByType(EventTypeCatalog.TryGetDeclaredName(typeof(TestEvent))!));
         var condition = AppendCondition.FailIfMatches(query);
 
         // Act & Assert
@@ -173,7 +173,7 @@ public class InMemoryEventStoreTests
 
         // Create condition that checks for TestEvent but only AFTER the first position
         // This means events at or before lastPosition are ignored
-        var query = Query.FromItems(QueryItem.ByType(EventTypeNameResolver.GetName(typeof(TestEvent))));
+        var query = Query.FromItems(QueryItem.ByType(EventTypeCatalog.TryGetDeclaredName(typeof(TestEvent))!));
         var condition = AppendCondition.FailIfMatches(query, after: lastPosition);
 
         // Act - Should succeed because events1 is at lastPosition (not after it)
@@ -198,7 +198,7 @@ public class InMemoryEventStoreTests
         var lastPosition = positions1.SequencePositions[0];
 
         // Create condition that checks for TestEvent but only after first position
-        var query = Query.FromItems(QueryItem.ByType(EventTypeNameResolver.GetName(typeof(TestEvent))));
+        var query = Query.FromItems(QueryItem.ByType(EventTypeCatalog.TryGetDeclaredName(typeof(TestEvent))!));
         var condition = AppendCondition.FailIfMatches(query, after: lastPosition);
 
         // Append second event AFTER the position (should cause failure when we try to append events3)
@@ -618,7 +618,7 @@ public class InMemoryEventStoreTests
         });
 
         var result = await store.ReadByQueryAsync(
-            Query.FromItems(QueryItem.ByType(EventTypeNameResolver.GetName(typeof(AliasedEvent)))));
+            Query.FromItems(QueryItem.ByType(EventTypeCatalog.TryGetDeclaredName(typeof(AliasedEvent))!)));
 
         var evt = Assert.Single(result.Events);
         Assert.IsType<AliasedEvent>(evt.Event);
@@ -717,6 +717,21 @@ public class InMemoryEventStoreTests
         Assert.Equal("tests.inmemory.test-event", ex.FamilyToken);
         Assert.Equal(99, ex.SchemaVersion);
         Assert.Equal(1, ex.ProcessCurrentVersion);
+    }
+
+    [Fact]
+    public async Task Log_persists_codec_id_without_a_mime_literal()
+    {
+        var store = new InMemoryEventStore();
+        await ((IEventLog)store).AppendAsync(
+            "codec-r2",
+            [new AppendEvent("family", new byte[] { 1 }, codecId: EventCodec.MemoryPack)]);
+
+        var recorded = Assert.Single(await ((IEventLog)store).ReadStreamAsync("codec-r2"));
+        Assert.Equal(EventCodec.MemoryPack, recorded.CodecId);
+        Assert.Equal(typeof(byte), recorded.CodecId.GetType());
+        Assert.DoesNotContain("application/vnd.lawndart.memorypack", recorded.CodecId.ToString());
+        Assert.DoesNotContain("application/json", recorded.CodecId.ToString());
     }
 
     [EventTypeName("tests.inmemory.test-event")]

@@ -343,7 +343,8 @@ public sealed class MapProjectionAdminApiTests : IAsyncLifetime
         foreach (var contextName in contextNames)
         {
             services.AddInMemoryProjectionStores(contextName);
-            var builder = services.AddBoundedContext(contextName).UseInMemory();
+            var builder = services.AddBoundedContext(contextName).UseInMemory()
+                .WithEventTypes<CounterIncremented>();
             RegisterProjectionsForTests(builder, TestRegistrations, multiNode);
         }
     }

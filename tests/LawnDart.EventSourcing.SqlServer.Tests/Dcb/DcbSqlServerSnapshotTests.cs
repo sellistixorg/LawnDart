@@ -213,6 +213,7 @@ public sealed class DcbSqlServerSnapshotTests : IAsyncLifetime
                 opt.SchemaName = "ordering_di";
                 opt.RequireTenantId = false;
             })
+            .WithEventTypes(typeof(CatalogPlaceholderEvent))
             .WithSnapshots(cfg => cfg.RegisterForDcb<InventoryEntity>(new EventCountSnapshotStrategy(100)));
 
         using var sp = services.BuildServiceProvider();

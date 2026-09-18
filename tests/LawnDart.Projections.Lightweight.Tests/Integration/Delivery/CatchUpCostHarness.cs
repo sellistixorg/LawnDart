@@ -74,7 +74,7 @@ internal static class CatchUpCostHarness
         int count,
         TimeSpan timeout)
     {
-        EventTypeNameResolver.Warmup([typeof(CatchUpTick), typeof(CatchUpShopNoise)]);
+        _ = EventTypeCatalog.Materialize([typeof(CatchUpTick), typeof(CatchUpShopNoise)]);
         var store = new InMemoryEventStore();
         var meta = new EventMetadata { Timestamp = DateTime.UtcNow, UserId = "catchup-cost" };
         await AppendTicksAsync(store, count, meta);
@@ -106,7 +106,7 @@ internal static class CatchUpCostHarness
         bool includeNoopShops,
         TimeSpan timeout)
     {
-        EventTypeNameResolver.Warmup([typeof(CatchUpTick), typeof(CatchUpShopNoise)]);
+        _ = EventTypeCatalog.Materialize([typeof(CatchUpTick), typeof(CatchUpShopNoise)]);
         CatchUpCostCounters.Reset();
 
         var inner = new InMemoryEventStore();

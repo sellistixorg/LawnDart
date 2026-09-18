@@ -21,10 +21,12 @@ public class EventQueryMatcherTests
         var se = new SequencedEvent(raw, 1, "s", 1, new EventMetadata());
         var query = Query.FromItems(QueryItem.ByType("test.course-created"));
 
-        Assert.True(EventQueryMatcher.Matches(se, query));
+        var catalog = EventTypeCatalog.Materialize([]);
+        Assert.True(EventQueryMatcher.Matches(se, query, catalog));
         Assert.False(EventQueryMatcher.Matches(
             se,
-            Query.FromItems(QueryItem.ByType(nameof(RawRecordedEvent)))));
+            Query.FromItems(QueryItem.ByType(nameof(RawRecordedEvent))),
+            catalog));
     }
 
     [EventTypeName("named.tick")]
@@ -40,12 +42,15 @@ public class EventQueryMatcherTests
             1,
             new EventMetadata());
 
+        var catalog = EventTypeCatalog.Materialize([typeof(NamedTick)]);
         Assert.True(EventQueryMatcher.Matches(
             se,
-            Query.FromItems(QueryItem.ByType("named.tick"))));
+            Query.FromItems(QueryItem.ByType("named.tick")),
+            catalog));
         Assert.False(EventQueryMatcher.Matches(
             se,
-            Query.FromItems(QueryItem.ByType(typeof(NamedTick).FullName!))));
+            Query.FromItems(QueryItem.ByType(typeof(NamedTick).FullName!)),
+            catalog));
     }
 
     [Fact]

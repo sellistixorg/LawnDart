@@ -21,7 +21,7 @@ public class EventSessionTests
 
         Assert.Equal("author-registered", append.EventType);
         Assert.Equal(1, append.SchemaVersion);
-        Assert.Equal("application/json", append.ContentType);
+        Assert.Equal(EventCodec.Json, append.CodecId);
         Assert.Equal(["author:1"], append.Tags);
         var json = Encoding.UTF8.GetString(append.Payload.Span);
         Assert.StartsWith("{", json);
@@ -141,14 +141,56 @@ public class EventSessionTests
             streamVersion: 1,
             sequencePosition: 1,
             commitTimestamp: DateTime.UtcNow,
-            contentType: "application/avro");
+            codecId: EventCodec.Avro);
 
         var ex = Assert.Throws<EventContentTypeMismatchException>(() => session.Hydrate(recorded));
-        Assert.Equal("application/avro", ex.StoredContentType);
-        Assert.Equal("application/json", ex.SessionContentType);
-        Assert.Contains("application/avro", ex.Message);
+        Assert.Equal(EventCodec.Avro, ex.StoredCodecId);
+        Assert.Equal(EventCodec.Json, ex.SessionCodecId);
+        Assert.Contains(EventCodec.AvroMime, ex.Message);
         Assert.DoesNotContain("migration tool", ex.Message, StringComparison.OrdinalIgnoreCase);
         Assert.IsAssignableFrom<EventHydrationException>(ex);
+    }
+
+    [Fact]
+    public void Hydrate_id_one_against_id_two_fails_closed()
+    {
+        var catalog = MapCatalog.For<AuthorRegistered>("author-registered");
+        var session = new EventSession(new StjEventSerializer(), catalog);
+        var evt = new AuthorRegistered(Guid.NewGuid(), DateTime.UtcNow, "Ada");
+        var recorded = new RecordedEvent(
+            "author-registered",
+            new StjEventSerializer().Serialize(evt, evt.GetType()),
+            "s",
+            streamVersion: 1,
+            sequencePosition: 1,
+            commitTimestamp: DateTime.UtcNow,
+            codecId: EventCodec.MemoryPack);
+
+        var ex = Assert.Throws<EventContentTypeMismatchException>(() => session.Hydrate(recorded));
+        Assert.Equal(EventCodec.MemoryPack, ex.StoredCodecId);
+        Assert.Equal(EventCodec.Json, ex.SessionCodecId);
+        Assert.Contains(EventCodec.MemoryPackMime, ex.Message);
+        Assert.Contains(EventCodec.JsonMime, ex.Message);
+    }
+
+    [Fact]
+    public void Hydrate_opaque_id_never_hydrates_on_typed_path()
+    {
+        var catalog = MapCatalog.For<AuthorRegistered>("author-registered");
+        var session = new EventSession(new StjEventSerializer(), catalog);
+        var recorded = new RecordedEvent(
+            "author-registered",
+            new byte[] { 1, 2, 3 },
+            "s",
+            streamVersion: 1,
+            sequencePosition: 1,
+            commitTimestamp: DateTime.UtcNow,
+            codecId: EventCodec.Opaque);
+
+        var ex = Assert.Throws<EventContentTypeMismatchException>(() => session.Hydrate(recorded));
+        Assert.Equal(EventCodec.Opaque, ex.StoredCodecId);
+        Assert.Equal(EventCodec.Json, ex.SessionCodecId);
+        Assert.Contains("opaque", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -490,7 +532,7 @@ public class EventSessionTests
                 commitTimestamp: new DateTime(2026, 9, 16, 12, 0, 0, DateTimeKind.Utc),
                 envelope.Metadata,
                 envelope.SchemaVersion,
-                envelope.ContentType,
+                envelope.CodecId,
                 envelope.Tags);
         }
     }

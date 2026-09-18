@@ -22,9 +22,24 @@ public class UseInMemoryBuilderTests
         services.AddSingleton<ITenantContextProvider>(new TestTenantContextProvider(null));
         services.Configure<LawnDartOptions>(_ => { });
 
-        services.AddBoundedContext(contextName).UseInMemory();
+        services.AddBoundedContext(contextName).UseInMemory().WithEventTypes(typeof(StubEvent));
 
         return services.BuildServiceProvider();
+    }
+
+    [Fact]
+    public void UseInMemory_WithoutWithEventTypes_ThrowsOnStoreResolve()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IMetadataProvider>(new DefaultMetadataProvider());
+        services.AddSingleton<ITenantContextProvider>(new TestTenantContextProvider(null));
+        services.Configure<LawnDartOptions>(_ => { });
+        services.AddBoundedContext("default").UseInMemory();
+
+        using var sp = services.BuildServiceProvider();
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => sp.GetRequiredKeyedService<IEventStore>("default"));
+        Assert.Contains("WithEventTypes", ex.Message);
     }
 
     [Fact]
@@ -54,8 +69,8 @@ public class UseInMemoryBuilderTests
         services.AddSingleton<ITenantContextProvider>(new TestTenantContextProvider(null));
         services.Configure<LawnDartOptions>(_ => { });
 
-        services.AddBoundedContext("ordering").UseInMemory();
-        services.AddBoundedContext("catalog").UseInMemory();
+        services.AddBoundedContext("ordering").UseInMemory().WithEventTypes(typeof(StubEvent));
+        services.AddBoundedContext("catalog").UseInMemory().WithEventTypes(typeof(StubEvent));
 
         var sp       = services.BuildServiceProvider();
         var ordering = sp.GetRequiredKeyedService<IEventStore>("ordering");
@@ -72,8 +87,8 @@ public class UseInMemoryBuilderTests
         services.AddSingleton<ITenantContextProvider>(new TestTenantContextProvider(null));
         services.Configure<LawnDartOptions>(_ => { });
 
-        services.AddBoundedContext("ordering").UseInMemory();
-        services.AddBoundedContext("catalog").UseInMemory();
+        services.AddBoundedContext("ordering").UseInMemory().WithEventTypes(typeof(StubEvent));
+        services.AddBoundedContext("catalog").UseInMemory().WithEventTypes(typeof(StubEvent));
 
         var sp = services.BuildServiceProvider();
 

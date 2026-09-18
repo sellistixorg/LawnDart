@@ -11,7 +11,7 @@ public sealed class AggregateSpecAssertionTests
     [Fact]
     public async Task spec_internal_failure_throws_bdd_spec_assertion_exception()
     {
-        await using var ctx = BddTestContext.CreateInMemory();
+        await using var ctx = BddTestContext.CreateInMemory(typeof(BookRegistered), typeof(BookLoaned));
         var id = Guid.NewGuid();
 
         var ex = await Assert.ThrowsAsync<BddSpecAssertionException>(() =>
@@ -28,7 +28,7 @@ public sealed class AggregateSpecAssertionTests
     [Fact]
     public async Task wrapping_run_async_in_invalid_operation_throws_fails_when_domain_did_not_throw()
     {
-        await using var ctx = BddTestContext.CreateInMemory();
+        await using var ctx = BddTestContext.CreateInMemory(typeof(BookRegistered), typeof(BookLoaned));
         var id = Guid.NewGuid();
 
         await Assert.ThrowsAsync<Xunit.Sdk.ThrowsException>(() =>
@@ -43,7 +43,7 @@ public sealed class AggregateSpecAssertionTests
     [Fact]
     public async Task then_throws_matches_derived_domain_exception()
     {
-        await using var ctx = BddTestContext.CreateInMemory();
+        await using var ctx = BddTestContext.CreateInMemory(typeof(BookRegistered), typeof(BookLoaned));
         var id = Guid.NewGuid();
 
         var result = await AggregateSpec
@@ -58,7 +58,7 @@ public sealed class AggregateSpecAssertionTests
     [Fact]
     public async Task then_throws_wrong_type_names_expected_and_actual()
     {
-        await using var ctx = BddTestContext.CreateInMemory();
+        await using var ctx = BddTestContext.CreateInMemory(typeof(BookRegistered), typeof(BookLoaned));
         var id = Guid.NewGuid();
 
         var ex = await Assert.ThrowsAsync<BddSpecAssertionException>(() =>
@@ -183,7 +183,10 @@ public sealed class AggregateSpecAssertionTests
     /// </summary>
     private sealed class ProbeEventStore : IEventStore
     {
-        private readonly EventSourcing.EventStore.InMemoryEventStore _inner = new();
+        private readonly EventSourcing.EventStore.InMemoryEventStore _inner = new(
+            session: new EventSession(
+                new EventSourcing.Serialization.JsonEventSerializer(),
+                EventTypeCatalog.Materialize([typeof(BookRegistered), typeof(BookLoaned)])));
 
         public Exception? SequenceException { get; init; }
         public Exception? QueryException { get; init; }

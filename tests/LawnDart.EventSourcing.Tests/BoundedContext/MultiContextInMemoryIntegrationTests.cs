@@ -22,10 +22,12 @@ public class MultiContextInMemoryIntegrationTests
 
         services.AddBoundedContext("ordering")
             .UseInMemory()
+            .WithEventTypes(typeof(TestEvent))
             .WithCommandHandlers([typeof(OrderingHandler)]);
 
         services.AddBoundedContext("catalog")
             .UseInMemory()
+            .WithEventTypes(typeof(TestEvent))
             .WithCommandHandlers([typeof(CatalogHandler)]);
 
         return services.BuildServiceProvider();

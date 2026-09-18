@@ -24,10 +24,12 @@ public class WithCommandHandlersAndDispatcherTests
         // Each context gets its own explicit handler types to avoid assembly-scan conflicts
         services.AddBoundedContext("ordering")
             .UseInMemory()
+            .WithEventTypes(typeof(CatalogPlaceholderEvent))
             .WithCommandHandlers([typeof(CreateOrderHandler), typeof(RepositoryCapturingHandler)]);
 
         services.AddBoundedContext("catalog")
             .UseInMemory()
+            .WithEventTypes(typeof(CatalogPlaceholderEvent))
             .WithCommandHandlers([typeof(PublishProductHandler)]);
 
         return services.BuildServiceProvider();

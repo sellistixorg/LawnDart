@@ -13,14 +13,15 @@ public static class EventQueryMatcher
     /// Empty <see cref="Query.Items"/> (i.e. <see cref="Query.All"/>) matches everything.
     /// Otherwise an event matches if it matches any query item (OR across items).
     /// </summary>
-    public static bool Matches(SequencedEvent sequencedEvent, Query query)
+    public static bool Matches(SequencedEvent sequencedEvent, Query query, IEventTypeCatalog catalog)
     {
         ArgumentNullException.ThrowIfNull(sequencedEvent);
         ArgumentNullException.ThrowIfNull(query);
+        ArgumentNullException.ThrowIfNull(catalog);
 
         return MatchesCore(
             sequencedEvent.StreamId,
-            ResolveTypeName(sequencedEvent.Event),
+            ResolveTypeName(sequencedEvent.Event, catalog),
             sequencedEvent.Tags,
             query);
     }
@@ -91,11 +92,11 @@ public static class EventQueryMatcher
 
     /// <summary>
     /// Prefer <see cref="IRawEvent.TypeName"/> (the stored family token).
-    /// <see cref="EventTypeNameResolver.GetName"/> would otherwise see the
+    /// <see cref="IEventTypeCatalog.GetName"/> would otherwise see the
     /// wrapper CLR name and drop typed query / subscribe matches.
     /// </summary>
-    private static string ResolveTypeName(IEvent @event) =>
+    private static string ResolveTypeName(IEvent @event, IEventTypeCatalog catalog) =>
         @event is IRawEvent raw && !string.IsNullOrWhiteSpace(raw.TypeName)
             ? raw.TypeName
-            : EventTypeNameResolver.GetName(@event.GetType());
+            : catalog.GetName(@event.GetType());
 }

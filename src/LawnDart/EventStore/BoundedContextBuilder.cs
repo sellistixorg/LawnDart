@@ -27,7 +27,11 @@ public sealed class BoundedContextBuilder
     /// <summary>The service collection that builder methods should register into.</summary>
     public IServiceCollection Services { get; }
 
-    internal EventTypeCatalog? EventCatalog { get; set; }
+    /// <summary>
+    /// Scoped catalog registered by <c>WithEventTypes</c>, or <c>null</c> when
+    /// the context has not been warmed up yet.
+    /// </summary>
+    public EventTypeCatalog? EventCatalog { get; internal set; }
 
     internal EventUpcastPipeline? UpcastPipeline { get; set; }
 
@@ -213,7 +217,6 @@ public static class BoundedContextExtensions
     private static void RegisterCatalog(BoundedContextBuilder builder, IReadOnlyCollection<Type> types)
     {
         var catalog = EventTypeCatalog.Materialize(types);
-        catalog.InstallIntoProcessResolver();
         builder.EventCatalog = catalog;
         builder.Services.AddKeyedSingleton<IEventTypeCatalog>(builder.ContextName, catalog);
         if (string.Equals(builder.ContextName, "default", StringComparison.Ordinal))
@@ -265,6 +268,14 @@ public static class BoundedContextExtensions
 
         return $"WithEventTypes scanned {scanned} and found no IEvent implementations.";
     }
+
+    /// <summary>
+    /// Message when a context has a store but no <c>WithEventTypes</c> catalog.
+    /// </summary>
+    internal static string MissingEventTypesMessage(string contextName)
+        => $"Bounded context '{contextName}' has no event-type catalog. " +
+           "Call WithEventTypes(...) when configuring this context. " +
+           "The catalog is per-context and required at startup.";
 
     private static BoundedContextRegistry GetOrCreateRegistry(IServiceCollection services)
     {

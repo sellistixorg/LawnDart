@@ -36,7 +36,7 @@ section availability, and an enrollment index.
 
 A view that spans stream types must also implement
 `IMultiStreamEntityResolver` (`GetEntityId`). That is the multi-stream
-hook (Flywheel and other Lightweight hosts).
+hook.
 
 `IProjector` is experimental and unused (`ProjectAsync`). This host does
 not discover or call it. You may hand-roll a projector against

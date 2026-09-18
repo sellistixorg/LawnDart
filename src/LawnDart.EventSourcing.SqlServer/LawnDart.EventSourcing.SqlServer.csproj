@@ -15,4 +15,8 @@
     <PackageReference Include="Microsoft.Data.SqlClient" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="LawnDart.EventSourcing.SqlServer.Tests" />
+  </ItemGroup>
+
 </Project>

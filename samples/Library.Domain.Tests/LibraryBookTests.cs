@@ -13,7 +13,7 @@ public sealed class LibraryBookTests
     [Fact]
     public async Task borrow_emits_event_and_updates_catalog_view()
     {
-        await using var ctx = BddTestContext.CreateInMemory();
+        await using var ctx = BddTestContext.CreateInMemory(typeof(BookAdded), typeof(BookBorrowed), typeof(BookReturned));
         var bookId = Guid.NewGuid();
         var projector = new LibraryProjector();
 
@@ -41,7 +41,7 @@ public sealed class LibraryBookTests
     [Fact]
     public async Task return_clears_loan_and_removes_borrowed_view()
     {
-        await using var ctx = BddTestContext.CreateInMemory();
+        await using var ctx = BddTestContext.CreateInMemory(typeof(BookAdded), typeof(BookBorrowed), typeof(BookReturned));
         var bookId = Guid.NewGuid();
         var projector = new LibraryProjector();
 
@@ -70,7 +70,7 @@ public sealed class LibraryBookTests
     [Fact]
     public async Task cannot_borrow_when_already_on_loan()
     {
-        await using var ctx = BddTestContext.CreateInMemory();
+        await using var ctx = BddTestContext.CreateInMemory(typeof(BookAdded), typeof(BookBorrowed), typeof(BookReturned));
         var bookId = Guid.NewGuid();
 
         await AggregateSpec

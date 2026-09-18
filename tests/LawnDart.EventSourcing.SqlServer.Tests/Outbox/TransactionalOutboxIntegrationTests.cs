@@ -119,11 +119,11 @@ public class TransactionalOutboxIntegrationTests : IAsyncLifetime
 
         Assert.Equal(recorded.EventType, outbox.EventType);
         Assert.Equal(recorded.SchemaVersion, outbox.SchemaVersion);
-        Assert.Equal(recorded.ContentType, outbox.ContentType);
-        Assert.Equal(System.Text.Encoding.UTF8.GetString(recorded.Payload.Span), outbox.Payload);
+        Assert.Equal(recorded.CodecId, outbox.CodecId);
+        Assert.Equal(recorded.Payload.ToArray(), outbox.Payload.ToArray());
         Assert.Equal(System.Text.Encoding.UTF8.GetString(recorded.Metadata.Span), outbox.Metadata);
         Assert.Equal("transactional-outbox-integration.test-event", outbox.EventType);
-        Assert.Contains("\"Value\":\"frame-copy\"", outbox.Payload);
+        Assert.Contains("\"Value\":\"frame-copy\"", System.Text.Encoding.UTF8.GetString(outbox.Payload.Span));
         Assert.Contains("\"UserId\":\"outbox-user\"", outbox.Metadata);
     }
 
@@ -356,7 +356,43 @@ public class TransactionalOutboxIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task AppendAsync_LogEnvelope_CopiesSchemaVersionAndContentTypeToOutbox()
+    public async Task AppendAsync_EnableOutbox_WithoutWriter_StillWritesRows()
+    {
+        var outboxWriter = new SqlServerOutboxWriter(_connectionString!, "OutboxNoWriter");
+        await outboxWriter.InitializeSchemaAsync();
+
+        var options = new SqlServerEventStoreOptions
+        {
+            EnableOutbox = true,
+            OutboxTableName = "OutboxNoWriter",
+            RequireTenantId = false
+        };
+
+        var eventStore = new SqlServerEventStore(
+            _connectionString!,
+            null,
+            "Events_NoWriter",
+            "Streams_NoWriter",
+            true,
+            options,
+            outboxWriter: null,
+            null);
+
+        await eventStore.InitializeSchemaAsync();
+
+        var streamId = "test-tenant:TestAggregate:no-writer";
+        await eventStore.AppendAsync(
+            streamId,
+            [new TestEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow, Value = "no-writer" }]);
+
+        var recorded = Assert.Single(await ((IEventLog)eventStore).ReadStreamAsync(streamId));
+        var outbox = Assert.Single(await outboxWriter.GetUnprocessedAsync(10));
+        Assert.Equal(recorded.CodecId, outbox.CodecId);
+        Assert.Equal(recorded.Payload.ToArray(), outbox.Payload.ToArray());
+    }
+
+    [Fact]
+    public async Task AppendAsync_LogEnvelope_CopiesSchemaVersionAndCodecIdToOutbox()
     {
         var outboxWriter = new SqlServerOutboxWriter(_connectionString!, "Outbox");
         await outboxWriter.InitializeSchemaAsync();
@@ -387,15 +423,15 @@ public class TransactionalOutboxIntegrationTests : IAsyncLifetime
             payload,
             metadata,
             schemaVersion: 2,
-            contentType: AppendEvent.DefaultContentType);
+            codecId: EventCodec.Json);
 
         await eventStore.AppendAsync("test-tenant:LogOutbox:v2", [envelope]);
 
         var outbox = Assert.Single(await outboxWriter.GetUnprocessedAsync(10));
         Assert.Equal("log-outbox.foreign-family", outbox.EventType);
         Assert.Equal(2, outbox.SchemaVersion);
-        Assert.Equal(AppendEvent.DefaultContentType, outbox.ContentType);
-        Assert.Equal("""{"Kind":"v2"}""", outbox.Payload);
+        Assert.Equal(EventCodec.Json, outbox.CodecId);
+        Assert.Equal(payload, outbox.Payload.ToArray());
     }
 
     // Test types

@@ -24,6 +24,7 @@ public class HttpCommandsRegisterNoHandlersTests
         services.AddLawnDart(o => o.RequireTenantId = false);
         services.AddBoundedContext("default")
             .UseInMemory()
+            .WithEventTypes(typeof(HttpCatalogPlaceholder))
             .WithCommandHandlers<CreateOrderCommandHandler>();
         services.AddLawnDartHttpCommands(typeof(CreateOrderCommandHandler).Assembly);
 
@@ -36,6 +37,9 @@ public class HttpCommandsRegisterNoHandlersTests
         Assert.Null(single.ImplementationType);
         Assert.Equal(ServiceLifetime.Transient, single.Lifetime);
     }
+
+    [EventTypeName("aspnetcore-tests.catalog-placeholder")]
+    private sealed record HttpCatalogPlaceholder(Guid Id, DateTime Timestamp) : IEvent;
 
     private static bool IsCommandHandlerRegistration(ServiceDescriptor d)
     {

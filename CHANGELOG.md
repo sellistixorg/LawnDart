@@ -10,6 +10,24 @@ changes to the public API.
 
 ## [Unreleased]
 
+## [0.4.0-alpha.7] — 2026-09-17
+
+### Changed
+
+- Log frames (`AppendEvent`, `RecordedEvent`, `OutboxMessage`) store a codec id (`byte`) instead of a MIME string. `IEventSerializer.ContentType` is still the plugin name; `EventCodec` maps it to the id. `0` is rejected; `255` is opaque and does not hydrate on the typed path.
+- The event-type catalog is per bounded context and `WithEventTypes` is required. There is no process-wide resolver and no FullName / simple-name read alias. An unknown token fails closed.
+- The core `LawnDart` package no longer depends on MemoryPack. `EventMetadata` is System.Text.Json only. MemoryPack remains an optional session codec (`EventCodec` id `2`) for event payloads.
+- SQL Server stores one `EventData` (`VARBINARY`) payload and a `CodecId` (`TINYINT`). `SchemaVersion` and `CodecId` have no column defaults. Opening an older events table throws and names drop-and-recreate. A `{table}_Readable` view is created for SSMS.
+- SQL Server DCB queries and append-condition fences always use the `EventTags` table. `UseEventTagsTable` is gone. `Events.Tags` is a read projection only.
+- SQL Server stores the family token in an `EventTypes` lookup and `Events.EventTypeId`. Type filters are integer seeks. Opening a format-1 events table throws and names drop-and-recreate.
+- SQL Server outbox rows store payload bytes and a `CodecId`. `SchemaVersion` and `CodecId` have no column defaults. Opening an older outbox table throws and names drop-and-recreate. `EnableOutbox` writes rows even when no writer is injected.
+- Schema changes are a wipe before 1.0. An older events or outbox table is not migrated in place.
+
+### Removed
+
+- `EventTypeNameResolver`, `EventTypeCatalog.Shared`, and the parameterless `EventTypeCatalog` constructor.
+- `AppendEvent.ContentType`, `AppendEvent.DefaultContentType`, and MIME string properties on `RecordedEvent` and `OutboxMessage`. `OutboxMessage.Payload` is bytes, not a string.
+
 ## [0.4.0-alpha.6] — 2026-09-17
 
 ### Added

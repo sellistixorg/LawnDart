@@ -23,7 +23,17 @@ namespace LawnDart.EventSourcing.SqlServer.EventStore;
 public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEventLog, IEventLogSubscriptions
 {
     internal const string StreamEventColumns =
-        "StreamId, Version, SequencePosition, EventType, EventData, EventPayload, SchemaVersion, ContentType, Tags, Metadata, Timestamp";
+        "StreamId, Version, SequencePosition, EventTypeId, EventData, SchemaVersion, CodecId, Tags, Metadata, Timestamp";
+
+    /// <summary>Extended property written on a fresh events table. Mismatch is a wipe.</summary>
+    internal const string SchemaFormatPropertyName = "LawnDart_SchemaFormat";
+
+    /// <summary>CLN-06 shape: EventTypeId INT FK, EventTypes lookup, no EventType column.</summary>
+    internal const string CurrentSchemaFormat = "2";
+
+    internal const string PartitionHashIndexName = "IX_Events_PartitionHash_SequencePosition";
+
+    internal string EventTypesTableName => _typesTableName;
 
     private readonly EventSession _session;
     private readonly EventStoreAdapter _adapter;
@@ -31,9 +41,9 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
     private readonly string _tableName;
     private readonly string _registryTableName;
     private readonly string _tagsTableName;
+    private readonly string _typesTableName;
     private readonly bool _enableRegistry;
-    private readonly bool _useEventTagsTable;
-    private readonly IOutboxWriter? _outboxWriter;
+    private readonly EventTypeIdCache _eventTypes = new();
     private readonly SqlServerEventStoreOptions _options;
     private readonly ILogger<SqlServerEventStore>? _logger;
     private readonly JsonSerializerOptions _jsonOptions;
@@ -48,6 +58,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
     private readonly string _qTable;
     private readonly string _qRegistry;
     private readonly string _qTags;
+    private readonly string _qTypes;
     private readonly string _qSequence;
 
     public SqlServerEventStore(
@@ -61,7 +72,9 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         ILogger<SqlServerEventStore>? logger = null,
         EventSession? session = null)
     {
-        _session = session ?? new EventSession(serializer ?? new JsonEventSerializer());
+        _session = session ?? new EventSession(
+            serializer ?? new JsonEventSerializer(),
+            new WriteThroughEventTypeCatalog());
         _options = options ?? new SqlServerEventStoreOptions();
         _adapter = new EventStoreAdapter(this, _session, this, _options.SubscriptionChannelCapacity);
         _tableName = tableName ?? throw new ArgumentNullException(nameof(tableName));
@@ -74,8 +87,11 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
             !string.Equals(_tableName, "Events", StringComparison.OrdinalIgnoreCase)
                 ? $"EventTags_{_tableName}"
                 : _options.EventTagsTableName;
-        _useEventTagsTable = _options.UseEventTagsTable;
-        _outboxWriter = outboxWriter;
+        _typesTableName =
+            !string.Equals(_tableName, "Events", StringComparison.OrdinalIgnoreCase)
+                ? $"EventTypes_{_tableName}"
+                : "EventTypes";
+        _ = outboxWriter;
         _logger = logger;
 
         // Pre-compute schema-qualified names (SchemaName defaults to "dbo" for backward compat)
@@ -84,6 +100,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         _qTable      = $"[{_schemaName}].[{_tableName}]";
         _qRegistry  = $"[{_schemaName}].[{_registryTableName}]";
         _qTags      = $"[{_schemaName}].[{_tagsTableName}]";
+        _qTypes     = $"[{_schemaName}].[{_typesTableName}]";
         _qSequence  = $"[{_schemaName}].[EventSequencePosition]";
 
         // Optimize connection string for performance
@@ -224,8 +241,8 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         IReadOnlyList<AppendEvent> envelopes,
         CancellationToken cancellationToken)
     {
-        // 12 parameters per frame; stay under SQL Server's 2100-parameter limit.
-        const int maxEventsPerBatch = 170;
+        // 11 parameters per frame; stay under SQL Server's 2100-parameter limit.
+        const int maxEventsPerBatch = 190;
 
         var allSequencePositions = new List<long>();
         var commitTimestamp = DateTime.UtcNow;
@@ -258,26 +275,31 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                 var streamIdParam = $"@StreamId{eventIndex}";
                 var versionParam = $"@Version{eventIndex}";
                 var seqPosParam = $"@SequencePosition{eventIndex}";
-                var eventTypeParam = $"@EventType{eventIndex}";
+                var eventTypeIdParam = $"@EventTypeId{eventIndex}";
                 var eventDataParam = $"@EventData{eventIndex}";
-                var eventPayloadParam = $"@EventPayload{eventIndex}";
                 var schemaVersionParam = $"@SchemaVersion{eventIndex}";
-                var contentTypeParam = $"@ContentType{eventIndex}";
+                var codecIdParam = $"@CodecId{eventIndex}";
                 var tagsParam = $"@Tags{eventIndex}";
                 var metadataParam = $"@Metadata{eventIndex}";
                 var timestampParam = $"@Timestamp{eventIndex}";
                 var partitionHashParam = $"@PartitionHash{eventIndex}";
 
-                values.Add($"({streamIdParam}, {versionParam}, {seqPosParam}, {eventTypeParam}, {eventDataParam}, {eventPayloadParam}, {schemaVersionParam}, {contentTypeParam}, {tagsParam}, {metadataParam}, {timestampParam}, {partitionHashParam})");
+                values.Add($"({streamIdParam}, {versionParam}, {seqPosParam}, {eventTypeIdParam}, {eventDataParam}, {schemaVersionParam}, {codecIdParam}, {tagsParam}, {metadataParam}, {timestampParam}, {partitionHashParam})");
+
+                if (!_eventTypes.TryGetId(envelope.EventType, out var eventTypeId))
+                {
+                    throw new InvalidOperationException(
+                        $"Event type token '{envelope.EventType}' is not in {_qTypes}. " +
+                        "Foreign tokens must be registered before the append transaction opens.");
+                }
 
                 parameters.Add(new SqlParameter(streamIdParam, streamId));
                 parameters.Add(new SqlParameter(versionParam, version));
                 parameters.Add(new SqlParameter(seqPosParam, sequencePositions[i]));
-                parameters.Add(new SqlParameter(eventTypeParam, envelope.EventType));
-                parameters.Add(new SqlParameter(eventDataParam, DBNull.Value));
-                parameters.Add(PayloadParameter(eventPayloadParam, envelope.Payload));
+                parameters.Add(new SqlParameter(eventTypeIdParam, eventTypeId));
+                parameters.Add(PayloadParameter(eventDataParam, envelope.Payload));
                 parameters.Add(new SqlParameter(schemaVersionParam, envelope.SchemaVersion));
-                parameters.Add(new SqlParameter(contentTypeParam, envelope.ContentType));
+                parameters.Add(new SqlParameter(codecIdParam, SqlDbType.TinyInt) { Value = envelope.CodecId });
                 parameters.Add(new SqlParameter(tagsParam, tagsJson));
                 parameters.Add(new SqlParameter(metadataParam, (object?)metadataText ?? DBNull.Value));
                 parameters.Add(new SqlParameter(timestampParam, commitTimestamp));
@@ -286,18 +308,15 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
 
             var sql = $@"
                 INSERT INTO {_qTable}
-                (StreamId, Version, SequencePosition, EventType, EventData, EventPayload, SchemaVersion, ContentType, Tags, Metadata, Timestamp, PartitionHash)
+                (StreamId, Version, SequencePosition, EventTypeId, EventData, SchemaVersion, CodecId, Tags, Metadata, Timestamp, PartitionHash)
                 VALUES {string.Join(", ", values)}";
 
             await using var command = new SqlCommand(sql, connection, transaction);
             command.Parameters.AddRange(parameters.ToArray());
             await command.ExecuteNonQueryAsync(cancellationToken);
 
-            if (_useEventTagsTable)
-            {
-                await InsertEventTagsAsync(connection, transaction, envelopes, chunkStart, chunkSize, sequencePositions, cancellationToken)
-                    .ConfigureAwait(false);
-            }
+            await InsertEventTagsAsync(connection, transaction, envelopes, chunkStart, chunkSize, sequencePositions, cancellationToken)
+                .ConfigureAwait(false);
 
             allSequencePositions.AddRange(sequencePositions);
         }
@@ -345,74 +364,81 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         return new SqlParameter(name, SqlDbType.VarBinary, -1) { Value = bytes };
     }
 
-    private RecordedEvent ReadRecordedEvent(SqlDataReader reader)
+    private readonly record struct EventRow(
+        string StreamId,
+        long Version,
+        long SequencePosition,
+        int EventTypeId,
+        byte[] Payload,
+        int SchemaVersion,
+        byte CodecId,
+        string TagsJson,
+        string MetadataJson,
+        DateTime Timestamp);
+
+    private static EventRow ReadEventRow(SqlDataReader reader)
+        => new(
+            reader.GetString("StreamId"),
+            reader.GetInt64("Version"),
+            reader.GetInt64("SequencePosition"),
+            reader.GetInt32("EventTypeId"),
+            (byte[])reader.GetValue(reader.GetOrdinal("EventData")),
+            reader.GetInt32("SchemaVersion"),
+            reader.GetByte(reader.GetOrdinal("CodecId")),
+            reader.IsDBNull(reader.GetOrdinal("Tags")) ? "[]" : reader.GetString("Tags"),
+            reader.IsDBNull(reader.GetOrdinal("Metadata")) ? string.Empty : reader.GetString("Metadata"),
+            reader.GetDateTime("Timestamp"));
+
+    private async Task<IReadOnlyList<RecordedEvent>> MaterializeAsync(
+        IReadOnlyList<EventRow> rows,
+        CancellationToken cancellationToken)
     {
-        var streamId = reader.GetString("StreamId");
-        var version = reader.GetInt64("Version");
-        var sequencePosition = reader.GetInt64("SequencePosition");
-        var eventType = reader.GetString("EventType");
-        var payload = CoalescePayload(reader);
+        if (rows.Count == 0)
+            return [];
 
-        var contentType = reader.IsDBNull(reader.GetOrdinal("ContentType"))
-            ? AppendEvent.DefaultContentType
-            : reader.GetString("ContentType");
-        if (string.IsNullOrWhiteSpace(contentType))
-            contentType = AppendEvent.DefaultContentType;
+        await EnsureTokensCachedAsync(rows.Select(r => r.EventTypeId), cancellationToken).ConfigureAwait(false);
 
-        var schemaVersion = 1;
-        var schemaOrdinal = reader.GetOrdinal("SchemaVersion");
-        if (!reader.IsDBNull(schemaOrdinal))
+        var frames = new List<RecordedEvent>(rows.Count);
+        foreach (var row in rows)
+            frames.Add(ToRecordedEvent(row));
+        return frames;
+    }
+
+    private RecordedEvent ToRecordedEvent(EventRow row)
+    {
+        if (!_eventTypes.TryGetToken(row.EventTypeId, out var eventType))
         {
-            schemaVersion = reader.GetInt32(schemaOrdinal);
-            if (schemaVersion == 0)
-                schemaVersion = 1;
+            throw new InvalidOperationException(
+                $"EventTypeId {row.EventTypeId} is not in {_qTypes} after a cache refresh. " +
+                "Drop and recreate the event store schema.");
         }
 
-        var tagsJson = reader.IsDBNull(reader.GetOrdinal("Tags")) ? "[]" : reader.GetString("Tags");
-        var metadataJson = reader.IsDBNull(reader.GetOrdinal("Metadata")) ? string.Empty : reader.GetString("Metadata");
-        var commitTimestamp = reader.GetDateTime("Timestamp");
-        var tags = JsonSerializer.Deserialize<string[]>(tagsJson, _jsonOptions) ?? [];
-        var metadataBytes = string.IsNullOrEmpty(metadataJson)
+        var tags = JsonSerializer.Deserialize<string[]>(row.TagsJson, _jsonOptions) ?? [];
+        var metadataBytes = string.IsNullOrEmpty(row.MetadataJson)
             ? ReadOnlyMemory<byte>.Empty
-            : Encoding.UTF8.GetBytes(metadataJson);
+            : Encoding.UTF8.GetBytes(row.MetadataJson);
 
         return new RecordedEvent(
             eventType,
-            payload,
-            streamId,
-            version,
-            sequencePosition,
-            commitTimestamp,
+            row.Payload,
+            row.StreamId,
+            row.Version,
+            row.SequencePosition,
+            row.Timestamp,
             metadataBytes,
-            schemaVersion,
-            contentType,
+            row.SchemaVersion,
+            row.CodecId,
             tags);
-    }
-
-    private static ReadOnlyMemory<byte> CoalescePayload(SqlDataReader reader)
-    {
-        var payloadOrdinal = reader.GetOrdinal("EventPayload");
-        if (!reader.IsDBNull(payloadOrdinal))
-        {
-            var bytes = (byte[])reader.GetValue(payloadOrdinal);
-            return bytes;
-        }
-
-        var dataOrdinal = reader.GetOrdinal("EventData");
-        if (reader.IsDBNull(dataOrdinal))
-            return ReadOnlyMemory<byte>.Empty;
-
-        return Encoding.UTF8.GetBytes(reader.GetString(dataOrdinal));
     }
 
     private static IReadOnlyList<string> UnionTags(IReadOnlyList<AppendEvent> envelopes)
         => envelopes.SelectMany(e => e.Tags).Distinct(StringComparer.Ordinal).ToList();
 
     /// <summary>
-    /// Takes <c>UPDLOCK, HOLDLOCK</c> on each condition tag (sorted) so a concurrent
-    /// insert of the same tag cannot sneak in between the existence check and commit.
-    /// When <see cref="SqlServerEventStoreOptions.UseEventTagsTable"/> is false, the
-    /// existence query itself holds the equivalent locks on <c>Events</c>.
+    /// Takes <c>UPDLOCK, HOLDLOCK</c> on each condition tag (sorted) in
+    /// <c>EventTags</c> so a concurrent insert of the same tag cannot sneak in
+    /// between the existence check and commit. Tagless conditions lock
+    /// <c>Events</c> the same way.
     /// </summary>
     private async Task AcquireDcbFenceLocksAsync(
         SqlConnection connection,
@@ -420,9 +446,6 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         AppendCondition condition,
         CancellationToken cancellationToken)
     {
-        if (!_useEventTagsTable)
-            return;
-
         var tags = CollectFenceTags(condition);
         if (tags.Count == 0)
         {
@@ -489,10 +512,9 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         AppendCondition condition,
         CancellationToken cancellationToken)
     {
-        var hints = _useEventTagsTable ? string.Empty : " WITH (UPDLOCK, HOLDLOCK, ROWLOCK)";
         var sql = $@"
             SELECT TOP 1 1
-            FROM {_qTable} e{hints}
+            FROM {_qTable} e
             WHERE 1=1";
 
         var parameters = new List<SqlParameter>();
@@ -513,18 +535,29 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
 
                 if (item.Types != null && item.Types.Count > 0)
                 {
-                    var typeConditions = new List<string>();
-                    for (int j = 0; j < item.Types.Count; j++)
+                    var typeIds = new List<int>(item.Types.Count);
+                    foreach (var typeName in item.Types)
                     {
-                        var typeName = item.Types[j];
-                        var paramName = $"@Type{i}_{j}";
-                        var paramNamePrefix = $"@TypePrefix{i}_{j}";
-
-                        typeConditions.Add($"(e.EventType = {paramName} OR e.EventType LIKE {paramNamePrefix})");
-                        parameters.Add(new SqlParameter(paramName, typeName));
-                        parameters.Add(new SqlParameter(paramNamePrefix, typeName + ",%"));
+                        if (_eventTypes.TryGetId(typeName, out var typeId))
+                            typeIds.Add(typeId);
                     }
-                    conditionParts.Add($"({string.Join(" OR ", typeConditions)})");
+
+                    if (typeIds.Count == 0)
+                    {
+                        conditionParts.Add("1 = 0");
+                    }
+                    else
+                    {
+                        var names = new string[typeIds.Count];
+                        for (int j = 0; j < typeIds.Count; j++)
+                        {
+                            var paramName = $"@Type{i}_{j}";
+                            names[j] = paramName;
+                            parameters.Add(new SqlParameter(paramName, typeIds[j]));
+                        }
+
+                        conditionParts.Add($"e.EventTypeId IN ({string.Join(", ", names)})");
+                    }
                 }
 
                 if (item.Tags != null && item.Tags.Count > 0)
@@ -533,14 +566,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                     {
                         var tag = item.Tags[j];
                         var paramName = $"@Tag{i}_{j}";
-                        if (_useEventTagsTable)
-                        {
-                            conditionParts.Add($"EXISTS (SELECT 1 FROM {_qTags} et WHERE et.GlobalSequencePosition = e.SequencePosition AND et.Tag = {paramName})");
-                        }
-                        else
-                        {
-                            conditionParts.Add($"EXISTS (SELECT 1 FROM OPENJSON(e.Tags) WHERE value = {paramName})");
-                        }
+                        conditionParts.Add($"EXISTS (SELECT 1 FROM {_qTags} et WHERE et.GlobalSequencePosition = e.SequencePosition AND et.Tag = {paramName})");
                         parameters.Add(new SqlParameter(paramName, tag));
                     }
                 }
@@ -633,178 +659,30 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         await using var schemaCmd = new SqlCommand(schemaSql, schemaConn);
         await schemaCmd.ExecuteNonQueryAsync(cancellationToken);
 
-        var sql = $@"
-            -- Create SEQUENCE for sequence positions (better performance than MAX query)
-            IF NOT EXISTS (SELECT * FROM sys.sequences WHERE name = 'EventSequencePosition' AND schema_id = SCHEMA_ID('{_schemaName}'))
-            BEGIN
-                CREATE SEQUENCE {_qSequence}
-                    START WITH 1
-                    INCREMENT BY 1
-                    CACHE 1000;  -- Cache 1000 values for better performance
-            END
-
-            -- Drop index if it exists (from previous schema versions)
-            IF EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Tags' AND object_id = OBJECT_ID(N'{_qTable}'))
-            BEGIN
-                DROP INDEX [IX_Tags] ON {_qTable};
-            END
-
-            -- Create table if it doesn't exist
-            IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'{_qTable}') AND type in (N'U'))
-            BEGIN
-                CREATE TABLE {_qTable} (
-                    [StreamId] NVARCHAR(255) NOT NULL,
-                    [Version] BIGINT NOT NULL,
-                    [SequencePosition] BIGINT NOT NULL,
-                    [EventType] NVARCHAR(500) NOT NULL,
-                    [EventData] NVARCHAR(MAX) NULL,
-                    [EventPayload] VARBINARY(MAX) NULL,
-                    [SchemaVersion] INT NOT NULL DEFAULT 1,
-                    [ContentType] NVARCHAR(100) NOT NULL DEFAULT 'application/json',
-                    [Tags] NVARCHAR(MAX) NULL,
-                    [Metadata] NVARCHAR(MAX) NULL,
-                    [Timestamp] DATETIME2 NOT NULL,
-                    [PartitionHash] INT NOT NULL DEFAULT 0,
-                    PRIMARY KEY ([StreamId], [Version]),
-                    INDEX [IX_SequencePosition] ([SequencePosition])
-                );
-                CREATE UNIQUE NONCLUSTERED INDEX [UX_SequencePosition]
-                    ON {_qTable} ([SequencePosition]);
-                
-                -- Create covering index for ReadStreamAsync (StreamId + Version with included columns)
-                CREATE NONCLUSTERED INDEX [IX_Events_StreamId_Version] 
-                ON {_qTable} ([StreamId], [Version]) 
-                INCLUDE ([SequencePosition], [EventType], [Timestamp]);
-                
-                -- Create index for timestamp-based queries
-                CREATE NONCLUSTERED INDEX [IX_Events_Timestamp] 
-                ON {_qTable} ([Timestamp]) 
-                INCLUDE ([StreamId], [SequencePosition]);
-                
-                -- Create covering index for partition-aware queries
-                CREATE NONCLUSTERED INDEX [IX_Events_PartitionHash_SequencePosition]
-                ON {_qTable}([PartitionHash], [SequencePosition])
-                INCLUDE ([StreamId], [Version], [EventType], [EventData], [ContentType], [Tags], [Metadata], [Timestamp]);
-            END
-            ELSE
-            BEGIN
-                -- Add ContentType column if it doesn't exist (for existing tables)
-                IF NOT EXISTS (SELECT * FROM sys.columns 
-                              WHERE object_id = OBJECT_ID(N'{_qTable}') 
-                              AND name = 'ContentType')
-                BEGIN
-                    ALTER TABLE {_qTable}
-                    ADD [ContentType] NVARCHAR(100) NULL;
-                    
-                    -- Backfill existing rows with JSON content type
-                    UPDATE {_qTable}
-                    SET [ContentType] = 'application/json'
-                    WHERE [ContentType] IS NULL;
-                    
-                    -- Make column NOT NULL with default
-                    ALTER TABLE {_qTable}
-                    ALTER COLUMN [ContentType] NVARCHAR(100) NOT NULL;
-                    
-                    ALTER TABLE {_qTable}
-                    ADD CONSTRAINT [DF_Events_ContentType] 
-                    DEFAULT 'application/json' FOR [ContentType];
-                END
-                
-                -- Add indexes if they don't exist (for existing tables)
-                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Events_StreamId_Version' AND object_id = OBJECT_ID(N'{_qTable}'))
-                BEGIN
-                    CREATE NONCLUSTERED INDEX [IX_Events_StreamId_Version] 
-                    ON {_qTable} ([StreamId], [Version]) 
-                    INCLUDE ([SequencePosition], [EventType], [Timestamp]);
-                END
-                
-                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Events_Timestamp' AND object_id = OBJECT_ID(N'{_qTable}'))
-                BEGIN
-                    CREATE NONCLUSTERED INDEX [IX_Events_Timestamp] 
-                    ON {_qTable} ([Timestamp]) 
-                    INCLUDE ([StreamId], [SequencePosition]);
-                END
-
-                -- Ensure SequencePosition is unique before EventTags FK references it.
-                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'UX_SequencePosition' AND object_id = OBJECT_ID(N'{_qTable}'))
-                BEGIN
-                    CREATE UNIQUE NONCLUSTERED INDEX [UX_SequencePosition]
-                        ON {_qTable}([SequencePosition]);
-                END
-                
-                -- Add PartitionHash column if it doesn't exist (for existing tables).
-                -- PartitionHash is computed by C# PartitionHashUtility.GetDeterministicHashCode (FNV-1a)
-                -- so it is consistent across all backends. Rows from old schemas default to 0 and
-                -- will be excluded from partition-filtered queries until backfilled.
-                IF NOT EXISTS (SELECT * FROM sys.columns 
-                              WHERE object_id = OBJECT_ID(N'{_qTable}') 
-                              AND name = 'PartitionHash')
-                BEGIN
-                    ALTER TABLE {_qTable}
-                    ADD [PartitionHash] INT NOT NULL DEFAULT 0;
-                END
-                
-                -- Add partition filtering index if it doesn't exist (for existing tables)
-                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Events_PartitionHash_SequencePosition' AND object_id = OBJECT_ID(N'{_qTable}'))
-                BEGIN
-                    CREATE NONCLUSTERED INDEX [IX_Events_PartitionHash_SequencePosition]
-                    ON {_qTable}([PartitionHash], [SequencePosition])
-                    INCLUDE ([StreamId], [Version], [EventType], [EventData], [ContentType], [Tags], [Metadata], [Timestamp]);
-                END
-
-                -- Canonical payload is EventPayload (VARBINARY). Keep EventData for coalesce-read of old NVARCHAR rows.
-                IF NOT EXISTS (SELECT * FROM sys.columns
-                              WHERE object_id = OBJECT_ID(N'{_qTable}')
-                              AND name = 'EventPayload')
-                BEGIN
-                    ALTER TABLE {_qTable}
-                    ADD [EventPayload] VARBINARY(MAX) NULL;
-                END
-
-                IF NOT EXISTS (SELECT * FROM sys.columns
-                              WHERE object_id = OBJECT_ID(N'{_qTable}')
-                              AND name = 'SchemaVersion')
-                BEGIN
-                    ALTER TABLE {_qTable}
-                    ADD [SchemaVersion] INT NOT NULL
-                        CONSTRAINT [DF_{_tableName}_SchemaVersion] DEFAULT 1;
-                END
-
-                IF EXISTS (SELECT * FROM sys.columns
-                           WHERE object_id = OBJECT_ID(N'{_qTable}')
-                           AND name = 'EventData'
-                           AND is_nullable = 0)
-                BEGIN
-                    ALTER TABLE {_qTable}
-                    ALTER COLUMN [EventData] NVARCHAR(MAX) NULL;
-                END
-            END";
-
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
 
-        await using var command = new SqlCommand(sql, connection);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        await EnsureSequenceAsync(connection, cancellationToken);
+        await ThrowIfIncompatibleEventsTableAsync(connection, cancellationToken);
+        await EnsureEventTypesTableAsync(connection, cancellationToken);
+        await EnsureEventsTableAsync(connection, cancellationToken);
+        await WarmEventTypesAsync(connection, cancellationToken);
 
-        // Create normalized EventTags table for indexed tag lookups
-        if (_useEventTagsTable)
-        {
-            var tagsSql = $@"
-                IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'{_qTags}') AND type in (N'U'))
-                BEGIN
-                    CREATE TABLE {_qTags} (
-                        [GlobalSequencePosition] BIGINT NOT NULL,
-                        [Tag]                    NVARCHAR(256) NOT NULL,
-                        CONSTRAINT [PK_{_tagsTableName}] PRIMARY KEY CLUSTERED ([Tag], [GlobalSequencePosition]),
-                        CONSTRAINT [FK_{_tagsTableName}_Events] FOREIGN KEY ([GlobalSequencePosition])
-                            REFERENCES {_qTable}([SequencePosition]) ON DELETE CASCADE
-                    );
-                    CREATE NONCLUSTERED INDEX [IX_{_tagsTableName}_GlobalSequencePosition]
-                        ON {_qTags}([GlobalSequencePosition]);
-                END";
-            await using var tagsCmd = new SqlCommand(tagsSql, connection);
-            await tagsCmd.ExecuteNonQueryAsync(cancellationToken);
-        }
+        var tagsSql = $@"
+            IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'{_qTags}') AND type in (N'U'))
+            BEGIN
+                CREATE TABLE {_qTags} (
+                    [GlobalSequencePosition] BIGINT NOT NULL,
+                    [Tag]                    NVARCHAR(256) NOT NULL,
+                    CONSTRAINT [PK_{_tagsTableName}] PRIMARY KEY CLUSTERED ([Tag], [GlobalSequencePosition]),
+                    CONSTRAINT [FK_{_tagsTableName}_Events] FOREIGN KEY ([GlobalSequencePosition])
+                        REFERENCES {_qTable}([SequencePosition]) ON DELETE CASCADE
+                );
+                CREATE NONCLUSTERED INDEX [IX_{_tagsTableName}_GlobalSequencePosition]
+                    ON {_qTags}([GlobalSequencePosition]);
+            END";
+        await using var tagsCmd = new SqlCommand(tagsSql, connection);
+        await tagsCmd.ExecuteNonQueryAsync(cancellationToken);
 
         // Create stream registry table if enabled
         if (_enableRegistry)
@@ -871,6 +749,278 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
             connection, _schemaName, dcbSnapTable, eventSnapTable, cancellationToken);
 
         _logger?.LogInformation("Initialized event store schema for table {TableName}", _tableName);
+    }
+
+    private async Task EnsureSequenceAsync(SqlConnection connection, CancellationToken cancellationToken)
+    {
+        var sql = $@"
+            IF NOT EXISTS (SELECT * FROM sys.sequences WHERE name = 'EventSequencePosition' AND schema_id = SCHEMA_ID('{_schemaName}'))
+            BEGIN
+                CREATE SEQUENCE {_qSequence}
+                    START WITH 1
+                    INCREMENT BY 1
+                    CACHE 1000;
+            END";
+        await using var command = new SqlCommand(sql, connection);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private async Task ThrowIfIncompatibleEventsTableAsync(SqlConnection connection, CancellationToken cancellationToken)
+    {
+        await using var existsCmd = new SqlCommand(
+            $"SELECT CASE WHEN OBJECT_ID(N'{_qTable}', 'U') IS NULL THEN 0 ELSE 1 END",
+            connection);
+        var exists = Convert.ToInt32(await existsCmd.ExecuteScalarAsync(cancellationToken)) == 1;
+        if (!exists)
+            return;
+
+        var found = await ReadSchemaFormatAsync(connection, cancellationToken);
+        if (!string.Equals(found, CurrentSchemaFormat, StringComparison.Ordinal))
+            throw new IncompatibleEventStoreSchemaException(_qTable, found, CurrentSchemaFormat);
+    }
+
+    private async Task EnsureEventsTableAsync(SqlConnection connection, CancellationToken cancellationToken)
+    {
+        await using (var existsCmd = new SqlCommand(
+            $"SELECT CASE WHEN OBJECT_ID(N'{_qTable}', 'U') IS NULL THEN 0 ELSE 1 END",
+            connection))
+        {
+            var exists = Convert.ToInt32(await existsCmd.ExecuteScalarAsync(cancellationToken)) == 1;
+            if (exists)
+                return;
+        }
+
+        var readable = $"[{_schemaName}].[{_tableName}_Readable]";
+        var sql = $@"
+            CREATE TABLE {_qTable} (
+                [StreamId] NVARCHAR(255) NOT NULL,
+                [Version] BIGINT NOT NULL,
+                [SequencePosition] BIGINT NOT NULL,
+                [EventTypeId] INT NOT NULL,
+                [EventData] VARBINARY(MAX) NOT NULL,
+                [SchemaVersion] INT NOT NULL,
+                [CodecId] TINYINT NOT NULL,
+                [Tags] NVARCHAR(4000) NULL,
+                [Metadata] NVARCHAR(MAX) NULL,
+                [Timestamp] DATETIME2 NOT NULL,
+                [PartitionHash] INT NOT NULL,
+                PRIMARY KEY ([StreamId], [Version]),
+                CONSTRAINT [FK_{_tableName}_EventTypes] FOREIGN KEY ([EventTypeId])
+                    REFERENCES {_qTypes}([Id])
+            );
+            CREATE UNIQUE NONCLUSTERED INDEX [UX_SequencePosition]
+                ON {_qTable} ([SequencePosition]);
+            CREATE NONCLUSTERED INDEX [IX_Events_StreamId_Version]
+                ON {_qTable} ([StreamId], [Version])
+                INCLUDE ([SequencePosition], [EventTypeId], [Timestamp]);
+            CREATE NONCLUSTERED INDEX [IX_Events_Timestamp]
+                ON {_qTable} ([Timestamp])
+                INCLUDE ([StreamId], [SequencePosition]);
+            CREATE NONCLUSTERED INDEX [{PartitionHashIndexName}]
+                ON {_qTable}([PartitionHash], [SequencePosition])
+                INCLUDE ([StreamId], [Version], [EventTypeId], [CodecId], [SchemaVersion], [Timestamp]);
+            EXEC('CREATE VIEW {readable} AS
+                SELECT
+                    e.StreamId,
+                    e.Version,
+                    e.SequencePosition,
+                    e.EventTypeId,
+                    t.Token AS EventType,
+                    CAST(e.EventData AS VARCHAR(MAX)) AS EventJson,
+                    e.SchemaVersion,
+                    e.CodecId,
+                    e.Tags,
+                    e.Metadata,
+                    e.[Timestamp],
+                    e.PartitionHash
+                FROM {_qTable} e
+                INNER JOIN {_qTypes} t ON t.Id = e.EventTypeId');
+            EXEC sys.sp_addextendedproperty
+                @name = N'{SchemaFormatPropertyName}',
+                @value = N'{CurrentSchemaFormat}',
+                @level0type = N'SCHEMA', @level0name = N'{_schemaName}',
+                @level1type = N'TABLE',  @level1name = N'{_tableName}';";
+
+        await using var command = new SqlCommand(sql, connection);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private async Task EnsureEventTypesTableAsync(SqlConnection connection, CancellationToken cancellationToken)
+    {
+        var sql = $@"
+            IF OBJECT_ID(N'{_qTypes}', 'U') IS NULL
+            BEGIN
+                CREATE TABLE {_qTypes} (
+                    [Id] INT IDENTITY(1, 1) NOT NULL,
+                    [Token] NVARCHAR(500) NOT NULL,
+                    CONSTRAINT [PK_{_typesTableName}] PRIMARY KEY ([Id]),
+                    CONSTRAINT [UX_{_typesTableName}_Token] UNIQUE ([Token])
+                );
+            END";
+        await using var command = new SqlCommand(sql, connection);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private async Task WarmEventTypesAsync(SqlConnection connection, CancellationToken cancellationToken)
+    {
+        var tokens = CatalogFamilyTokens().Distinct(StringComparer.Ordinal).ToList();
+        if (tokens.Count > 0)
+        {
+            await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
+            try
+            {
+                foreach (var token in tokens.OrderBy(t => t, StringComparer.Ordinal))
+                    await GetOrInsertEventTypeIdCoreAsync(connection, transaction, token, cancellationToken)
+                        .ConfigureAwait(false);
+                await transaction.CommitAsync(cancellationToken);
+            }
+            catch
+            {
+                try { await transaction.RollbackAsync(cancellationToken); } catch { /* already rolled back */ }
+                throw;
+            }
+        }
+
+        await ReloadEventTypeCacheAsync(connection, cancellationToken).ConfigureAwait(false);
+    }
+
+    private IEnumerable<string> CatalogFamilyTokens()
+    {
+        if (_session.Catalog is EventTypeCatalog catalog)
+        {
+            foreach (var family in catalog.EnumerateFamilies())
+                yield return family.Token;
+        }
+    }
+
+    private async Task ReloadEventTypeCacheAsync(SqlConnection connection, CancellationToken cancellationToken)
+    {
+        var rows = new List<(int Id, string Token)>();
+        await using var command = new SqlCommand($"SELECT Id, Token FROM {_qTypes}", connection);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            rows.Add((reader.GetInt32(0), reader.GetString(1)));
+        _eventTypes.ReplaceAll(rows);
+    }
+
+    private async Task EnsureTokensCachedAsync(IEnumerable<int> typeIds, CancellationToken cancellationToken)
+    {
+        var missing = false;
+        foreach (var id in typeIds)
+        {
+            if (!_eventTypes.TryGetToken(id, out _))
+            {
+                missing = true;
+                break;
+            }
+        }
+
+        if (!missing)
+            return;
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await ReloadEventTypeCacheAsync(connection, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task EnsureEventTypeIdsAsync(
+        IReadOnlyList<AppendEvent> envelopes,
+        CancellationToken cancellationToken)
+    {
+        var tokens = envelopes
+            .Select(e => e.EventType)
+            .Where(t => !_eventTypes.TryGetId(t, out _))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(t => t, StringComparer.Ordinal)
+            .ToList();
+
+        foreach (var token in tokens)
+            await RegisterEventTypeTokenAsync(token, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Get-or-insert <paramref name="token"/> in its own short transaction, committed
+    /// before the caller opens the append transaction.
+    /// </summary>
+    private async Task RegisterEventTypeTokenAsync(string token, CancellationToken cancellationToken)
+    {
+        if (_eventTypes.TryGetId(token, out _))
+            return;
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            var id = await GetOrInsertEventTypeIdCoreAsync(connection, transaction, token, cancellationToken)
+                .ConfigureAwait(false);
+            _eventTypes.Add(id, token);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch (SqlException ex) when (ex.Number is 2627 or 2601)
+        {
+            try { await transaction.RollbackAsync(cancellationToken); } catch { /* already rolled back */ }
+            await using var select = new SqlCommand(
+                $"SELECT Id FROM {_qTypes} WHERE Token = @Token",
+                connection);
+            select.Parameters.Add(new SqlParameter("@Token", token));
+            var id = Convert.ToInt32(await select.ExecuteScalarAsync(cancellationToken));
+            _eventTypes.Add(id, token);
+        }
+        catch
+        {
+            try { await transaction.RollbackAsync(cancellationToken); } catch { /* already rolled back */ }
+            throw;
+        }
+    }
+
+    private async Task<int> GetOrInsertEventTypeIdCoreAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string token,
+        CancellationToken cancellationToken)
+    {
+        await using (var select = new SqlCommand(
+            $"""
+            SELECT Id
+            FROM {_qTypes} WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
+            WHERE Token = @Token
+            """,
+            connection,
+            transaction))
+        {
+            select.Parameters.Add(new SqlParameter("@Token", token));
+            var existing = await select.ExecuteScalarAsync(cancellationToken);
+            if (existing is not null and not DBNull)
+                return Convert.ToInt32(existing);
+        }
+
+        await using var insert = new SqlCommand(
+            $"""
+            INSERT INTO {_qTypes} (Token)
+            OUTPUT INSERTED.Id
+            VALUES (@Token)
+            """,
+            connection,
+            transaction);
+        insert.Parameters.Add(new SqlParameter("@Token", token));
+        return Convert.ToInt32(await insert.ExecuteScalarAsync(cancellationToken));
+    }
+
+    private async Task<string?> ReadSchemaFormatAsync(SqlConnection connection, CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT CAST(value AS nvarchar(128))
+            FROM sys.extended_properties
+            WHERE major_id = OBJECT_ID(@Table)
+              AND name = @Name
+              AND minor_id = 0
+            """;
+        await using var command = new SqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@Table", _qTable);
+        command.Parameters.AddWithValue("@Name", SchemaFormatPropertyName);
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is null or DBNull ? null : Convert.ToString(result);
     }
 
     // Stream Registry Implementation
@@ -1320,9 +1470,6 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         {
             var envelope = envelopes[i];
             var sequencePosition = sequencePositions[i];
-            var payloadText = envelope.Payload.IsEmpty
-                ? "{}"
-                : Encoding.UTF8.GetString(envelope.Payload.Span);
             var metadataText = envelope.Metadata.IsEmpty
                 ? "{}"
                 : Encoding.UTF8.GetString(envelope.Metadata.Span);
@@ -1332,8 +1479,8 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                 Id = Guid.NewGuid(),
                 EventType = envelope.EventType,
                 SchemaVersion = envelope.SchemaVersion,
-                ContentType = envelope.ContentType,
-                Payload = payloadText,
+                CodecId = envelope.CodecId,
+                Payload = envelope.Payload,
                 Metadata = metadataText,
                 StreamId = streamId,
                 SequencePosition = sequencePosition,
@@ -1341,14 +1488,13 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                 Attempts = 0
             };
 
-            // Use SQL directly to write outbox message with same connection/transaction
             var sql = $@"
                 INSERT INTO [{_schemaName}].[{_options.OutboxTableName}] (
-                    Id, EventType, SchemaVersion, ContentType, Payload, Metadata, CreatedAt, 
+                    Id, EventType, SchemaVersion, CodecId, Payload, Metadata, CreatedAt,
                     Attempts, StreamId, SequencePosition
                 )
                 VALUES (
-                    @Id, @EventType, @SchemaVersion, @ContentType, @Payload, @Metadata, @CreatedAt,
+                    @Id, @EventType, @SchemaVersion, @CodecId, @Payload, @Metadata, @CreatedAt,
                     @Attempts, @StreamId, @SequencePosition
                 )";
 
@@ -1356,8 +1502,8 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
             command.Parameters.AddWithValue("@Id", outboxMessage.Id);
             command.Parameters.AddWithValue("@EventType", outboxMessage.EventType);
             command.Parameters.AddWithValue("@SchemaVersion", outboxMessage.SchemaVersion);
-            command.Parameters.AddWithValue("@ContentType", outboxMessage.ContentType);
-            command.Parameters.AddWithValue("@Payload", outboxMessage.Payload);
+            command.Parameters.Add(new SqlParameter("@CodecId", SqlDbType.TinyInt) { Value = outboxMessage.CodecId });
+            command.Parameters.Add(PayloadParameter("@Payload", outboxMessage.Payload));
             command.Parameters.AddWithValue("@Metadata", outboxMessage.Metadata);
             command.Parameters.AddWithValue("@CreatedAt", outboxMessage.CreatedAt);
             command.Parameters.AddWithValue("@Attempts", outboxMessage.Attempts);
@@ -1588,6 +1734,8 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
 
         return await ExecuteWithRetryAsync(async ct =>
         {
+            await EnsureEventTypeIdsAsync(envelopes, ct).ConfigureAwait(false);
+
             await using var connection = new SqlConnection(_connectionString);
             await connection.OpenAsync(ct);
             await using var transaction = connection.BeginTransaction();
@@ -1624,7 +1772,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                         ct);
                 }
 
-                if (_options.EnableOutbox && _outboxWriter != null)
+                if (_options.EnableOutbox)
                 {
                     await WriteEventsToOutboxAsync(
                         connection, transaction, envelopes, sequencePositions, streamId, ct)
@@ -1660,6 +1808,8 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
 
         return await ExecuteWithRetryAsync(async ct =>
         {
+            await EnsureEventTypeIdsAsync(envelopes, ct).ConfigureAwait(false);
+
             await using var connection = new SqlConnection(_connectionString);
             await connection.OpenAsync(ct);
             await using var transaction = connection.BeginTransaction();
@@ -1702,7 +1852,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                         ct);
                 }
 
-                if (_options.EnableOutbox && _outboxWriter != null)
+                if (_options.EnableOutbox)
                 {
                     await WriteEventsToOutboxAsync(
                         connection, transaction, envelopes, sequencePositions, streamId, ct)
@@ -1752,12 +1902,14 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         if (toCommitTimestamp.HasValue)
             command.Parameters.AddWithValue("@ToTimestamp", toCommitTimestamp.Value);
 
-        var frames = new List<RecordedEvent>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
-            frames.Add(ReadRecordedEvent(reader));
+        var rows = new List<EventRow>();
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+                rows.Add(ReadEventRow(reader));
+        }
 
-        return frames;
+        return await MaterializeAsync(rows, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<IReadOnlyList<RecordedEvent>> ReadRecordedQueryCoreAsync(
@@ -1771,25 +1923,30 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         var built = DcbQuerySql.Build(
             _qTable,
             _qTags,
-            _useEventTagsTable,
             query,
+            _eventTypes.FindId,
             fromSequencePosition,
             toSequencePosition,
             toCommitTimestamp,
             limit,
             DcbQuerySql.Mode.Events);
 
+        if (built.ShortCircuited)
+            return [];
+
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(built.Sql, connection);
         command.Parameters.AddRange(built.Parameters.ToArray());
 
-        var frames = new List<RecordedEvent>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
-            frames.Add(ReadRecordedEvent(reader));
+        var rows = new List<EventRow>();
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+                rows.Add(ReadEventRow(reader));
+        }
 
-        return frames;
+        return await MaterializeAsync(rows, cancellationToken).ConfigureAwait(false);
     }
 
     private async IAsyncEnumerable<RecordedEvent> ReadRecordedQueryStreamAsync(
@@ -1820,13 +1977,16 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         var built = DcbQuerySql.Build(
             _qTable,
             _qTags,
-            _useEventTagsTable,
             query,
+            _eventTypes.FindId,
             fromSequencePosition,
             toSequencePosition,
             toCommitTimestamp,
             limit: null,
             DcbQuerySql.Mode.MaxSequence);
+
+        if (built.ShortCircuited)
+            return 0L;
 
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);

@@ -39,7 +39,7 @@ public class MapProjectionQueriesTests : IAsyncLifetime
         builder.Logging.ClearProviders();
 
         builder.Services.AddLawnDart(o => { o.RequireTenantId = false; o.EnableAuthorization = false; });
-        builder.Services.AddBoundedContext("default").UseInMemory();
+        builder.Services.AddBoundedContext("default").UseInMemory().WithEventTypes(typeof(CatalogPlaceholderEvent));
         builder.Services.AddInMemoryProjectionStores();
         builder.Services.AddHttpContextAccessor();
         builder.Services.AddSingleton<IPartitioningService, SingleNodePartitioningService>();
@@ -195,7 +195,7 @@ public class MapProjectionQueriesTests : IAsyncLifetime
         builder.Logging.ClearProviders();
 
         builder.Services.AddLawnDart(o => { o.RequireTenantId = false; o.EnableAuthorization = false; });
-        builder.Services.AddBoundedContext("default").UseInMemory();
+        builder.Services.AddBoundedContext("default").UseInMemory().WithEventTypes(typeof(CatalogPlaceholderEvent));
         builder.Services.AddInMemoryProjectionStores();
         builder.Services.AddHttpContextAccessor();
         builder.Services.AddSingleton<IPartitioningService>(_ =>

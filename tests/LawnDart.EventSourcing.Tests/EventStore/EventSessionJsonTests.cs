@@ -25,13 +25,13 @@ public class EventSessionJsonTests
             commitTimestamp: commit,
             append.Metadata,
             append.SchemaVersion,
-            append.ContentType,
+            append.CodecId,
             append.Tags);
 
         var sequenced = session.Hydrate(recorded);
 
         Assert.Equal("book-registered", append.EventType);
-        Assert.Equal("application/json", append.ContentType);
+        Assert.Equal(EventCodec.Json, append.CodecId);
         var hydrated = Assert.IsType<BookRegistered>(sequenced.Event);
         Assert.Equal("Dune", hydrated.Title);
         Assert.Equal(commit, sequenced.Metadata.CommitTimestamp);
@@ -43,7 +43,7 @@ public class EventSessionJsonTests
 
     private sealed class IsolatedCatalog : IEventTypeCatalog
     {
-        public string GetName(Type type) => EventTypeNameResolver.TryGetDeclaredName(type)
+        public string GetName(Type type) => EventTypeCatalog.TryGetDeclaredName(type)
             ?? throw new InvalidOperationException(type.FullName);
 
         public bool TryResolveType(string storedName, [NotNullWhen(true)] out Type? type)

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using LawnDart.EventStore;
 using LawnDart.Metadata;
 using LawnDart.Serialization;
 
@@ -43,7 +44,8 @@ public static class LawnDartExtensions
         services.AddSingleton<IMetadataProvider>(sp =>
         {
             var tenantProvider = sp.GetService<ITenantContextProvider>();
-            return new DefaultMetadataProvider(tenantProvider);
+            var catalog = sp.GetService<IEventTypeCatalog>();
+            return new DefaultMetadataProvider(tenantProvider, catalog);
         });
 
         return services;

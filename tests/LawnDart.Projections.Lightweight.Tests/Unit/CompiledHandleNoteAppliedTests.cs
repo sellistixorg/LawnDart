@@ -95,12 +95,12 @@ public sealed class CompiledHandleNoteAppliedTests
         var defaultMap = defaultNamed.GetCompiledHandlers();
 
         Assert.True(aliasedMap.ContainsKey(typeof(AliasedNamedEvent)));
-        Assert.Equal("delivery-alias", EventTypeNameResolver.GetName(typeof(AliasedNamedEvent)));
-        Assert.NotEqual(typeof(AliasedNamedEvent).FullName, EventTypeNameResolver.GetName(typeof(AliasedNamedEvent)));
+        Assert.Equal("delivery-alias", EventTypeCatalog.TryGetDeclaredName(typeof(AliasedNamedEvent)));
+        Assert.NotEqual(typeof(AliasedNamedEvent).FullName, EventTypeCatalog.TryGetDeclaredName(typeof(AliasedNamedEvent)));
 
         Assert.True(defaultMap.ContainsKey(typeof(GlobalTagged)));
-        Assert.Equal("test-projection-fixtures.global-tagged", EventTypeNameResolver.GetName(typeof(GlobalTagged)));
-        Assert.NotEqual(typeof(GlobalTagged).FullName, EventTypeNameResolver.GetName(typeof(GlobalTagged)));
+        Assert.Equal("test-projection-fixtures.global-tagged", EventTypeCatalog.TryGetDeclaredName(typeof(GlobalTagged)));
+        Assert.NotEqual(typeof(GlobalTagged).FullName, EventTypeCatalog.TryGetDeclaredName(typeof(GlobalTagged)));
     }
 
     private static EventMetadata Meta() =>

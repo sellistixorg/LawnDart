@@ -42,7 +42,9 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
     /// <param name="options">Optional in-memory store options (subscription channel capacity).</param>
     /// <param name="session">
     /// Typed session used to serialize on append and hydrate on read.
-    /// Defaults to STJ UTF-8 and <see cref="EventTypeCatalog.Shared"/>.
+    /// Defaults to STJ UTF-8 and a per-store write-through catalog (not a
+    /// process-wide resolver). Hosts must pass a materialized catalog via
+    /// <c>WithEventTypes</c>.
     /// </param>
     public InMemoryEventStore(
         bool enableRegistry = true,
@@ -54,7 +56,9 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         _enableRegistry = enableRegistry;
         ContextName     = string.IsNullOrWhiteSpace(contextName) ? "default" : contextName;
         _logger         = logger;
-        _session        = session ?? new EventSession(new JsonEventSerializer());
+        _session        = session ?? new EventSession(
+            new JsonEventSerializer(),
+            new WriteThroughEventTypeCatalog());
         var capacity = options?.SubscriptionChannelCapacity
             ?? InMemoryEventStoreOptions.DefaultSubscriptionChannelCapacity;
         if (capacity < 1)
@@ -651,7 +655,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
             DateTime.UtcNow,
             envelope.Metadata,
             envelope.SchemaVersion,
-            envelope.ContentType,
+            envelope.CodecId,
             envelope.Tags);
     }
 

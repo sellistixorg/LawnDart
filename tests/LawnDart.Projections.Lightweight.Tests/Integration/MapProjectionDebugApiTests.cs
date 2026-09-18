@@ -43,7 +43,7 @@ public class MapProjectionDebugApiTests : IAsyncLifetime
         builder.Logging.ClearProviders();
 
         builder.Services.AddLawnDart(o => { o.RequireTenantId = false; o.EnableAuthorization = false; });
-        builder.Services.AddBoundedContext("default").UseInMemory();
+        builder.Services.AddBoundedContext("default").UseInMemory().WithEventTypes<CounterIncremented>();
         // Bridge for GetRequiredService<IEventStore> in timeline/state/step tests + debug DI.
         builder.Services.AddSingleton<IEventStore>(sp =>
             sp.GetRequiredKeyedService<IEventStore>("default"));

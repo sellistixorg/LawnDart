@@ -36,9 +36,10 @@ services.AddBoundedContext("default")
 
 `AddBoundedContext` only starts the named context. Pair it with
 `UseInMemory()` or `UseSqlServer(...)` from an EventSourcing package.
-`WithEventTypes` materializes a scoped catalog (required `[EventTypeName]`;
-one-arg is version 1 and implicitly current when it is the only type for
-that family). In-memory GWT may skip it; writes still need the attribute.
+`WithEventTypes` is required. It materializes a scoped catalog (required
+`[EventTypeName]`; one-arg is version 1 and implicitly current when it is
+the only type for that family). A host that skips it fails at startup.
+In-memory GWT passes the same types to `BddTestContext.CreateInMemory`.
 
 ## Portable store contract
 

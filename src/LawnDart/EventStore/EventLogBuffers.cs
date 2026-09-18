@@ -45,12 +45,17 @@ internal static class EventLogBuffers
         return eventType;
     }
 
-    internal static string RequireContentType(string contentType)
+    internal static byte RequireCodecId(byte codecId)
     {
-        if (string.IsNullOrWhiteSpace(contentType))
-            throw new ArgumentException("ContentType is required.", nameof(contentType));
+        if (codecId == 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(codecId),
+                codecId,
+                "Codec id 0 is never valid on a durable frame.");
+        }
 
-        return contentType;
+        return codecId;
     }
 
     internal static string RequireStreamId(string streamId)

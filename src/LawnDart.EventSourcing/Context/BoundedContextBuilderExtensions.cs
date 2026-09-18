@@ -55,11 +55,13 @@ public static class BoundedContextBuilderExtensions
         var services     = builder.Services;
         var contextName  = builder.ContextName;
 
+        services.AddKeyedSingleton(contextName, EventStoreContextMarker.Instance);
+
         // Keyed IEventStore + IStreamRegistry + portable subscriptions
         services.AddKeyedSingleton<IEventStore>(contextName, (sp, _) =>
         {
             var catalog = sp.GetKeyedService<IEventTypeCatalog>(contextName)
-                ?? EventTypeCatalog.Shared;
+                ?? throw new InvalidOperationException(BoundedContextExtensions.MissingEventTypesMessage(contextName));
             var pipeline = sp.GetKeyedService<EventUpcastPipeline>(contextName);
             return new InMemoryEventStore(
                 contextName: contextName,

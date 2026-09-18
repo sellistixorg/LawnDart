@@ -35,20 +35,23 @@ public sealed class EventSession
     private readonly EventUpcastPipeline? _upcast;
 
     /// <param name="serializer">Payload codec for this session (one codec per session).</param>
-    /// <param name="catalog">Scoped catalog. Defaults to <see cref="EventTypeCatalog.Shared"/>.</param>
+    /// <param name="catalog">Scoped catalog from <c>WithEventTypes</c> / <see cref="EventTypeCatalog.Materialize"/>.</param>
     /// <param name="upcastPipeline">
     /// Chain from historical types to current. Null still fail-closes when the
     /// stored type is not this process's current type.
     /// </param>
     public EventSession(
         IEventSerializer serializer,
-        IEventTypeCatalog? catalog = null,
+        IEventTypeCatalog catalog,
         EventUpcastPipeline? upcastPipeline = null)
     {
         _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
-        _catalog = catalog ?? EventTypeCatalog.Shared;
+        _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         _upcast = upcastPipeline;
     }
+
+    /// <summary>Scoped catalog this session resolves against.</summary>
+    internal IEventTypeCatalog Catalog => _catalog;
 
     /// <summary>
     /// Maps a typed event to an append envelope. Stamps frame
@@ -82,7 +85,7 @@ public sealed class EventSession
             payload,
             SerializeMetadata(envelopeMetadata),
             schemaVersion,
-            contentType: _serializer.ContentType,
+            codecId: EventCodec.IdFor(_serializer.ContentType),
             tags);
     }
 
@@ -93,7 +96,7 @@ public sealed class EventSession
     /// Fail-closed cases throw <see cref="EventHydrationException"/>.
     /// Log and raw copy paths do not use this method.
     /// </summary>
-    /// <exception cref="EventContentTypeMismatchException">Stored content-type does not match this session's codec.</exception>
+    /// <exception cref="EventContentTypeMismatchException">Stored codec id does not match this session's codec, or the frame is <see cref="EventCodec.Opaque"/>.</exception>
     /// <exception cref="EventSchemaTooNewException">Stored version is newer than this process's current type.</exception>
     /// <exception cref="UnknownEventFamilyException">Family token is not in this process's catalog.</exception>
     /// <exception cref="EventSchemaNotInCatalogException">Known family, but this version's CLR type is not registered.</exception>
@@ -103,9 +106,10 @@ public sealed class EventSession
     {
         ArgumentNullException.ThrowIfNull(recorded);
 
-        if (!string.Equals(_serializer.ContentType, recorded.ContentType, StringComparison.OrdinalIgnoreCase))
+        var sessionCodecId = EventCodec.IdFor(_serializer.ContentType);
+        if (recorded.CodecId == EventCodec.Opaque || recorded.CodecId != sessionCodecId)
         {
-            throw new EventContentTypeMismatchException(recorded.ContentType, _serializer.ContentType);
+            throw new EventContentTypeMismatchException(recorded.CodecId, sessionCodecId);
         }
 
         var schemaVersion = recorded.SchemaVersion <= 0 ? 1 : recorded.SchemaVersion;

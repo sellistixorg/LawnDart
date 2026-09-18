@@ -12,7 +12,7 @@ namespace LawnDart.EventStore;
 /// <see cref="IEventLog"/>. <see cref="EventSession.Hydrate"/> still fails
 /// closed when the family token is unknown. This type exists so
 /// <see cref="IRawEvent"/> has a production implementation and so typed
-/// helpers such as <see cref="EventQueryMatcher.Matches(SequencedEvent, Query)"/>
+/// helpers such as <see cref="EventQueryMatcher.Matches(SequencedEvent, Query, IEventTypeCatalog)"/>
 /// can read the stored family token instead of this CLR name.
 /// <para>
 /// <see cref="Id"/> and <see cref="Timestamp"/> come from the caller or from

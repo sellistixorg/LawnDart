@@ -46,7 +46,7 @@ internal static class EventLogContract
                 recorded.Payload,
                 recorded.Metadata,
                 recorded.SchemaVersion,
-                recorded.ContentType,
+                recorded.CodecId,
                 recorded.Tags)]);
 
         var copy = Assert.Single(await log.ReadStreamAsync(copyStreamId));
@@ -129,14 +129,27 @@ internal static class EventLogContract
             [new AppendEvent(
                 "log-contract.tick",
                 Encoding.UTF8.GetBytes("{}"),
-                contentType: "application/x-custom")]);
+                codecId: EventCodec.MemoryPack)]);
 
         var adapter = new EventStoreAdapter(
             log,
             new EventSession(new JsonEventSerializer(), MapCatalog.For<ContractTick>("log-contract.tick")));
         var ex = await Assert.ThrowsAsync<EventContentTypeMismatchException>(() => adapter.ReadStreamAsync(streamId));
-        Assert.Contains("application/x-custom", ex.Message);
+        Assert.Equal(EventCodec.MemoryPack, ex.StoredCodecId);
+        Assert.Equal(EventCodec.Json, ex.SessionCodecId);
+        Assert.Contains(EventCodec.MemoryPackMime, ex.Message);
         Assert.DoesNotContain("migration tool", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static async Task Append_CodecId2_ReadsCodecId2Async(IEventLog log)
+    {
+        var streamId = Unique("codec2");
+        await log.AppendAsync(
+            streamId,
+            [new AppendEvent(ForeignFamily, Encoding.UTF8.GetBytes("{}"), codecId: EventCodec.MemoryPack)]);
+
+        var recorded = Assert.Single(await log.ReadStreamAsync(streamId));
+        Assert.Equal(EventCodec.MemoryPack, recorded.CodecId);
     }
 
     private static string Unique(string suffix) => $"log-contract:{suffix}:{Guid.NewGuid():N}";

@@ -44,13 +44,53 @@ public class EventLogTypesTests
     }
 
     [Fact]
-    public void AppendEvent_defaults_schema_version_one_and_json_content_type()
+    public void AppendEvent_defaults_schema_version_one_and_json_codec_id()
     {
         var append = new AppendEvent("author-registered", payload: new byte[] { 1 });
 
         Assert.Equal(1, append.SchemaVersion);
-        Assert.Equal(AppendEvent.DefaultContentType, append.ContentType);
-        Assert.Equal("application/json", append.ContentType);
+        Assert.Equal(EventCodec.Json, append.CodecId);
+    }
+
+    [Fact]
+    public void AppendEvent_and_RecordedEvent_reject_codec_id_zero()
+    {
+        var append = Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new AppendEvent("author-registered", payload: new byte[] { 1 }, codecId: 0));
+        Assert.Equal("codecId", append.ParamName);
+
+        var recorded = Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new RecordedEvent(
+                "author-registered",
+                payload: new byte[] { 1 },
+                streamId: "s",
+                streamVersion: 1,
+                sequencePosition: 1,
+                commitTimestamp: DateTime.UtcNow,
+                codecId: 0));
+        Assert.Equal("codecId", recorded.ParamName);
+    }
+
+    [Fact]
+    public void RecordedEvent_stores_codec_id_not_a_mime_literal()
+    {
+        var recorded = new RecordedEvent(
+            "author-registered",
+            payload: new byte[] { 1 },
+            streamId: "s",
+            streamVersion: 1,
+            sequencePosition: 1,
+            commitTimestamp: DateTime.UtcNow,
+            codecId: EventCodec.Json);
+
+        Assert.Equal(EventCodec.Json, recorded.CodecId);
+        Assert.Equal(typeof(byte), typeof(RecordedEvent).GetProperty(nameof(RecordedEvent.CodecId))!.PropertyType);
+        Assert.Null(typeof(RecordedEvent).GetProperty("ContentType"));
+        Assert.Null(typeof(AppendEvent).GetProperty("ContentType"));
+        Assert.Null(typeof(AppendEvent).GetField(
+            "DefaultContentType",
+            BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy));
+        Assert.DoesNotContain("application/json", recorded.CodecId.ToString());
     }
 
     [Fact]

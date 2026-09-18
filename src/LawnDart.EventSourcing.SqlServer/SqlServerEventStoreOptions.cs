@@ -87,13 +87,6 @@ public class SqlServerEventStoreOptions : EventSourcingOptions
     public bool EnableOutbox { get; set; } = false;
 
     /// <summary>
-    /// Use a normalized EventTags side-table for indexed tag lookups instead of OPENJSON on Tags column.
-    /// Set to false only if migrating an existing schema that does not yet have the EventTags table.
-    /// Default: true
-    /// </summary>
-    public bool UseEventTagsTable { get; set; } = true;
-
-    /// <summary>
     /// DCB snapshot table name. Primary key is a 64-character SHA-256 hex
     /// (<see cref="LawnDart.Dcb.DcbSnapshotId"/>), not plaintext tags.
     /// Default: "DcbSnapshots"

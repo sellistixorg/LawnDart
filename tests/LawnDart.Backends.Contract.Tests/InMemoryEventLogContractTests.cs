@@ -31,4 +31,8 @@ public sealed class InMemoryEventLogContractTests
     [Fact]
     public Task TypedAdapter_ContentTypeMismatch_FailsClosed()
         => EventLogContract.TypedAdapter_ContentTypeMismatch_FailsClosedAsync(_log);
+
+    [Fact]
+    public Task Append_CodecId2_ReadsCodecId2()
+        => EventLogContract.Append_CodecId2_ReadsCodecId2Async(_log);
 }
