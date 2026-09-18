@@ -94,13 +94,12 @@ public sealed class MessageTransportOutboxPublisher : IOutboxPublisher
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        var payload = Encoding.UTF8.GetBytes(message.Payload);
         var metadataBytes = string.IsNullOrWhiteSpace(message.Metadata)
             ? ReadOnlyMemory<byte>.Empty
             : Encoding.UTF8.GetBytes(message.Metadata);
         var recorded = new RecordedEvent(
             message.EventType,
-            payload,
+            message.Payload,
             message.StreamId,
             streamVersion: 0,
             sequencePosition: message.SequencePosition,

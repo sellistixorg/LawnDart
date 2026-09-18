@@ -50,6 +50,9 @@ public sealed class EventSession
         _upcast = upcastPipeline;
     }
 
+    /// <summary>Scoped catalog this session resolves against.</summary>
+    internal IEventTypeCatalog Catalog => _catalog;
+
     /// <summary>
     /// Maps a typed event to an append envelope. Stamps frame
     /// <see cref="AppendEvent.SchemaVersion"/> from the current type and mirrors

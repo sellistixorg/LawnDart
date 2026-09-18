@@ -68,7 +68,7 @@ public class SqlServerMultiContextOutboxTests : IAsyncLifetime
         {
             Id              = Guid.NewGuid(),
             EventType       = "OrderPlaced",
-            Payload         = "{}",
+            Payload         = "{}"u8.ToArray(),
             Metadata        = "{}",
             CreatedAt       = DateTime.UtcNow,
             Attempts        = 0,
@@ -100,7 +100,7 @@ public class SqlServerMultiContextOutboxTests : IAsyncLifetime
         {
             Id               = messageId,
             EventType        = "OrderPlaced",
-            Payload          = "{}",
+            Payload          = "{}"u8.ToArray(),
             Metadata         = "{}",
             CreatedAt        = DateTime.UtcNow,
             Attempts         = 0,

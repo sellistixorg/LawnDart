@@ -17,12 +17,13 @@ in-process.
 2. A background publisher reads unpublished rows.
 3. `AddMessageTransportOutboxPublisher` hands payloads to `IMessageTransport`.
 
-The outbox row is a copy of the appended frame: family token, payload and
-metadata as UTF-8 JSON text, plus first-class `SchemaVersion` and
-`CodecId`. The publisher resolves the CLR type through
-`IEventTypeCatalog` (token + schema version), then upcasts through
-`EventSession` the same way typed store reads do. An unknown token fails
-closed; there is no FullName alias.
+The outbox row is a copy of the appended frame, written in the same
+transaction: family token, payload **bytes**, metadata as UTF-8 JSON
+text, plus first-class `SchemaVersion` and `CodecId` (`TINYINT`, no
+column default). The publisher selects the codec by id and hydrates
+through `EventSession` (token + schema version, then upcast) the same
+way typed store reads do. An unknown token fails closed; there is no
+FullName alias.
 
 ```csharp
 services.AddBoundedContext("default")

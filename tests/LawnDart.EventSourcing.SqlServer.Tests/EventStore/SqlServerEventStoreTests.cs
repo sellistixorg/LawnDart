@@ -729,40 +729,6 @@ public class SqlServerEventStoreTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task ReadByQueryAsync_OpenJsonFallback_StillFiltersByTag()
-    {
-        var tableName = $"Events_OpenJson_{Guid.NewGuid():N}";
-        var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Warning));
-        var logger = loggerFactory.CreateLogger<SqlServerEventStore>();
-        var store = new SqlServerEventStore(
-            _connectionString!,
-            null,
-            tableName,
-            $"Streams_{tableName}",
-            enableRegistry: true,
-            new SqlServerEventStoreOptions { RequireTenantId = false, UseEventTagsTable = false },
-            null,
-            logger);
-        await store.InitializeSchemaAsync();
-
-        await store.AppendAsync(
-            "test-tenant:Order:openjson",
-            new IEvent[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) },
-            tags: new[] { "openjson:tag" });
-        await store.AppendAsync(
-            "test-tenant:Order:openjson-other",
-            new IEvent[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) },
-            tags: new[] { "openjson:other" });
-
-        var result = await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags("openjson:tag")));
-        Assert.Single(result.Events);
-        Assert.Contains("openjson:tag", result.Events[0].Tags);
-
-        var max = await store.GetMaxSequencePositionAsync(Query.FromItems(QueryItem.ByTags("openjson:tag")));
-        Assert.Equal(result.Events[0].SequencePosition, max);
-    }
-
-    [Fact]
     public async Task Log_can_materialize_recorded_event_without_registered_clr_type()
     {
         var streamId = "test-tenant:Opaque:log-only";
@@ -837,9 +803,11 @@ public class SqlServerEventStoreTests : IAsyncLifetime
 
         Assert.False(columns.ContainsKey("EventPayload"));
         Assert.False(columns.ContainsKey("ContentType"));
+        Assert.False(columns.ContainsKey("EventType"));
         Assert.Equal("varbinary", columns["EventData"].Type);
         Assert.Equal("tinyint", columns["CodecId"].Type);
         Assert.Equal("int", columns["SchemaVersion"].Type);
+        Assert.Equal("int", columns["EventTypeId"].Type);
 
         await using (var cmd = new SqlCommand(
             """
@@ -848,7 +816,7 @@ public class SqlServerEventStoreTests : IAsyncLifetime
             JOIN sys.columns c
                 ON c.object_id = dc.parent_object_id AND c.column_id = dc.parent_column_id
             WHERE dc.parent_object_id = OBJECT_ID(@Table)
-              AND c.name IN (N'SchemaVersion', N'CodecId')
+              AND c.name IN (N'SchemaVersion', N'CodecId', N'EventTypeId')
             """,
             connection))
         {
@@ -876,6 +844,7 @@ public class SqlServerEventStoreTests : IAsyncLifetime
         }
 
         Assert.True(await ObjectExistsAsync(connection, $"[dbo].[{_tableName}_Readable]", "V"));
+        Assert.True(await ObjectExistsAsync(connection, $"[dbo].[{_eventStore!.EventTypesTableName}]", "U"));
     }
 
     [Fact]
@@ -905,7 +874,8 @@ public class SqlServerEventStoreTests : IAsyncLifetime
 
         Assert.Contains("CodecId", included.Keys);
         Assert.Contains("SchemaVersion", included.Keys);
-        Assert.Contains("EventType", included.Keys);
+        Assert.Contains("EventTypeId", included.Keys);
+        Assert.DoesNotContain("EventType", included.Keys);
         Assert.DoesNotContain("EventData", included.Keys);
         Assert.DoesNotContain("Tags", included.Keys);
         Assert.DoesNotContain("Metadata", included.Keys);
@@ -923,7 +893,7 @@ public class SqlServerEventStoreTests : IAsyncLifetime
 
         await using (var cmd = new SqlCommand(
             $"""
-            SELECT EventType, Tags, Metadata, CodecId
+            SELECT EventTypeId, Tags, Metadata, CodecId
             FROM [dbo].[{_tableName}]
             WHERE StreamId = @StreamId
             """,
@@ -933,7 +903,7 @@ public class SqlServerEventStoreTests : IAsyncLifetime
             await using var reader = await cmd.ExecuteReaderAsync();
             Assert.True(await reader.ReadAsync());
             Assert.Equal(EventCodec.Json, reader.GetByte("CodecId"));
-            Assert.DoesNotContain(EventCodec.JsonMime, reader.GetString("EventType"));
+            Assert.True(reader.GetInt32("EventTypeId") > 0);
             Assert.DoesNotContain(EventCodec.JsonMime, reader.GetString("Tags"));
             var metadata = reader.IsDBNull("Metadata") ? string.Empty : reader.GetString("Metadata");
             Assert.DoesNotContain(EventCodec.JsonMime, metadata);
@@ -993,6 +963,132 @@ public class SqlServerEventStoreTests : IAsyncLifetime
             connection);
         cmd.Parameters.AddWithValue("@Table", $"[dbo].[{tableName}]");
         Assert.Equal(0, (int)(await cmd.ExecuteScalarAsync())!);
+        Assert.False(await ObjectExistsAsync(connection, $"[dbo].[{store.EventTypesTableName}]", "U"));
+    }
+
+    [Fact]
+    public async Task Format_1_stamped_table_throws_wipe_exception_and_is_not_altered()
+    {
+        var tableName = $"Events_Fmt1_{Guid.NewGuid():N}";
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using (var create = new SqlCommand(
+            $"""
+            CREATE TABLE [dbo].[{tableName}] (
+                StreamId NVARCHAR(255) NOT NULL,
+                Version BIGINT NOT NULL,
+                EventType NVARCHAR(500) NOT NULL,
+                PRIMARY KEY (StreamId, Version)
+            );
+            EXEC sys.sp_addextendedproperty
+                @name = N'{SqlServerEventStore.SchemaFormatPropertyName}',
+                @value = N'1',
+                @level0type = N'SCHEMA', @level0name = N'dbo',
+                @level1type = N'TABLE',  @level1name = N'{tableName}';
+            """,
+            connection))
+        {
+            await create.ExecuteNonQueryAsync();
+        }
+
+        var store = new SqlServerEventStore(
+            _connectionString!,
+            tableName: tableName,
+            registryTableName: $"Streams_{tableName}",
+            options: new SqlServerEventStoreOptions { RequireTenantId = false });
+
+        var ex = await Assert.ThrowsAsync<IncompatibleEventStoreSchemaException>(
+            () => store.InitializeSchemaAsync());
+        Assert.Equal("1", ex.FoundFormat);
+        Assert.Equal(SqlServerEventStore.CurrentSchemaFormat, ex.RequiredFormat);
+
+        await using var cmd = new SqlCommand(
+            """
+            SELECT COUNT(*)
+            FROM sys.columns
+            WHERE object_id = OBJECT_ID(@Table) AND name = N'EventTypeId'
+            """,
+            connection);
+        cmd.Parameters.AddWithValue("@Table", $"[dbo].[{tableName}]");
+        Assert.Equal(0, (int)(await cmd.ExecuteScalarAsync())!);
+        Assert.False(await ObjectExistsAsync(connection, $"[dbo].[{store.EventTypesTableName}]", "U"));
+    }
+
+    [Fact]
+    public async Task Concurrent_foreign_token_appends_produce_one_event_types_row()
+    {
+        var token = $"foreign-concurrent.{Guid.NewGuid():N}";
+        var streamA = $"test-tenant:Foreign:{Guid.NewGuid():N}";
+        var streamB = $"test-tenant:Foreign:{Guid.NewGuid():N}";
+        var log = (IEventLog)_eventStore!;
+
+        await Task.WhenAll(
+            log.AppendAsync(streamA, [new AppendEvent(token, new byte[] { 1 })]),
+            log.AppendAsync(streamB, [new AppendEvent(token, new byte[] { 2 })]));
+
+        Assert.Equal(token, Assert.Single(await log.ReadStreamAsync(streamA)).EventType);
+        Assert.Equal(token, Assert.Single(await log.ReadStreamAsync(streamB)).EventType);
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var cmd = new SqlCommand(
+            $"""
+            SELECT COUNT(*) FROM [dbo].[{_eventStore!.EventTypesTableName}] WHERE Token = @Token
+            """,
+            connection);
+        cmd.Parameters.AddWithValue("@Token", token);
+        Assert.Equal(1, (int)(await cmd.ExecuteScalarAsync())!);
+    }
+
+    [Fact]
+    public async Task Schema_init_warms_event_types_from_the_scoped_catalog()
+    {
+        var tableName = $"Events_Warm_{Guid.NewGuid():N}";
+        var catalog = EventTypeCatalog.Materialize([typeof(TestEvent), typeof(AnotherEvent)]);
+        var store = new SqlServerEventStore(
+            _connectionString!,
+            tableName: tableName,
+            registryTableName: $"Streams_{tableName}",
+            options: new SqlServerEventStoreOptions { RequireTenantId = false },
+            session: new EventSession(new JsonEventSerializer(), catalog));
+        await store.InitializeSchemaAsync();
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var cmd = new SqlCommand(
+            $"""
+            SELECT Token FROM [dbo].[{store.EventTypesTableName}] ORDER BY Token
+            """,
+            connection);
+        var tokens = new List<string>();
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            tokens.Add(reader.GetString(0));
+
+        Assert.Contains("sql-server-event-store-tests.test-event", tokens);
+        Assert.Contains("sql-server-event-store-tests.another-event", tokens);
+    }
+
+    [Fact]
+    public async Task Unknown_token_query_returns_empty_without_sql()
+    {
+        var built = DcbQuerySql.Build(
+            "[dbo].[Events]",
+            "[dbo].[EventTags]",
+            Query.FromItems(QueryItem.ByType("no-such-family")),
+            _ => null,
+            fromSequencePosition: null,
+            toSequencePosition: null,
+            toTimestamp: null,
+            limit: null,
+            DcbQuerySql.Mode.Events);
+
+        Assert.True(built.ShortCircuited);
+        Assert.Equal("", built.Sql);
+
+        var result = await ((IEventLog)_eventStore!).ReadByQueryAsync(
+            Query.FromItems(QueryItem.ByType($"unknown-family.{Guid.NewGuid():N}")));
+        Assert.Empty(result.Events);
     }
 
     [Fact]

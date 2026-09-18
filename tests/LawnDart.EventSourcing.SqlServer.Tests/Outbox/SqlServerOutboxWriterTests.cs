@@ -43,7 +43,7 @@ public class SqlServerOutboxWriterTests : IAsyncLifetime
         {
             Id = Guid.NewGuid(),
             EventType = "TestEvent",
-            Payload = "{\"value\":\"test\"}",
+            Payload = "{\"value\":\"test\"}"u8.ToArray(),
             Metadata = "{}",
             CreatedAt = DateTime.UtcNow,
             StreamId = "stream1",
@@ -69,7 +69,7 @@ public class SqlServerOutboxWriterTests : IAsyncLifetime
             {
                 Id = Guid.NewGuid(),
                 EventType = "TestEvent1",
-                Payload = "{}",
+                Payload = "{}"u8.ToArray(),
                 Metadata = "{}",
                 CreatedAt = DateTime.UtcNow,
                 StreamId = "stream1",
@@ -79,7 +79,7 @@ public class SqlServerOutboxWriterTests : IAsyncLifetime
             {
                 Id = Guid.NewGuid(),
                 EventType = "TestEvent2",
-                Payload = "{}",
+                Payload = "{}"u8.ToArray(),
                 Metadata = "{}",
                 CreatedAt = DateTime.UtcNow,
                 StreamId = "stream1",
@@ -103,7 +103,7 @@ public class SqlServerOutboxWriterTests : IAsyncLifetime
         {
             Id = Guid.NewGuid(),
             EventType = "TestEvent",
-            Payload = "{}",
+            Payload = "{}"u8.ToArray(),
             Metadata = "{}",
             CreatedAt = DateTime.UtcNow,
             StreamId = "stream1",
@@ -113,7 +113,7 @@ public class SqlServerOutboxWriterTests : IAsyncLifetime
         {
             Id = Guid.NewGuid(),
             EventType = "TestEvent",
-            Payload = "{}",
+            Payload = "{}"u8.ToArray(),
             Metadata = "{}",
             CreatedAt = DateTime.UtcNow,
             StreamId = "stream1",
@@ -140,7 +140,7 @@ public class SqlServerOutboxWriterTests : IAsyncLifetime
         {
             Id = Guid.NewGuid(),
             EventType = "TestEvent",
-            Payload = "{}",
+            Payload = "{}"u8.ToArray(),
             Metadata = "{}",
             CreatedAt = DateTime.UtcNow,
             StreamId = "stream1",
@@ -150,7 +150,7 @@ public class SqlServerOutboxWriterTests : IAsyncLifetime
         {
             Id = Guid.NewGuid(),
             EventType = "TestEvent",
-            Payload = "{}",
+            Payload = "{}"u8.ToArray(),
             Metadata = "{}",
             CreatedAt = DateTime.UtcNow,
             StreamId = "stream1",
@@ -180,7 +180,7 @@ public class SqlServerOutboxWriterTests : IAsyncLifetime
             {
                 Id = Guid.NewGuid(),
                 EventType = "TestEvent",
-                Payload = "{}",
+                Payload = "{}"u8.ToArray(),
                 Metadata = "{}",
                 CreatedAt = DateTime.UtcNow,
                 StreamId = "stream1",
@@ -203,7 +203,7 @@ public class SqlServerOutboxWriterTests : IAsyncLifetime
         {
             Id = Guid.NewGuid(),
             EventType = "TestEvent",
-            Payload = "{}",
+            Payload = "{}"u8.ToArray(),
             Metadata = "{}",
             CreatedAt = DateTime.UtcNow,
             StreamId = "stream1",
@@ -227,7 +227,7 @@ public class SqlServerOutboxWriterTests : IAsyncLifetime
         {
             Id = Guid.NewGuid(),
             EventType = "TestEvent",
-            Payload = "{}",
+            Payload = "{}"u8.ToArray(),
             Metadata = "{}",
             CreatedAt = DateTime.UtcNow,
             StreamId = "stream1",
@@ -254,7 +254,7 @@ public class SqlServerOutboxWriterTests : IAsyncLifetime
         {
             Id = Guid.NewGuid(),
             EventType = "TestEvent",
-            Payload = "{}",
+            Payload = "{}"u8.ToArray(),
             Metadata = "{}",
             CreatedAt = DateTime.UtcNow,
             StreamId = "stream1",
@@ -281,7 +281,7 @@ public class SqlServerOutboxWriterTests : IAsyncLifetime
         {
             Id = Guid.NewGuid(),
             EventType = "Live",
-            Payload = "{}",
+            Payload = "{}"u8.ToArray(),
             Metadata = "{}",
             CreatedAt = DateTime.UtcNow,
             StreamId = "stream1",
@@ -291,7 +291,7 @@ public class SqlServerOutboxWriterTests : IAsyncLifetime
         {
             Id = Guid.NewGuid(),
             EventType = "Poison",
-            Payload = "{}",
+            Payload = "{}"u8.ToArray(),
             Metadata = "{}",
             CreatedAt = DateTime.UtcNow,
             StreamId = "stream1",
@@ -314,7 +314,7 @@ public class SqlServerOutboxWriterTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task WriteAsync_PersistsSchemaVersionAndContentType()
+    public async Task WriteAsync_PersistsSchemaVersionAndCodecId()
     {
         var message = new OutboxMessage
         {
@@ -322,7 +322,7 @@ public class SqlServerOutboxWriterTests : IAsyncLifetime
             EventType = "family.order-placed",
             SchemaVersion = 2,
             CodecId = EventCodec.Json,
-            Payload = """{"Kind":"v2"}""",
+            Payload = """{"Kind":"v2"}"""u8.ToArray(),
             Metadata = "{}",
             CreatedAt = DateTime.UtcNow,
             StreamId = "stream1",
@@ -338,7 +338,52 @@ public class SqlServerOutboxWriterTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task GetUnprocessedAsync_OldRowWithoutEnvelopeColumns_ReadsVersion1AndJson()
+    public async Task Outbox_table_layout_is_varbinary_codec_id_no_defaults()
+    {
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        var columns = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        await using (var cmd = new SqlCommand(
+            """
+            SELECT c.name, t.name AS type_name
+            FROM sys.columns c
+            JOIN sys.types t ON t.user_type_id = c.user_type_id
+            WHERE c.object_id = OBJECT_ID(N'[dbo].[Outbox]')
+            """,
+            connection))
+        {
+            await using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+                columns[reader.GetString(0)] = reader.GetString(1);
+        }
+
+        Assert.False(columns.ContainsKey("ContentType"));
+        Assert.Equal("varbinary", columns["Payload"]);
+        Assert.Equal("tinyint", columns["CodecId"]);
+        Assert.Equal("int", columns["SchemaVersion"]);
+
+        await using (var cmd = new SqlCommand(
+            """
+            SELECT c.name
+            FROM sys.default_constraints dc
+            JOIN sys.columns c
+                ON c.object_id = dc.parent_object_id AND c.column_id = dc.parent_column_id
+            WHERE dc.parent_object_id = OBJECT_ID(N'[dbo].[Outbox]')
+              AND c.name IN (N'SchemaVersion', N'CodecId')
+            """,
+            connection))
+        {
+            var defaults = new List<string>();
+            await using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+                defaults.Add(reader.GetString(0));
+            Assert.Empty(defaults);
+        }
+    }
+
+    [Fact]
+    public async Task Pre_stamp_outbox_table_throws_wipe_exception()
     {
         const string table = "OutboxLegacy";
         await using var connection = new SqlConnection(_connectionString);
@@ -350,46 +395,22 @@ public class SqlServerOutboxWriterTests : IAsyncLifetime
                 Payload NVARCHAR(MAX) NOT NULL,
                 Metadata NVARCHAR(MAX) NOT NULL,
                 CreatedAt DATETIME2 NOT NULL,
-                ProcessedAt DATETIME2 NULL,
-                Attempts INT NOT NULL DEFAULT 0,
-                LastError NVARCHAR(MAX) NULL,
-                LastAttemptAt DATETIME2 NULL,
                 StreamId NVARCHAR(500) NOT NULL,
-                SequencePosition BIGINT NOT NULL,
-                DeadLetteredAt DATETIME2 NULL
+                SequencePosition BIGINT NOT NULL
             );", connection))
         {
             await create.ExecuteNonQueryAsync();
-        }
-
-        var id = Guid.NewGuid();
-        await using (var insert = new SqlCommand($@"
-            INSERT INTO [dbo].[{table}]
-                (Id, EventType, Payload, Metadata, CreatedAt, Attempts, StreamId, SequencePosition)
-            VALUES
-                (@Id, @EventType, @Payload, @Metadata, @CreatedAt, 0, @StreamId, @SequencePosition);",
-            connection))
-        {
-            insert.Parameters.AddWithValue("@Id", id);
-            insert.Parameters.AddWithValue("@EventType", "legacy.event");
-            insert.Parameters.AddWithValue("@Payload", "{}");
-            insert.Parameters.AddWithValue("@Metadata", "{}");
-            insert.Parameters.AddWithValue("@CreatedAt", DateTime.UtcNow);
-            insert.Parameters.AddWithValue("@StreamId", "stream-legacy");
-            insert.Parameters.AddWithValue("@SequencePosition", 1L);
-            await insert.ExecuteNonQueryAsync();
         }
 
         var legacyWriter = new SqlServerOutboxWriter(
             _connectionString!,
             table,
             NullLogger<SqlServerOutboxWriter>.Instance);
-        await legacyWriter.InitializeSchemaAsync();
 
-        var read = Assert.Single(await legacyWriter.GetUnprocessedAsync(10));
-        Assert.Equal(id, read.Id);
-        Assert.Equal(1, read.SchemaVersion);
-        Assert.Equal(EventCodec.Json, read.CodecId);
-        Assert.Equal("legacy.event", read.EventType);
+        var ex = await Assert.ThrowsAsync<IncompatibleOutboxSchemaException>(
+            () => legacyWriter.InitializeSchemaAsync());
+        Assert.Null(ex.FoundFormat);
+        Assert.Equal(SqlServerOutboxWriter.CurrentSchemaFormat, ex.RequiredFormat);
+        Assert.Contains("Drop and recreate", ex.Message, StringComparison.Ordinal);
     }
 }

@@ -160,20 +160,6 @@ public static class EventCodec
         return $"unregistered:{id}";
     }
 
-    /// <summary>
-    /// MIME for the outbox <c>ContentType</c> column that remains until the
-    /// outbox payload-layout ticket. Fail-closed when the id has no plugin name.
-    /// </summary>
-    internal static string RequireMime(byte id)
-    {
-        if (TryGetMime(id, out var mime))
-            return mime;
-
-        throw new InvalidOperationException(
-            $"Codec id {id} has no registered MIME. Call {nameof(Register)} for user ids, " +
-            "or persist Opaque only after the column is a TINYINT.");
-    }
-
     private static void Seed(byte id, string mime)
     {
         IdToMime[id] = mime;

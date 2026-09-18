@@ -23,7 +23,7 @@ public class OutboxProcessorTests
         {
             Id = Guid.NewGuid(),
             EventType = "TestEvent",
-            Payload = "{}",
+            Payload = "{}"u8.ToArray(),
             Metadata = "{}",
             CreatedAt = DateTime.UtcNow,
             StreamId = "stream1",
@@ -53,7 +53,7 @@ public class OutboxProcessorTests
         {
             Id = messageId,
             EventType = "TestEvent",
-            Payload = "{}",
+            Payload = "{}"u8.ToArray(),
             Metadata = "{}",
             CreatedAt = DateTime.UtcNow,
             StreamId = "stream1",
@@ -83,7 +83,7 @@ public class OutboxProcessorTests
         {
             Id = messageId,
             EventType = "TestEvent",
-            Payload = "{}",
+            Payload = "{}"u8.ToArray(),
             Metadata = "{}",
             CreatedAt = DateTime.UtcNow,
             StreamId = "stream1",
@@ -116,7 +116,7 @@ public class OutboxProcessorTests
         {
             Id = poisonId,
             EventType = "TestEvent",
-            Payload = "{}",
+            Payload = "{}"u8.ToArray(),
             Metadata = "{}",
             CreatedAt = DateTime.UtcNow,
             StreamId = "stream1",
@@ -127,7 +127,7 @@ public class OutboxProcessorTests
         {
             Id = laterId,
             EventType = "TestEvent",
-            Payload = "{}",
+            Payload = "{}"u8.ToArray(),
             Metadata = "{}",
             CreatedAt = DateTime.UtcNow,
             StreamId = "stream1",
@@ -157,7 +157,7 @@ public class OutboxProcessorTests
         {
             Id = messageId,
             EventType = "TestEvent",
-            Payload = "{}",
+            Payload = "{}"u8.ToArray(),
             Metadata = "{}",
             CreatedAt = DateTime.UtcNow,
             StreamId = "stream1",
@@ -191,7 +191,7 @@ public class OutboxProcessorTests
             {
                 Id = Guid.NewGuid(),
                 EventType = "TestEvent",
-                Payload = $"{{\"id\":{i}}}",
+                Payload = System.Text.Encoding.UTF8.GetBytes($"{{\"id\":{i}}}"),
                 Metadata = "{}",
                 CreatedAt = DateTime.UtcNow,
                 StreamId = "stream1",
@@ -226,7 +226,7 @@ public class OutboxProcessorTests
         {
             Id = Guid.NewGuid(),
             EventType = "TestEvent",
-            Payload = "{}",
+            Payload = "{}"u8.ToArray(),
             Metadata = "{}",
             CreatedAt = DateTime.UtcNow,
             StreamId = "stream1",
