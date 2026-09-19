@@ -39,8 +39,31 @@ await AggregateSpec
 
 ## DCB spec
 
-`DcbSpec` uses the same Given / When / Then verbs with tags. The reference
-slice has no DCB entity. The compiled DCB example lives in
+`DcbSpec` uses the same Given / When / Then verbs with tags. Excerpted from
+`samples/Library.Dcb.Domain.Tests/LibraryBookLoanTests.cs`
+(`cannot_borrow_when_already_on_loan`; method signature omitted):
+
+```csharp
+await using var ctx = BddTestContext.CreateInMemory(typeof(BookAdded), typeof(BookBorrowed), typeof(BookReturned));
+var bookId = Guid.NewGuid();
+var memberId = Guid.NewGuid();
+var tags = BookLoan.GetTags(bookId, memberId);
+
+await DcbSpec
+    .For<BookLoan, BorrowBookCommand>(
+        ctx,
+        tags,
+        new BorrowBookCommand(Guid.NewGuid(), bookId, memberId, "Someone Else"))
+    .Given(new BookAdded(Guid.NewGuid(), DateTime.UtcNow, bookId, "Pragmatic Programmer", "978-0135957059"), tags)
+    .Given(new BookBorrowed(Guid.NewGuid(), DateTime.UtcNow, bookId, Guid.NewGuid(), "Jane Doe"), tags)
+    .ThenThrows<DomainException>()
+    .AndAssert(result =>
+        Assert.Equal("Book is already on loan.", result.Exception!.Message))
+    .RunAsync();
+```
+
+Input: [`build-kit/library-dcb-slice.json`](../build-kit/library-dcb-slice.json).
+Framework proofs also live in
 `tests/LawnDart.Testing.Tests/Bdd/InMemoryGwtTests.cs`.
 
 ## AndView
@@ -80,7 +103,8 @@ await AggregateSpec
 
 Reference `LawnDart`, `LawnDart.EventSourcing`, `LawnDart.Testing`, plus your
 domain project. Use xUnit. Canonical proofs:
-`samples/Library.Domain.Tests/LibraryBookTests.cs` (reference slice) and
+`samples/Library.Domain.Tests/LibraryBookTests.cs` (aggregate slice),
+`samples/Library.Dcb.Domain.Tests/LibraryBookLoanTests.cs` (DCB slice), and
 `tests/LawnDart.Testing.Tests/Bdd/InMemoryGwtTests.cs`.
 
 These specs match the Eventhesis GWT widget. See [EVENTHESIS.md](../EVENTHESIS.md).

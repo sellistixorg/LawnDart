@@ -4,8 +4,11 @@ Dynamic Consistency Boundary (DCB) loads events by **tags**, not by a
 single aggregate stream, then appends new facts atomically with an
 `AppendCondition`.
 
-Use DCB when a rule spans more than one identity (student + section,
-order + inventory). Use an aggregate when one stream owns the rule.
+Use DCB when a rule spans more than one identity (book + member,
+student + section). Use an aggregate when one stream owns the rule.
+
+Skill excerpts come from `samples/Library.Dcb.Domain` (`BookLoan`).
+Academy `EnrollmentEntity` is the larger runnable host.
 
 ## Shape
 

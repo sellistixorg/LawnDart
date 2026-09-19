@@ -1,19 +1,29 @@
 ---
 name: lawndart-domain-model
-description: Author LawnDart commands, events, aggregates, DCB entities, tags, and stream IDs. Keep IEvent Id and Timestamp first.
+description: Author LawnDart commands, events, aggregates, and DCB entities. Use when adding or changing domain types, stream IDs, or tags.
 ---
 
 # Domain model
 
-## Frozen surface
+App-facing dispatch is `ICommandHandler<T>`. Aggregates and DCB entities
+declare closed `Handle(TCommand)`. Persist with `HandleCommandAsync`.
 
-1. **App-facing dispatch** is `ICommandHandler<T>` (HTTP, jobs).
-2. **Aggregates / DCB** declare closed `Handle(TCommand)`. `HandleCommandAsync` is persistence + authorization. Do not write a per-command async Handle switch on the entity (obsolete).
-3. **Load** with `GetOrCreateAsync<T>(id)` when the stream is `{type}:{guid}`; use `GetOrCreateAsync<T>(streamId)` otherwise.
-4. **Projections:** `ProjectionBase<TView>` plus attributes; multi-stream views implement `IMultiStreamEntityResolver`.
-5. **Stores:** `UseInMemory` / `UseSqlServer` on `AddBoundedContext(name)`.
+**Load:** aggregate `GetOrCreateAsync<T>(id)` when the stream is
+`{type}:{guid}` (or `{tenant}:{type}:{guid}`); `GetOrCreateAsync<T>(streamId)`
+otherwise. DCB `GetOrCreateEntityAsync<T>(tags)` then `Emit(event, tags)`.
+Do not implement `IProjector<TState>`.
 
-Excerpt from `samples/Library.Domain/Commands.cs`, `Events.cs`, `BookState.cs`, `Book.cs`, `Handlers.cs`:
+Stream IDs: `{tenant}:{type}:{id}`. Tags for DCB: `type:{id}` (Guids, not
+names). See `docs/STREAM_IDS.md` and `docs/TAGGING.md`.
+
+Every written `IEvent` needs `[EventTypeName]`. `Id` and `Timestamp` are
+required properties. Declaration order is an Eventhesis convention, not a
+runtime rule. See `docs/EVENTHESIS.md` and `docs/EVENT_SCHEMA_VERSIONING.md`.
+
+## Aggregate
+
+Excerpt from `samples/Library.Domain/Commands.cs`, `Events.cs`, `BookState.cs`,
+`Book.cs`, `Handlers.cs`:
 
 ```csharp
 public sealed record BorrowBookCommand(Guid Id, Guid BookId, string MemberName) : ICommand;
@@ -83,33 +93,54 @@ public sealed class BorrowBookHandler : ICommandHandler<BorrowBookCommand>
 
 `BookState` is decision state only. Catalog fields live on `BookCatalogView`.
 
-Stream IDs: `{tenant}:{type}:{id}`. Tags for DCB: `type:{id}`.
-Load with `GetOrCreateAsync<T>(id)` when that shape holds; use
-`GetOrCreateAsync<T>(streamId)` for custom IDs.
+## DCB
 
-DCB when a rule spans identities — `DcbEntity` + `IDcbRepository`, not two
+DCB when a rule spans identities. `DcbEntity` + `IDcbRepository`, not two
 aggregates plus a distributed transaction. Aggregates `Apply` events; DCB
-entities `Emit` with tags. Author `Handle(TCommand)`; persist with
-`HandleCommandAsync`. Broker reactions are `IReactor`; in-process DCB
-reactions are `IDcbReactor`. These names stay. See
-`docs/GLOSSARY.md` (Intentional verb differences).
+entities `Emit` with tags. Input: `build-kit/library-dcb-slice.json`.
+
+Excerpt from `samples/Library.Dcb.Domain/BookLoan.cs`, `Handlers.cs`:
+
+```csharp
+public sealed class BookLoan : DcbEntity<BookLoanState>
+{
+    public const int MaxLoansPerMember = 3;
+
+    public static string[] GetTags(Guid bookId, Guid memberId)
+        => [$"book:{bookId}", $"member:{memberId}"];
+
+    public void Handle(BorrowBookCommand cmd)
+    {
+        if (!State.Exists)
+            throw new DomainException("Book does not exist.");
+        if (State.OnLoan)
+            throw new DomainException("Book is already on loan.");
+        if (State.MemberActiveLoans >= MaxLoansPerMember)
+            throw new DomainException("Member is at the loan limit.");
+
+        Emit(new BookBorrowed(Guid.NewGuid(), DateTime.UtcNow, cmd.BookId, cmd.MemberId, cmd.MemberName),
+            $"book:{cmd.BookId}", $"member:{cmd.MemberId}");
+    }
+}
+
+public sealed class BorrowBookHandler : ICommandHandler<BorrowBookCommand>
+{
+    private readonly IDcbRepository _loans;
+
+    public BorrowBookHandler(IDcbRepository loans) => _loans = loans;
+
+    public async Task HandleAsync(BorrowBookCommand command, CancellationToken cancellationToken = default)
+    {
+        var loan = await _loans.GetOrCreateEntityAsync<BookLoan>(
+            BookLoan.GetTags(command.BookId, command.MemberId), cancellationToken).ConfigureAwait(false);
+        await _loans.HandleCommandAsync(loan, command, cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+}
+```
+
+Broker reactions are `IReactor`; in-process DCB reactions are `IDcbReactor`.
+See `lawndart-reactions` and `docs/DCB_PATTERNS.md`.
 
 Read models are not part of the aggregate. Use Lightweight
 `ProjectionBase<TView>` (see `lawndart-projection-authoring`) or your own
 projector (`LibraryProjector` in `samples/Library.Domain/Projections`).
-Do not implement `IProjector` unless you are writing your own
-fold (`IProjector` is experimental). Multi-stream Lightweight views
-implement `IMultiStreamEntityResolver`.
-
-Additive JSON rolls freely: new named properties on the current type do not
-require a `SchemaVersion` bump. A breaking change — renamed meaning, a
-removed required field, or a positional-codec layout change (a reused or
-remapped `[PropertyOrder]` number) — is expand-contract. Ship readers that
-understand `SchemaVersion` N+1 before any process writes N+1. Old binaries
-fail closed on those newer rows (`EventSchemaTooNewException`) and may keep
-appending the version that was current for them. There is no remote
-downcaster and no skip override. Optional `LawnDart.Analyzers` reports
-`LDT001`–`LDT003` at `dotnet build`; warmup is the runtime authority. See
-`docs/EVENT_SCHEMA_VERSIONING.md`.
-
-See `docs/STREAM_IDS.md`, `docs/TAGGING.md`, `docs/DCB_PATTERNS.md`.

@@ -5,13 +5,9 @@ description: Register named LawnDart bounded contexts, keyed stores, and WithCom
 
 # Bounded context
 
-## Frozen surface
-
-1. **App-facing dispatch** is `ICommandHandler<T>` (HTTP, jobs) — `WithCommandHandlers<TMarker>()` per context.
-2. **Aggregates / DCB** declare closed `Handle(TCommand)`. `HandleCommandAsync` is persistence + authorization.
-3. **Load** by `string streamId` when the stream is not `{type}:{guid}`.
-4. **Projections:** `ProjectionBase<TView>` plus attributes; multi-stream views implement `IMultiStreamEntityResolver`.
-5. **Stores:** each context calls `UseInMemory()` / `UseSqlServer(...)`.
+Each context calls `UseInMemory()` / `UseSqlServer(...)` and
+`WithEventTypes`. A store-backed context without a catalog fails at warmup.
+Register handlers with `WithCommandHandlers<TMarker>()` on that context.
 
 Excerpt from `samples/Library.Host/LibraryHost.cs` (`AddTwoContexts`):
 
@@ -23,6 +19,7 @@ library.WithEventTypes<BookAdded>();
 
 var other = services.AddBoundedContext("other");
 other.UseInMemory();
+other.WithEventTypes<BookAdded>();
 ```
 
 Single-store apps use name `"default"`. Keyed `IEventStore` /

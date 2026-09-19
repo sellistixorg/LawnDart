@@ -1,34 +1,28 @@
 ---
 name: lawndart-event-store
-description: Choose and register a LawnDart event store. UseInMemory for zero infra; UseSqlServer for durable SQL.
+description: Choose and register a LawnDart event store. UseInMemory for zero infra; UseSqlServer for durable SQL. Use when picking or swapping the event-store backend.
 ---
 
 # Event store
 
 v1 backends: **InMemory** and **SQL Server**. Both persist recorded frames
 (`IEventLog`: `AppendEvent` in, `RecordedEvent` out). Application code uses
-the typed session (`IEventStore`). InMemory serializes on append — it is
-not an object heap. `IEventSerializer` is `ReadOnlyMemory<byte>` (UTF-8
-JSON by default). Third-party stores implement the log, not the session.
+the typed session (`IEventStore`). InMemory serializes on append. It is
+not an object heap. `IEventSerializer` reads and writes `ReadOnlyMemory<byte>`
+(UTF-8 JSON by default). Third-party stores implement the log, not the session.
 
-Additive JSON rolls freely: new named properties on the current type do not
-require a `SchemaVersion` bump. A breaking change — renamed meaning, a
-removed required field, or a positional-codec layout change (a reused or
-remapped `[PropertyOrder]` number) — is expand-contract. Ship readers that
-understand `SchemaVersion` N+1 before any process writes N+1. Old binaries
-fail closed on those newer rows (`EventSchemaTooNewException`) and may keep
-appending the version that was current for them. There is no remote
-downcaster and no skip override. Optional `LawnDart.Analyzers` reports
-`LDT001`–`LDT003` at `dotnet build`; warmup is the runtime authority. See
+`WithEventTypes` is required. Frames store a `CodecId`, not a MIME string.
+SQL uses one `EventData` (`VARBINARY`) column. Pre-1.0 schema changes are
+a wipe: drop and recreate event and outbox tables. There is no in-place
+migration.
+
+SQL does not create tables on first append. Call
+`SqlServerEventStore.InitializeSchemaAsync` before the first command.
+See `lawndart-host-setup` for snapshots and projection-store init.
+
+Additive JSON rolls freely. A breaking payload change is expand-contract.
+Register hops with `WithUpcasters` after `WithEventTypes`. See
 `docs/EVENT_SCHEMA_VERSIONING.md`.
-
-## Frozen surface
-
-1. **App-facing dispatch** is `ICommandHandler<T>` (HTTP, jobs).
-2. **Aggregates / DCB** declare closed `Handle(TCommand)`. `HandleCommandAsync` is persistence + authorization.
-3. **Load** by `string streamId` when the stream is not `{type}:{guid}`.
-4. **Projections:** `ProjectionBase<TView>` plus attributes; multi-stream views implement `IMultiStreamEntityResolver`.
-5. **Stores:** `UseInMemory()` / `UseSqlServer(...)` on `AddBoundedContext(name)`.
 
 Excerpt from `samples/Library.Host/LibraryHost.cs` (`AddInMemoryLibrary`):
 
@@ -50,8 +44,5 @@ ctx.WithEventTypes<BookAdded>();
 ```
 
 Align `RequireTenantId` on `AddLawnDart` and `SqlServerEventStoreOptions`.
-`WithEventTypes` is required. Frames store a `CodecId`, not a MIME string.
-SQL uses one `EventData` (`VARBINARY`) column. Pre-1.0 schema changes are
-a wipe: drop and recreate event and outbox tables; Flywheel reseeds.
 
 See `docs/BACKEND_SELECTION.md`.

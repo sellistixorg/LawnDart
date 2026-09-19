@@ -30,8 +30,10 @@ await AggregateSpec
     .RunAsync();
 ```
 
-Also ships `DcbSpec`, `ReactorTestHarness<TReactor, TEvent>`, and
-`WaitForAsync` for eventual-consistency assertions.
+`DcbSpec` excerpts live in
+`samples/Library.Dcb.Domain.Tests/LibraryBookLoanTests.cs`.
+Also ships `ReactorTestHarness<TReactor, TEvent>` and `WaitForAsync` for
+eventual-consistency assertions.
 
 ## Related
 

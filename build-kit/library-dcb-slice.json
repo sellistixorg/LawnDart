@@ -1,0 +1,48 @@
+{
+  "slice": "library-book-dcb",
+  "context": "library",
+  "commands": [
+    { "name": "AddBook", "fields": ["BookId", "Title", "Isbn"] },
+    { "name": "BorrowBook", "fields": ["BookId", "MemberId", "MemberName"] },
+    { "name": "ReturnBook", "fields": ["BookId", "MemberId"] }
+  ],
+  "events": [
+    { "name": "BookAdded", "token": "book-added", "fields": ["Id", "Timestamp", "BookId", "Title", "Isbn"] },
+    { "name": "BookBorrowed", "token": "book-borrowed", "fields": ["Id", "Timestamp", "BookId", "MemberId", "MemberName"] },
+    { "name": "BookReturned", "token": "book-returned", "fields": ["Id", "Timestamp", "BookId", "MemberId"] }
+  ],
+  "entity": {
+    "name": "BookLoan",
+    "kind": "dcb",
+    "state": "BookLoanState",
+    "stateFields": ["BookId", "Exists", "OnLoan", "BorrowedBy", "BorrowedByMemberId", "MemberActiveLoans"],
+    "tags": ["book:{bookId}", "member:{memberId}"],
+    "rules": ["book exists", "book not on loan", "member under 3 active loans"]
+  },
+  "gwt": [
+    {
+      "name": "borrow_emits_event",
+      "given": ["BookAdded"],
+      "when": "BorrowBook",
+      "then": ["BookBorrowed", "OnLoan", "MemberActiveLoans 1"]
+    },
+    {
+      "name": "return_clears_loan",
+      "given": ["BookAdded", "BookBorrowed"],
+      "when": "ReturnBook",
+      "then": ["BookReturned", "not OnLoan", "MemberActiveLoans 0"]
+    },
+    {
+      "name": "cannot_borrow_when_already_on_loan",
+      "given": ["BookAdded", "BookBorrowed"],
+      "when": "BorrowBook",
+      "then": ["throws DomainException"]
+    },
+    {
+      "name": "cannot_borrow_when_member_at_loan_limit",
+      "given": ["BookAdded", "BookBorrowed x3 other books"],
+      "when": "BorrowBook",
+      "then": ["throws DomainException"]
+    }
+  ]
+}

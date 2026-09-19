@@ -17,6 +17,8 @@
     <ProjectReference Include="..\..\src\LawnDart.AspNetCore\LawnDart.AspNetCore.csproj" />
     <ProjectReference Include="..\..\src\LawnDart.Authorization.AspNetCore\LawnDart.Authorization.AspNetCore.csproj" />
     <ProjectReference Include="..\..\src\LawnDart.Projections.Lightweight\LawnDart.Projections.Lightweight.csproj" />
+    <ProjectReference Include="..\..\src\LawnDart.Messaging\LawnDart.Messaging.csproj" />
+    <ProjectReference Include="..\..\src\LawnDart.Messaging.InMemory\LawnDart.Messaging.InMemory.csproj" />
   </ItemGroup>
 
 </Project>

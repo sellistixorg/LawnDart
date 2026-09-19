@@ -4,7 +4,8 @@
   "commands": [
     { "name": "AddBook", "fields": ["BookId", "Title", "Isbn"] },
     { "name": "BorrowBook", "fields": ["BookId", "MemberName"] },
-    { "name": "ReturnBook", "fields": ["BookId"] }
+    { "name": "ReturnBook", "fields": ["BookId"] },
+    { "name": "NotifyMember", "fields": ["BookId", "MemberName"] }
   ],
   "events": [
     { "name": "BookAdded", "token": "book-added", "fields": ["Id", "Timestamp", "BookId", "Title", "Isbn"] },
@@ -20,6 +21,9 @@
   "views": [
     { "name": "BookCatalogView", "fields": ["BookId", "Title", "Isbn", "OnLoan", "BorrowedBy"] },
     { "name": "BorrowedBookView", "fields": ["BookId", "MemberName"], "removedOn": "BookReturned" }
+  ],
+  "process": [
+    { "name": "LoanNotice", "on": "BookBorrowed", "command": "NotifyMember" }
   ],
   "gwt": [
     {

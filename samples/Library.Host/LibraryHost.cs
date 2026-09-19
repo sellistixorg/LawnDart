@@ -4,7 +4,8 @@ using LawnDart.Authorization.AspNetCore;
 using LawnDart.EventSourcing;
 using LawnDart.EventSourcing.SqlServer;
 using LawnDart.EventStore;
-using LawnDart.Metadata;
+using LawnDart.Messaging;
+using LawnDart.Messaging.InMemory;
 using LawnDart.Projections.Lightweight;
 using Library.Domain;
 using Microsoft.AspNetCore.Builder;
@@ -17,7 +18,8 @@ public static class LibraryHost
     public static IServiceCollection AddInMemoryLibrary(IServiceCollection services)
     {
         services.AddLawnDart(o => o.RequireTenantId = false);
-        services.AddSingleton<ITenantContextProvider, AmbientTenantContextProvider>();
+        services.AddInMemoryMessaging();
+        services.AddReactor<LoanNoticeReactor, BookBorrowed>();
         services.AddInMemoryProjectionStores("default");
         var ctx = services.AddBoundedContext("default");
         ctx.UseInMemory();
@@ -36,7 +38,6 @@ public static class LibraryHost
     public static IServiceCollection AddSqlLibrary(IServiceCollection services, string connectionString)
     {
         services.AddLawnDart(o => o.RequireTenantId = false);
-        services.AddSingleton<ITenantContextProvider, AmbientTenantContextProvider>();
         var ctx = services.AddBoundedContext("default");
         ctx.UseSqlServer(o =>
         {
@@ -57,14 +58,13 @@ public static class LibraryHost
 
         var other = services.AddBoundedContext("other");
         other.UseInMemory();
+        other.WithEventTypes<BookAdded>();
     }
 
     public static void MapLibraryHttp(IServiceCollection services, WebApplication app)
     {
         services.AddLawnDartHttpCommands(typeof(BorrowBookHandler).Assembly);
         services.AddHttpAuthorizationContext();
-        app.UseAuthentication();
-        app.UseAuthorization();
         app.MapLawnDartCommands();
         app.MapProjectionQueries("default");
     }

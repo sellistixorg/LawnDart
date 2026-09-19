@@ -13,9 +13,14 @@ changes to the public API.
 ### Added
 
 - [Metadata](docs/METADATA.md) covers `MessageContext`, `CommandMetadata`, `EventMetadata`, and what the default provider fills.
+- A DCB Library sample (`samples/Library.Dcb.Domain`) implements the same book intents as a `BookLoan` entity that spans book and member. Input is `build-kit/library-dcb-slice.json`.
+- The build kit has `lawndart-testing` and `lawndart-reactions` skills.
 
 ### Changed
 
+- The skill kit frozen surface lives on `lawndart-host-setup`. Aggregate load is `GetOrCreateAsync`. DCB load is `GetOrCreateEntityAsync`. Projection scopes include `[MultiStreamProjection]`.
+- A store-backed second bounded context in `Library.Host` registers `WithEventTypes`.
+- [BDD testing](docs/testing/BDD_TESTING.md) excerpts `DcbSpec` from the Library DCB sample.
 - Command HTTP endpoints map success to 202, failed authorization to 403, `ConcurrencyException` to 409, and `DomainException` to 422.
 - Guides lead with what LawnDart is and what to do.
 - Pre-1.0 store-schema changes are a wipe. Drop and recreate SQL event and outbox tables. Flywheel reseeds. There is no in-place migration.

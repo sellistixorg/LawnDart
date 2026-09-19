@@ -29,6 +29,12 @@ public sealed class BorrowBookHandler : ICommandHandler<BorrowBookCommand>
     }
 }
 
+public sealed class NotifyMemberHandler : ICommandHandler<NotifyMemberCommand>
+{
+    public Task HandleAsync(NotifyMemberCommand command, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
+}
+
 public sealed class ReturnBookHandler : ICommandHandler<ReturnBookCommand>
 {
     private readonly IAggregateRepository _books;
