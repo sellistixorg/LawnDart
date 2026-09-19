@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using Scalar.AspNetCore;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 using LawnDart;
 using LawnDart.AspNetCore;
 using LawnDart.Authorization;
@@ -108,8 +110,8 @@ builder.Services.AddOpenApi(opts =>
             Type = SecuritySchemeType.Http,
             Scheme = "bearer",
             BearerFormat = "JWT",
-            Description = "Paste your JWT token (without 'Bearer ' prefix). " +
-                          "Use role 'Admin' for full access, 'Instructor' or 'Student' for scoped access."
+            Description = "POST /token for a demo JWT, then paste it here (no 'Bearer ' prefix). " +
+                          "Roles: Admin, Instructor, Student."
         };
         doc.Security =
         [
@@ -146,4 +148,38 @@ app.MapGet("/health", () => Results.Ok(new { status = "healthy", time = DateTime
     .WithName("HealthCheck")
     .WithTags("System");
 
+app.MapPost("/token", async (HttpRequest request) =>
+    {
+        var req = new TokenRequest(null, null, null);
+        if (request.ContentLength is > 0)
+        {
+            var parsed = await request.ReadFromJsonAsync<TokenRequest>().ConfigureAwait(false);
+            if (parsed is not null)
+                req = parsed;
+        }
+
+        var role = string.IsNullOrWhiteSpace(req.Role) ? "Student" : req.Role.Trim();
+        if (role is not ("Admin" or "Instructor" or "Student"))
+            return Results.BadRequest(new { error = "role must be Admin, Instructor, or Student." });
+
+        var tenantId = string.IsNullOrWhiteSpace(req.TenantId) ? "academy" : req.TenantId.Trim();
+        var sub = string.IsNullOrWhiteSpace(req.Sub) ? "demo" : req.Sub.Trim();
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
+        var token = new JwtSecurityTokenHandler().WriteToken(new JwtSecurityToken(
+            claims:
+            [
+                new Claim("role", role),
+                new Claim("tenant_id", tenantId),
+                new Claim("sub", sub)
+            ],
+            signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256)));
+
+        return Results.Ok(new { token, role });
+    })
+    .AllowAnonymous()
+    .WithName("IssueDemoToken")
+    .WithTags("System");
+
 app.Run();
+
+internal sealed record TokenRequest(string? Role, string? TenantId, string? Sub);

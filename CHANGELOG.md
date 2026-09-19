@@ -15,6 +15,7 @@ changes to the public API.
 - [Metadata](docs/METADATA.md) covers `MessageContext`, `CommandMetadata`, `EventMetadata`, and what the default provider fills.
 - A DCB Library sample (`samples/Library.Dcb.Domain`) implements the same book intents as a `BookLoan` entity that spans book and member. Input is `build-kit/library-dcb-slice.json`.
 - The build kit has `lawndart-testing` and `lawndart-reactions` skills.
+- Academy WebApi issues a demo JWT at `POST /token`.
 
 ### Changed
 
