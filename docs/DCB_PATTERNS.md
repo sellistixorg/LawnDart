@@ -1,29 +1,49 @@
 # DCB patterns
 
-Dynamic Consistency Boundary (DCB) loads events by **tags**, not by a single
-aggregate stream, then appends new facts atomically with an `AppendCondition`.
+Dynamic Consistency Boundary (DCB) loads events by **tags**, not by a
+single aggregate stream, then appends new facts atomically with an
+`AppendCondition`.
 
-Use DCB when a rule spans more than one identity (student + section, order +
-inventory). Use an aggregate when one stream owns the rule.
+Use DCB when a rule spans more than one identity (student + section,
+order + inventory). Use an aggregate when one stream owns the rule.
 
 ## Shape
 
+Academy `EnrollmentEntity` declares closed `Handle(TCommand)`:
+
 ```csharp
-public sealed class EnrollmentEntity : DcbEntity<EnrollmentState>
+public class EnrollmentEntity : DcbEntity<EnrollmentState>
 {
-    public override Task HandleAsync<TCommand>(TCommand command, CancellationToken cancellationToken = default)
+    public static string[] GetTags(Guid studentId, Guid sectionId)
+        => [$"student:{studentId}", $"section:{sectionId}"];
+
+    public void Handle(EnrollStudentCommand cmd)
     {
-        if (command is EnrollStudentCommand enroll)
-        {
-            if (State.SeatsRemaining <= 0)
-                throw new DomainException("Section is full.");
-            Emit(new SeatReserved(...), $"student:{enroll.StudentId}", $"section:{enroll.SectionId}");
-            Emit(new StudentEnrolled(...), $"student:{enroll.StudentId}", $"section:{enroll.SectionId}");
-        }
-        return Task.CompletedTask;
+        if (!State.StudentIsActive)
+            throw new InvalidOperationException("Student must be registered before enrolling.");
+
+        if (State.SeatsAvailable <= 0)
+            throw new InvalidOperationException(
+                $"No seats available in section {_sectionId}. Enrollment denied.");
+
+        if (State.StudentEnrolled)
+            throw new InvalidOperationException($"Student {_studentId} is already enrolled in this section.");
+
+        if (State.IsCancelled)
+            throw new InvalidOperationException("Enrollment has been cancelled.");
+
+        Emit(new SeatReserved(Guid.NewGuid(), DateTime.UtcNow, _sectionId, _studentId),
+            $"student:{_studentId}", $"section:{_sectionId}", $"course:{cmd.CourseId}");
+
+        Emit(new StudentEnrolled(Guid.NewGuid(), DateTime.UtcNow, _studentId, cmd.CourseId),
+            $"student:{_studentId}", $"section:{_sectionId}", $"course:{cmd.CourseId}");
     }
 }
 ```
+
+`Handle(SendConfirmationCommand)` and `Handle(CancelRegistrationCommand)`
+are on the same type. Source:
+`demos/LawnDart.Demo.Academy/Enrollment/EnrollmentEntity.cs`.
 
 The repository:
 
@@ -39,6 +59,6 @@ Showcase B (DCB) appends `SeatReserved` and `StudentEnrolled` in one write.
 
 DCB records pending events with `Emit` (tags), not aggregate `Apply`.
 `HandleCommandAsync` is the repository; author `Handle(TCommand)` on the
-entity. See [Glossary — Intentional verb differences](GLOSSARY.md#intentional-verb-differences).
+entity. See [Intentional verb differences](GLOSSARY.md#intentional-verb-differences).
 
-See [TAGGING.md](TAGGING.md) and Academy `Enrollment/EnrollmentEntity.cs`.
+See [TAGGING.md](TAGGING.md).

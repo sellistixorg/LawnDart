@@ -1,75 +1,65 @@
-# Step 5 — DCB patterns
+# Step 5. DCB patterns
 
 **Previous:** [Reading state](04-reading-state.md) · **Next:** [Reactions](06-reactions.md)
 
 Use an aggregate when one stream owns the rule. Use a `DcbEntity` when the
-rule spans identities — student and section, order and SKU — and must commit
+rule spans identities (student and section, order and SKU) and must commit
 in one append.
 
-The repository loads every event that carries **all** of the given tags,
-rebuilds the entity, runs the command, and appends with
-`FailIfEventsMatch` so a concurrent writer on the same tag set loses.
+Academy `EnrollmentEntity` declares closed `Handle(TCommand)`:
 
 ```csharp
-public sealed record HoldSeatCommand(Guid Id, Guid StudentId, Guid SectionId) : ICommand;
-
-[EventTypeName("section-opened")]
-public sealed record SectionOpened(Guid Id, DateTime Timestamp, Guid SectionId, int Seats) : IEvent;
-
-[EventTypeName("seat-held")]
-public sealed record SeatHeld(Guid Id, DateTime Timestamp, Guid StudentId, Guid SectionId) : IEvent;
-
-public sealed class SeatHoldState : IState
+public class EnrollmentEntity : DcbEntity<EnrollmentState>
 {
-    public int SeatsRemaining { get; set; }
-}
+    public static string[] GetTags(Guid studentId, Guid sectionId)
+        => [$"student:{studentId}", $"section:{sectionId}"];
 
-public sealed class SeatHold : DcbEntity<SeatHoldState>
-{
-    public override Task HandleAsync<TCommand>(TCommand command, CancellationToken cancellationToken = default)
+    public void Handle(EnrollStudentCommand cmd)
     {
-        if (command is HoldSeatCommand hold)
-        {
-            if (State.SeatsRemaining <= 0)
-                throw new DomainException("Section is full.");
+        if (!State.StudentIsActive)
+            throw new InvalidOperationException("Student must be registered before enrolling.");
 
-            Emit(
-                new SeatHeld(Guid.NewGuid(), DateTime.UtcNow, hold.StudentId, hold.SectionId),
-                $"student:{hold.StudentId}",
-                $"section:{hold.SectionId}");
-        }
+        if (State.SeatsAvailable <= 0)
+            throw new InvalidOperationException(
+                $"No seats available in section {_sectionId}. Enrollment denied.");
 
-        return Task.CompletedTask;
-    }
+        if (State.StudentEnrolled)
+            throw new InvalidOperationException($"Student {_studentId} is already enrolled in this section.");
 
-    protected override void ApplyEventToState(IEvent @event)
-    {
-        if (@event is SectionOpened opened) State.SeatsRemaining = opened.Seats;
-        if (@event is SeatHeld) State.SeatsRemaining--;
+        if (State.IsCancelled)
+            throw new InvalidOperationException("Enrollment has been cancelled.");
+
+        Emit(new SeatReserved(Guid.NewGuid(), DateTime.UtcNow, _sectionId, _studentId),
+            $"student:{_studentId}", $"section:{_sectionId}", $"course:{cmd.CourseId}");
+
+        Emit(new StudentEnrolled(Guid.NewGuid(), DateTime.UtcNow, _studentId, cmd.CourseId),
+            $"student:{_studentId}", $"section:{_sectionId}", $"course:{cmd.CourseId}");
     }
 }
 ```
 
-Bootstrap events must carry the **same tag set** the entity loads, or they
-will not appear in state. Same InMemory host as [step 2](02-first-aggregate.md):
+`Handle(SendConfirmationCommand)` and `Handle(CancelRegistrationCommand)`
+are on the same type. Source:
+`demos/LawnDart.Demo.Academy/Enrollment/EnrollmentEntity.cs`.
+
+The repository loads events for the tag set, rebuilds the entity, runs
+the command, and appends with `FailIfMatches` after the last seen sequence.
+Excerpted from `demos/LawnDart.Demo.Academy/Showcases/ShowcaseB_DcbInProcess.cs`
+(seed and projector lines omitted):
 
 ```csharp
-var store = sp.GetRequiredService<IEventStore>();
-var dcb = sp.GetRequiredService<IDcbRepository>();
-var tags = new[] { $"student:{studentId}", $"section:{sectionId}" };
-
-await store.AppendAsync(
-    $"dcb-seed:{sectionId}",
-    [new SectionOpened(Guid.NewGuid(), DateTime.UtcNow, sectionId, Seats: 5)],
-    tags: tags);
-
-var entity = await dcb.GetOrCreateEntityAsync<SeatHold>(tags);
-await dcb.HandleCommandAsync(entity, new HoldSeatCommand(Guid.NewGuid(), studentId, sectionId));
+var entity = await _dcbRepository.GetOrCreateEntityAsync<EnrollmentEntity>(enrollmentTags);
+await _dcbRepository.HandleCommandAsync<EnrollmentEntity, EnrollStudentCommand>(
+    entity,
+    new EnrollStudentCommand(Guid.NewGuid(), studentId, courseId));
 ```
 
-Academy Showcase B does this for enrollment: one read of `student:{id}` +
-`section:{id}`, then one append of `SeatReserved` + `StudentEnrolled`.
-Showcase A needs five hops and is eventually consistent.
+Bootstrap events must carry the same tag set the entity loads, or they
+will not appear in state. Same InMemory host as
+[step 2](02-first-aggregate.md).
+
+Academy Showcase B appends `SeatReserved` and `StudentEnrolled` in one
+write. Showcase A needs five hops and is eventually consistent.
 
 DCB uses `Emit(event, tags)`, not aggregate `Apply`. `HandleCommandAsync`
 is the repository. See [Intentional verb differences](../GLOSSARY.md#intentional-verb-differences).

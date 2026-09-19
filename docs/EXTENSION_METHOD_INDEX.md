@@ -2,13 +2,7 @@
 
 Happy-path registrations shipped in LawnDart v1.
 
-## Frozen surface
-
-1. **App-facing dispatch** is `ICommandHandler<T>` (HTTP, jobs).
-2. **Aggregates / DCB** declare closed `Handle(TCommand)`. `HandleCommandAsync` is persistence + authorization (`HandleAsync<TCommand>` on the entity is obsolete).
-3. **Load** by `string streamId` when the stream is not `{type}:{guid}` — see repository methods below.
-4. **Projections:** `ProjectionBase<TView>` plus attributes; multi-stream views implement `IMultiStreamEntityResolver`.
-5. **Stores:** `UseInMemory` / `UseSqlServer` on `AddBoundedContext(name)`.
+Host grammar (the frozen surface) is on [DI Grammar](DI_GRAMMAR.md).
 
 ## Repository (stream id)
 
@@ -45,7 +39,7 @@ These live on `IAggregateRepository` in Core (not `Add*` extensions). Guid overl
 | `UseSqlServer` | `LawnDart.EventSourcing.SqlServer` | Durable SQL store |
 | `WithSnapshots` | `LawnDart.EventSourcing.SqlServer` | Optional snapshot store |
 | `AddSnapshotWriteInfrastructure` | `LawnDart.EventSourcing` | Snapshot write channel + hosted consumer. `UseInMemory` / `UseSqlServer` already call it; third-party `Use*` methods must |
-| `EventSourcingRepositories.Create*` | `LawnDart.EventSourcing` | Build repositories with the write queue. Do not use the public constructors from a custom store |
+| `EventSourcingRepositories.Create*` | `LawnDart.EventSourcing` | Build repositories with the write queue. Public constructors omit the queue. |
 | `WithCommandHandlers` / `WithCommandHandlers<TMarker>` | `LawnDart.EventSourcing` | The only handler registrar. Scan `ICommandHandler<T>` and register `ICommandDispatcher` (`LawnDart.Messaging` namespace, Core package) |
 | `WithTagProvider` | `LawnDart.EventSourcing` | Per-context tags |
 

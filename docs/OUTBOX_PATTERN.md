@@ -22,8 +22,10 @@ transaction: family token, payload **bytes**, metadata as UTF-8 JSON
 text, plus first-class `SchemaVersion` and `CodecId` (`TINYINT`, no
 column default). The publisher selects the codec by id and hydrates
 through `EventSession` (token + schema version, then upcast) the same
-way typed store reads do. An unknown token fails closed; there is no
-FullName alias.
+way typed store reads do. Register the family with `WithEventTypes`; an
+unknown token fails closed (no FullName alias). Drop and recreate an
+older outbox table: `SchemaVersion` and `CodecId` have no column defaults,
+and opening that table throws and names drop-and-recreate.
 
 ```csharp
 services.AddBoundedContext("default")
@@ -43,5 +45,5 @@ or your own `IMessageTransport` implementation.
 
 When publish attempts reach the processor max (default 10), the row is marked
 with `DeadLetteredAt` and dropped from `GetUnprocessedAsync`. Query failed rows
-with `GetDeadLetteredAsync`. `ProcessedAt` is success only — dead letters do not
-set it. There is no reset/replay API in this version.
+with `GetDeadLetteredAsync`. `ProcessedAt` is success only; dead letters do not
+set it. Inspect those rows in place. This version has no reset or replay API.

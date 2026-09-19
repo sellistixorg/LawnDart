@@ -18,11 +18,11 @@ Those fields live on the envelope, not on `ICommand` / `IEvent`.
 
 ## Aggregate spec
 
-Excerpted from `samples/Library.Domain.Tests/LibraryBookTests.cs`:
+Excerpted from `samples/Library.Domain.Tests/LibraryBookTests.cs`
+(`cannot_borrow_when_already_on_loan`; method signature omitted):
 
 ```csharp
-await using var ctx = BddTestContext.CreateInMemory(
-    typeof(BookAdded), typeof(BookBorrowed), typeof(BookReturned));
+await using var ctx = BddTestContext.CreateInMemory(typeof(BookAdded), typeof(BookBorrowed), typeof(BookReturned));
 var bookId = Guid.NewGuid();
 
 await AggregateSpec
@@ -47,11 +47,11 @@ slice has no DCB entity. The compiled DCB example lives in
 
 `AndView` replays the whole stream (Given + When) through a projector
 `Apply` callback. The callback does not need `LawnDart.Projections.Lightweight`.
-Excerpted from `samples/Library.Domain.Tests/LibraryBookTests.cs`:
+Excerpted from `samples/Library.Domain.Tests/LibraryBookTests.cs`
+(`borrow_emits_event_and_updates_catalog_view`; method signature omitted):
 
 ```csharp
-await using var ctx = BddTestContext.CreateInMemory(
-    typeof(BookAdded), typeof(BookBorrowed), typeof(BookReturned));
+await using var ctx = BddTestContext.CreateInMemory(typeof(BookAdded), typeof(BookBorrowed), typeof(BookReturned));
 var bookId = Guid.NewGuid();
 var projector = new LibraryProjector();
 
@@ -83,31 +83,29 @@ domain project. Use xUnit. Canonical proofs:
 `samples/Library.Domain.Tests/LibraryBookTests.cs` (reference slice) and
 `tests/LawnDart.Testing.Tests/Bdd/InMemoryGwtTests.cs`.
 
-These specs match the Eventhesis GWT widget — see [EVENTHESIS.md](../EVENTHESIS.md).
+These specs match the Eventhesis GWT widget. See [EVENTHESIS.md](../EVENTHESIS.md).
 
 ## Exception contract
 
-Spec-internal failures — missing `When`, a `Then*` mismatch, an unexpected
-exception from `When`, or a broken store probe — throw
-`BddSpecAssertionException`. That type does **not** derive from
-`InvalidOperationException`.
+Use `ThenThrows<T>()` for a domain rule. Spec-internal failures (missing
+`When`, a `Then*` mismatch, an unexpected exception from `When`, or a
+broken store probe) throw `BddSpecAssertionException`. That type does
+not derive from `InvalidOperationException`. Wrapping `RunAsync()` in
+`Assert.ThrowsAsync<InvalidOperationException>` would pass when a spec
+assertion failed.
 
-Do not wrap `RunAsync()` in
-`Assert.ThrowsAsync<InvalidOperationException>`. A failed spec assertion
-would have passed that test. Use `ThenThrows<T>()` for a domain rule:
-
-- Domain rules throw `DomainException`. HTTP command endpoints map that type
-  to `422 Unprocessable Entity`.
+- Domain rules throw `DomainException`. HTTP command endpoints map that
+  type to `422 Unprocessable Entity`.
 - `ThenThrows<DomainException>()` is the assertion in the library slice.
-- `ThenThrows<T>()` passes when the domain throws `T` or a type derived from `T`.
-  `DomainException` derives from `InvalidOperationException`, so
-  `ThenThrows<InvalidOperationException>()` still matches — assert the
+- `ThenThrows<T>()` passes when the domain throws `T` or a type derived
+  from `T`. `DomainException` derives from `InvalidOperationException`,
+  so `ThenThrows<InvalidOperationException>()` still matches. Assert the
   narrower type.
-- A mismatch throws `BddSpecAssertionException` and names both the expected
-  and actual types.
+- A mismatch throws `BddSpecAssertionException` and names both the
+  expected and actual types.
 
 A store that does not implement `GetCurrentSequenceAsync` or
-`ReadByQueryAsync` throws `NotSupportedException`. The spec treats that as
-a missing capability: sequence baseline becomes `-1`, and the appended-stream
-set is empty. Any other exception from those probes is a broken store and
-surfaces as `BddSpecAssertionException`.
+`ReadByQueryAsync` throws `NotSupportedException`. The spec treats that
+as a missing capability: sequence baseline becomes `-1`, and the
+appended-stream set is empty. Any other exception from those probes is
+a broken store and surfaces as `BddSpecAssertionException`.

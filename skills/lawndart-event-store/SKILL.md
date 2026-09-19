@@ -35,6 +35,7 @@ Excerpt from `samples/Library.Host/LibraryHost.cs` (`AddInMemoryLibrary`):
 ```csharp
 var ctx = services.AddBoundedContext("default");
 ctx.UseInMemory();
+ctx.WithEventTypes<BookAdded>();
 ```
 
 Excerpt from `samples/Library.Host/LibraryHost.cs` (`AddSqlLibrary`):
@@ -45,8 +46,12 @@ ctx.UseSqlServer(o =>
     o.ConnectionString = connectionString;
     o.RequireTenantId = false;
 });
+ctx.WithEventTypes<BookAdded>();
 ```
 
 Align `RequireTenantId` on `AddLawnDart` and `SqlServerEventStoreOptions`.
+`WithEventTypes` is required. Frames store a `CodecId`, not a MIME string.
+SQL uses one `EventData` (`VARBINARY`) column. Pre-1.0 schema changes are
+a wipe: drop and recreate event and outbox tables; Flywheel reseeds.
 
 See `docs/BACKEND_SELECTION.md`.

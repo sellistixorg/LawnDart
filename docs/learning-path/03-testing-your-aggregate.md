@@ -1,4 +1,4 @@
-# Step 3 — Testing your aggregate
+# Step 3. Testing your aggregate
 
 **Previous:** [First aggregate](02-first-aggregate.md) · **Next:** [Reading state](04-reading-state.md)
 
@@ -6,11 +6,11 @@ Use `LawnDart.Testing` against InMemory. No Docker. Events from
 [step 2](02-first-aggregate.md) already declare `[EventTypeName]`. Pass
 those types to `CreateInMemory` so the spec has a scoped catalog.
 
-Excerpted from `samples/Library.Domain.Tests/LibraryBookTests.cs`.
+Excerpted from `samples/Library.Domain.Tests/LibraryBookTests.cs`
+(`cannot_borrow_when_already_on_loan`; method signature omitted).
 
 ```csharp
-await using var ctx = BddTestContext.CreateInMemory(
-    typeof(BookAdded), typeof(BookBorrowed), typeof(BookReturned));
+await using var ctx = BddTestContext.CreateInMemory(typeof(BookAdded), typeof(BookBorrowed), typeof(BookReturned));
 var bookId = Guid.NewGuid();
 
 await AggregateSpec

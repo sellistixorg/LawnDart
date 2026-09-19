@@ -15,4 +15,6 @@ Eight steps from first command to a production-shaped host.
 
 **Prerequisites:** .NET 10 SDK, basic C# records and dependency injection.
 
-Then run [Academy](../QUICKSTART.md).
+Then run [Academy](../QUICKSTART.md). Envelope fields:
+[Metadata](../METADATA.md). Family tokens and upcast:
+[Event schema versioning](../EVENT_SCHEMA_VERSIONING.md).

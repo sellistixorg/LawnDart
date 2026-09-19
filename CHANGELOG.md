@@ -10,6 +10,16 @@ changes to the public API.
 
 ## [Unreleased]
 
+### Added
+
+- [Metadata](docs/METADATA.md) covers `MessageContext`, `CommandMetadata`, `EventMetadata`, and what the default provider fills.
+
+### Changed
+
+- Command HTTP endpoints map success to 202, failed authorization to 403, `ConcurrencyException` to 409, and `DomainException` to 422.
+- Guides lead with what LawnDart is and what to do.
+- Pre-1.0 store-schema changes are a wipe. Drop and recreate SQL event and outbox tables. Flywheel reseeds. There is no in-place migration.
+
 ## [0.4.0-alpha.7] — 2026-09-17
 
 ### Changed

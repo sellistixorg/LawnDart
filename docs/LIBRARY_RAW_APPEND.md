@@ -1,24 +1,23 @@
-# Library domain — raw append (comparison foil)
+# Library domain: raw append (comparison foil)
 
-This page is **article material**, not the recommended path. The canonical
-reference slice is [`samples/Library.Domain`](https://github.com/sellistixorg/LawnDart/tree/main/samples/Library.Domain) and
-its given / when / then specs. Do not imitate this page when adding a slice.
+This page is article material. The recommended path is
+[`samples/Library.Domain`](https://github.com/sellistixorg/LawnDart/tree/main/samples/Library.Domain)
+and its given / when / then specs.
 
-It exists so an article can show both sides of the same book domain: raw
-store internals (this page) versus commands, `Handle`, `BookState` ≠
-`BookCatalogView`, and `AggregateSpec` + `AndView` (the slice).
+An article can show both sides of the same book domain: raw store internals
+(this page) versus commands, `Handle`, `BookState` distinct from
+`BookCatalogView`, and `AggregateSpec` plus `AndView` (the slice).
 
 Compared posts: [Chronicle](https://blog.cratis.io/event-sourcing-in-dotnet-with-chronicle/),
 [Marten](https://jasperfx.net/news/chronicle-quickstart-on-marten).
 
-Use the events and `LibraryProjector` already compiled in
-`samples/Library.Domain`. Do not invent a second `BookAdded` or a second
-projector. This foil’s stream id is `book:{guid:N}`; `AggregateSpec` writes
-`Book:{guid}`. They are not interchangeable.
+The events and `LibraryProjector` are already compiled in
+`samples/Library.Domain`. This foil's stream id is `book:{guid:N}`.
+`AggregateSpec` writes `Book:{guid}`. They are not interchangeable.
 
-App code should live on `GetOrCreateAsync` / `HandleCommandAsync`
-([QUICKSTART](QUICKSTART.md)), not here. `AppendAsync` is the correct store
-API and the wrong first application lesson.
+Application code should use `GetOrCreateAsync` / `HandleCommandAsync`
+([QUICKSTART](QUICKSTART.md)). `AppendAsync` is the store API. It is the
+wrong first application lesson.
 
 ## Append and read
 
@@ -57,13 +56,13 @@ foreach (var envelope in recorded)
     Console.WriteLine($"{envelope.Version}: {envelope.Event.GetType().Name}");
 ```
 
-Wrong `expectedVersion` throws `ConcurrencyException`. There is no command
-and no `Handle` — the decide step is in the script.
+Wrong `expectedVersion` throws `ConcurrencyException`. The script calls
+`AppendAsync`. The decide step is in the script, not in `Handle`.
 
 ## Fold by hand (Marten-shaped blur)
 
-One collapsed type, not `BookState` / `BookCatalogView`. Useful only to say
-you *can* do this; the slice does not.
+One collapsed type, not `BookState` / `BookCatalogView`. Useful only to show
+you can fold this way. The slice does not.
 
 ```csharp
 public sealed class BookSnapshot
@@ -105,7 +104,7 @@ public static BookSnapshot FoldBook(IReadOnlyList<SequencedEvent> history)
 
 ## Project the same read model
 
-Push the stream through the slice’s projector:
+Push the stream through the slice's projector:
 
 ```csharp
 var projector = new LibraryProjector();

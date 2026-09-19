@@ -1,10 +1,10 @@
-# Step 7 — Testing EDA
+# Step 7. Testing EDA
 
 **Previous:** [Reactions](06-reactions.md) · **Next:** [Production](08-production.md)
 
 `LawnDart.Testing` messaging harnesses stay on InMemory transports. Drive the
 `PaymentReactor` from [step 6](06-reactions.md) in isolation with
-`ReactorTestHarness<TReactor, TEvent>` — no host, no broker.
+`ReactorTestHarness<TReactor, TEvent>`. No host, no broker.
 
 ```csharp
 using LawnDart.Messaging;
@@ -21,7 +21,7 @@ Assert.Single(first);
 Assert.IsType<ProcessPaymentCommand>(first[0]);
 
 var replay = await harness.ReactAsync(evt, context);
-Assert.Empty(replay); // same MessageId — inbox deduplicated
+Assert.Empty(replay); // same MessageId: inbox deduplicated
 ```
 
 Assert:

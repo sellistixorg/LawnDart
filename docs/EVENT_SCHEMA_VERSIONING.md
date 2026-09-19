@@ -10,8 +10,8 @@ current type. `GetName` returns the family token, not `author-registered.v2`.
 `IEventLog` is the durable log: append `AppendEvent`, read `RecordedEvent`.
 Each frame carries the family token, first-class `SchemaVersion`,
 `CodecId`, payload bytes, UTF-8 JSON metadata bytes, tags, stream
-id/version, global sequence, and commit timestamp. The log does not
-resolve CLR types.
+id/version, global sequence, and commit timestamp. Stores persist frames.
+They do not resolve CLR types.
 
 `IEventStore` is the typed session over that log. Handlers, aggregates,
 DCB, Lightweight replay, time-travel, and the outbox publisher stay on
@@ -19,40 +19,40 @@ DCB, Lightweight replay, time-travel, and the outbox publisher stay on
 resolves `(token, SchemaVersion)` on the way out, deserializes the stored
 version's CLR type, then upcasts to current.
 
-LawnDart is an in-process runtime. Upcast happens in your host. The log
-does not store Chronicle-style generations, downcast for old readers, or
-run a server-side migrator.
+Upcast runs in your host. Register hops with `WithUpcasters`. Typed append
+writes only this process's current type. There is no downcast API.
 
 ## Implement a store
 
-A third-party backend implements `IEventLog`, not `IEventStore`.
+A third-party backend implements `IEventLog`. Application code keeps
+`IEventStore`.
 
 - Append `AppendEvent`: family token, `SchemaVersion`, `CodecId`,
   payload bytes, UTF-8 JSON metadata bytes, tags. Snapshot payload and
-  metadata; do not retain the caller's arrays.
+  metadata. Copy the bytes.
 - Return `RecordedEvent` with store-assigned stream id, stream version,
-  global sequence, and commit timestamp. Do not parse metadata JSON to
-  fill those fields.
+  global sequence, and commit timestamp. Those fields come from the store,
+  not from metadata JSON.
 - Query, concurrency, and filters stay on tokens, tags, and sequence.
 - Push, if you offer it, is `IEventLogSubscriptions` (recorded events).
   The shipped adapter hydrates `IEventStoreSubscriptions`.
 - `ConsistencyMarker` on append/query results is store-owned and passes
   through the adapter unchanged.
 
-Application code keeps `IEventStore`. Signatures:
-[core package](packages/core.md#portable-store-contract).
+Signatures: [core package](packages/core.md#portable-store-contract).
 
 ## Family token
 
 Every concrete `IEvent` that is written needs `[EventTypeName]`. Prefer
-kebab-case (`author-registered`). The token does not change across
-versions. CLR `FullName` is not stored. An old FullName /
-AssemblyQualifiedName token fails closed.
+kebab-case (`author-registered`). The token stays the family name across
+versions. CLR `FullName` is not stored. Register the family with
+`WithEventTypes`. An unknown token (including an old FullName /
+AssemblyQualifiedName string) fails closed.
 
-`WithEventTypes` is mandatory. It calls `EventTypeCatalog.Materialize` and
-registers that **scoped immutable** catalog on the bounded context. A host
-that skips it fails at startup. Two contexts do not share a catalog; the
-same token may map to different CLR types in each.
+`WithEventTypes` calls `EventTypeCatalog.Materialize` and registers that
+**scoped immutable** catalog on the bounded context. A host that skips it
+fails at startup. Two contexts do not share a catalog; the same token may
+map to different CLR types in each.
 
 ## One type
 
@@ -66,8 +66,8 @@ One-arg `[EventTypeName("token")]` is version 1 and implicitly current.
 ## Two or more types
 
 The **current** type keeps the domain name. Historical types take a `V1` /
-`V2` suffix. Mark exactly one `current: true`. Do not infer current from the
-highest integer.
+`V2` suffix. Mark exactly one `current: true`. Current is not inferred
+from the highest integer.
 
 ```csharp
 [EventTypeName("author-registered", version: 1)]
@@ -86,30 +86,35 @@ attribute is not an error.
 Typed append (`IEventStore` / `EventSession`) rejects a historical CLR type
 for a family the catalog already knows. The session stamps frame
 `SchemaVersion` from the current type and mirrors it onto
-`EventMetadata.SchemaVersion` (a caller-supplied integer is overwritten).
-On read, the **frame** integer is authority — not the metadata blob, not an
-implied `1` when the frame has a value. Missing or zero on old rows is `1`.
-Old binaries may still append the version that was current for them; the log
-accepts those frames. This process does not downcast.
+`EventMetadata.SchemaVersion` (a caller-supplied integer is overwritten on
+the snapshot copy). See [Metadata](METADATA.md).
+
+On read, the **frame** integer is authority, not the metadata blob. A
+constructed frame with `0` becomes `1`. Drop and recreate older SQL event
+and outbox tables: `SchemaVersion` and `CodecId` have no column defaults,
+and an older table throws and names drop-and-recreate. Old binaries may
+still append the version that was current for them; the log accepts those
+frames.
 
 ## Default codec
 
 The shipped session codec is System.Text.Json (`IEventSerializer` as
-`ReadOnlyMemory<byte>` UTF-8, content-type `application/json`). One codec
-per session; a stored content-type that does not match fails closed.
+`ReadOnlyMemory<byte>` UTF-8, plugin identity `application/json`). One
+codec per session. The durable frame stores `CodecId`, not a MIME string.
+A stored codec id that does not match the session fails closed.
 
 MemoryPack, protobuf, and Avro are optional session codecs. Keep
 `[PropertyOrder]` on events so those positional formats share one model.
 STJ ignores the numbers. The **field number** is the contract, not source
 order. Reusing a number or changing the meaning at that number is a
-layout break — bump `SchemaVersion`. Reordering properties in the file
-with stable numbers is not.
+layout break: bump `SchemaVersion`. Reordering properties in the file
+with stable numbers is additive.
 
 ## Writing an upcaster
 
 Register hops with `WithUpcasters` after `WithEventTypes`. One class, one
-hop. A v1 → v3 family is either a direct upcaster or a chain
-(`v1 → v2`, `v2 → v3`). There is no downcast API.
+hop, forward only. A v1 to v3 family is either a direct upcaster or a
+chain (`v1` to `v2`, `v2` to `v3`).
 
 ```csharp
 public sealed class AuthorRegisteredV1ToV2 : IEventUpcaster<AuthorRegistered, AuthorRegisteredV1>
@@ -128,8 +133,7 @@ version in the catalog cannot reach current. That warmup is the runtime
 authority. `LawnDart.Analyzers` reports the same rules at `dotnet build`
 (`LDT001` two currents, `LDT002` multi-type family with no `current: true`,
 `LDT003` incomplete upcaster chain). One-arg `[EventTypeName("token")]` is
-not a diagnostic. Positioning §3 is reopened only for these versioning
-analyzers. A green analyzer is not a substitute for warmup.
+not a diagnostic. A green analyzer still needs warmup.
 
 Typed hydrate (`IEventStore` / `EventSession` / outbox publish) deserializes
 the stored version, then applies that chain. The value on
@@ -141,13 +145,12 @@ they read through the session. A missing hop throws
 ## Deploy
 
 Additive JSON rolls freely: new named properties on the current type do not
-require a `SchemaVersion` bump. A breaking change — renamed meaning, a
-removed required field, or a positional-codec layout change (a reused or
-remapped `[PropertyOrder]` number) — is expand-contract. Ship readers that
+require a `SchemaVersion` bump. A breaking change (renamed meaning, a
+removed required field, or a positional-codec layout change: a reused or
+remapped `[PropertyOrder]` number) is expand-contract. Ship readers that
 understand `SchemaVersion` N+1 before any process writes N+1. Old binaries
 fail closed on those newer rows (`EventSchemaTooNewException`) and may keep
-appending the version that was current for them. There is no remote
-downcaster and no skip override.
+appending the version that was current for them.
 
 ## When typed read fails
 
@@ -163,11 +166,10 @@ frame.
 | Payload will not deserialize as the stored type | `EventPayloadException` |
 | Historical type present, no upcaster to current | `MissingEventUpcasterException` |
 
-There is no runtime override to skip a fail-closed event. Deploy the
-missing type or upcaster. An upcaster that throws fails closed the same
-way — the session does not skip the frame. A typed subscription does not
-advance its cursor past the failed frame. The Lightweight runner logs
-the stuck sequence and waits five seconds; it does not hot-loop.
+Deploy the missing type or upcaster. An upcaster that throws fails closed
+the same way: the session does not skip the frame. A typed subscription
+does not advance its cursor past the failed frame. The Lightweight runner
+logs the stuck sequence and waits five seconds; it does not hot-loop.
 
 See [Glossary](GLOSSARY.md) (catalog token, SchemaVersion, event log,
 event store). [Eventhesis](EVENTHESIS.md) keeps the token when you

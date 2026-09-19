@@ -1,23 +1,17 @@
 # HTTP commands
 
 `LawnDart.AspNetCore` maps `ICommandHandler<TCommand>` to POST endpoints.
-Authorization attributes on the command are optional. Handlers are registered
-only by `WithCommandHandlers<TMarker>()` on the bounded context;
-`AddLawnDartHttpCommands` records assemblies for routing and authorization.
+Register handlers with `WithCommandHandlers<TMarker>()` on the bounded
+context. `AddLawnDartHttpCommands` records assemblies for routing and
+authorization. `MapLawnDartCommands` maps those handlers to POST.
 
-HTTP endpoints call `ICommandHandler<T>` directly. Reactors and task processors
-go through `ICommandDispatcher` (Core, `LawnDart.Messaging` namespace),
-registered by `UseInMemory` / `WithCommandHandlers`.
+Host grammar: [DI Grammar](DI_GRAMMAR.md).
 
-## Frozen surface
+HTTP endpoints call `ICommandHandler<T>` directly. Reactors and task
+processors go through `ICommandDispatcher` (Core, `LawnDart.Messaging`
+namespace), registered by `UseInMemory` / `WithCommandHandlers`.
 
-1. **App-facing dispatch** is `ICommandHandler<T>` (HTTP, jobs). Register handlers with `WithCommandHandlers<TMarker>()`. `AddLawnDartHttpCommands` / `MapLawnDartCommands` map those handlers to POST.
-2. **Aggregates / DCB** declare closed `Handle(TCommand)`. The handler calls `HandleCommandAsync` for persistence + authorization.
-3. **Load** with `GetOrCreateAsync<T>(id)` or `GetOrCreateAsync<T>(streamId)` when the stream is not `{type}:{guid}`.
-4. **Projections:** `ProjectionBase<TView>` plus attributes; multi-stream views implement `IMultiStreamEntityResolver`.
-5. **Stores:** `AddBoundedContext(name).UseInMemory()` / `UseSqlServer(...)`.
-
-## Workflow
+## Register
 
 ```csharp
 [RequiresPermission("Orders.Create")]
@@ -35,9 +29,10 @@ builder.Services.AddLawnDartHttpCommands(typeof(CreateOrderCommand).Assembly);
 app.MapLawnDartCommands();
 ```
 
-Auth package is optional. Without `LawnDart.Authorization.AspNetCore`, commands
-that have no auth attributes still run. Commands that declare attributes need
-an `IAuthorizationContextProvider` (HTTP claims via `AddHttpAuthorizationContext`).
+Auth package is optional. Without `LawnDart.Authorization.AspNetCore`,
+commands that have no auth attributes still run. Commands that declare
+attributes need an `IAuthorizationContextProvider` (HTTP claims via
+`AddHttpAuthorizationContext`). See [Authorization](AUTHORIZATION.md).
 
 ## Route convention
 
@@ -49,33 +44,41 @@ an `IAuthorizationContextProvider` (HTTP claims via `AddHttpAuthorizationContext
 Rules:
 
 - Strip the `Command` suffix.
-- PascalCase → kebab-case.
+- PascalCase to kebab-case.
 - Last meaningful namespace segment is the group (`Commands` is ignored).
 - Default prefix is `api`. Override with `MapLawnDartCommands(o => o.RoutePrefix = "v1")`.
 
-## Tracing and command identity
+## Headers and command identity
 
-Send W3C `traceparent` (and optional `tracestate`). The host continues that
-Activity. Envelope `TraceId` / `SpanId` and `CorrelationId` come from the
-trace — not `HttpContext.TraceIdentifier`.
+`MapLawnDartCommands` builds inbound `MessageContext` from:
 
-If the JSON body omits `Id` (or sends an empty GUID), the host may assign
-`ICommand.Id` from `Idempotency-Key` when that header is a GUID, otherwise a
-new GUID. The body `Id` still wins when present.
+| Header or claim | Field |
+|---|---|
+| `X-Tenant-Id` | `TenantId` |
+| `sub` | `UserId` |
+| `traceparent` / `tracestate` | `Headers`; `CorrelationId` is the parent trace id when `traceparent` parses |
+| `Idempotency-Key` | `MessageId`; if the body `Id` is empty and the header is a GUID, that GUID becomes `ICommand.Id` |
 
-The endpoint publishes inbound `MessageContext` on `AmbientMessageContext`
-before `HandleAsync`. `ICommandHandler<T>` is unchanged. `HandleCommandAsync`
-then captures correlation / causation / tenant from that ambient context
-(and sets `CausationId` to the command id when the caller left it unset).
+`TransportType` is `HTTP`. Envelope `TraceId` / `SpanId` and
+`CorrelationId` come from the W3C trace, not `HttpContext.TraceIdentifier`.
+The body `Id` still wins when present.
 
-Other-language clients use the same HTTP JSON + `traceparent` + optional
-`Idempotency-Key`. There is no Command gRPC service in this release.
+The endpoint publishes that context on `AmbientMessageContext` before
+`HandleAsync`. `HandleCommandAsync` then captures correlation, causation,
+and tenant from it, and sets `CausationId` to the command id when the
+caller left it unset. Default fill: [Metadata](METADATA.md).
 
 ## Status codes
 
-- Authorized / no attributes → `202 Accepted` after the handler succeeds.
-- Failed auth → `403 Forbidden` (`ProblemDetails`).
-- Domain failures surface as the handler's exception (map to problem details in
-  your host if you want a custom shape).
+`CommandEndpointRegistrar` returns:
+
+| Outcome | Status | Body |
+|---|---|---|
+| Handler succeeds | `202 Accepted` | empty |
+| Auth attributes fail | `403 Forbidden` | `ProblemDetails`, title `Forbidden` |
+| `ConcurrencyException` | `409 Conflict` | `ProblemDetails`, title `Conflict` |
+| `DomainException` | `422 Unprocessable Entity` | `ProblemDetails`, title `ex.Title` (default `Domain rule violated`) |
+
+Commands with no auth attributes skip the permission check.
 
 See Academy WebApi: `demos/LawnDart.Demo.Academy.WebApi`.

@@ -1,37 +1,37 @@
 # Eventhesis adapter
 
 [Eventhesis](https://eventhesis.com) is one modelling tool that targets
-LawnDart. It is not the reason the library exists.
+LawnDart. It emits slice JSON. It does not generate LawnDart C# types.
 
 The build kit is written against a **generic slice spec** (command, event,
 entity, view, process, GWT, vertical slice). See
 [skills/BUILD_KIT.md](https://github.com/sellistixorg/LawnDart/blob/main/skills/BUILD_KIT.md).
 
-This page is the **first modelling-tool adapter**. It maps Eventhesis slice
-JSON onto that spec. Eventhesis does **not** generate LawnDart C# types. A
-second canvas (prooph board, eventmodelers.ai, …) is another adapter page —
-not a skill change.
+This page maps Eventhesis slice JSON onto that spec. A second canvas (prooph
+board, eventmodelers.ai, and the like) is another adapter page.
 
 Academy is a reference host, not generated output.
 
-## Eventhesis concept → generic spec → LawnDart
+## Eventhesis concept to LawnDart
 
 | Eventhesis | Generic spec | Typical LawnDart implementation |
 |---|---|---|
-| Command | Command | `ICommand` + aggregate / DCB handler. |
-| Event | Event | `IEvent` (`Id`, `Timestamp` first if you use the Eventhesis field-order convention) plus `[EventTypeName("kebab-token")]`. Correlation, causation, and W3C trace live on the envelope (`EventMetadata` / `CommandMetadata`), not the payload. |
+| Command | Command | `ICommand` plus an aggregate or DCB handler. |
+| Event | Event | `IEvent` (`Id` and `Timestamp` first if you use the Eventhesis field-order convention) plus `[EventTypeName("kebab-token")]`. Correlation, causation, and W3C trace live on the envelope (`EventMetadata` / `CommandMetadata`), not the payload. |
 | Entity | Entity | `AggregateRoot<TState>` or `DcbEntity<TState>` declaring `Handle(TCommand)` |
-| View | View | A read model. Lightweight host: `ProjectionBase<TView>` + scope attributes + `IMultiStreamEntityResolver` when multi-stream. Or your own projector against `IEventStore`. `IProjector` is experimental and unused — neither host calls it. |
+| View | View | A read model. Lightweight: `ProjectionBase<TView>` plus scope attributes. Multi-stream views implement `IMultiStreamEntityResolver`. You may also fold against `IEventStore`. |
 | Process / reaction | Process | `IReactor` / `IEventProcessor` / `ITaskProcessor` |
 | GWT | GWT | `LawnDart.Testing` spec |
 | Vertical slice | Vertical slice | `AddBoundedContext(name)` |
 
-There is no required CLR type for a View widget. View mapping is unchanged.
+A View widget maps to a read model. The widget itself has no required CLR type.
 
 Keep `ICommand` and `IEvent`. Hand-written events need a unique catalog token.
-Do not put correlation / causation / trace on the payload.
+Put correlation, causation, and trace on the envelope, not the payload.
 
-## Host grammar (if you implement the slice on LawnDart)
+## Host grammar
+
+See [DI Grammar](DI_GRAMMAR.md) for the frozen surface. A typical host:
 
 ```csharp
 services.AddLawnDart(o => o.RequireTenantId = false);
@@ -45,10 +45,8 @@ app.MapLawnDartCommands();
 ```
 
 Keep catalog tokens stable when you hand-write events. Additive JSON
-keeps the same `SchemaVersion`; a breaking shape change keeps the token
+keeps the same `SchemaVersion`. A breaking shape change keeps the token
 and bumps the integer. See [Event schema versioning](EVENT_SCHEMA_VERSIONING.md).
-Rename only the package and extension-method prefixes (`AddLawnDart`,
-`MapLawnDartCommands`, `AddLawnDartAuthorization`).
 
 Academy (`demos/LawnDart.Demo.Academy`) is a reference InMemory host with
 optional SQL and HTTP commands via `MapLawnDartCommands`.

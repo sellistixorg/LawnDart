@@ -16,6 +16,8 @@
   href: EXTENSION_METHOD_INDEX.md
 - name: Glossary
   href: GLOSSARY.md
+- name: Metadata
+  href: METADATA.md
 - name: Event schema versioning
   href: EVENT_SCHEMA_VERSIONING.md
 - name: Backend selection

@@ -4,7 +4,7 @@ LawnDart is the .NET runtime that event-modeled systems compile into.
 
 [Eventhesis](https://eventhesis.com) is one modelling tool that targets
 LawnDart. It emits slice-based event-model JSON. It does not generate LawnDart
-types. You do not need it. See [Why LawnDart](WHY.md).
+types. A whiteboard or any canvas is enough. See [Why LawnDart](WHY.md).
 
 ## Core mental model
 
@@ -13,8 +13,7 @@ types. You do not need it. See [Why LawnDart](WHY.md).
 - **State**: current read model used by users and workflows.
 
 Most applications start with an aggregate or DCB, then a projection, then
-optional reactions. The nine shapes an event model compiles into — five hosted
-today — are on the [CES matrix](CES_MATRIX.md).
+optional reactions. The shapes are on the [CES matrix](CES_MATRIX.md).
 
 Typical first path:
 

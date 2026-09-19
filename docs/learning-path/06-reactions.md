@@ -1,4 +1,4 @@
-# Step 6 — Reactions and EDA
+# Step 6. Reactions and EDA
 
 **Previous:** [DCB](05-dcb-patterns.md) · **Next:** [Testing EDA](07-testing-eda.md)
 
@@ -55,7 +55,7 @@ The other two EDA patterns:
 | Event processing | `IEventProcessor<TEvent>` | Event → Event / side work |
 | Task processing | `ITaskProcessor` | State → Command (poll a read model) |
 
-`ITaskProcessor.ProcessTasksAsync` is the overdue-registration counterpart —
+`ITaskProcessor.ProcessTasksAsync` is the overdue-registration counterpart.
 Academy menu item 5 runs it without a broker.
 
 Guide: [EDA-Patterns.md](../EDA-Patterns.md).

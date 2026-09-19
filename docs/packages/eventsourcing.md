@@ -26,7 +26,7 @@ name. The `"default"` context also gets unkeyed aliases, so
 `GetRequiredService<IAggregateRepository>()` works without a key.
 
 Append stores the `[EventTypeName]` token, not CLR `FullName`.
-InMemory serializes on append and hydrates a new instance on read — it is not
+InMemory serializes on append and hydrates a new instance on read. It is not
 an object heap. The session codec is `IEventSerializer`
 (`ReadOnlyMemory<byte>`). Excerpt from
 `src/LawnDart.EventSourcing/Serialization/JsonEventSerializer.cs`:
@@ -46,6 +46,7 @@ public object Deserialize(ReadOnlyMemory<byte> data, Type type)
 `ContextAwareCommandDispatcher` publishes inbound `MessageContext` (and
 continues `traceparent`) before `HandleAsync`. `HandleCommandAsync` sets
 envelope `CausationId` to the command id when the caller left it unset.
+Envelope fields: [Metadata](../METADATA.md).
 
 `IAggregateRepository` loads by `Guid` (`{type}:{id}` / `{tenant}:{type}:{id}`)
 or by `string streamId` when the stream is a custom identity. Prefer

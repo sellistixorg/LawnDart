@@ -5,10 +5,10 @@ the zero-infra default.
 
 ## What's included
 
-- **`SqlServerEventStore`** — `IEventStore` + portable subscriptions
-- **`SqlServerOutboxWriter`** — transactional outbox with event appends
+- **`SqlServerEventStore`**: `IEventStore` + portable subscriptions
+- **`SqlServerOutboxWriter`**: transactional outbox with event appends
 - **`UseSqlServer(...)`** on `BoundedContextBuilder`
-- **`SqlServerSnapshotStore`** — opt-in via `.WithSnapshots()`
+- **`SqlServerSnapshotStore`**: opt-in via `.WithSnapshots()`
 
 ## Installation
 

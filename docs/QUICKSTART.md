@@ -34,6 +34,7 @@ them without a key. InMemory is a recorded-event log: append serializes
 to bytes, read hydrates a new instance. Application code still uses
 `IEventStore`. Third-party stores implement `IEventLog`. The session codec
 is `IEventSerializer` (`ReadOnlyMemory<byte>`, UTF-8 JSON by default).
+Frames store a `CodecId`, not a MIME string. `WithEventTypes` is required.
 
 ## 3. Handle a command
 
@@ -100,9 +101,8 @@ Console.WriteLine(loaded!.State.Value); // 1
 ```
 
 `GetOrCreateAsync` loads existing events (or starts a new stream).
-`HandleCommandAsync` authorizes if configured, dispatches `Handle(TCommand)`
-(or `HandleAsync` when that is still overridden), and
-appends the pending events. Guid overloads build `{type}:{id}` (with a tenant
+`HandleCommandAsync` authorizes if configured, dispatches `Handle(TCommand)`,
+and appends the pending events. Guid overloads build `{type}:{id}` (with a tenant
 prefix when one is present). Use `GetOrCreateAsync<T>(streamId)` when the
 stream is not that shape.
 

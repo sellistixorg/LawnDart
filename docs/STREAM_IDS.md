@@ -23,8 +23,8 @@ events to state, and appends with expected version.
 
 `GetAsync(Guid)` / `GetOrCreateAsync(Guid)` / `CreateAsync(Guid)` still build
 `{tenant}:{type}:{guid}` (or `{type}:{guid}` when no tenant). When the stream
-is not that shape — for example
-`{account}:InboundShipment:{plan}:{shipment}` — load with the string overloads:
+is not that shape, for example
+`{account}:InboundShipment:{plan}:{shipment}`, load with the string overloads:
 
 ```csharp
 var streamId = $"{accountId}:InboundShipment:{planId:N}:{shipmentId}";
@@ -44,3 +44,5 @@ Academy WebApi builds stream IDs from `ITenantContextProvider`:
 var tenantId = _tenant.GetTenantId() ?? "default";
 var streamId = $"{tenantId}:Student:{command.StudentId}";
 ```
+
+Tenant prefix comes from `ITenantContextProvider`. See [Metadata](METADATA.md).
