@@ -41,3 +41,4 @@ issues a demo JWT. See [WebApi README](../LawnDart.Demo.Academy.WebApi/README.md
 | 4 | InMemory throughput |
 | 5 | Task processor (state → command) |
 | 6 | Temporal queries |
+| 7 | Course catalog (published courses) |

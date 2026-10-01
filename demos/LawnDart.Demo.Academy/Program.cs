@@ -83,12 +83,14 @@ internal class Program
 
         services.AddSingleton<CourseSectionProjector>();
         services.AddSingleton<StudentTranscriptProjector>();
+        services.AddSingleton<CourseCatalogProjector>();
 
         services.AddTransient<ShowcaseA_TraditionalEda>();
         services.AddTransient<ShowcaseB_DcbInProcess>();
         services.AddTransient<ShowcaseC_LiveProjectionPanel>();
         services.AddTransient<ShowcaseD_Performance>();
         services.AddTransient<ShowcaseE_TemporalQueries>();
+        services.AddTransient<ShowcaseF_CourseCatalog>();
 
         var sp = services.BuildServiceProvider();
 
@@ -113,6 +115,7 @@ internal class Program
         await RunShowcaseD(sp);
         await RunShowcaseE(sp);
         RunOverdueRegistrationDemo();
+        await RunCourseCatalog(sp);
 
         Console.WriteLine("\n=== All showcases completed successfully ===");
     }
@@ -153,6 +156,10 @@ internal class Program
 
                 case "6":
                     await RunShowcaseE(sp);
+                    break;
+
+                case "7":
+                    await RunCourseCatalog(sp);
                     break;
 
                 case "0" or "q" or "exit" or "quit" or null:
@@ -236,6 +243,9 @@ internal class Program
         Console.WriteLine();
         Console.WriteLine("  [6]   Temporal Queries");
         Console.WriteLine("        Point-in-time state, ReadStreamEnumerableAsync");
+        Console.WriteLine();
+        Console.WriteLine("  [7]   Course Catalog");
+        Console.WriteLine("        Published courses from CourseCreated, CoursePublished, CoursePriceUpdated");
         Console.WriteLine();
         SetColor(ConsoleColor.DarkGray);
         Console.WriteLine("  [0]   Exit");
@@ -380,6 +390,20 @@ internal class Program
 """);
 
         var showcase = sp.GetRequiredService<ShowcaseE_TemporalQueries>();
+        await showcase.RunAsync();
+    }
+
+    static async Task RunCourseCatalog(IServiceProvider sp)
+    {
+        SafeClear();
+        PrintShowcaseHeader("Course Catalog");
+        Console.WriteLine("""
+  Read model: CourseCatalogProjector
+  Events:     CourseCreated, CoursePublished, CoursePriceUpdated
+  Display:    Published courses only. A draft is written and omitted.
+""");
+
+        var showcase = sp.GetRequiredService<ShowcaseF_CourseCatalog>();
         await showcase.RunAsync();
     }
 
