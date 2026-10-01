@@ -80,3 +80,4 @@ TestResults/
 # Local scratch
 .local/
 
+.cursor/mcp.json
