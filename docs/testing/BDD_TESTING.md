@@ -62,7 +62,7 @@ await DcbSpec
     .RunAsync();
 ```
 
-Input: [`build-kit/library-dcb-slice.json`](../build-kit/library-dcb-slice.json).
+Input: [`build-kit/library-dcb-slice.json`](../../build-kit/library-dcb-slice.json).
 Framework proofs also live in
 `tests/LawnDart.Testing.Tests/Bdd/InMemoryGwtTests.cs`.
 

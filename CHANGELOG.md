@@ -10,6 +10,10 @@ changes to the public API.
 
 ## [Unreleased]
 
+### Fixed
+
+- The BDD testing guide links to `build-kit/library-dcb-slice.json`.
+
 ### Added
 
 - `AGENTS.md` is the instruction file for coding agents in this repository. A cloud agent commit includes `Signed-off-by: Cursor Agent <cursoragent@cursor.com>`.
