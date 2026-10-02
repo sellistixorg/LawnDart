@@ -10,6 +10,10 @@ changes to the public API.
 
 ## [Unreleased]
 
+### Added
+
+- The Academy demo lists published courses and their current price in a course catalog folded from course created, published, and price-updated events.
+
 ## [0.4.0-alpha.7] — 2026-09-17
 
 ### Changed
