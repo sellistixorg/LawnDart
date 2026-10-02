@@ -82,6 +82,7 @@ internal class Program
         }
 
         services.AddSingleton<CourseSectionProjector>();
+        services.AddSingleton<CourseCatalogProjector>();
         services.AddSingleton<StudentTranscriptProjector>();
 
         services.AddTransient<ShowcaseA_TraditionalEda>();

@@ -10,6 +10,10 @@ Requires the .NET 10 SDK only. No Docker.
 dotnet run --project demos/LawnDart.Demo.Academy
 ```
 
+The course catalog read model lists published courses and their current price.
+It folds Course Created, Course Published, and Course Price Updated. A draft
+stays off the list until the course is published.
+
 Non-interactive (CI / smoke test):
 
 ```bash
