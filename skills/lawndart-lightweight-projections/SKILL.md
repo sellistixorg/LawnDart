@@ -1,17 +1,14 @@
 ---
 name: lawndart-lightweight-projections
-description: Register LawnDart Lightweight projections — AddInMemoryProjectionStores or AddSqlProjectionStores, WithProjections, MapProjectionQueries.
+description: Register LawnDart Lightweight projections. AddInMemoryProjectionStores or AddSqlProjectionStores, WithProjections, MapProjectionQueries. Use when hosting a read model.
 ---
 
 # Lightweight projections
 
-## Frozen surface
-
-1. **App-facing dispatch** is `ICommandHandler<T>` (HTTP, jobs).
-2. **Aggregates / DCB** declare closed `Handle(TCommand)`. `HandleCommandAsync` is persistence + authorization.
-3. **Load** by `string streamId` when the stream is not `{type}:{guid}`.
-4. **Projections:** author `ProjectionBase<TView>` plus attributes; multi-stream views implement `IMultiStreamEntityResolver`. Host with `WithProjections`.
-5. **Stores:** `UseInMemory` / `UseSqlServer` on `AddBoundedContext(name)` before `WithProjections`.
+Author `ProjectionBase<TView>` plus a scope attribute. Host with
+`WithProjections` after the event store. Call `Add*ProjectionStores`
+**before** `WithProjections`. Prefer the keyed `MapProjectionQueries(name)`
+overload.
 
 Excerpt from `samples/Library.Host/LibraryHost.cs` (`AddInMemoryLibrary` / `MapLibraryHttp`):
 
@@ -34,8 +31,6 @@ app.MapProjectionQueries("default");
 ```
 
 `AddSqlProjectionStores(name, cs)` is the SQL store twin; the slice hosts InMemory.
-
-Call `Add*ProjectionStores` **before** `WithProjections`. Prefer the keyed
-`MapProjectionQueries(name)` overload.
+After SQL stores, call `InitializeSqlProjectionStoresAsync` before runners start.
 
 See `docs/LIGHTWEIGHT_PROJECTIONS.md`.

@@ -2,27 +2,27 @@
 
 LawnDart is the .NET runtime that event-modeled systems compile into.
 
-You model slices — in Eventhesis, in prooph board, in eventmodelers.ai, or on a
-whiteboard — and LawnDart is what they become: commands, events, state,
+You model slices in Eventhesis, in prooph board, in eventmodelers.ai, or on a
+whiteboard, and LawnDart is what they become: commands, events, state,
 projections, with a production path that is a DI swap away.
 
 That is a different product from the ones readers usually compare first.
 
-## Not a document database
+## Versus Marten
 
 [Marten](https://martendb.io) is a document database that also does events.
-LawnDart is not. It does not store documents, does not replace a general-purpose
-persistence library, and does not compete with Marten on breadth.
+LawnDart stores events. It does not store documents and does not replace a
+general-purpose persistence library.
 
-## Not a kernel
+## Versus Cratis
 
-[Cratis](https://cratis.io) is a kernel. LawnDart is not. It runs in-process in
-your host, on your DI, on `net10.0`. There is no LawnDart server.
+[Cratis](https://cratis.io) is a kernel. LawnDart runs in-process in your host,
+on your DI, on `net10.0`. There is no LawnDart server.
 
-## Not a JVM platform
+## Versus Axon
 
-[Axon](https://axoniq.io) is a JVM platform. LawnDart is a .NET library and framework. It is
-not a cross-language runtime.
+[Axon](https://axoniq.io) is a JVM platform. LawnDart is a .NET library and
+framework.
 
 ## Closed set
 

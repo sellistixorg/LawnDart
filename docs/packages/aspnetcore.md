@@ -3,8 +3,8 @@
 HTTP command mapping. Discovers command handlers and maps them to POST
 endpoints.
 
-Take it when a Web API should accept commands. This package does **not**
-reference the auth package — claims mapping is additive.
+Take it when a Web API should accept commands. This package does not
+reference the auth package. Claims mapping is additive.
 
 ## Registration
 

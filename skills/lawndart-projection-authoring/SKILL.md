@@ -5,22 +5,16 @@ description: Write LawnDart Lightweight projection classes, view DTOs, and view 
 
 # Projection authoring
 
-## Frozen surface
-
-1. **App-facing dispatch** is `ICommandHandler<T>` (HTTP, jobs).
-2. **Aggregates / DCB** declare closed `Handle(TCommand)`. `HandleCommandAsync` is persistence + authorization.
-3. **Load** by `string streamId` when the stream is not `{type}:{guid}`.
-4. **Projections:** `ProjectionBase<TView>` plus attributes. Multi-stream views implement `IMultiStreamEntityResolver`. Do not implement `IProjector` unless you are writing your own fold.
-5. **Stores:** `UseInMemory` / `UseSqlServer` on `AddBoundedContext(name)`.
-
 Define a view DTO and a class that extends `ProjectionBase<TView>` with a
-scope attribute (`[SingleStreamProjection]`, `[GlobalProjection]`,
-`[DcbProjection]`, `[ProjectionEndpoint]`). Use
-`LawnDart.Projections.Lightweight` / `LawnDart.Projections.Sdk`.
-Do not implement `IProjector` — it is experimental and Lightweight does
-not call it. A view that spans stream types implements
-`IMultiStreamEntityResolver` on the handler (the Flywheel multi-stream
-hook).
+**scope** attribute (`[SingleStreamProjection]`, `[GlobalProjection]`,
+`[DcbProjection]`, `[MultiStreamProjection]`). `[ProjectionEndpoint]` maps
+an optional HTTP GET. Use `LawnDart.Projections.Lightweight` /
+`LawnDart.Projections.Sdk`.
+
+A view that spans stream types uses `[MultiStreamProjection]` and implements
+`IMultiStreamEntityResolver` on the handler (`GetEntityId`).
+
+Do not implement `IProjector<TState>`. Lightweight does not call it.
 
 Excerpt from `samples/Library.Host/LibraryCatalogProjection.cs`.
 `BookCatalogView` is in `samples/Library.Domain/Projections/LibraryProjector.cs`.

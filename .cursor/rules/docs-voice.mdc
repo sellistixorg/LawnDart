@@ -1,0 +1,79 @@
+---
+description: User-voice rules for LawnDart consumer docs
+globs: docs/**/*.md,index.md,README.md,src/**/README.md
+alwaysApply: true
+---
+
+# Docs voice
+
+Applies to DocFX markdown, `index.md`, root `README.md`, and packed `src/*/README.md`.
+Keep/cut/rewrite lives in `DOC_USER_VOICE_PLAN.md` (DOC-00 table). Identity lives in
+`LAWNDART_PRODUCT_POSITIONING.md`. Do not restate positioning. Do not re-derive voice.
+
+## Zinsser
+
+Strip every sentence. Cut words that do no work. Prefer short words and short
+sentences. One idea when you can. Active verbs. Concrete nouns. No throat-clearing
+and no decoration.
+
+## Punctuation
+
+No en dash (U+2013) and no em dash (U+2014). Use a period, comma, colon, or
+parentheses. ASCII hyphen-minus only in compounds (`user-facing`) and in code.
+
+## Lead and contrast
+
+Lead with what is true and what to do. Do not open a page or section with a
+negation. Contrast only when it adds information. One comparison is enough.
+
+`docs/WHY.md` may compare Marten, Cratis, and Axon. It still leads with what
+LawnDart is. No other page is a "not a..." list.
+
+## Who owns which sentence
+
+The line "LawnDart is the .NET runtime that event-modeled systems compile into"
+stays on `README.md`, `index.md`, `docs/START_HERE.md`, `docs/OVERVIEW.md`, and
+`docs/WHY.md`. Every other page starts with the topic.
+
+CES count lives on `docs/CES_MATRIX.md`. Frozen surface lives on
+`docs/DI_GRAMMAR.md`. `IProjector` is one glossary line if the type is still
+public. Teaching pages author `ProjectionBase<TView>`.
+
+## Competitors and plan voice
+
+Marten, Cratis, Chronicle, Axon, EventStoreDB, and Kurrent appear only on
+`docs/WHY.md` and `docs/LIBRARY_RAW_APPEND.md`. README links Why. It does not
+name them.
+
+No ticket ids, `Positioning §`, "reopened", "not a skill change", "do not split",
+"Flywheel", `UseBoomerang`, or "Historical. Do not rename." Changelog may keep
+history.
+
+## What stays
+
+Operational limits stay when the next sentence is the action (drop and recreate,
+register the hop). Unused knobs stay omitted. Do not call them reserved.
+
+"Do not" is for a footgun the reader will hit (`ThenThrows<DomainException>()`
+vs wrapping `RunAsync` in `Assert.ThrowsAsync<InvalidOperationException>`).
+Load through `GetOrCreateAsync` / `HandleCommandAsync`. Do not add a
+`SetStreamId` warning. That method is `internal`.
+
+Do not name a removed type except in `CHANGELOG.md`.
+
+## Samples and code
+
+Code is authority. Confirm types, headers, and status codes against `src/`.
+HTTP maps `DomainException` to 422 and `ConcurrencyException` to 409.
+
+Counter lives on README and Quickstart (`QuickstartCounterTests`). Library lives
+on learning path 02-04, BDD, and the raw-append foil. Do not invent a third
+domain. Excerpts must match the compiled slice.
+
+```markdown
+<!-- BAD -->
+Do not look for those knobs. They do not exist.
+
+<!-- GOOD -->
+Snapshots are one row per stream. A write replaces that row.
+```

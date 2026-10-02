@@ -4,14 +4,17 @@ Ten packages. Take `LawnDart` + `LawnDart.EventSourcing` first; add the
 others when you need a durable store, read models, HTTP, tests, or
 compile-time schema checks.
 
-The **`IEventStore` interface** lives in core `LawnDart`. It is the typed
-session (`IEvent` in, `SequencedEvent` out). Backends implement **`IEventLog`**
+The `IEventStore` interface lives in core `LawnDart`. It is the typed
+session (`IEvent` in, `SequencedEvent` out). Backends implement `IEventLog`
 (`AppendEvent` in, `RecordedEvent` out): `InMemoryEventStore` in
 `LawnDart.EventSourcing`, `SqlServerEventStore` in
 `LawnDart.EventSourcing.SqlServer`. Application code depends on the session
-without taking a backend. InMemory serializes on append — it is not an
+without taking a backend. InMemory serializes on append. It is not an
 object heap. `IEventSerializer` reads and writes `ReadOnlyMemory<byte>`
 (UTF-8 JSON by default).
+
+Host grammar: [DI Grammar](../DI_GRAMMAR.md). Envelope fields:
+[Metadata](../METADATA.md). Shapes: [CES matrix](../CES_MATRIX.md).
 
 | Package | Take it when | Registration |
 |---|---|---|
@@ -21,9 +24,9 @@ object heap. `IEventSerializer` reads and writes `ReadOnlyMemory<byte>`
 | [`LawnDart.Projections.Lightweight`](projections-lightweight.md) | You need read models. | `WithProjections` / `MapProjectionQueries` |
 | [`LawnDart.Messaging`](messaging.md) | You need reactors or task processors. | `AddMessaging` / `AddReactor` |
 | [`LawnDart.Messaging.InMemory`](messaging-inmemory.md) | You want choreography without a broker. | `AddInMemoryMessaging()` |
-| [`LawnDart.AspNetCore`](aspnetcore.md) | You want HTTP POST → command. | `AddLawnDartHttpCommands` / `MapLawnDartCommands` |
+| [`LawnDart.AspNetCore`](aspnetcore.md) | You want HTTP POST to a command. | `AddLawnDartHttpCommands` / `MapLawnDartCommands` |
 | [`LawnDart.Authorization.AspNetCore`](authorization-aspnetcore.md) | You want HTTP claims on those commands. | `AddHttpAuthorizationContext()` |
-| [`LawnDart.Testing`](testing.md) | You want given / when / then against InMemory. | `BddTestContext.CreateInMemory()` |
+| [`LawnDart.Testing`](testing.md) | You want given / when / then against InMemory. | `BddTestContext.CreateInMemory(...)` |
 | [`LawnDart.Analyzers`](analyzers.md) | You want `LDT*` schema-versioning diagnostics at `dotnet build`. | Package reference (optional) |
 
 Happy-path host:
@@ -46,16 +49,13 @@ app.MapProjectionQueries("default");
 Swap `.UseInMemory()` for `.UseSqlServer(...)` and
 `AddInMemoryProjectionStores` for `AddSqlProjectionStores` when you leave
 dev. The bounded-context name stays the same. That swap is verified for
-command dispatch, persist, reload, project, and read-back — not outbox or
-subscriptions. See [BACKEND_SELECTION.md](../BACKEND_SELECTION.md).
+command dispatch, persist, reload, project, and read-back. Outbox and
+subscriptions have their own tests. See
+[BACKEND_SELECTION.md](../BACKEND_SELECTION.md).
 
-## Frozen surface
+Log frames store a `CodecId` (`byte`), not a MIME string. SQL Server uses
+one `EventData` (`VARBINARY`) column. `WithEventTypes` is required. Drop
+and recreate SQL event and outbox tables on a pre-1.0 schema change.
+There is no in-place migration.
 
-1. **App-facing dispatch** is `ICommandHandler<T>` (HTTP, jobs).
-2. **Aggregates / DCB** declare closed `Handle(TCommand)`. `HandleCommandAsync` is persistence + authorization.
-3. **Load** by `string streamId` when the stream is not `{type}:{guid}`.
-4. **Projections:** `ProjectionBase<TView>` plus attributes; multi-stream views implement `IMultiStreamEntityResolver`.
-5. **Stores:** `AddBoundedContext(name).UseInMemory()` / `UseSqlServer(...)`.
-
-See [DI Grammar](../DI_GRAMMAR.md) and the
-[extension method index](../EXTENSION_METHOD_INDEX.md).
+See the [extension method index](../EXTENSION_METHOD_INDEX.md).

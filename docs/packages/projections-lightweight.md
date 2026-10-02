@@ -4,9 +4,8 @@ In-process projection host. Includes the view store, checkpoint store, SDK,
 and partitioning types used with InMemory and SQL Server.
 
 Take it when you need queryable read models. LawnDart ships this projection
-engine only. Author `ProjectionBase<TView>` plus attributes — not `IProjector`
-(`IProjector` is experimental and unused; this host does not call it).
-Multi-stream views implement `IMultiStreamEntityResolver`.
+engine only. Author `ProjectionBase<TView>` plus attributes. Multi-stream
+views implement `IMultiStreamEntityResolver`.
 
 Register the view stores **before** `WithProjections`.
 

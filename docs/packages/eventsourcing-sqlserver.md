@@ -13,7 +13,7 @@ name so projections and HTTP mapping stay pointed at the same stack.
 
 One payload column: `EventData VARBINARY(MAX) NOT NULL`. `SchemaVersion`
 (`INT`), `CodecId` (`TINYINT`), and `EventTypeId` (`INT`) are `NOT NULL`
-with no defaults — the session stamps all three on append. Family tokens
+with no defaults. The session stamps all three on append. Family tokens
 live in an `EventTypes` lookup (`Id INT IDENTITY`, `Token NVARCHAR(500)`
 unique). `Events` stores `EventTypeId` and a foreign key; the store
 caches token↔id both ways at schema init so reads do not join. A cache
@@ -25,21 +25,22 @@ still accepts an unregistered (foreign) token: get-or-insert runs in its
 own short transaction and commits before the append transaction opens.
 An orphan `EventTypes` row is harmless.
 
-`Tags` is `NVARCHAR(4000)` and is a read projection only — DCB queries
+`Tags` is `NVARCHAR(4000)` and is a read projection only. DCB queries
 and append-condition fences use the `EventTags` side table (clustered on
 `(Tag, GlobalSequencePosition)`). That table is always created and always
 written. There is no `UseEventTagsTable` flag and no `OPENJSON` fallback
 on `Events.Tags`. Metadata stays `NVARCHAR` JSON.
 
 Init writes an extended property `LawnDart_SchemaFormat` on the events
-table (current format `2`). A table that is already present without that
-stamp, or with a different value, throws. Drop and recreate; there is no
-in-place `ALTER`.
+table (current format `2`). Drop and recreate a table that is already
+present without that stamp, or with a different value. Opening it throws
+and names drop-and-recreate. There is no in-place `ALTER` and no
+migration tool.
 
 SSMS: `{table}_Readable` projects `CAST(EventData AS VARCHAR(MAX)) AS EventJson`
 alongside the scalar columns and the family token from `EventTypes`.
-Non-ASCII text needs a `_UTF8` collation on that cast — an operator
-choice; the store does not detect server capability.
+Non-ASCII text needs a `_UTF8` collation on that cast (an operator
+choice). The store does not detect server capability.
 
 ```sql
 SELECT EventJson, EventType, EventTypeId, SchemaVersion, CodecId
@@ -70,7 +71,7 @@ durability is the same channel + hosted consumer as InMemory; see
 [SNAPSHOTS.md](../SNAPSHOTS.md). Integration tests use Testcontainers and
 are tagged `Category=Integration`. The InMemory → SQL swap contract
 (`Category=Contract`) covers dispatch, persist, reload, project, and
-read-back — not outbox or subscriptions. The same project also covers the
+read-back. Outbox and subscriptions have their own tests. The same project also covers the
 `IEventLog` contract (payload round-trip, token/tag query, thesis read
 without CLR types). See
 [BACKEND_SELECTION.md](../BACKEND_SELECTION.md).

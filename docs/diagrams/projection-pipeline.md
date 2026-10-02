@@ -9,6 +9,5 @@ flowchart LR
     View --> GET["MapProjectionQueries"]
 ```
 
-The runner applies `ProjectionBase<TView>` handlers, not `IProjector`.
-Stores are InMemory (`AddInMemoryProjectionStores`) or SQL
-(`AddSqlProjectionStores`).
+The runner applies `ProjectionBase<TView>` handlers. Stores are InMemory
+(`AddInMemoryProjectionStores`) or SQL (`AddSqlProjectionStores`).

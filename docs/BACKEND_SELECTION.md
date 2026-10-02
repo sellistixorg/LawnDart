@@ -9,17 +9,16 @@ LawnDart v1 ships two event-store backends.
 
 Both register through the same `AddBoundedContext` grammar. The verified swap is
 **command dispatch, event persistence, aggregate reload, projection materialisation,
-and read-back** — one application body, two registrations. Additional backends
+and read-back**: one application body, two registrations. Additional backends
 implement `IEventLog` (the typed `IEventStore` session is shipped). A
 third-party store must construct repositories with `EventSourcingRepositories`
 and call `AddSnapshotWriteInfrastructure` (see [SNAPSHOTS.md](SNAPSHOTS.md));
 the public repository constructors omit the write queue.
 
-**Outbox and subscriptions are not covered by the swap guarantee.** Those paths
-exist on both backends and have their own tests. Do not treat a green swap
-contract as proof they behave identically.
+Outbox and subscriptions exist on both backends and have their own tests. A
+green swap contract does not prove those paths behave identically.
 
-The swap is not a single `Use*` line. Leaving InMemory also means:
+Leaving InMemory also means:
 
 - A connection string and `SqlServerEventStore.InitializeSchemaAsync` (SQL does
   not create tables on first append).
@@ -31,7 +30,7 @@ The swap is not a single `Use*` line. Leaving InMemory also means:
 
 ## Portable store contract
 
-`IEventStore` inherits `IStreamRegistry` — do not split. Changing a method
+`IEventStore` inherits `IStreamRegistry`. Changing a method
 signature here breaks InMemory, SQL Server, and any third-party store.
 `IEventStoreSubscriptions` is optional for a custom store; both shipped
 backends implement it.
@@ -104,7 +103,7 @@ also `Category=Integration`). That project also runs the event-log contract:
 same payload on append/read, token and tag query without hydrate, and a host
 that has not registered event CLR types can still read, filter, and copy
 frames. Typed adapter tests sit on the same logs (unknown family and
-content-type mismatch fail closed).
+codec-id mismatch fail closed).
 
 Local unit runs use `--filter Category!=Integration`. CI runs unit tests and
 then `Category=Integration|Category=Contract` on the SQL Server, Lightweight,
@@ -112,7 +111,7 @@ and backend-contract test projects. SQL Server tests need Docker
 (Testcontainers). In-process projection harnesses under `tests/.../Integration`
 use the same trait so they stay out of the local unit job.
 
-Academy optional profile — **local Windows path only**. Both launch profiles
+Academy optional profile is a **local Windows path only**. Both launch profiles
 use `Trusted_Connection=True` (integrated auth). CI does not run these
 profiles; the contract test uses Testcontainers instead.
 
@@ -122,7 +121,7 @@ Console:
 dotnet run --project demos/LawnDart.Demo.Academy --launch-profile SqlServer
 ```
 
-WebApi (no source change — the `SqlServer` profile sets `EventStore__UseSqlServer=true`):
+WebApi (no source change: the `SqlServer` profile sets `EventStore__UseSqlServer=true`):
 
 ```bash
 dotnet run --project demos/LawnDart.Demo.Academy.WebApi --launch-profile SqlServer
@@ -136,7 +135,7 @@ Required: a local SQL Server and `ConnectionStrings__Academy`, or
 Create the database first. Academy does not call `InitializeSchemaAsync`; you
 must create the event-store schema (or run the SQL tests' init against that
 database) before the first command. Academy WebApi keeps
-`AddInMemoryProjectionStores` even on the SQL profile — views stay
+`AddInMemoryProjectionStores` even on the SQL profile: views stay
 process-local. That is a named limitation, not a second event-store bug.
 
 ## Switching

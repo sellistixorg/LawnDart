@@ -22,8 +22,8 @@ returns tag strings.
 InMemory and SQL Server both honor tags on append. DCB `AppendCondition` uses
 the same tag set the entity loaded.
 
-## What tags are not
+## Tags are keys
 
-Tags are not stream IDs. A traditional aggregate still writes one stream
-(`tenant:Student:{id}`). DCB may write events that carry multiple tags and
-share a DCB stream identity — see [STREAM_IDS.md](STREAM_IDS.md).
+Stream IDs stay `{tenant}:{type}:{id}` (see [STREAM_IDS.md](STREAM_IDS.md)).
+An aggregate still writes one stream (`tenant:Student:{id}`). DCB events
+may carry multiple tags and share a DCB stream identity.

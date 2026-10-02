@@ -12,7 +12,7 @@ Targets LawnDart 0.4
 
 CI fails when MinVer's `major.minor` is not `0.4`. Height-suffixed versions
 such as `0.4.0-alpha.2.1` and `0.4.1-alpha.0.7` still match. A `0.5` tag does
-not — update this line when the kit is reviewed for that minor.
+not. Update this line when the kit is reviewed for that minor.
 
 ## Generic slice spec
 
@@ -46,21 +46,29 @@ doc and **zero skill changes**.
 2. The adapter for the model you were given (Eventhesis → `docs/EVENTHESIS.md`).
    Skip if the input is already the generic spec.
 3. Skills, in this order:
-   1. [`lawndart-host-setup`](lawndart-host-setup/SKILL.md) — hub, packages, registration order
-   2. [`lawndart-event-store`](lawndart-event-store/SKILL.md) — `UseInMemory` / `UseSqlServer`
-   3. [`lawndart-bounded-context`](lawndart-bounded-context/SKILL.md) — named contexts, handlers
-   4. [`lawndart-domain-model`](lawndart-domain-model/SKILL.md) — commands, events, aggregates, DCB
-   5. [`lawndart-lightweight-projections`](lawndart-lightweight-projections/SKILL.md) — host the read model
-   6. [`lawndart-projection-authoring`](lawndart-projection-authoring/SKILL.md) — projection classes
-   7. [`lawndart-aspnet-hosting`](lawndart-aspnet-hosting/SKILL.md) — HTTP commands and auth
+   1. [`lawndart-host-setup`](lawndart-host-setup/SKILL.md): hub, packages, registration order
+   2. [`lawndart-event-store`](lawndart-event-store/SKILL.md): `UseInMemory` / `UseSqlServer`
+   3. [`lawndart-bounded-context`](lawndart-bounded-context/SKILL.md): named contexts, handlers
+   4. [`lawndart-domain-model`](lawndart-domain-model/SKILL.md): commands, events, aggregates, DCB
+   5. [`lawndart-testing`](lawndart-testing/SKILL.md): `AggregateSpec` / `DcbSpec`
+   6. [`lawndart-reactions`](lawndart-reactions/SKILL.md): `IReactor` / `AddInMemoryMessaging`
+   7. [`lawndart-lightweight-projections`](lawndart-lightweight-projections/SKILL.md): host the read model
+   8. [`lawndart-projection-authoring`](lawndart-projection-authoring/SKILL.md): projection classes
+   9. [`lawndart-aspnet-hosting`](lawndart-aspnet-hosting/SKILL.md): HTTP commands and auth
 4. Required docs:
    - [docs/DI_GRAMMAR.md](../docs/DI_GRAMMAR.md)
    - [docs/HTTP_COMMANDS.md](../docs/HTTP_COMMANDS.md)
    - [docs/testing/BDD_TESTING.md](../docs/testing/BDD_TESTING.md)
+   - [docs/DCB_PATTERNS.md](../docs/DCB_PATTERNS.md)
+   - [docs/learning-path/06-reactions.md](../docs/learning-path/06-reactions.md)
 5. Canonical demo input: [`build-kit/library-slice.json`](../build-kit/library-slice.json).
    Reference implementation: [`samples/Library.Domain`](../samples/Library.Domain),
    [`samples/Library.Host`](../samples/Library.Host), and
    [`samples/Library.Domain.Tests`](../samples/Library.Domain.Tests).
+   DCB alternate: [`build-kit/library-dcb-slice.json`](../build-kit/library-dcb-slice.json),
+   [`samples/Library.Dcb.Domain`](../samples/Library.Dcb.Domain),
+   [`samples/Library.Dcb.Host`](../samples/Library.Dcb.Host), and
+   [`samples/Library.Dcb.Domain.Tests`](../samples/Library.Dcb.Domain.Tests).
    Academy (`demos/LawnDart.Demo.Academy` / `Academy.WebApi`) is the
    runnable host, not the excerpt source.
 
@@ -74,10 +82,15 @@ Supporting material (not required to implement a slice): the
   context. `AddLawnDartHttpCommands` only maps routes.
 - Aggregates and DCB entities declare closed `Handle(TCommand)`. Persist with
   `HandleCommandAsync`. Do not implement Delegation, Downstream Activity,
-  Event Generator, or State Transformation — those cells are not hosted.
+  Event Generator, or State Transformation. Those cells are not hosted.
 - Every code block in `skills/` is excerpted from the reference slice
   (`samples/Library.Domain`, `samples/Library.Host`,
-  `samples/Library.Domain.Tests`).
+  `samples/Library.Domain.Tests`). DCB blocks are excerpted from
+  `samples/Library.Dcb.Domain`, `samples/Library.Dcb.Host`, and
+  `samples/Library.Dcb.Domain.Tests` only.
+- Consume the LawnDart package version that matches the tag you cloned.
+  Patterns pins `LawnDartPackageVersion`; generating from `main` against an
+  older pin is the drift this `Targets` line exists to catch.
 
 ## Pre-demo rehearsal
 
@@ -85,8 +98,9 @@ Do this by hand before any live demo. It is not a CI job.
 
 1. Check out the git tag that matches the LawnDart packages the demo consumes.
 2. Open this file and `build-kit/library-slice.json`. Do not invent types.
-3. Run `dotnet test samples/Library.Domain.Tests`.
-4. Hand the kit (this file, the spec, the seven skills) to an agent and ask
+3. Run `dotnet test samples/Library.Domain.Tests` and
+   `dotnet test samples/Library.Dcb.Domain.Tests`.
+4. Hand the kit (this file, the spec, the nine skills) to an agent and ask
    it to implement the slice in a throwaway folder. Compare the result to
    `samples/Library.Domain`. Fix skill wording if the agent is confused;
    fix the slice if the agent is wrong.
@@ -95,6 +109,3 @@ Do this by hand before any live demo. It is not a CI job.
 The one-time “does a breaking API change fail?” proof is recorded in
 [`build-kit/REGRESSION_PROOF.md`](../build-kit/REGRESSION_PROOF.md). Do not
 turn it into a CI job.
-- Consume the LawnDart package version that matches the tag you cloned.
-  Patterns pins `LawnDartPackageVersion`; generating from `main` against an
-  older pin is the drift this `Targets` line exists to catch.

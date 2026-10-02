@@ -3,8 +3,8 @@
 In-process `IMessageTransport`. Academy Showcase A uses it for choreography
 without a broker.
 
-Take it for local work and tests. There is no durable outbox relay on this
-transport — SQL Server plus `EnableOutbox` is the durable publish path.
+Take it for local work and tests. Use SQL Server plus `EnableOutbox` when
+the consumer is another process. InMemory publishes in-process.
 
 ## Registration
 

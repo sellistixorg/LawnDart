@@ -1,6 +1,6 @@
-# Step 1 — Core concepts
+# Step 1. Core concepts
 
-**Next:** [Step 2 — First aggregate](02-first-aggregate.md)
+**Next:** [Step 2. First aggregate](02-first-aggregate.md)
 
 ## Command, event, state
 
@@ -10,29 +10,26 @@ Every message-driven system shuffles three kinds of thing:
 - **Event**: immutable fact about what already happened.
 - **State**: current read model used by users and workflows.
 
-You do not need all nine From×To combinations on day one. Most apps start
-with aggregate + projection.
-
-The shapes an event model compiles into — five hosted today — are on the
-[CES matrix](../CES_MATRIX.md).
+Most apps start with aggregate or DCB plus a projection. The shapes and
+which cells are hosted are on the [CES matrix](../CES_MATRIX.md).
 
 ## What the hosted shapes do
 
-**Aggregate Root (Command → Event)** — A command is checked, then events are
-appended. State is rebuilt by replaying those events.
+**Aggregate Root (Command → Event).** A command is checked, then events
+are appended. State is rebuilt by replaying those events.
 
-**Projection (Event → State)** — Events reduce into a query-friendly view.
+**Projection (Event → State).** Events reduce into a query-friendly view.
 
-**Reaction (Event → Command)** — An event in one slice becomes a command in
-another (choreography).
+**Reaction (Event → Command).** An event in one slice becomes a command
+in another (choreography).
 
-**Event Processing (Event → Event)** — Transform or enrich events without a
-command. Same host family as reactions (step 6).
+**Event Processing (Event → Event).** Transform or enrich events without
+a command. Same host family as reactions (step 6).
 
-**Task Processing (State → Command)** — A poller emits commands from read-model
-conditions (timeouts, SLAs).
+**Task Processing (State → Command).** A poller emits commands from
+read-model conditions (timeouts, SLAs).
 
-**DCB** — When a rule spans identities, load by tags and append atomically.
+**DCB.** When a rule spans identities, load by tags and append atomically.
 See [DCB_PATTERNS.md](../DCB_PATTERNS.md).
 
 ## Mental model
@@ -46,12 +43,14 @@ Command → Aggregate / DCB → Events → IEventStore (typed session)
 ```
 
 `IEventStore` is what handlers and aggregates use. The durable log
-(`IEventLog`) stores recorded events — family token, schema version,
-content-type, payload bytes — not live CLR objects. InMemory serializes
-on append the same way SQL does. Third-party stores implement the log.
+(`IEventLog`) stores recorded events: family token, schema version,
+codec id, payload bytes. Those frames are not live CLR objects.
+InMemory serializes on append the same way SQL does. Third-party stores
+implement the log.
 
 When a payload shape changes, keep the family token and follow
 [event schema versioning](../EVENT_SCHEMA_VERSIONING.md) (expand-contract
-deploy is on [step 8](08-production.md)).
+deploy is on [step 8](08-production.md)). Envelope fields:
+[Metadata](../METADATA.md).
 
 [Glossary](../GLOSSARY.md) · [Overview](../OVERVIEW.md)

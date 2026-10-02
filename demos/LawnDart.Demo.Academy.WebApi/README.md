@@ -27,7 +27,7 @@ dotnet run --project demos/LawnDart.Demo.Academy.WebApi --launch-profile SqlServ
 Or `dotnet run -- --sql` with `ConnectionStrings:Academy` or
 `LAWNDART_SQL_CONNECTION`.
 
-`GET /health` is unauthenticated.
+`GET /health` and `POST /token` are unauthenticated.
 
 ## Endpoints
 
@@ -68,18 +68,22 @@ the stream identities.
 
 ## Authentication
 
-Nothing in this demo **issues** a JWT. There is no login or `/token` endpoint.
-The host only **validates** `Authorization: Bearer <jwt>` with HS256.
+Call `POST /token` for a demo JWT. Paste `token` into Scalar (Authorize,
+BearerAuth, no `Bearer ` prefix). Then POST commands and GET views.
 
-Signing key (`Jwt:Key` in `appsettings.json`):
+This is not login. The host signs with HS256 using `Jwt:Key` in
+`appsettings.json` and does not check issuer, audience, or expiry. Use the
+same key if you mint a token offline.
 
-```text
-Academy-Demo-Secret-Key-32-Chars!
+```bash
+curl -s -X POST http://localhost:5180/token -H "Content-Type: application/json" -d "{\"role\":\"Admin\"}"
 ```
 
-Issuer, audience, and expiry are not validated. You mint the token yourself
-and paste it into Scalar (Authorize → BearerAuth, token only, no `Bearer `
-prefix).
+An empty body issues `Student` / `academy` / `demo`. Allowed roles:
+`Admin`, `Instructor`, `Student`. Any other role is `400`.
+
+Use the same `tenant_id` on later GETs as on the POSTs that wrote the streams
+(`academy` unless you passed `tenantId`).
 
 ### Claims the host reads
 
@@ -99,44 +103,3 @@ prefix).
 
 `EnrollmentIndex` is system-global (no tenant in the view key) but still
 requires `EnrollmentIndex.View`.
-
-### Create a JWT (jwt.io)
-
-1. Algorithm **HS256**.
-2. Payload:
-
-```json
-{
-  "role": "Admin",
-  "tenant_id": "academy",
-  "sub": "demo"
-}
-```
-
-3. Secret: `Academy-Demo-Secret-Key-32-Chars!`
-4. Leave **secret base64 encoded** unchecked (the key is a raw UTF-8 string).
-5. Copy the encoded token into Scalar.
-
-Use the same `tenant_id` on later GETs as on the POSTs that wrote the streams
-(`academy` in the example above).
-
-### Create a JWT (PowerShell)
-
-```powershell
-function B64Url([byte[]]$bytes) {
-    [Convert]::ToBase64String($bytes).TrimEnd('=').Replace('+','-').Replace('/','_')
-}
-$header  = B64Url ([Text.Encoding]::UTF8.GetBytes('{"alg":"HS256","typ":"JWT"}'))
-$payload = B64Url ([Text.Encoding]::UTF8.GetBytes('{"role":"Admin","tenant_id":"academy","sub":"demo"}'))
-$unsigned = "$header.$payload"
-$key = [Text.Encoding]::UTF8.GetBytes('Academy-Demo-Secret-Key-32-Chars!')
-$hmac = [System.Security.Cryptography.HMACSHA256]::new($key)
-$jwt = "$unsigned.$(B64Url $hmac.ComputeHash([Text.Encoding]::UTF8.GetBytes($unsigned)))"
-$jwt
-```
-
-Then:
-
-```http
-Authorization: Bearer <jwt>
-```

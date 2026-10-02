@@ -9,21 +9,20 @@ Take it first. It does not include an event-store implementation.
 
 - `ICommand`, `IEvent`, `IState`
 - `[EventTypeName]` family tokens, `WithEventTypes` / `EventTypeCatalog.Materialize`, and `WithUpcasters` / `IEventUpcaster<TTo, TFrom>`. See [Event schema versioning](../EVENT_SCHEMA_VERSIONING.md).
-- `EventMetadata` / `CommandMetadata` (`TraceId`, `SpanId`, correlation, causation)
-- `ICommandDispatcher` — routes reactor/processor commands to `ICommandHandler<T>` (same `LawnDart.Messaging` namespace as `MessageContext`)
+- `EventMetadata` / `CommandMetadata` (`TraceId`, `SpanId`, correlation, causation). See [Metadata](../METADATA.md).
+- `ICommandDispatcher` routes reactor/processor commands to `ICommandHandler<T>` (same `LawnDart.Messaging` namespace as `MessageContext`)
 - `AggregateRoot<TState>`, `DcbEntity<TState>`, and their repository interfaces
-- `IEventStore` — the typed session **abstraction** (`IEvent` in, `SequencedEvent` out)
-- `IEventLog` — the durable log (`AppendEvent` in, `RecordedEvent` out). Third-party stores implement this. `IEventSerializer` is `ReadOnlyMemory<byte>`.
+- `IEventStore` is the typed session abstraction (`IEvent` in, `SequencedEvent` out)
+- `IEventLog` is the durable log (`AppendEvent` in, `RecordedEvent` out). Third-party stores implement this. `IEventSerializer` is `ReadOnlyMemory<byte>`.
 - Authorization attributes and `AuthorizationService`
 - `AddLawnDart`, `AddBoundedContext`, `AddLawnDartAuthorization`
-- Hosted pattern contracts (`IReactor`, `IEventProcessor`, `ITaskProcessor`).
-  Four CES cells are roadmap only — no public type yet.
-- `IProjector` — experimental unused stub; neither host calls it. Not
-  the authoring API. Author `ProjectionBase<TView>` plus scope attributes
-  for Lightweight. Multi-stream views (including Flywheel) implement
-  `IMultiStreamEntityResolver` on that handler.
+- Hosted pattern contracts (`IReactor`, `IEventProcessor`, `ITaskProcessor`)
 
-The shapes an event model compiles into — five hosted today — are on the
+Author Lightweight views as `ProjectionBase<TView>` plus scope attributes
+(in `LawnDart.Projections.Lightweight`). Multi-stream views implement
+`IMultiStreamEntityResolver`.
+
+The shapes an event model compiles into are on the
 [CES matrix](../CES_MATRIX.md).
 
 ## Registration
@@ -45,12 +44,13 @@ In-memory GWT passes the same types to `BddTestContext.CreateInMemory`.
 
 A third-party backend implements `IEventLog`. LawnDart ships the typed
 `IEventStore` adapter over that log. `IEventStore` inherits `IStreamRegistry`.
-Do not split them. `IEventStoreSubscriptions` is the portable push surface
+Changing a method signature here breaks InMemory, SQL Server, and any
+third-party store. `IEventStoreSubscriptions` is the portable push surface
 for the session; the log has `IEventLogSubscriptions`.
 
 **`IEventStore`**
 
-- `ReadStreamAsync(string streamId, long fromVersion = 0, long? toVersion = null, DateTime? toTimestamp = null, CancellationToken cancellationToken = default)` — `toTimestamp` is envelope business time (`EventMetadata.Timestamp`), not `CommitTimestamp`.
+- `ReadStreamAsync(string streamId, long fromVersion = 0, long? toVersion = null, DateTime? toTimestamp = null, CancellationToken cancellationToken = default)`. `toTimestamp` is envelope business time (`EventMetadata.Timestamp`), not `CommitTimestamp`.
 - `ReadStreamEnumerableAsync(string streamId, long fromVersion = 0, long? toVersion = null, DateTime? toTimestamp = null, CancellationToken cancellationToken = default)`
 - `ReadByQueryAsync(Query query, long? fromSequencePosition = null, int? limit = null, long? toSequencePosition = null, DateTime? toTimestamp = null, CancellationToken cancellationToken = default)`
 - `ReadByQueryStreamAsync(Query query, long? fromSequencePosition = null, long? toSequencePosition = null, DateTime? toTimestamp = null, CancellationToken cancellationToken = default)`
@@ -79,6 +79,6 @@ See [Backend selection](../BACKEND_SELECTION.md).
 ## Related
 
 - [Package map](README.md)
-- [Analyzers](analyzers.md) — optional `LDT*` schema-versioning diagnostics
+- [Analyzers](analyzers.md): optional `LDT*` schema-versioning diagnostics
 - [DI Grammar](../DI_GRAMMAR.md)
 - [Overview](../OVERVIEW.md)

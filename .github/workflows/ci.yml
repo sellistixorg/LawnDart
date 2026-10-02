@@ -41,6 +41,11 @@ jobs:
         dotnet test samples/Library.Domain.Tests --no-build --configuration Release
         --verbosity normal
 
+    - name: Test DCB reference slice
+      run: >
+        dotnet test samples/Library.Dcb.Domain.Tests --no-build --configuration Release
+        --verbosity normal
+
     - name: Test (integration)
       run: |
         for proj in \

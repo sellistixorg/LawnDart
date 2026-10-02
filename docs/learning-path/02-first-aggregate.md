@@ -1,9 +1,9 @@
-# Step 2 — First aggregate
+# Step 2. First aggregate
 
 **Previous:** [Concepts](01-concepts.md) · **Next:** [Testing](03-testing-your-aggregate.md)
 
 The shortest copy-paste quick start stays on the [README](https://github.com/sellistixorg/LawnDart/blob/main/README.md)
-and [Quickstart](../QUICKSTART.md). This step is the library domain — a
+and [Quickstart](../QUICKSTART.md). This step is the library domain: a
 `Book` with an invariant (`OnLoan`) whose decision state is not the catalog
 view.
 
@@ -106,8 +106,9 @@ Keep `Id` and `Timestamp` first on events if you follow the Eventhesis
 field-order convention. Every concrete `IEvent` needs `[EventTypeName]`.
 The token is a family name; versioning is
 [Event schema versioning](../EVENT_SCHEMA_VERSIONING.md).
-`BookState` is decision state only — no title, no ISBN. Those live on
-`BookCatalogView` ([step 4](04-reading-state.md)).
+`BookState` is decision state only: no title, no ISBN. Those live on
+`BookCatalogView` ([step 4](04-reading-state.md)). Envelope fields:
+[Metadata](../METADATA.md).
 
 ## Host and dispatch
 
@@ -145,8 +146,7 @@ hosts still use `GetRequiredKeyedService<IAggregateRepository>("other")`.
 Guid overloads build `{type}:{id}` (or `{tenant}:{type}:{id}`). If the stream
 is a custom ID, use `GetOrCreateAsync<T>(streamId)` instead.
 
-Do not load the store yourself. Use `GetAsync` / `GetOrCreateAsync` and
-`HandleCommandAsync`.
+Load with `GetAsync` / `GetOrCreateAsync` and `HandleCommandAsync`.
 
 Aggregates record events with `Apply`. DCB entities use `Emit` (tags).
 `Handle(TCommand)` is authoring; `HandleCommandAsync` is the repository.

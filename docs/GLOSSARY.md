@@ -4,8 +4,8 @@ Terms used across LawnDart docs. Avoid inventing a second vocabulary.
 
 ## Intentional verb differences
 
-Aggregate and DCB paths use different verbs on purpose. These are **not**
-renames waiting to happen.
+Aggregate and DCB paths use different verbs on purpose. The names are
+stable. They are not a pending rename.
 
 | Concept | Aggregate / broker | DCB | Why they differ |
 |---|---|---|---|
@@ -15,8 +15,7 @@ renames waiting to happen.
 | Persist and dispatch | `IAggregateRepository.HandleCommandAsync` | `IDcbRepository.HandleCommandAsync` | Repository verb. Not the same as entity `Handle`. |
 | App-facing handler | `ICommandHandler<T>.HandleAsync` | same | Handler interface; not renamed. |
 | Reaction | `IReactor<TEvent>.ReactAsync(evt, MessageContext, ct)` | `IDcbReactor.ReactAsync(evt, EventMetadata, ct)` | Broker transport vs in-process tag/metadata. `IDcbReactor` is for in-service workflows without a broker. |
-| Projection stub | `IProjector.ProjectAsync` (experimental, unused) | `DcbProjector.ProjectEventAsync` | Different hosts. Author `ProjectionBase` for Lightweight. |
-| Cancellation parameter | `cancellationToken` almost everywhere | `ct` in Snapshots | Historical. Do not rename. |
+| Projection | `ProjectionBase<TView>` (Lightweight) | `DcbProjector.ProjectEventAsync` | Different hosts. See **IProjector**. |
 
 ## A
 
@@ -32,7 +31,7 @@ tags, the append fails with `ConcurrencyException`.
 User roles, permission claims, and entitlements used by `AuthorizationService`.
 
 **AppendEvent**  
-Caller-supplied log envelope: family token, schema version, content-type,
+Caller-supplied log envelope: family token, schema version, codec id,
 payload bytes, UTF-8 JSON metadata bytes, tags. No store-assigned sequence,
 stream version, or commit timestamp.
 
@@ -57,12 +56,11 @@ that skips it fails at startup. Resolve-on-read is `(token, SchemaVersion)`
 → CLR type. One-arg `[EventTypeName("token")]` is version 1 and implicitly
 current when it is the only type for that family. A family with two or more
 types needs exactly one `current: true`. Duplicate `(token, version)` or two
-currents fail at materialize. An unknown token fails closed; there is no
-FullName / simple-name / AssemblyQualifiedName alias and no process-wide
-resolver. Current CLR type keeps the domain name; historical is
+currents fail at materialize. An unknown token fails closed. Register the family with `WithEventTypes`.
+Current CLR type keeps the domain name; historical is
 `AuthorRegisteredV1`. Historical versions reach current through
 `IEventUpcaster<TTo, TFrom>` registered with `WithUpcasters`. Optional
-`LawnDart.Analyzers` reports `LDT001`–`LDT003` for the same rules at
+`LawnDart.Analyzers` reports `LDT001` to `LDT003` for the same rules at
 compile time; warmup is the runtime authority. See
 [Event schema versioning](EVENT_SCHEMA_VERSIONING.md).
 
@@ -82,7 +80,7 @@ Expected stream version or DCB `AppendCondition` was not satisfied.
 **Correlation / causation**  
 Envelope fields. `CausationId` is the immediate parent (defaults to
 `command.Id` on `HandleCommandAsync` when unset). `CorrelationId` is the
-saga / W3C trace id — not a copy of causation.
+saga / W3C trace id. It is not a copy of causation.
 
 ## D
 
@@ -106,16 +104,18 @@ Command → State. Roadmap cell; no public type and no host yet.
 Source of truth for event id, business time, commit time, correlation,
 causation, `TraceId`, `SpanId`, and tenant. `SchemaName` is the catalog token.
 The durable log does not carry `EventMetadata`; see **AppendEvent**.
+How-to: [Metadata](METADATA.md).
 
 **Event**  
 Immutable fact. `IEvent` with `Id` and `Timestamp` first, plus
 `[EventTypeName]`.
 
-**Event clocks**  
-Three times on the envelope, do not mix them:
-- **Business time** — `IEvent.Timestamp` and `EventMetadata.Timestamp` (same after enrich). `IEventStore.toTimestamp` / time-travel uses this.
-- **Commit time** — first-class on `RecordedEvent.CommitTimestamp`; mirrored onto `EventMetadata.CommitTimestamp` by the session. Lag and ops, not domain queries. `IEventLog` may filter `toCommitTimestamp`.
-- **Trace** — `TraceId` / `SpanId` (W3C hex). The Activity clock is not stored as a third `DateTime`.
+### Event clocks
+
+Three times on the envelope. Keep them apart:
+- **Business time:** `IEvent.Timestamp` and `EventMetadata.Timestamp` (same after enrich). `IEventStore.toTimestamp` / time-travel uses this.
+- **Commit time:** first-class on `RecordedEvent.CommitTimestamp`; mirrored onto `EventMetadata.CommitTimestamp` by the session. Lag and ops, not domain queries. `IEventLog` may filter `toCommitTimestamp`.
+- **Trace:** `TraceId` / `SpanId` (W3C hex). The Activity clock is not stored as a third `DateTime`.
 
 **Event log**  
 `IEventLog`: schema-dumb durability. Append `AppendEvent`, read `RecordedEvent`.
@@ -124,7 +124,7 @@ bytes, tags, stream id/version, global sequence, commit timestamp. No CLR
 event type. Third-party stores implement this. A process that has **not**
 registered event CLR types still appends, filters, and copies frames here.
 Typed hydrate (`EventSession` / `IEventStore`) fails closed on an unknown
-family — it does not invent a stand-in event.
+family. Deploy the missing type. It does not invent a stand-in event.
 
 **Event store**  
 `IEventStore`: typed application session over a log. Append/read `IEvent` /
@@ -142,6 +142,10 @@ Separate event-modelling canvas that emits slice-based JSON. It does not
 generate LawnDart types. See [EVENTHESIS.md](EVENTHESIS.md).
 
 ## I
+
+**IProjector**  
+Public Event to State interface (`ProjectAsync`). Lightweight does not call
+it. Author `ProjectionBase<TView>`.
 
 **IRawEvent**  
 `IEvent` that already has a family token and payload bytes. LawnDart's type is
@@ -163,13 +167,13 @@ In-process projection host (`LawnDart.Projections.Lightweight`).
 **MessageContext**  
 Inbound transport envelope (HTTP, messaging). `ContextAwareCommandDispatcher`
 publishes it on `AmbientMessageContext` and continues `traceparent` before
-`HandleAsync`.
+`HandleAsync`. See [Metadata](METADATA.md).
 
 ## N
 
 **Nine common patterns**
-The command–event–state matrix. Five cells are hosted; four are roadmap
-(no public type yet). See the [pattern matrix](OVERVIEW.md).
+The command-event-state matrix. Five cells are hosted; four are roadmap
+(no public type yet). See the [CES matrix](CES_MATRIX.md).
 
 ## O
 
@@ -186,13 +190,13 @@ Event → State. Incremental read model.
 
 **Reaction**  
 Event → Command. Broker path: `IReactor<TEvent>` (`MessageContext`). DCB
-in-process path: `IDcbReactor` (`EventMetadata`). Not the same contract —
-see **Intentional verb differences**.
+in-process path: `IDcbReactor` (`EventMetadata`). Not the same contract.
+See **Intentional verb differences**.
 
 **RawRecordedEvent**  
 LawnDart's `IRawEvent`: a `RecordedEvent` viewed as an `IEvent` so typed
 helpers can read the stored family token. Not a hydrate fallback and not a
-catalog type. `OpaqueEvent` / `UnknownEvent` are not LawnDart types.
+catalog type.
 
 **RecordedEvent**  
 `AppendEvent` fields plus store-assigned stream id, stream version, global
@@ -202,11 +206,12 @@ sequence, and commit timestamp. Tags as stored.
 
 **SchemaVersion**  
 Integer on the log frame (`AppendEvent` / `RecordedEvent` / SQL column).
-Identifies which CLR type in a family to deserialize. Not a Chronicle
-"generation". The typed session stamps it from the current CLR type on
+Identifies which CLR type in a family to deserialize. The typed session
+stamps it from the current CLR type on
 append. `EventMetadata.SchemaVersion` is a compatibility mirror written
-by the session (append and hydrate). The frame is authority. Missing or
-zero on old rows treats as `1`. The catalog resolves
+by the session (append and hydrate). The frame is authority. A constructed
+frame with `0` becomes `1`. SQL columns have no default; an older table
+throws and names drop-and-recreate. The catalog resolves
 `(token, SchemaVersion)`; the token stays the family name.
 See [Event schema versioning](EVENT_SCHEMA_VERSIONING.md)
 (including [deploy](EVENT_SCHEMA_VERSIONING.md#deploy)).

@@ -9,13 +9,13 @@ without starting a host. It is optional. The runtime still requires
 
 ## What you get
 
-- `LDT001` — two `current: true` on one family token
-- `LDT002` — two or more types and no `current: true`
-- `LDT003` — a historical version has no upcaster path to current
+- `LDT001`: two `current: true` on one family token
+- `LDT002`: two or more types and no `current: true`
+- `LDT003`: a historical version has no upcaster path to current
 
-One-arg `[EventTypeName("token")]` is not a diagnostic. Warmup is the
-runtime authority if the analyzer and catalog drift. Positioning §3 is
-reopened only for these versioning rules.
+This package reports `LDT001` to `LDT003` only. One-arg
+`[EventTypeName("token")]` is not a diagnostic. Warmup is the runtime
+authority if the analyzer and catalog drift.
 
 See the [package README](https://github.com/sellistixorg/LawnDart/blob/main/src/LawnDart.Analyzers/README.md)
 and [Event schema versioning](../EVENT_SCHEMA_VERSIONING.md).

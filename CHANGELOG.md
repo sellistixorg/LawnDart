@@ -10,6 +10,26 @@ changes to the public API.
 
 ## [Unreleased]
 
+### Fixed
+
+- The BDD testing guide links to `build-kit/library-dcb-slice.json`.
+
+### Added
+
+- `AGENTS.md` is the instruction file for coding agents in this repository. A cloud agent commit includes `Signed-off-by: Cursor Agent <cursoragent@cursor.com>`.
+- [Metadata](docs/METADATA.md) covers `MessageContext`, `CommandMetadata`, `EventMetadata`, and what the default provider fills.
+- A DCB Library sample (`samples/Library.Dcb.Domain`) implements the same book intents as a `BookLoan` entity that spans book and member. Input is `build-kit/library-dcb-slice.json`.
+- The build kit has `lawndart-testing` and `lawndart-reactions` skills.
+- Academy WebApi issues a demo JWT at `POST /token`.
+
+### Changed
+
+- The skill kit frozen surface lives on `lawndart-host-setup`. Aggregate load is `GetOrCreateAsync`. DCB load is `GetOrCreateEntityAsync`. Projection scopes include `[MultiStreamProjection]`.
+- A store-backed second bounded context in `Library.Host` registers `WithEventTypes`.
+- [BDD testing](docs/testing/BDD_TESTING.md) excerpts `DcbSpec` from the Library DCB sample.
+- Command HTTP endpoints map success to 202, failed authorization to 403, `ConcurrencyException` to 409, and `DomainException` to 422.
+- Guides lead with what LawnDart is and what to do.
+
 ## [0.4.0-alpha.7] — 2026-09-17
 
 ### Changed

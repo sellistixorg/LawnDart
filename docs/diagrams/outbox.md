@@ -10,4 +10,5 @@ flowchart LR
     Bus --> Reactor["IReactor"]
 ```
 
-InMemory hosts skip the durable outbox and publish in-process.
+Use SQL Server plus `EnableOutbox` when the consumer is another process.
+InMemory publishes in-process.

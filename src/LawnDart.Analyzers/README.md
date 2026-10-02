@@ -3,16 +3,14 @@
 Compile-time checks for **event schema versioning** only. Diagnostic prefix
 `LDT`. Add the package to a project that declares `[EventTypeName]` types.
 
-Positioning §3 preferred warmup over analyzers. That is reopened **only**
-for these versioning rules. Warmup
-(`EventTypeCatalog.Materialize` / `WithUpcasters`) is still the **runtime
-authority**. A green analyzer is not a substitute for warmup — the analyzer
+This package reports `LDT001` to `LDT003` only. Warmup
+(`EventTypeCatalog.Materialize` / `WithUpcasters`) is still the runtime
+authority. A green analyzer is not a substitute for warmup. The analyzer
 sees types in the compilation; it cannot see whether `WithEventTypes` /
 `WithUpcasters` registered them.
 
-Do not treat this package as a kitchen-sink linter. Missing
-`[EventTypeName]`, duplicate tokens, kebab-case, and handler/DI mistakes
-stay warmup / `ContextStartupValidator`.
+Missing `[EventTypeName]`, duplicate tokens, kebab-case, and handler/DI
+mistakes stay warmup / `ContextStartupValidator`.
 
 ## Install
 

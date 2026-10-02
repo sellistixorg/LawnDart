@@ -1,4 +1,4 @@
-# Step 4 — Reading state
+# Step 4. Reading state
 
 **Previous:** [Testing](03-testing-your-aggregate.md) · **Next:** [DCB](05-dcb-patterns.md)
 
@@ -9,12 +9,12 @@ never needed to decide a borrow.
 
 You may hand-roll a projector or use the shipped host. LawnDart ships
 `LawnDart.Projections.Lightweight` only. Author `ProjectionBase<TView>` plus
-scope attributes. `IProjector` is experimental and unused — this host does
-not call it. A view that spans stream types implements
+scope attributes. A view that spans stream types implements
 `IMultiStreamEntityResolver` on the handler.
 
 Hand-rolled fold, excerpted from
-`samples/Library.Domain/Projections/LibraryProjector.cs`:
+`samples/Library.Domain/Projections/LibraryProjector.cs`
+(`BorrowedBookView` XML comment omitted):
 
 ```csharp
 public sealed class BookCatalogView
@@ -26,7 +26,6 @@ public sealed class BookCatalogView
     public string? BorrowedBy { get; set; }
 }
 
-/// <summary>Who has what out right now — instance removed on return.</summary>
 public sealed class BorrowedBookView
 {
     public Guid BookId { get; set; }

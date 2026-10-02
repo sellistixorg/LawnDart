@@ -28,8 +28,8 @@ dotnet run --project demos/LawnDart.Demo.Academy --launch-profile SqlServer
 dotnet run --project demos/LawnDart.Demo.Academy.WebApi
 ```
 
-Separate host (no shared project). Scalar at `/scalar/v1`. You mint the JWT
-yourself — see [WebApi README](../LawnDart.Demo.Academy.WebApi/README.md).
+Separate host (no shared project). Scalar at `/scalar/v1`. `POST /token`
+issues a demo JWT. See [WebApi README](../LawnDart.Demo.Academy.WebApi/README.md).
 
 ## Showcases
 
