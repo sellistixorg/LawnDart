@@ -12,6 +12,7 @@ changes to the public API.
 
 ### Added
 
+- `AGENTS.md` is the instruction file for coding agents in this repository. A cloud agent commit includes `Signed-off-by: Cursor Agent <cursoragent@cursor.com>`.
 - [Metadata](docs/METADATA.md) covers `MessageContext`, `CommandMetadata`, `EventMetadata`, and what the default provider fills.
 - A DCB Library sample (`samples/Library.Dcb.Domain`) implements the same book intents as a `BookLoan` entity that spans book and member. Input is `build-kit/library-dcb-slice.json`.
 - The build kit has `lawndart-testing` and `lawndart-reactions` skills.
