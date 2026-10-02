@@ -9,6 +9,7 @@ using LawnDart.Demo.Academy.Domain.Student.Commands;
 using LawnDart.Demo.Academy.Domain.Student.Events;
 using LawnDart.Demo.Academy.Domain.Course;
 using LawnDart.Demo.Academy.Domain.Course.Commands;
+using LawnDart.Demo.Academy.Domain.Course.Events;
 using LawnDart.Demo.Academy.Domain.CourseSection;
 using LawnDart.Demo.Academy.Domain.CourseSection.Commands;
 using LawnDart.Demo.Academy.Domain.CourseSection.Events;
@@ -38,15 +39,18 @@ public class ShowcaseA_TraditionalEda
 {
     private readonly IAggregateRepository _repository;
     private readonly CourseSectionProjector _sectionProjector;
+    private readonly CourseCatalogProjector _catalogProjector;
     private readonly StudentTranscriptProjector _transcriptProjector;
 
     public ShowcaseA_TraditionalEda(
         IAggregateRepository repository,
         CourseSectionProjector sectionProjector,
+        CourseCatalogProjector catalogProjector,
         StudentTranscriptProjector transcriptProjector)
     {
         _repository = repository;
         _sectionProjector = sectionProjector;
+        _catalogProjector = catalogProjector;
         _transcriptProjector = transcriptProjector;
     }
 
@@ -67,6 +71,8 @@ public class ShowcaseA_TraditionalEda
         var course = await _repository.GetOrCreateAsync<Course>(courseId);
         await _repository.HandleCommandAsync(course,
             new CreateCourseCommand(Guid.NewGuid(), courseId, "Advanced Event Sourcing", "Master ES, CQRS, and DCB", 299m));
+        _catalogProjector.Apply(new CourseCreated(
+            Guid.NewGuid(), DateTime.UtcNow, courseId, course.State.Title, course.State.Description, course.State.Price));
         result.Steps.Add($"[Step 2] CourseCreated: {course.State.Title} @ £{course.State.Price:F2}");
 
         // ── Step 3: Create section with 5 seats ──────────────────────────────
