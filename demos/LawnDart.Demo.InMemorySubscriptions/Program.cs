@@ -111,10 +111,16 @@ internal sealed class DemoRunner : IHostedService
         // A previous process can leave lastApplied ahead of head, or a partial
         // write inside that range. Either one skips events and the loop waits.
         var inRange = lastApplied >= 0 && lastApplied < head;
-        if (!inRange || lastApplied > 0)
+        if (!inRange)
         {
             Console.WriteLine(
-                $"Checkpoint ({lastApplied}) is outside [0, {head}) or would skip seeded events; resetting cursor (InMemory is empty each process).");
+                $"Checkpoint ({lastApplied}) is outside [0, {head}); resetting cursor (InMemory is empty each process).");
+            lastApplied = 0;
+        }
+        else if (lastApplied > 0)
+        {
+            Console.WriteLine(
+                $"Checkpoint ({lastApplied}) would skip seeded events under head {head}; resetting cursor (InMemory is empty each process).");
             lastApplied = 0;
         }
 
