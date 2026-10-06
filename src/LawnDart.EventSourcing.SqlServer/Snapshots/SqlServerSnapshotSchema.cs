@@ -1,4 +1,5 @@
 using Microsoft.Data.SqlClient;
+using LawnDart.Sql;
 
 namespace LawnDart.EventSourcing.SqlServer.Snapshots;
 
@@ -13,10 +14,10 @@ internal static class SqlServerSnapshotSchema
     internal const string DefaultEventTable = "EventSnapshots";
 
     internal static string Quote(string identifier)
-        => identifier.Replace("]", "]]", StringComparison.Ordinal);
+        => SqlIdentifier.Escape(identifier);
 
     internal static string Qualify(string schemaName, string tableName)
-        => $"[{Quote(schemaName)}].[{Quote(tableName)}]";
+        => SqlIdentifier.Qualify(schemaName, tableName);
 
     /// <summary>
     /// When the events table is renamed (tests / multi-store in one schema) and the snapshot
@@ -46,7 +47,7 @@ internal static class SqlServerSnapshotSchema
         var pkEvent = Quote($"PK_{eventTableName}");
 
         var sql = $@"
-            IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'{qDcb}') AND type in (N'U'))
+            IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'{SqlIdentifier.Literal(qDcb)}') AND type in (N'U'))
             BEGIN
                 CREATE TABLE {qDcb} (
                     [DcbId] CHAR(64) COLLATE Latin1_General_BIN NOT NULL,
@@ -61,7 +62,7 @@ internal static class SqlServerSnapshotSchema
                 );
             END
 
-            IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'{qEvent}') AND type in (N'U'))
+            IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'{SqlIdentifier.Literal(qEvent)}') AND type in (N'U'))
             BEGIN
                 CREATE TABLE {qEvent} (
                     [StreamId] NVARCHAR(255) NOT NULL,
@@ -75,7 +76,8 @@ internal static class SqlServerSnapshotSchema
                 );
             END";
 
-        await using var command = new SqlCommand(sql, connection);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        var command = new SqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 }

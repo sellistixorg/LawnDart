@@ -46,13 +46,13 @@ public sealed class EventProcessorTestHarness<TProcessor, TEvent>
     {
         context ??= MessageContext.New();
 
-        if (context.MessageId is not null && await _inboxStore.IsProcessedAsync(context.MessageId, cancellationToken))
+        if (context.MessageId is not null && await _inboxStore.IsProcessedAsync(context.MessageId, cancellationToken).ConfigureAwait(false))
             return [];
 
-        var events = (await _processor.ProcessAsync(@event, context, cancellationToken)).ToList();
+        var events = (await _processor.ProcessAsync(@event, context, cancellationToken).ConfigureAwait(false)).ToList();
 
         if (context.MessageId is not null)
-            await _inboxStore.MarkProcessedAsync(context.MessageId, DateTimeOffset.UtcNow, cancellationToken);
+            await _inboxStore.MarkProcessedAsync(context.MessageId, DateTimeOffset.UtcNow, cancellationToken).ConfigureAwait(false);
 
         return events;
     }

@@ -34,7 +34,7 @@ public class CompositeAuthorizationContextProvider : IAuthorizationContextProvid
         {
             if (provider.CanProvideContext())
             {
-                var context = await provider.GetAuthorizationContextAsync(cancellationToken);
+                var context = await provider.GetAuthorizationContextAsync(cancellationToken).ConfigureAwait(false);
                 if (context != null)
                     return context;
             }

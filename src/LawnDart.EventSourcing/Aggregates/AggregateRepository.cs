@@ -97,14 +97,14 @@ public class AggregateRepository : IAggregateRepository
             var restoreSw = Stopwatch.StartNew();
             try
             {
-                snapshotInfo = await aggregate.TryRestoreFromSnapshotAsync(_snapshotStore, cancellationToken);
+                snapshotInfo = await aggregate.TryRestoreFromSnapshotAsync(_snapshotStore, cancellationToken).ConfigureAwait(false);
                 restoreSw.Stop();
                 snapshotRestoreElapsed = restoreSw.Elapsed;
                 if (snapshotInfo != null)
                 {
-                    _logger?.LogDebug(
-                        "Restored {Type} {StreamId} from snapshot at version {Version} (global seq {Seq})",
-                        typeof(T).Name, streamId, snapshotInfo.Version, snapshotInfo.GlobalSequence);
+                    if (_logger is not null)
+                        AggregateRepositoryLog.RestoredFromSnapshot(
+                            _logger, typeof(T).Name, streamId, snapshotInfo.Version, snapshotInfo.GlobalSequence);
                     // Hit telemetry is recorded after delta replay so the delta count is known.
                 }
             }
@@ -112,9 +112,8 @@ public class AggregateRepository : IAggregateRepository
             {
                 restoreSw.Stop();
                 // Corrupt or incompatible snapshot — fall back to full replay.
-                _logger?.LogWarning(ex,
-                    "Snapshot restore failed for {Type} {StreamId}; falling back to full replay",
-                    typeof(T).Name, streamId);
+                if (_logger is not null)
+                    AggregateRepositoryLog.SnapshotRestoreFailed(_logger, ex, typeof(T).Name, streamId);
                 SnapshotTelemetry.RecordMiss(typeof(T).Name, "aggregate", restoreSw.Elapsed);
                 snapshotInfo = null;
                 aggregate = new T();
@@ -124,11 +123,12 @@ public class AggregateRepository : IAggregateRepository
 
         // Delta replay: from version 0 for full replay, or snapshotVersion+1 for delta.
         var fromVersion = snapshotInfo != null ? snapshotInfo.Version + 1 : 0;
-        var events = await _eventStore.ReadStreamAsync(streamId, fromVersion, cancellationToken: cancellationToken);
+        var events = await _eventStore.ReadStreamAsync(streamId, fromVersion, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         if (events.Count == 0 && snapshotInfo == null)
         {
-            _logger?.LogDebug("Aggregate {Type} with stream {StreamId} not found", typeof(T).Name, streamId);
+            if (_logger is not null)
+                AggregateRepositoryLog.AggregateNotFound(_logger, typeof(T).Name, streamId);
             return null;
         }
 
@@ -173,13 +173,14 @@ public class AggregateRepository : IAggregateRepository
             aggregate.SetCommittedVersion(snapshotInfo.Version);
         }
 
-        _logger?.LogDebug(
-            "Loaded aggregate {Type} with stream {StreamId}, version {Version}, {DeltaEventCount} delta events (snapshot: {HasSnapshot})",
-            typeof(T).Name,
-            streamId,
-            aggregate.Version,
-            events.Count,
-            snapshotInfo != null);
+        if (_logger is not null)
+            AggregateRepositoryLog.AggregateLoaded(
+                _logger,
+                typeof(T).Name,
+                streamId,
+                aggregate.Version,
+                events.Count,
+                snapshotInfo != null);
 
         return aggregate as T;
     }
@@ -195,7 +196,8 @@ public class AggregateRepository : IAggregateRepository
         aggregate.SetStreamId(streamId);
         aggregate.SetCommittedVersion(-1);   // -1 = brand new, never flushed: "stream must not exist yet"
 
-        _logger?.LogDebug("Created new aggregate {Type} with StreamId: {StreamId}", typeof(T).Name, streamId);
+        if (_logger is not null)
+            AggregateRepositoryLog.AggregateCreated(_logger, typeof(T).Name, streamId);
 
         return Task.FromResult(aggregate);
     }
@@ -205,15 +207,17 @@ public class AggregateRepository : IAggregateRepository
 
     public async Task<T> GetOrCreateAsync<T>(string streamId, CancellationToken cancellationToken = default) where T : AggregateRoot, new()
     {
-        var existing = await GetAsync<T>(streamId, cancellationToken);
+        var existing = await GetAsync<T>(streamId, cancellationToken).ConfigureAwait(false);
         if (existing != null)
         {
-            _logger?.LogDebug("Found existing aggregate {Type} with stream {StreamId}, version {Version}", typeof(T).Name, streamId, existing.Version);
+            if (_logger is not null)
+                AggregateRepositoryLog.ExistingAggregateFound(_logger, typeof(T).Name, streamId, existing.Version);
             return existing;
         }
 
-        var aggregate = await CreateAsync<T>(streamId, cancellationToken);
-        _logger?.LogDebug("Created new aggregate {Type} with stream {StreamId} (did not exist)", typeof(T).Name, streamId);
+        var aggregate = await CreateAsync<T>(streamId, cancellationToken).ConfigureAwait(false);
+        if (_logger is not null)
+            AggregateRepositoryLog.AggregateCreatedBecauseMissing(_logger, typeof(T).Name, streamId);
         return aggregate;
     }
 
@@ -231,7 +235,8 @@ public class AggregateRepository : IAggregateRepository
         var events = aggregate.PendingEvents.ToList();
         if (events.Count == 0)
         {
-            _logger?.LogDebug("No pending events to flush for aggregate {StreamId}", aggregate.StreamId);
+            if (_logger is not null)
+                AggregateRepositoryLog.NoPendingEvents(_logger, aggregate.StreamId);
             return;
         }
 
@@ -270,8 +275,9 @@ public class AggregateRepository : IAggregateRepository
                     ? GetStreamId(aggregate.GetType(), aggregateId.Value, tenantId)
                     : $"{aggregate.GetType().Name}:{aggregateId.Value}";
                 aggregate.SetStreamId(streamId);
-                _logger?.LogDebug("Auto-set StreamId for aggregate {Type} with ID {Id}, StreamId: {StreamId}", 
-                    aggregate.GetType().Name, aggregateId.Value, streamId);
+                if (_logger is not null)
+                    AggregateRepositoryLog.StreamIdAutoSet(
+                        _logger, aggregate.GetType().Name, aggregateId.Value, streamId);
             }
             else
             {
@@ -286,7 +292,7 @@ public class AggregateRepository : IAggregateRepository
         // Validate stream ID includes tenant prefix (only if tenant is required)
         if (_options.RequireTenantId && tenantId != null)
         {
-            if (!aggregate.StreamId.StartsWith($"{tenantId}:"))
+            if (!aggregate.StreamId.StartsWith($"{tenantId}:", StringComparison.Ordinal))
             {
                 throw new InvalidOperationException(
                     $"Stream ID '{aggregate.StreamId}' does not match tenant ID '{tenantId}'. " +
@@ -327,7 +333,7 @@ public class AggregateRepository : IAggregateRepository
             expectedVersion,
             metadata,
             allTags,
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
 
         // Clear pending events
         aggregate.ClearPendingEvents();
@@ -343,11 +349,8 @@ public class AggregateRepository : IAggregateRepository
             aggregate.SetCommittedVersion(appendResult.LastStreamVersion);
         }
 
-        _logger?.LogDebug(
-            "Saved {Count} events for aggregate {StreamId}, new version {Version}",
-            events.Count,
-            aggregate.StreamId,
-            aggregate.Version);
+        if (_logger is not null)
+            AggregateRepositoryLog.EventsSaved(_logger, events.Count, aggregate.StreamId, aggregate.Version);
 
         // Capture on this thread, enqueue wait-free. The hosted consumer writes.
         if (_snapshotStore != null && _strategyResolver != null && _snapshotWriteQueue != null)
@@ -417,13 +420,12 @@ public class AggregateRepository : IAggregateRepository
         // Authorization check (if enabled and service is registered)
         if (_options.EnableAuthorization && _authorizationService != null)
         {
-            var authResult = await _authorizationService.AuthorizeCommandAsync(command, cancellationToken);
+            var authResult = await _authorizationService.AuthorizeCommandAsync(command, cancellationToken).ConfigureAwait(false);
             if (!authResult.IsAuthorized)
             {
-                _logger?.LogWarning(
-                    "Authorization failed for command {CommandType}: {Reason}",
-                    typeof(TCommand).Name,
-                    authResult.FailureReason);
+                if (_logger is not null)
+                    AggregateRepositoryLog.AuthorizationFailed(
+                        _logger, typeof(TCommand).Name, authResult.FailureReason);
                     
                 throw new UnauthorizedAccessException(
                     $"Authorization failed: {authResult.FailureReason}. " +
@@ -434,23 +436,22 @@ public class AggregateRepository : IAggregateRepository
             commandMetadata.AuthorizedAt = DateTime.UtcNow;
             commandMetadata.AuthorizedBy = commandMetadata.UserId;
             
-            _logger?.LogDebug(
-                "Command {CommandType} authorized for user {UserId}",
-                typeof(TCommand).Name,
-                commandMetadata.UserId);
+            if (_logger is not null)
+                AggregateRepositoryLog.CommandAuthorized(
+                    _logger, typeof(TCommand).Name, commandMetadata.UserId);
         }
 
         if (CompiledCommandApplicator.OverridesHandleAsync(aggregate.GetType()))
         {
 #pragma warning disable CS0618
-            await aggregate.HandleAsync(command, cancellationToken);
+            await aggregate.HandleAsync(command, cancellationToken).ConfigureAwait(false);
 #pragma warning restore CS0618
         }
         else
-            await CompiledCommandApplicator.DispatchAsync(aggregate, command, cancellationToken);
+            await CompiledCommandApplicator.DispatchAsync(aggregate, command, cancellationToken).ConfigureAwait(false);
         
         // Persist events
-        await SaveAsync(aggregate, commandMetadata, cancellationToken);
+        await SaveAsync(aggregate, commandMetadata, cancellationToken).ConfigureAwait(false);
         
         return aggregate;
     }
@@ -562,7 +563,7 @@ public class AggregateRepository : IAggregateRepository
         }
 
         // Default: add aggregate tag
-        if (!tags.Any(t => t.StartsWith($"{aggregate.GetType().Name}:")))
+        if (!tags.Any(t => t.StartsWith($"{aggregate.GetType().Name}:", StringComparison.Ordinal)))
         {
             var aggregateId = ExtractAggregateId(aggregate.StreamId);
             if (aggregateId != null)

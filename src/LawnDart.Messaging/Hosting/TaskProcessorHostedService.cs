@@ -47,7 +47,7 @@ public sealed class TaskProcessorHostedService<TProcessor> : BackgroundService
 
             try
             {
-                var commands = (await _processor.ProcessTasksAsync(stoppingToken)).ToList();
+                var commands = (await _processor.ProcessTasksAsync(stoppingToken).ConfigureAwait(false)).ToList();
 
                 if (_commandDispatcher is not null)
                 {
@@ -61,7 +61,7 @@ public sealed class TaskProcessorHostedService<TProcessor> : BackgroundService
                                 : null,
                             Headers = MessageTrace.WithCurrentTraceHeaders(null, activity)
                         };
-                        await _commandDispatcher.DispatchAsync(command, inbound, stoppingToken);
+                        await _commandDispatcher.DispatchAsync(command, inbound, stoppingToken).ConfigureAwait(false);
                     }
                 }
                 else if (commands.Count > 0)
@@ -96,13 +96,13 @@ public sealed class TaskProcessorHostedService<TProcessor> : BackgroundService
                         "TaskProcessor {Processor} entering backoff for {BackoffDuration} after {ErrorCount} consecutive errors",
                         ProcessorTypeName, _options.ErrorBackoffDuration, consecutiveErrors);
 
-                    await Task.Delay(_options.ErrorBackoffDuration, stoppingToken);
+                    await Task.Delay(_options.ErrorBackoffDuration, stoppingToken).ConfigureAwait(false);
                     consecutiveErrors = 0;
                     continue;
                 }
             }
 
-            await Task.Delay(_options.PollingInterval, stoppingToken);
+            await Task.Delay(_options.PollingInterval, stoppingToken).ConfigureAwait(false);
         }
     }
 }

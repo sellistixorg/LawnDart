@@ -13,6 +13,7 @@ using LawnDart.Outbox;
 using LawnDart.Serialization;
 using LawnDart.EventSourcing.Serialization;
 using LawnDart.EventSourcing.SqlServer.Snapshots;
+using LawnDart.Sql;
 
 namespace LawnDart.EventSourcing.SqlServer.EventStore;
 
@@ -61,6 +62,16 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
     private readonly string _qTypes;
     private readonly string _qSequence;
 
+    internal string QualifiedEventsTable => _qTable;
+
+    internal string QualifiedRegistryTable => _qRegistry;
+
+    internal string QualifiedTagsTable => _qTags;
+
+    internal string QualifiedTypesTable => _qTypes;
+
+    internal string QualifiedSequence => _qSequence;
+
     public SqlServerEventStore(
         string connectionString,
         IEventSerializer? serializer = null,
@@ -97,11 +108,11 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         // Pre-compute schema-qualified names (SchemaName defaults to "dbo" for backward compat)
         _schemaName  = string.IsNullOrWhiteSpace(_options.SchemaName) ? "dbo" : _options.SchemaName;
         ContextName  = string.IsNullOrWhiteSpace(_options.ContextName) ? "default" : _options.ContextName;
-        _qTable      = $"[{_schemaName}].[{_tableName}]";
-        _qRegistry  = $"[{_schemaName}].[{_registryTableName}]";
-        _qTags      = $"[{_schemaName}].[{_tagsTableName}]";
-        _qTypes     = $"[{_schemaName}].[{_typesTableName}]";
-        _qSequence  = $"[{_schemaName}].[EventSequencePosition]";
+        _qTable      = SqlIdentifier.Qualify(_schemaName, _tableName);
+        _qRegistry  = SqlIdentifier.Qualify(_schemaName, _registryTableName);
+        _qTags      = SqlIdentifier.Qualify(_schemaName, _tagsTableName);
+        _qTypes     = SqlIdentifier.Qualify(_schemaName, _typesTableName);
+        _qSequence  = SqlIdentifier.Qualify(_schemaName, "EventSequencePosition");
 
         // Optimize connection string for performance
         // NOTE: If connection string already has pool settings, preserve them
@@ -198,7 +209,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         // Optimize: Use registry if available (much faster than MAX query)
         if (_enableRegistry)
         {
-            var metadata = await GetStreamMetadataAsync(connection, transaction, streamId, cancellationToken);
+            var metadata = await GetStreamMetadataAsync(connection, transaction, streamId, cancellationToken).ConfigureAwait(false);
             if (metadata != null)
             {
                 return metadata.CurrentVersion;
@@ -212,10 +223,11 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
             WHERE StreamId = @StreamId
             ORDER BY Version DESC";
 
-        await using var command = new SqlCommand(sql, connection, transaction);
+        var command = new SqlCommand(sql, connection, transaction);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("@StreamId", streamId);
 
-        var result = await command.ExecuteScalarAsync(cancellationToken);
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return result != null && result != DBNull.Value ? Convert.ToInt64(result) : -1;
     }
 
@@ -227,9 +239,10 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         // Use SEQUENCE object for better performance (no table lock)
         var sql = $"SELECT NEXT VALUE FOR {_qSequence}";
 
-        await using var command = new SqlCommand(sql, connection, transaction);
+        var command = new SqlCommand(sql, connection, transaction);
+        await using var commandDisposal = command.ConfigureAwait(false);
 
-        var result = await command.ExecuteScalarAsync(cancellationToken);
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return Convert.ToInt64(result);
     }
 
@@ -256,7 +269,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
             var sequencePositions = new List<long>(chunkSize);
             for (int i = 0; i < chunkSize; i++)
             {
-                sequencePositions.Add(await GetNextSequencePositionAsync(connection, transaction, cancellationToken));
+                sequencePositions.Add(await GetNextSequencePositionAsync(connection, transaction, cancellationToken).ConfigureAwait(false));
             }
 
             var values = new List<string>(chunkSize);
@@ -311,9 +324,10 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                 (StreamId, Version, SequencePosition, EventTypeId, EventData, SchemaVersion, CodecId, Tags, Metadata, Timestamp, PartitionHash)
                 VALUES {string.Join(", ", values)}";
 
-            await using var command = new SqlCommand(sql, connection, transaction);
+            var command = new SqlCommand(sql, connection, transaction);
+            await using var commandDisposal = command.ConfigureAwait(false);
             command.Parameters.AddRange(parameters.ToArray());
-            await command.ExecuteNonQueryAsync(cancellationToken);
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
             await InsertEventTagsAsync(connection, transaction, envelopes, chunkStart, chunkSize, sequencePositions, cancellationToken)
                 .ConfigureAwait(false);
@@ -353,9 +367,10 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         var tagSql = $@"
             INSERT INTO {_qTags} (GlobalSequencePosition, Tag)
             VALUES {string.Join(", ", tagValues)}";
-        await using var tagCmd = new SqlCommand(tagSql, connection, transaction);
+        var tagCmd = new SqlCommand(tagSql, connection, transaction);
+        await using var tagCmdDisposal = tagCmd.ConfigureAwait(false);
         tagCmd.Parameters.AddRange(tagParameters.ToArray());
-        await tagCmd.ExecuteNonQueryAsync(cancellationToken);
+        await tagCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static SqlParameter PayloadParameter(string name, ReadOnlyMemory<byte> payload)
@@ -460,9 +475,10 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                 eventsParams.Add(new SqlParameter("@After", condition.After.Value));
             }
 
-            await using var eventsCmd = new SqlCommand(eventsSql, connection, transaction);
+            var eventsCmd = new SqlCommand(eventsSql, connection, transaction);
+            await using var eventsCmdDisposal = eventsCmd.ConfigureAwait(false);
             eventsCmd.Parameters.AddRange(eventsParams.ToArray());
-            await eventsCmd.ExecuteScalarAsync(cancellationToken);
+            await eventsCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -472,7 +488,8 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                 SELECT TOP 1 1
                 FROM {_qTags} WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
                 WHERE Tag = @Tag";
-            await using var command = new SqlCommand(sql, connection, transaction);
+            var command = new SqlCommand(sql, connection, transaction);
+            await using var commandDisposal = command.ConfigureAwait(false);
             command.Parameters.Add(new SqlParameter("@Tag", tag));
             if (condition.After.HasValue)
             {
@@ -480,7 +497,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                 command.Parameters.Add(new SqlParameter("@After", condition.After.Value));
             }
 
-            await command.ExecuteScalarAsync(cancellationToken);
+            await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -583,9 +600,10 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
             }
         }
 
-        await using var command = new SqlCommand(sql, connection, transaction);
+        var command = new SqlCommand(sql, connection, transaction);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddRange(parameters.ToArray());
-        var result = await command.ExecuteScalarAsync(cancellationToken);
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return result is not null && result is not DBNull;
     }
 
@@ -619,20 +637,20 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         {
             try
             {
-                return await operation(cancellationToken);
+                return await operation(cancellationToken).ConfigureAwait(false);
             }
             catch (SqlException ex) when (attempt < maxRetries && IsTransientSqlError(ex))
             {
                 var delay = TimeSpan.FromMilliseconds(baseDelay.TotalMilliseconds * (attempt + 1));
-                _logger?.LogWarning(
-                    "Transient SQL error (attempt {Attempt}/{Max}, code {Code}): {Message}. Retrying in {DelayMs}ms.",
-                    attempt + 1, maxRetries, ex.Number, ex.Message, delay.TotalMilliseconds);
-                await Task.Delay(delay, cancellationToken);
+                if (_logger is not null)
+                    SqlServerEventStoreLog.TransientSqlError(
+                        _logger, attempt + 1, maxRetries, ex.Number, ex.Message, delay.TotalMilliseconds);
+                await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
             }
         }
 
         // Final attempt — let any exception propagate naturally
-        return await operation(cancellationToken);
+        return await operation(cancellationToken).ConfigureAwait(false);
     }
 
     private static bool IsTransientSqlError(SqlException ex)
@@ -649,46 +667,50 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         // Ensure the target schema exists before creating any objects within it.
         // This is an idempotent guard — safe to call multiple times.
         var schemaSql = $@"
-            IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = '{_schemaName}')
+            IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = '{SqlIdentifier.Literal(_schemaName)}')
             BEGIN
-                EXEC('CREATE SCHEMA [{_schemaName}] AUTHORIZATION dbo');
+                EXEC('CREATE SCHEMA {SqlIdentifier.Literal(SqlIdentifier.Quote(_schemaName))} AUTHORIZATION dbo');
             END";
 
-        await using var schemaConn = new SqlConnection(_connectionString);
-        await schemaConn.OpenAsync(cancellationToken);
-        await using var schemaCmd = new SqlCommand(schemaSql, schemaConn);
-        await schemaCmd.ExecuteNonQueryAsync(cancellationToken);
+        var schemaConn = new SqlConnection(_connectionString);
+        await using var schemaConnDisposal = schemaConn.ConfigureAwait(false);
+        await schemaConn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        var schemaCmd = new SqlCommand(schemaSql, schemaConn);
+        await using var schemaCmdDisposal = schemaCmd.ConfigureAwait(false);
+        await schemaCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-        await EnsureSequenceAsync(connection, cancellationToken);
-        await ThrowIfIncompatibleEventsTableAsync(connection, cancellationToken);
-        await EnsureEventTypesTableAsync(connection, cancellationToken);
-        await EnsureEventsTableAsync(connection, cancellationToken);
-        await WarmEventTypesAsync(connection, cancellationToken);
+        await EnsureSequenceAsync(connection, cancellationToken).ConfigureAwait(false);
+        await ThrowIfIncompatibleEventsTableAsync(connection, cancellationToken).ConfigureAwait(false);
+        await EnsureEventTypesTableAsync(connection, cancellationToken).ConfigureAwait(false);
+        await EnsureEventsTableAsync(connection, cancellationToken).ConfigureAwait(false);
+        await WarmEventTypesAsync(connection, cancellationToken).ConfigureAwait(false);
 
         var tagsSql = $@"
-            IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'{_qTags}') AND type in (N'U'))
+            IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qTags)}') AND type in (N'U'))
             BEGIN
                 CREATE TABLE {_qTags} (
                     [GlobalSequencePosition] BIGINT NOT NULL,
                     [Tag]                    NVARCHAR(256) NOT NULL,
-                    CONSTRAINT [PK_{_tagsTableName}] PRIMARY KEY CLUSTERED ([Tag], [GlobalSequencePosition]),
-                    CONSTRAINT [FK_{_tagsTableName}_Events] FOREIGN KEY ([GlobalSequencePosition])
+                    CONSTRAINT {SqlIdentifier.Quote("PK_" + _tagsTableName)} PRIMARY KEY CLUSTERED ([Tag], [GlobalSequencePosition]),
+                    CONSTRAINT {SqlIdentifier.Quote("FK_" + _tagsTableName + "_Events")} FOREIGN KEY ([GlobalSequencePosition])
                         REFERENCES {_qTable}([SequencePosition]) ON DELETE CASCADE
                 );
-                CREATE NONCLUSTERED INDEX [IX_{_tagsTableName}_GlobalSequencePosition]
+                CREATE NONCLUSTERED INDEX {SqlIdentifier.Quote("IX_" + _tagsTableName + "_GlobalSequencePosition")}
                     ON {_qTags}([GlobalSequencePosition]);
             END";
-        await using var tagsCmd = new SqlCommand(tagsSql, connection);
-        await tagsCmd.ExecuteNonQueryAsync(cancellationToken);
+        var tagsCmd = new SqlCommand(tagsSql, connection);
+        await using var tagsCmdDisposal = tagsCmd.ConfigureAwait(false);
+        await tagsCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
         // Create stream registry table if enabled
         if (_enableRegistry)
         {
             var registrySql = $@"
-                IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'{_qRegistry}') AND type in (N'U'))
+                IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qRegistry)}') AND type in (N'U'))
                 BEGIN
                     CREATE TABLE {_qRegistry} (
                         [StreamId] NVARCHAR(255) PRIMARY KEY,
@@ -704,32 +726,33 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                         [Status] NVARCHAR(20) NOT NULL DEFAULT 'Active'
                     );
                     
-                    IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_AggregateType' AND object_id = OBJECT_ID(N'{_qRegistry}'))
+                    IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_AggregateType' AND object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qRegistry)}'))
                         CREATE INDEX [IX_AggregateType] ON {_qRegistry} ([AggregateType]);
-                    IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_TenantId' AND object_id = OBJECT_ID(N'{_qRegistry}'))
+                    IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_TenantId' AND object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qRegistry)}'))
                         CREATE INDEX [IX_TenantId] ON {_qRegistry} ([TenantId]);
-                    IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_LastSequencePosition' AND object_id = OBJECT_ID(N'{_qRegistry}'))
+                    IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_LastSequencePosition' AND object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qRegistry)}'))
                         CREATE INDEX [IX_LastSequencePosition] ON {_qRegistry} ([LastSequencePosition]);
-                    IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_LastEventAt' AND object_id = OBJECT_ID(N'{_qRegistry}'))
+                    IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_LastEventAt' AND object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qRegistry)}'))
                         CREATE INDEX [IX_LastEventAt] ON {_qRegistry} ([LastEventAt]);
-                    IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Status' AND object_id = OBJECT_ID(N'{_qRegistry}'))
+                    IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Status' AND object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qRegistry)}'))
                         CREATE INDEX [IX_Status] ON {_qRegistry} ([Status]);
                 END
                 ELSE
                 BEGIN
                     -- Add TenantId column if it doesn't exist (for existing tables)
-                    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'{_qRegistry}') AND name = 'TenantId')
+                    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qRegistry)}') AND name = 'TenantId')
                     BEGIN
                         ALTER TABLE {_qRegistry} ADD [TenantId] NVARCHAR(100) NULL;
-                        IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_TenantId' AND object_id = OBJECT_ID(N'{_qRegistry}'))
+                        IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_TenantId' AND object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qRegistry)}'))
                             CREATE INDEX [IX_TenantId] ON {_qRegistry} ([TenantId]);
                     END
                 END";
 
             try
             {
-                await using var registryCommand = new SqlCommand(registrySql, connection);
-                await registryCommand.ExecuteNonQueryAsync(cancellationToken);
+                var registryCommand = new SqlCommand(registrySql, connection);
+                await using var registryCommandDisposal = registryCommand.ConfigureAwait(false);
+                await registryCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
                 _logger?.LogInformation("Initialized stream registry schema for table {TableName}", _registryTableName);
             }
@@ -746,7 +769,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         var eventSnapTable = SqlServerSnapshotSchema.ResolveTableName(
             _options.EventSnapshotsTableName, SqlServerSnapshotSchema.DefaultEventTable, _tableName);
         await SqlServerSnapshotSchema.EnsureCreatedAsync(
-            connection, _schemaName, dcbSnapTable, eventSnapTable, cancellationToken);
+            connection, _schemaName, dcbSnapTable, eventSnapTable, cancellationToken).ConfigureAwait(false);
 
         _logger?.LogInformation("Initialized event store schema for table {TableName}", _tableName);
     }
@@ -754,43 +777,46 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
     private async Task EnsureSequenceAsync(SqlConnection connection, CancellationToken cancellationToken)
     {
         var sql = $@"
-            IF NOT EXISTS (SELECT * FROM sys.sequences WHERE name = 'EventSequencePosition' AND schema_id = SCHEMA_ID('{_schemaName}'))
+            IF NOT EXISTS (SELECT * FROM sys.sequences WHERE name = 'EventSequencePosition' AND schema_id = SCHEMA_ID('{SqlIdentifier.Literal(_schemaName)}'))
             BEGIN
                 CREATE SEQUENCE {_qSequence}
                     START WITH 1
                     INCREMENT BY 1
                     CACHE 1000;
             END";
-        await using var command = new SqlCommand(sql, connection);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        var command = new SqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async Task ThrowIfIncompatibleEventsTableAsync(SqlConnection connection, CancellationToken cancellationToken)
     {
-        await using var existsCmd = new SqlCommand(
-            $"SELECT CASE WHEN OBJECT_ID(N'{_qTable}', 'U') IS NULL THEN 0 ELSE 1 END",
+        var existsCmd = new SqlCommand(
+            $"SELECT CASE WHEN OBJECT_ID(N'{SqlIdentifier.Literal(_qTable)}', 'U') IS NULL THEN 0 ELSE 1 END",
             connection);
-        var exists = Convert.ToInt32(await existsCmd.ExecuteScalarAsync(cancellationToken)) == 1;
+        await using var existsCmdDisposal = existsCmd.ConfigureAwait(false);
+        var exists = Convert.ToInt32(await existsCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false)) == 1;
         if (!exists)
             return;
 
-        var found = await ReadSchemaFormatAsync(connection, cancellationToken);
+        var found = await ReadSchemaFormatAsync(connection, cancellationToken).ConfigureAwait(false);
         if (!string.Equals(found, CurrentSchemaFormat, StringComparison.Ordinal))
             throw new IncompatibleEventStoreSchemaException(_qTable, found, CurrentSchemaFormat);
     }
 
     private async Task EnsureEventsTableAsync(SqlConnection connection, CancellationToken cancellationToken)
     {
-        await using (var existsCmd = new SqlCommand(
-            $"SELECT CASE WHEN OBJECT_ID(N'{_qTable}', 'U') IS NULL THEN 0 ELSE 1 END",
-            connection))
+        var existsCmd = new SqlCommand(
+            $"SELECT CASE WHEN OBJECT_ID(N'{SqlIdentifier.Literal(_qTable)}', 'U') IS NULL THEN 0 ELSE 1 END",
+            connection);
+        await using (existsCmd.ConfigureAwait(false))
         {
-            var exists = Convert.ToInt32(await existsCmd.ExecuteScalarAsync(cancellationToken)) == 1;
+            var exists = Convert.ToInt32(await existsCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false)) == 1;
             if (exists)
                 return;
         }
 
-        var readable = $"[{_schemaName}].[{_tableName}_Readable]";
+        var readable = SqlIdentifier.Qualify(_schemaName, _tableName + "_Readable");
         var sql = $@"
             CREATE TABLE {_qTable} (
                 [StreamId] NVARCHAR(255) NOT NULL,
@@ -805,7 +831,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                 [Timestamp] DATETIME2 NOT NULL,
                 [PartitionHash] INT NOT NULL,
                 PRIMARY KEY ([StreamId], [Version]),
-                CONSTRAINT [FK_{_tableName}_EventTypes] FOREIGN KEY ([EventTypeId])
+                CONSTRAINT {SqlIdentifier.Quote("FK_" + _tableName + "_EventTypes")} FOREIGN KEY ([EventTypeId])
                     REFERENCES {_qTypes}([Id])
             );
             CREATE UNIQUE NONCLUSTERED INDEX [UX_SequencePosition]
@@ -819,7 +845,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
             CREATE NONCLUSTERED INDEX [{PartitionHashIndexName}]
                 ON {_qTable}([PartitionHash], [SequencePosition])
                 INCLUDE ([StreamId], [Version], [EventTypeId], [CodecId], [SchemaVersion], [Timestamp]);
-            EXEC('CREATE VIEW {readable} AS
+            EXEC('CREATE VIEW {SqlIdentifier.Literal(readable)} AS
                 SELECT
                     e.StreamId,
                     e.Version,
@@ -833,32 +859,34 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                     e.Metadata,
                     e.[Timestamp],
                     e.PartitionHash
-                FROM {_qTable} e
-                INNER JOIN {_qTypes} t ON t.Id = e.EventTypeId');
+                FROM {SqlIdentifier.Literal(_qTable)} e
+                INNER JOIN {SqlIdentifier.Literal(_qTypes)} t ON t.Id = e.EventTypeId');
             EXEC sys.sp_addextendedproperty
                 @name = N'{SchemaFormatPropertyName}',
                 @value = N'{CurrentSchemaFormat}',
-                @level0type = N'SCHEMA', @level0name = N'{_schemaName}',
-                @level1type = N'TABLE',  @level1name = N'{_tableName}';";
+                @level0type = N'SCHEMA', @level0name = N'{SqlIdentifier.Literal(_schemaName)}',
+                @level1type = N'TABLE',  @level1name = N'{SqlIdentifier.Literal(_tableName)}';";
 
-        await using var command = new SqlCommand(sql, connection);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        var command = new SqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async Task EnsureEventTypesTableAsync(SqlConnection connection, CancellationToken cancellationToken)
     {
         var sql = $@"
-            IF OBJECT_ID(N'{_qTypes}', 'U') IS NULL
+            IF OBJECT_ID(N'{SqlIdentifier.Literal(_qTypes)}', 'U') IS NULL
             BEGIN
                 CREATE TABLE {_qTypes} (
                     [Id] INT IDENTITY(1, 1) NOT NULL,
                     [Token] NVARCHAR(500) NOT NULL,
-                    CONSTRAINT [PK_{_typesTableName}] PRIMARY KEY ([Id]),
-                    CONSTRAINT [UX_{_typesTableName}_Token] UNIQUE ([Token])
+                    CONSTRAINT {SqlIdentifier.Quote("PK_" + _typesTableName)} PRIMARY KEY ([Id]),
+                    CONSTRAINT {SqlIdentifier.Quote("UX_" + _typesTableName + "_Token")} UNIQUE ([Token])
                 );
             END";
-        await using var command = new SqlCommand(sql, connection);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        var command = new SqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async Task WarmEventTypesAsync(SqlConnection connection, CancellationToken cancellationToken)
@@ -866,17 +894,18 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         var tokens = CatalogFamilyTokens().Distinct(StringComparer.Ordinal).ToList();
         if (tokens.Count > 0)
         {
-            await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
+            var transaction = ((SqlTransaction)await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false));
+            await using var transactionDisposal = transaction.ConfigureAwait(false);
             try
             {
                 foreach (var token in tokens.OrderBy(t => t, StringComparer.Ordinal))
                     await GetOrInsertEventTypeIdCoreAsync(connection, transaction, token, cancellationToken)
                         .ConfigureAwait(false);
-                await transaction.CommitAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
             }
             catch
             {
-                try { await transaction.RollbackAsync(cancellationToken); } catch { /* already rolled back */ }
+                try { await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false); } catch { /* already rolled back */ }
                 throw;
             }
         }
@@ -896,9 +925,11 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
     private async Task ReloadEventTypeCacheAsync(SqlConnection connection, CancellationToken cancellationToken)
     {
         var rows = new List<(int Id, string Token)>();
-        await using var command = new SqlCommand($"SELECT Id, Token FROM {_qTypes}", connection);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
+        var command = new SqlCommand($"SELECT Id, Token FROM {_qTypes}", connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
+        var reader = (await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false));
+        await using var readerDisposal = reader.ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             rows.Add((reader.GetInt32(0), reader.GetString(1)));
         _eventTypes.ReplaceAll(rows);
     }
@@ -918,8 +949,9 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         if (!missing)
             return;
 
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await ReloadEventTypeCacheAsync(connection, cancellationToken).ConfigureAwait(false);
     }
 
@@ -947,29 +979,32 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         if (_eventTypes.TryGetId(token, out _))
             return;
 
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
-        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        var transaction = ((SqlTransaction)await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false));
+        await using var transactionDisposal = transaction.ConfigureAwait(false);
         try
         {
             var id = await GetOrInsertEventTypeIdCoreAsync(connection, transaction, token, cancellationToken)
                 .ConfigureAwait(false);
             _eventTypes.Add(id, token);
-            await transaction.CommitAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (SqlException ex) when (ex.Number is 2627 or 2601)
         {
-            try { await transaction.RollbackAsync(cancellationToken); } catch { /* already rolled back */ }
-            await using var select = new SqlCommand(
+            try { await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false); } catch { /* already rolled back */ }
+            var select = new SqlCommand(
                 $"SELECT Id FROM {_qTypes} WHERE Token = @Token",
                 connection);
+            await using var selectDisposal = select.ConfigureAwait(false);
             select.Parameters.Add(new SqlParameter("@Token", token));
-            var id = Convert.ToInt32(await select.ExecuteScalarAsync(cancellationToken));
+            var id = Convert.ToInt32(await select.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false));
             _eventTypes.Add(id, token);
         }
         catch
         {
-            try { await transaction.RollbackAsync(cancellationToken); } catch { /* already rolled back */ }
+            try { await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false); } catch { /* already rolled back */ }
             throw;
         }
     }
@@ -980,22 +1015,23 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         string token,
         CancellationToken cancellationToken)
     {
-        await using (var select = new SqlCommand(
+        var select = new SqlCommand(
             $"""
             SELECT Id
             FROM {_qTypes} WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
             WHERE Token = @Token
             """,
             connection,
-            transaction))
+            transaction);
+        await using (select.ConfigureAwait(false))
         {
             select.Parameters.Add(new SqlParameter("@Token", token));
-            var existing = await select.ExecuteScalarAsync(cancellationToken);
+            var existing = await select.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
             if (existing is not null and not DBNull)
                 return Convert.ToInt32(existing);
         }
 
-        await using var insert = new SqlCommand(
+        var insert = new SqlCommand(
             $"""
             INSERT INTO {_qTypes} (Token)
             OUTPUT INSERTED.Id
@@ -1003,8 +1039,9 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
             """,
             connection,
             transaction);
+        await using var insertDisposal = insert.ConfigureAwait(false);
         insert.Parameters.Add(new SqlParameter("@Token", token));
-        return Convert.ToInt32(await insert.ExecuteScalarAsync(cancellationToken));
+        return Convert.ToInt32(await insert.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false));
     }
 
     private async Task<string?> ReadSchemaFormatAsync(SqlConnection connection, CancellationToken cancellationToken)
@@ -1016,10 +1053,11 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
               AND name = @Name
               AND minor_id = 0
             """;
-        await using var command = new SqlCommand(sql, connection);
+        var command = new SqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("@Table", _qTable);
         command.Parameters.AddWithValue("@Name", SchemaFormatPropertyName);
-        var result = await command.ExecuteScalarAsync(cancellationToken);
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return result is null or DBNull ? null : Convert.ToString(result);
     }
 
@@ -1035,8 +1073,9 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         if (string.IsNullOrWhiteSpace(streamId))
             throw new ArgumentException("Stream ID cannot be null or empty", nameof(streamId));
 
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         var sql = $@"
             SELECT StreamId, TenantId, AggregateType, AggregateId, CurrentVersion, LastSequencePosition,
@@ -1044,11 +1083,13 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
             FROM {_qRegistry}
             WHERE StreamId = @StreamId";
 
-        await using var command = new SqlCommand(sql, connection);
+        var command = new SqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("@StreamId", streamId);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (await reader.ReadAsync(cancellationToken))
+        var reader = (await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false));
+        await using var readerDisposal = reader.ConfigureAwait(false);
+        if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             return ReadStreamMetadata(reader);
         }
@@ -1066,8 +1107,9 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         if (string.IsNullOrWhiteSpace(aggregateType))
             throw new ArgumentException("Aggregate type cannot be null or empty", nameof(aggregateType));
 
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         var sql = $@"
             SELECT StreamId, TenantId, AggregateType, AggregateId, CurrentVersion, LastSequencePosition,
@@ -1076,12 +1118,14 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
             WHERE AggregateType = @AggregateType AND Status = 'Active'
             ORDER BY LastEventAt DESC";
 
-        await using var command = new SqlCommand(sql, connection);
+        var command = new SqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("@AggregateType", aggregateType);
 
         var streams = new List<StreamMetadata>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
+        var reader = (await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false));
+        await using var readerDisposal = reader.ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             streams.Add(ReadStreamMetadata(reader));
         }
@@ -1099,8 +1143,9 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         if (string.IsNullOrWhiteSpace(tag))
             throw new ArgumentException("Tag cannot be null or empty", nameof(tag));
 
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         var sql = $@"
             SELECT StreamId, TenantId, AggregateType, AggregateId, CurrentVersion, LastSequencePosition,
@@ -1110,12 +1155,14 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
               AND Status = 'Active'
             ORDER BY LastEventAt DESC";
 
-        await using var command = new SqlCommand(sql, connection);
+        var command = new SqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("@Tag", tag);
 
         var streams = new List<StreamMetadata>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
+        var reader = (await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false));
+        await using var readerDisposal = reader.ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             streams.Add(ReadStreamMetadata(reader));
         }
@@ -1130,8 +1177,9 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         if (!_enableRegistry)
             throw new InvalidOperationException("Stream registry is not enabled");
 
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         var sql = $@"
             SELECT StreamId
@@ -1145,15 +1193,17 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
 
         sql += " ORDER BY StreamId";
 
-        await using var command = new SqlCommand(sql, connection);
+        var command = new SqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         if (!string.IsNullOrWhiteSpace(prefix))
         {
             command.Parameters.AddWithValue("@Prefix", prefix + "%");
         }
 
         var streamIds = new List<string>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
+        var reader = (await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false));
+        await using var readerDisposal = reader.ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             streamIds.Add(reader.GetString("StreamId"));
         }
@@ -1169,8 +1219,9 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         if (!_enableRegistry)
             throw new InvalidOperationException("Stream registry is not enabled");
 
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         var sql = $@"
             SELECT StreamId, TenantId, AggregateType, AggregateId, CurrentVersion, LastSequencePosition,
@@ -1185,12 +1236,14 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
             sql += $" OFFSET 0 ROWS FETCH NEXT {limit.Value} ROWS ONLY";
         }
 
-        await using var command = new SqlCommand(sql, connection);
+        var command = new SqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("@AfterSequencePosition", afterSequencePosition);
 
         var streams = new List<StreamMetadata>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
+        var reader = (await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false));
+        await using var readerDisposal = reader.ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             streams.Add(ReadStreamMetadata(reader));
         }
@@ -1204,18 +1257,20 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         if (!_enableRegistry)
             throw new InvalidOperationException("Stream registry is not enabled");
 
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         var sql = $"SELECT COUNT_BIG(*) FROM {_qRegistry} WHERE Status = 'Active'";
         if (!string.IsNullOrWhiteSpace(prefix))
             sql += " AND StreamId LIKE @Prefix";
 
-        await using var command = new SqlCommand(sql, connection);
+        var command = new SqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         if (!string.IsNullOrWhiteSpace(prefix))
             command.Parameters.AddWithValue("@Prefix", prefix + "%");
 
-        var result = await command.ExecuteScalarAsync(cancellationToken);
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return result is long l ? l : Convert.ToInt64(result);
     }
 
@@ -1228,16 +1283,18 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
     /// </remarks>
     public async Task<long> GetCurrentSequenceAsync(CancellationToken cancellationToken = default)
     {
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         var sql = $"""
             SELECT ISNULL(MAX(SequencePosition), 0)
             FROM {_qTable}
             """;
 
-        await using var command = new SqlCommand(sql, connection);
-        var result = await command.ExecuteScalarAsync(cancellationToken);
+        var command = new SqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return result is long l ? l : result is null ? 0L : Convert.ToInt64(result);
     }
 
@@ -1261,7 +1318,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         IReadOnlyList<string> tags,
         CancellationToken cancellationToken)
     {
-        var existing = await GetStreamMetadataAsync(connection, transaction, streamId, cancellationToken);
+        var existing = await GetStreamMetadataAsync(connection, transaction, streamId, cancellationToken).ConfigureAwait(false);
         var now = DateTime.UtcNow;
         var tenantId = ExtractTenantId(streamId);
         var aggregateType = ExtractAggregateType(streamId);
@@ -1279,7 +1336,8 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                 (@StreamId, @TenantId, @AggregateType, @AggregateId, @CurrentVersion, @LastSequencePosition,
                  @CreatedAt, @LastEventAt, @EventCount, @Tags, @Status)";
 
-            await using var command = new SqlCommand(sql, connection, transaction);
+            var command = new SqlCommand(sql, connection, transaction);
+            await using var commandDisposal = command.ConfigureAwait(false);
             command.Parameters.AddWithValue("@StreamId", streamId);
             command.Parameters.AddWithValue("@TenantId", tenantId ?? (object)DBNull.Value);
             command.Parameters.AddWithValue("@AggregateType", aggregateType);
@@ -1292,7 +1350,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
             command.Parameters.AddWithValue("@Tags", tagsJson);
             command.Parameters.AddWithValue("@Status", "Active");
 
-            await command.ExecuteNonQueryAsync(cancellationToken);
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
         else
         {
@@ -1309,7 +1367,8 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                     Tags = @Tags
                 WHERE StreamId = @StreamId";
 
-            await using var command = new SqlCommand(sql, connection, transaction);
+            var command = new SqlCommand(sql, connection, transaction);
+            await using var commandDisposal = command.ConfigureAwait(false);
             command.Parameters.AddWithValue("@StreamId", streamId);
             command.Parameters.AddWithValue("@CurrentVersion", currentVersion);
             command.Parameters.AddWithValue("@LastSequencePosition", lastSequencePosition);
@@ -1317,7 +1376,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
             command.Parameters.AddWithValue("@EventCountDelta", eventCountDelta);
             command.Parameters.AddWithValue("@Tags", mergedTagsJson);
 
-            await command.ExecuteNonQueryAsync(cancellationToken);
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -1333,11 +1392,13 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
             FROM {_qRegistry}
             WHERE StreamId = @StreamId";
 
-        await using var command = new SqlCommand(sql, connection, transaction);
+        var command = new SqlCommand(sql, connection, transaction);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("@StreamId", streamId);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (await reader.ReadAsync(cancellationToken))
+        var reader = (await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false));
+        await using var readerDisposal = reader.ConfigureAwait(false);
+        if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             return ReadStreamMetadata(reader);
         }
@@ -1488,8 +1549,9 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                 Attempts = 0
             };
 
+            var qOutbox = SqlIdentifier.Qualify(_schemaName, _options.OutboxTableName);
             var sql = $@"
-                INSERT INTO [{_schemaName}].[{_options.OutboxTableName}] (
+                INSERT INTO {qOutbox} (
                     Id, EventType, SchemaVersion, CodecId, Payload, Metadata, CreatedAt,
                     Attempts, StreamId, SequencePosition
                 )
@@ -1498,7 +1560,8 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                     @Attempts, @StreamId, @SequencePosition
                 )";
 
-            await using var command = new SqlCommand(sql, connection, transaction);
+            var command = new SqlCommand(sql, connection, transaction);
+            await using var commandDisposal = command.ConfigureAwait(false);
             command.Parameters.AddWithValue("@Id", outboxMessage.Id);
             command.Parameters.AddWithValue("@EventType", outboxMessage.EventType);
             command.Parameters.AddWithValue("@SchemaVersion", outboxMessage.SchemaVersion);
@@ -1510,13 +1573,11 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
             command.Parameters.AddWithValue("@StreamId", outboxMessage.StreamId);
             command.Parameters.AddWithValue("@SequencePosition", outboxMessage.SequencePosition);
 
-            await command.ExecuteNonQueryAsync(cancellationToken);
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        _logger?.LogDebug(
-            "Wrote {Count} events to outbox for stream {StreamId}",
-            envelopes.Count,
-            streamId);
+        if (_logger is not null)
+            SqlServerEventStoreLog.OutboxEventsWritten(_logger, envelopes.Count, streamId);
     }
 
     /// <inheritdoc />
@@ -1622,7 +1683,8 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         }
         catch (Exception ex)
         {
-            _logger?.LogError(ex, "SQL Server subscription {SubscriberId} failed.", handle.SubscriberId);
+            if (_logger is not null)
+                SqlServerEventStoreLog.SubscriptionFailed(_logger, ex, handle.SubscriberId);
         }
         finally
         {
@@ -1648,8 +1710,9 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         if (string.IsNullOrWhiteSpace(streamId))
             throw new ArgumentException("Stream ID cannot be null or empty", nameof(streamId));
 
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         return await ReadRecordedStreamCoreAsync(
             connection, streamId, fromVersion, toVersion, toCommitTimestamp, cancellationToken)
             .ConfigureAwait(false);
@@ -1665,8 +1728,9 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         if (string.IsNullOrWhiteSpace(streamId))
             throw new ArgumentException("Stream ID cannot be null or empty", nameof(streamId));
 
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         foreach (var frame in await ReadRecordedStreamCoreAsync(
             connection, streamId, fromVersion, toVersion, toCommitTimestamp, cancellationToken)
@@ -1736,15 +1800,17 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         {
             await EnsureEventTypeIdsAsync(envelopes, ct).ConfigureAwait(false);
 
-            await using var connection = new SqlConnection(_connectionString);
-            await connection.OpenAsync(ct);
-            await using var transaction = connection.BeginTransaction();
+            var connection = new SqlConnection(_connectionString);
+            await using var connectionDisposal = connection.ConfigureAwait(false);
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var transaction = connection.BeginTransaction();
+            await using var transactionDisposal = transaction.ConfigureAwait(false);
 
             try
             {
                 if (expectedVersion.HasValue)
                 {
-                    var currentVersion = await GetCurrentVersionAsync(connection, transaction, streamId, ct);
+                    var currentVersion = await GetCurrentVersionAsync(connection, transaction, streamId, ct).ConfigureAwait(false);
                     if (currentVersion != expectedVersion.Value)
                     {
                         throw new ConcurrencyException(
@@ -1754,10 +1820,10 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                     }
                 }
 
-                var streamCurrentVersion = await GetCurrentVersionAsync(connection, transaction, streamId, ct);
+                var streamCurrentVersion = await GetCurrentVersionAsync(connection, transaction, streamId, ct).ConfigureAwait(false);
                 var startingVersion = streamCurrentVersion < 0 ? 1 : streamCurrentVersion + 1;
                 var sequencePositions = await InsertEventsBatchAsync(
-                    connection, transaction, streamId, startingVersion, envelopes, ct);
+                    connection, transaction, streamId, startingVersion, envelopes, ct).ConfigureAwait(false);
 
                 if (_enableRegistry)
                 {
@@ -1769,7 +1835,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                         sequencePositions.Last(),
                         envelopes.Count,
                         UnionTags(envelopes),
-                        ct);
+                        ct).ConfigureAwait(false);
                 }
 
                 if (_options.EnableOutbox)
@@ -1779,19 +1845,19 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                         .ConfigureAwait(false);
                 }
 
-                await transaction.CommitAsync(ct);
+                await transaction.CommitAsync(ct).ConfigureAwait(false);
                 return new AppendResult(sequencePositions, null, startingVersion + envelopes.Count - 1);
             }
             catch
             {
                 if (transaction.Connection != null)
                 {
-                    try { await transaction.RollbackAsync(ct); }
+                    try { await transaction.RollbackAsync(ct).ConfigureAwait(false); }
                     catch { /* already rolled back */ }
                 }
                 throw;
             }
-        }, cancellationToken);
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<AppendResult> AppendAsync(
@@ -1810,17 +1876,19 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         {
             await EnsureEventTypeIdsAsync(envelopes, ct).ConfigureAwait(false);
 
-            await using var connection = new SqlConnection(_connectionString);
-            await connection.OpenAsync(ct);
-            await using var transaction = connection.BeginTransaction();
+            var connection = new SqlConnection(_connectionString);
+            await using var connectionDisposal = connection.ConfigureAwait(false);
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var transaction = connection.BeginTransaction();
+            await using var transactionDisposal = transaction.ConfigureAwait(false);
 
             try
             {
-                await AcquireDcbFenceLocksAsync(connection, transaction, condition, ct);
+                await AcquireDcbFenceLocksAsync(connection, transaction, condition, ct).ConfigureAwait(false);
 
-                if (await AppendConditionMatchesAsync(connection, transaction, condition, ct))
+                if (await AppendConditionMatchesAsync(connection, transaction, condition, ct).ConfigureAwait(false))
                 {
-                    await transaction.RollbackAsync(ct);
+                    await transaction.RollbackAsync(ct).ConfigureAwait(false);
                     throw new ConcurrencyException(
                         "Append condition failed: matching events exist",
                         condition.After);
@@ -1837,7 +1905,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                     ? $"{tenantId}:dcb:{Guid.NewGuid()}"
                     : $"dcb:{Guid.NewGuid()}";
                 var sequencePositions = await InsertEventsBatchAsync(
-                    connection, transaction, streamId, 0, envelopes, ct);
+                    connection, transaction, streamId, 0, envelopes, ct).ConfigureAwait(false);
 
                 if (_enableRegistry)
                 {
@@ -1849,7 +1917,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                         sequencePositions.Last(),
                         envelopes.Count,
                         UnionTags(envelopes),
-                        ct);
+                        ct).ConfigureAwait(false);
                 }
 
                 if (_options.EnableOutbox)
@@ -1859,19 +1927,19 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                         .ConfigureAwait(false);
                 }
 
-                await transaction.CommitAsync(ct);
+                await transaction.CommitAsync(ct).ConfigureAwait(false);
                 return new AppendResult(sequencePositions);
             }
             catch
             {
                 if (transaction.Connection != null)
                 {
-                    try { await transaction.RollbackAsync(ct); }
+                    try { await transaction.RollbackAsync(ct).ConfigureAwait(false); }
                     catch { /* already rolled back */ }
                 }
                 throw;
             }
-        }, cancellationToken);
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<IReadOnlyList<RecordedEvent>> ReadRecordedStreamCoreAsync(
@@ -1894,7 +1962,8 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
 
         sql += " ORDER BY Version";
 
-        await using var command = new SqlCommand(sql, connection);
+        var command = new SqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("@StreamId", streamId);
         command.Parameters.AddWithValue("@FromVersion", fromVersion);
         if (toVersion.HasValue)
@@ -1903,9 +1972,10 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
             command.Parameters.AddWithValue("@ToTimestamp", toCommitTimestamp.Value);
 
         var rows = new List<EventRow>();
-        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        var reader = (await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false));
+        await using (reader.ConfigureAwait(false))
         {
-            while (await reader.ReadAsync(cancellationToken))
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
                 rows.Add(ReadEventRow(reader));
         }
 
@@ -1934,15 +2004,18 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         if (built.ShortCircuited)
             return [];
 
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
-        await using var command = new SqlCommand(built.Sql, connection);
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        var command = new SqlCommand(built.Sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddRange(built.Parameters.ToArray());
 
         var rows = new List<EventRow>();
-        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        var reader = (await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false));
+        await using (reader.ConfigureAwait(false))
         {
-            while (await reader.ReadAsync(cancellationToken))
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
                 rows.Add(ReadEventRow(reader));
         }
 
@@ -1988,11 +2061,13 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         if (built.ShortCircuited)
             return 0L;
 
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
-        await using var command = new SqlCommand(built.Sql, connection);
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        var command = new SqlCommand(built.Sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddRange(built.Parameters.ToArray());
-        var result = await command.ExecuteScalarAsync(cancellationToken);
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return result is long l ? l : result is null || result is DBNull ? 0L : Convert.ToInt64(result);
     }
 }

@@ -43,12 +43,12 @@ public abstract class DcbProjector<TState> where TState : IState, new()
 
         // Collect then sort — streaming yields per-segment, not globally ordered.
         var events = new List<SequencedEvent>();
-        await foreach (var evt in eventStore.ReadByQueryStreamAsync(query, cancellationToken: cancellationToken))
+        await foreach (var evt in eventStore.ReadByQueryStreamAsync(query, cancellationToken: cancellationToken).ConfigureAwait(false))
             events.Add(evt);
 
         foreach (var sequencedEvent in events.OrderBy(e => e.SequencePosition))
         {
-            await ProjectEventAsync(sequencedEvent.Event, sequencedEvent.Metadata, cancellationToken);
+            await ProjectEventAsync(sequencedEvent.Event, sequencedEvent.Metadata, cancellationToken).ConfigureAwait(false);
         }
     }
 }

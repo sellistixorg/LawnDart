@@ -45,7 +45,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport
         foreach (var handler in snapshot)
         {
             var typed = (Func<TMessage, MessageContext, CancellationToken, Task>)handler;
-            await typed(message, context, cancellationToken);
+            await typed(message, context, cancellationToken).ConfigureAwait(false);
         }
     }
 

@@ -47,7 +47,7 @@ public sealed class ReactorHostedService<TReactor, TEvent> : BackgroundService
     {
         var messageId = context.MessageId;
 
-        if (messageId is not null && await _inboxStore.IsProcessedAsync(messageId, ct))
+        if (messageId is not null && await _inboxStore.IsProcessedAsync(messageId, ct).ConfigureAwait(false))
         {
             MessagingTelemetry.RecordInboxDuplicate(EventTypeName);
             _logger.LogDebug(
@@ -61,13 +61,13 @@ public sealed class ReactorHostedService<TReactor, TEvent> : BackgroundService
 
         try
         {
-            var commands = (await _reactor.ReactAsync(@event, context, ct)).ToList();
+            var commands = (await _reactor.ReactAsync(@event, context, ct).ConfigureAwait(false)).ToList();
 
             if (_commandDispatcher is not null)
             {
                 foreach (var command in commands)
                 {
-                    await _commandDispatcher.DispatchAsync(command, context.CreateChild(), ct);
+                    await _commandDispatcher.DispatchAsync(command, context.CreateChild(), ct).ConfigureAwait(false);
                 }
             }
             else if (commands.Count > 0)
@@ -79,7 +79,7 @@ public sealed class ReactorHostedService<TReactor, TEvent> : BackgroundService
 
             if (messageId is not null)
             {
-                await _inboxStore.MarkProcessedAsync(messageId, DateTimeOffset.UtcNow, ct);
+                await _inboxStore.MarkProcessedAsync(messageId, DateTimeOffset.UtcNow, ct).ConfigureAwait(false);
             }
 
             var elapsed = TimeProvider.System.GetElapsedTime(start);

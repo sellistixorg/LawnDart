@@ -2,6 +2,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
 using LawnDart.Projections.Storage;
+using LawnDart.Sql;
 
 namespace LawnDart.Projections.Checkpoints;
 
@@ -15,6 +16,8 @@ public class SqlCheckpointStore : ICheckpointStore
     private readonly string _tableName = "ProjectionCheckpoints";
     private readonly string _schemaName;
     private readonly string _qualifiedTableName;
+
+    internal string QualifiedTableName => _qualifiedTableName;
     private readonly IViewStore _viewStore;
 
     public SqlCheckpointStore(
@@ -27,7 +30,7 @@ public class SqlCheckpointStore : ICheckpointStore
         _viewStore           = viewStore ?? throw new ArgumentNullException(nameof(viewStore));
         _logger              = logger;
         _schemaName          = string.IsNullOrWhiteSpace(schemaName) ? "dbo" : schemaName;
-        _qualifiedTableName  = $"[{_schemaName}].[{_tableName}]";
+        _qualifiedTableName  = SqlIdentifier.Qualify(_schemaName, _tableName);
     }
 
     public async Task<ProjectionCheckpoint?> GetCheckpointAsync(
@@ -35,20 +38,23 @@ public class SqlCheckpointStore : ICheckpointStore
         int nodeId,
         CancellationToken cancellationToken = default)
     {
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         var sql = $@"
             SELECT ProjectionType, NodeId, LastSequencePosition, LastUpdated, TotalEventsProcessed
             FROM {_qualifiedTableName}
             WHERE ProjectionType = @ProjectionType AND NodeId = @NodeId";
 
-        await using var command = new SqlCommand(sql, connection);
+        var command = new SqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("@ProjectionType", projectionType);
         command.Parameters.AddWithValue("@NodeId", nodeId);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (await reader.ReadAsync(cancellationToken))
+        var reader = (await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false));
+        await using var readerDisposal = reader.ConfigureAwait(false);
+        if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             return new ProjectionCheckpoint
             {
@@ -74,8 +80,9 @@ public class SqlCheckpointStore : ICheckpointStore
         {
             try
             {
-                await using var connection = new SqlConnection(_connectionString);
-                await connection.OpenAsync(cancellationToken);
+                var connection = new SqlConnection(_connectionString);
+                await using var connectionDisposal = connection.ConfigureAwait(false);
+                await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
                 // CRITICAL: LastSequencePosition must be monotonically increasing.
                 // Multiple projection instances on the same node process different streams with different sequence positions.
@@ -101,17 +108,19 @@ public class SqlCheckpointStore : ICheckpointStore
                         INSERT (ProjectionType, NodeId, LastSequencePosition, LastUpdated, TotalEventsProcessed)
                         VALUES (@ProjectionType, @NodeId, @LastSequencePosition, @LastUpdated, @TotalEventsProcessed);";
 
-                await using var command = new SqlCommand(sql, connection);
+                var command = new SqlCommand(sql, connection);
+                await using var commandDisposal = command.ConfigureAwait(false);
                 command.Parameters.AddWithValue("@ProjectionType", checkpoint.ProjectionType);
                 command.Parameters.AddWithValue("@NodeId", checkpoint.NodeId);
                 command.Parameters.AddWithValue("@LastSequencePosition", checkpoint.LastSequencePosition);
                 command.Parameters.AddWithValue("@LastUpdated", checkpoint.LastUpdated);
                 command.Parameters.AddWithValue("@TotalEventsProcessed", checkpoint.TotalEventsProcessed);
 
-                await command.ExecuteNonQueryAsync(cancellationToken);
+                await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
                 
-                _logger?.LogDebug("Saved checkpoint for {ProjectionType} on Node {NodeId} at position {Position}", 
-                    checkpoint.ProjectionType, checkpoint.NodeId, checkpoint.LastSequencePosition);
+                if (_logger is not null)
+                    SqlCheckpointStoreLog.CheckpointSaved(
+                        _logger, checkpoint.ProjectionType, checkpoint.NodeId, checkpoint.LastSequencePosition);
                 return; // Success - exit retry loop
             }
             catch (SqlException sqlEx) when (
@@ -122,19 +131,17 @@ public class SqlCheckpointStore : ICheckpointStore
                 // 10053 = Connection broken/reset
                 retryCount++;
                 var delay = TimeSpan.FromMilliseconds(50 * Math.Pow(2, retryCount)); // 100ms, 200ms, 400ms
-                _logger?.LogWarning(
-                    "Connection pool timeout (retry {RetryCount}/{MaxRetries}) for checkpoint {ProjectionType}:Node{NodeId}, retrying in {Delay}ms",
-                    retryCount, maxRetries, checkpoint.ProjectionType, checkpoint.NodeId, delay.TotalMilliseconds);
-                await Task.Delay(delay, cancellationToken);
+                if (_logger is not null)
+                    SqlCheckpointStoreLog.CheckpointSaveRetry(
+                        _logger, retryCount, maxRetries, checkpoint.ProjectionType, checkpoint.NodeId, delay.TotalMilliseconds);
+                await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                _logger?.LogError(ex,
-                    "Error saving checkpoint for {ProjectionType} on Node {NodeId} | " +
-                    "Error Type: {ErrorType} | Message: {Message} | " +
-                    "Retry count: {RetryCount}",
-                    checkpoint.ProjectionType, checkpoint.NodeId,
-                    ex.GetType().FullName, ex.Message, retryCount);
+                if (_logger is not null)
+                    SqlCheckpointStoreLog.CheckpointSaveFailed(
+                        _logger, ex, checkpoint.ProjectionType, checkpoint.NodeId,
+                        ex.GetType().FullName, ex.Message, retryCount);
                 throw; // Re-throw if not a retryable error or max retries reached
             }
         }
@@ -144,8 +151,9 @@ public class SqlCheckpointStore : ICheckpointStore
         string projectionType,
         CancellationToken cancellationToken = default)
     {
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         var sql = $@"
             SELECT ProjectionType, NodeId, LastSequencePosition, LastUpdated, TotalEventsProcessed
@@ -153,12 +161,14 @@ public class SqlCheckpointStore : ICheckpointStore
             WHERE ProjectionType = @ProjectionType
             ORDER BY NodeId";
 
-        await using var command = new SqlCommand(sql, connection);
+        var command = new SqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("@ProjectionType", projectionType);
         var checkpoints = new List<ProjectionCheckpoint>();
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
+        var reader = (await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false));
+        await using var readerDisposal = reader.ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             checkpoints.Add(new ProjectionCheckpoint
             {
@@ -176,19 +186,22 @@ public class SqlCheckpointStore : ICheckpointStore
     public async Task<IEnumerable<ProjectionCheckpoint>> GetAllCheckpointsAsync(
         CancellationToken cancellationToken = default)
     {
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         var sql = $@"
             SELECT ProjectionType, NodeId, LastSequencePosition, LastUpdated, TotalEventsProcessed
             FROM {_qualifiedTableName}
             ORDER BY ProjectionType, NodeId";
 
-        await using var command = new SqlCommand(sql, connection);
+        var command = new SqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         var checkpoints = new List<ProjectionCheckpoint>();
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
+        var reader = (await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false));
+        await using var readerDisposal = reader.ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             checkpoints.Add(new ProjectionCheckpoint
             {
@@ -210,13 +223,13 @@ public class SqlCheckpointStore : ICheckpointStore
     {
         // Delegate to view store to read checkpoint from view metadata
         var result = await _viewStore.GetViewWithCheckpointAsync(
-            projectionType, streamId, cancellationToken);
+            projectionType, streamId, cancellationToken).ConfigureAwait(false);
         
         if (result.HasValue)
         {
-            _logger?.LogDebug(
-                "Retrieved stream checkpoint from view: {ProjectionType}:{StreamId} | Checkpoint: {Checkpoint}",
-                projectionType, streamId, result.Value.Checkpoint);
+            if (_logger is not null)
+                SqlCheckpointStoreLog.StreamCheckpointRetrieved(
+                    _logger, projectionType, streamId, result.Value.Checkpoint);
             
             return result.Value.Checkpoint;
         }
@@ -232,9 +245,8 @@ public class SqlCheckpointStore : ICheckpointStore
     {
         // Checkpoint is saved with view in ProjectionInstanceActor.SaveView()
         // This method is a no-op - checkpoint already persisted with view
-        _logger?.LogTrace(
-            "SaveStreamCheckpointAsync called for {ProjectionType}:{StreamId} at position {Position} (no-op, checkpoint saved with view)",
-            projectionType, streamId, sequencePosition);
+        if (_logger is not null)
+            SqlCheckpointStoreLog.StreamCheckpointSaveNoOp(_logger, projectionType, streamId, sequencePosition);
         
         return Task.CompletedTask;
     }
@@ -244,8 +256,9 @@ public class SqlCheckpointStore : ICheckpointStore
         int? nodeId = null,
         CancellationToken cancellationToken = default)
     {
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         string sql;
         if (nodeId.HasValue)
@@ -257,12 +270,13 @@ public class SqlCheckpointStore : ICheckpointStore
             sql = $"DELETE FROM {_qualifiedTableName} WHERE ProjectionType = @ProjectionType";
         }
 
-        await using var command = new SqlCommand(sql, connection);
+        var command = new SqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("@ProjectionType", projectionType);
         if (nodeId.HasValue)
             command.Parameters.AddWithValue("@NodeId", nodeId.Value);
 
-        var rows = await command.ExecuteNonQueryAsync(cancellationToken);
+        var rows = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         _logger?.LogDebug("Deleted {Rows} checkpoint row(s) for {ProjectionType} (nodeId={NodeId})",
             rows, projectionType, nodeId?.ToString() ?? "all");
     }
@@ -274,39 +288,44 @@ public class SqlCheckpointStore : ICheckpointStore
     /// </summary>
     public async Task InitializeSchemaAsync(CancellationToken cancellationToken = default)
     {
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         // Ensure the target schema exists before creating any objects within it.
         var schemaSql = $@"
-            IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = '{_schemaName}')
+            IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = '{SqlIdentifier.Literal(_schemaName)}')
             BEGIN
-                EXEC('CREATE SCHEMA [{_schemaName}] AUTHORIZATION dbo');
+                EXEC('CREATE SCHEMA {SqlIdentifier.Literal(SqlIdentifier.Quote(_schemaName))} AUTHORIZATION dbo');
             END";
-        await using var schemaCmd = new SqlCommand(schemaSql, connection);
-        await schemaCmd.ExecuteNonQueryAsync(cancellationToken);
+        var schemaCmd = new SqlCommand(schemaSql, connection);
+        await using var schemaCmdDisposal = schemaCmd.ConfigureAwait(false);
+        await schemaCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
         // Check if table exists and if it has NodeId column
         var checkColumnSql = $@"
-            IF EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'{_qualifiedTableName}') AND type in (N'U'))
+            IF EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qualifiedTableName)}') AND type in (N'U'))
             BEGIN
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'{_qualifiedTableName}') AND name = 'NodeId')
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qualifiedTableName)}') AND name = 'NodeId')
                 BEGIN
                     -- Migrate existing table: Add NodeId column with default 0, then update primary key
                     ALTER TABLE {_qualifiedTableName} ADD [NodeId] INT NOT NULL DEFAULT 0;
                     
                     -- Drop old primary key if it exists
-                    DECLARE @PKName NVARCHAR(200) = (SELECT name FROM sys.key_constraints WHERE parent_object_id = OBJECT_ID(N'{_qualifiedTableName}') AND type = 'PK');
+                    DECLARE @PKName NVARCHAR(200) = (SELECT name FROM sys.key_constraints WHERE parent_object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qualifiedTableName)}') AND type = 'PK');
                     IF @PKName IS NOT NULL
-                        EXEC('ALTER TABLE {_qualifiedTableName} DROP CONSTRAINT [' + @PKName + ']');
+                    BEGIN
+                        DECLARE @DropPk NVARCHAR(MAX) = N'ALTER TABLE {SqlIdentifier.Literal(_qualifiedTableName)} DROP CONSTRAINT ' + QUOTENAME(@PKName);
+                        EXEC(@DropPk);
+                    END
                     
                     -- Create new composite primary key
-                    ALTER TABLE {_qualifiedTableName} ADD CONSTRAINT [PK_{_tableName}] PRIMARY KEY ([ProjectionType], [NodeId]);
+                    ALTER TABLE {_qualifiedTableName} ADD CONSTRAINT {SqlIdentifier.Quote("PK_" + _tableName)} PRIMARY KEY ([ProjectionType], [NodeId]);
                 END
             END";
 
         var createTableSql = $@"
-            IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'{_qualifiedTableName}') AND type in (N'U'))
+            IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qualifiedTableName)}') AND type in (N'U'))
             BEGIN
                 CREATE TABLE {_qualifiedTableName} (
                     [ProjectionType] NVARCHAR(200) NOT NULL,
@@ -314,34 +333,37 @@ public class SqlCheckpointStore : ICheckpointStore
                     [LastSequencePosition] BIGINT NOT NULL,
                     [LastUpdated] DATETIME2 NOT NULL,
                     [TotalEventsProcessed] BIGINT NOT NULL DEFAULT 0,
-                    CONSTRAINT [PK_{_tableName}] PRIMARY KEY ([ProjectionType], [NodeId])
+                    CONSTRAINT {SqlIdentifier.Quote("PK_" + _tableName)} PRIMARY KEY ([ProjectionType], [NodeId])
                 );
             END";
 
         // PK (ProjectionType, NodeId) covers all store query patterns.
         // Drop obsolete nonclustered indexes that duplicate the PK or are unused.
         var indexSql = $@"
-            IF EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'{_qualifiedTableName}') AND type in (N'U'))
+            IF EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qualifiedTableName)}') AND type in (N'U'))
             BEGIN
-                IF EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_LastUpdated' AND object_id = OBJECT_ID(N'{_qualifiedTableName}'))
+                IF EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_LastUpdated' AND object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qualifiedTableName)}'))
                     DROP INDEX [IX_LastUpdated] ON {_qualifiedTableName};
 
-                IF EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_ProjectionType_NodeId' AND object_id = OBJECT_ID(N'{_qualifiedTableName}'))
+                IF EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_ProjectionType_NodeId' AND object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qualifiedTableName)}'))
                     DROP INDEX [IX_ProjectionType_NodeId] ON {_qualifiedTableName};
             END";
 
         try
         {
             // First, migrate existing table if needed
-            await using var migrateCommand = new SqlCommand(checkColumnSql, connection);
-            await migrateCommand.ExecuteNonQueryAsync(cancellationToken);
+            var migrateCommand = new SqlCommand(checkColumnSql, connection);
+            await using var migrateCommandDisposal = migrateCommand.ConfigureAwait(false);
+            await migrateCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             
             // Then, create table if it doesn't exist
-            await using var createCommand = new SqlCommand(createTableSql, connection);
-            await createCommand.ExecuteNonQueryAsync(cancellationToken);
+            var createCommand = new SqlCommand(createTableSql, connection);
+            await using var createCommandDisposal = createCommand.ConfigureAwait(false);
+            await createCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
-            await using var indexCommand = new SqlCommand(indexSql, connection);
-            await indexCommand.ExecuteNonQueryAsync(cancellationToken);
+            var indexCommand = new SqlCommand(indexSql, connection);
+            await using var indexCommandDisposal = indexCommand.ConfigureAwait(false);
+            await indexCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             
             _logger?.LogInformation(
                 "Initialized checkpoint store schema {SchemaName}.{TableName} (with NodeId support)",

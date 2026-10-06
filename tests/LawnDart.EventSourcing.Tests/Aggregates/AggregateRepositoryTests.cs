@@ -92,6 +92,27 @@ public class AggregateRepositoryTests
     }
 
     [Fact]
+    public async Task SaveAsync_SoftHyphenInStreamId_DoesNotMatchTenantPrefix()
+    {
+        var eventStore = new InMemoryEventStore();
+        var options = Options.Create(new LawnDartOptions { RequireTenantId = true });
+        var repository = new AggregateRepository(
+            eventStore,
+            new DefaultMetadataProvider(),
+            new TestTenantContextProvider("acme"),
+            options);
+
+        var aggregate = new TestAggregate();
+        aggregate.SetStreamId($"ac\u00ADme:{Guid.NewGuid()}");
+        aggregate.ApplyTest(new TestEvent(Guid.NewGuid(), DateTime.UtcNow));
+
+        var commandMetadata = new CommandMetadata { TenantId = "acme" };
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            repository.SaveAsync(aggregate, commandMetadata));
+    }
+
+    [Fact]
     public async Task SaveAsync_PropagatesMetadata()
     {
         // Arrange

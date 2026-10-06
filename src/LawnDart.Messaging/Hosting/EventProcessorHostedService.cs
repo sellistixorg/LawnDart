@@ -43,7 +43,7 @@ public sealed class EventProcessorHostedService<TProcessor, TEvent> : Background
     {
         var messageId = context.MessageId;
 
-        if (messageId is not null && await _inboxStore.IsProcessedAsync(messageId, ct))
+        if (messageId is not null && await _inboxStore.IsProcessedAsync(messageId, ct).ConfigureAwait(false))
         {
             MessagingTelemetry.RecordInboxDuplicate(EventTypeName);
             _logger.LogDebug(
@@ -57,18 +57,18 @@ public sealed class EventProcessorHostedService<TProcessor, TEvent> : Background
 
         try
         {
-            var derivedEvents = (await _processor.ProcessAsync(@event, context, ct)).ToList();
+            var derivedEvents = (await _processor.ProcessAsync(@event, context, ct).ConfigureAwait(false)).ToList();
 
             foreach (var derived in derivedEvents)
             {
                 // Use runtime-type dispatch so the concrete type drives generic resolution,
                 // ensuring the correct TMessage subscription bucket is found.
-                await _transport.PublishEventAsync(derived, context.CreateChild(), ct);
+                await _transport.PublishEventAsync(derived, context.CreateChild(), ct).ConfigureAwait(false);
             }
 
             if (messageId is not null)
             {
-                await _inboxStore.MarkProcessedAsync(messageId, DateTimeOffset.UtcNow, ct);
+                await _inboxStore.MarkProcessedAsync(messageId, DateTimeOffset.UtcNow, ct).ConfigureAwait(false);
             }
 
             var elapsed = TimeProvider.System.GetElapsedTime(start);

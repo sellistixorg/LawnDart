@@ -26,7 +26,7 @@ public sealed class TaskProcessorTestHarness<TProcessor>
     /// <returns>Commands emitted by the processor on this poll.</returns>
     public async Task<IReadOnlyList<ICommand>> PollAsync(CancellationToken cancellationToken = default)
     {
-        var commands = await _processor.ProcessTasksAsync(cancellationToken);
+        var commands = await _processor.ProcessTasksAsync(cancellationToken).ConfigureAwait(false);
         return commands.ToList();
     }
 }

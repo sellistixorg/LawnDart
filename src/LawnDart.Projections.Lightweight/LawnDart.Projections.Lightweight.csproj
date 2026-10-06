@@ -12,6 +12,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\Shared\SqlIdentifier.cs" Link="Internal\SqlIdentifier.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\LawnDart\LawnDart.csproj" />
   </ItemGroup>
 

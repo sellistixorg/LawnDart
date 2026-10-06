@@ -71,9 +71,11 @@ the stream identities.
 Call `POST /token` for a demo JWT. Paste `token` into Scalar (Authorize,
 BearerAuth, no `Bearer ` prefix). Then POST commands and GET views.
 
-This is not login. The host signs with HS256 using `Jwt:Key` in
-`appsettings.json` and does not check issuer, audience, or expiry. Use the
-same key if you mint a token offline.
+This is not login. Tokens expire after 8 hours and carry issuer
+`lawndart-academy-demo` and audience `lawndart-academy-api`. The host signs
+with HS256. In Development, `Jwt:Key` in `appsettings.Development.json` is
+the built-in demo key. Outside Development, set `Jwt:Key` (for example with
+the `Jwt__Key` environment variable) to a value of at least 32 bytes.
 
 ```bash
 curl -s -X POST http://localhost:5180/token -H "Content-Type: application/json" -d "{\"role\":\"Admin\"}"

@@ -12,6 +12,8 @@ changes to the public API.
 
 ### Fixed
 
+- Configured schema, table, constraint, and index names that contain `]` or `'` are escaped before they are placed in SQL text.
+- The tenant prefix check on a stream id uses an ordinal comparison.
 - The BDD testing guide links to `build-kit/library-dcb-slice.json`.
 
 ### Added
@@ -24,6 +26,8 @@ changes to the public API.
 
 ### Changed
 
+- Academy demo tokens expire after 8 hours and are checked for issuer, audience, and lifetime. The built-in signing key is used only in Development.
+- Library awaits resume without capturing the caller's synchronization context.
 - The skill kit frozen surface lives on `lawndart-host-setup`. Aggregate load is `GetOrCreateAsync`. DCB load is `GetOrCreateEntityAsync`. Projection scopes include `[MultiStreamProjection]`.
 - A store-backed second bounded context in `Library.Host` registers `WithEventTypes`.
 - [BDD testing](docs/testing/BDD_TESTING.md) excerpts `DcbSpec` from the Library DCB sample.

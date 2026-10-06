@@ -254,7 +254,7 @@ public static class LawnDartSqlServerExtensions
         public async Task PublishAsync(OutboxMessage message, CancellationToken cancellationToken = default)
         {
             foreach (var p in _publishers)
-                await p.PublishAsync(message, cancellationToken);
+                await p.PublishAsync(message, cancellationToken).ConfigureAwait(false);
         }
     }
 }

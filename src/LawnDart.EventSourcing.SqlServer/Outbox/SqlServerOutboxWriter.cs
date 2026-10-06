@@ -2,6 +2,7 @@ using System.Data;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 using LawnDart.Outbox;
+using LawnDart.Sql;
 
 namespace LawnDart.EventSourcing.SqlServer.Outbox;
 
@@ -25,6 +26,8 @@ public class SqlServerOutboxWriter : IOutboxWriter
     // Pre-computed schema-qualified table name, e.g. [ordering].[Outbox]
     private readonly string _qualifiedTableName;
 
+    internal string QualifiedTableName => _qualifiedTableName;
+
     /// <summary>
     /// Initializes a new instance of the SqlServerOutboxWriter.
     /// </summary>
@@ -38,29 +41,29 @@ public class SqlServerOutboxWriter : IOutboxWriter
         _tableName             = tableName;
         _schemaName            = string.IsNullOrWhiteSpace(schemaName) ? "dbo" : schemaName;
         _logger                = logger;
-        _qualifiedTableName    = $"[{_schemaName}].[{_tableName}]";
+        _qualifiedTableName    = SqlIdentifier.Qualify(_schemaName, _tableName);
     }
 
     /// <inheritdoc/>
     public async Task WriteAsync(OutboxMessage message, CancellationToken cancellationToken = default)
     {
         using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
-        await WriteAsync(connection, null, message, cancellationToken);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await WriteAsync(connection, null, message, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     public async Task WriteBatchAsync(IEnumerable<OutboxMessage> messages, CancellationToken cancellationToken = default)
     {
         using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         using var transaction = connection.BeginTransaction();
         try
         {
             foreach (var message in messages)
             {
-                await WriteAsync(connection, transaction, message, cancellationToken);
+                await WriteAsync(connection, transaction, message, cancellationToken).ConfigureAwait(false);
             }
 
             transaction.Commit();
@@ -104,7 +107,7 @@ public class SqlServerOutboxWriter : IOutboxWriter
         command.Parameters.Add("@StreamId", SqlDbType.NVarChar, 500).Value = message.StreamId;
         command.Parameters.Add("@SequencePosition", SqlDbType.BigInt).Value = message.SequencePosition;
 
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
         _logger?.LogDebug("Wrote outbox message {MessageId} for event {EventType}", message.Id, message.EventType);
     }
@@ -121,7 +124,7 @@ public class SqlServerOutboxWriter : IOutboxWriter
             WHERE ProcessedAt IS NULL AND DeadLetteredAt IS NULL
             ORDER BY SequencePosition ASC";
 
-        return await QueryMessagesAsync(sql, batchSize, cancellationToken);
+        return await QueryMessagesAsync(sql, batchSize, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -136,22 +139,22 @@ public class SqlServerOutboxWriter : IOutboxWriter
             WHERE DeadLetteredAt IS NOT NULL
             ORDER BY SequencePosition ASC";
 
-        return await QueryMessagesAsync(sql, batchSize, cancellationToken);
+        return await QueryMessagesAsync(sql, batchSize, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<IReadOnlyList<OutboxMessage>> QueryMessagesAsync(
         string sql, int batchSize, CancellationToken cancellationToken)
     {
         using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         using var command = new SqlCommand(sql, connection);
         command.Parameters.Add("@BatchSize", SqlDbType.Int).Value = batchSize;
 
         var messages = new List<OutboxMessage>();
 
-        using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
+        using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             messages.Add(ReadMessage(reader));
         }
@@ -195,13 +198,13 @@ public class SqlServerOutboxWriter : IOutboxWriter
             WHERE Id = @Id";
 
         using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         using var command = new SqlCommand(sql, connection);
         command.Parameters.Add("@ProcessedAt", SqlDbType.DateTime2).Value = DateTime.UtcNow;
         command.Parameters.Add("@Id", SqlDbType.UniqueIdentifier).Value = messageId;
 
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
         _logger?.LogDebug("Marked outbox message {MessageId} as processed", messageId);
     }
@@ -217,14 +220,14 @@ public class SqlServerOutboxWriter : IOutboxWriter
             WHERE Id = @Id";
 
         using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         using var command = new SqlCommand(sql, connection);
         command.Parameters.Add("@LastError", SqlDbType.NVarChar, -1).Value = error;
         command.Parameters.Add("@LastAttemptAt", SqlDbType.DateTime2).Value = DateTime.UtcNow;
         command.Parameters.Add("@Id", SqlDbType.UniqueIdentifier).Value = messageId;
 
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
         _logger?.LogWarning("Recorded failure for outbox message {MessageId}: {Error}", messageId, error);
     }
@@ -238,13 +241,13 @@ public class SqlServerOutboxWriter : IOutboxWriter
             WHERE Id = @Id AND DeadLetteredAt IS NULL";
 
         using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         using var command = new SqlCommand(sql, connection);
         command.Parameters.Add("@DeadLetteredAt", SqlDbType.DateTime2).Value = DateTime.UtcNow;
         command.Parameters.Add("@Id", SqlDbType.UniqueIdentifier).Value = messageId;
 
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
         _logger?.LogWarning("Dead-lettered outbox message {MessageId}", messageId);
     }
@@ -255,25 +258,25 @@ public class SqlServerOutboxWriter : IOutboxWriter
     public async Task InitializeSchemaAsync(CancellationToken cancellationToken = default)
     {
         var schemaSql = $@"
-            IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = '{_schemaName}')
+            IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = '{SqlIdentifier.Literal(_schemaName)}')
             BEGIN
-                EXEC('CREATE SCHEMA [{_schemaName}] AUTHORIZATION dbo');
+                EXEC('CREATE SCHEMA {SqlIdentifier.Literal(SqlIdentifier.Quote(_schemaName))} AUTHORIZATION dbo');
             END";
 
         using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         using (var schemaCmd = new SqlCommand(schemaSql, connection))
-            await schemaCmd.ExecuteNonQueryAsync(cancellationToken);
+            await schemaCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
         using (var existsCmd = new SqlCommand(
-            $"SELECT CASE WHEN OBJECT_ID(N'{_qualifiedTableName}', 'U') IS NULL THEN 0 ELSE 1 END",
+            $"SELECT CASE WHEN OBJECT_ID(N'{SqlIdentifier.Literal(_qualifiedTableName)}', 'U') IS NULL THEN 0 ELSE 1 END",
             connection))
         {
-            var exists = Convert.ToInt32(await existsCmd.ExecuteScalarAsync(cancellationToken)) == 1;
+            var exists = Convert.ToInt32(await existsCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false)) == 1;
             if (exists)
             {
-                var found = await ReadSchemaFormatAsync(connection, cancellationToken);
+                var found = await ReadSchemaFormatAsync(connection, cancellationToken).ConfigureAwait(false);
                 if (!string.Equals(found, CurrentSchemaFormat, StringComparison.Ordinal))
                     throw new IncompatibleOutboxSchemaException(_qualifiedTableName, found, CurrentSchemaFormat);
                 return;
@@ -298,21 +301,21 @@ public class SqlServerOutboxWriter : IOutboxWriter
                 DeadLetteredAt DATETIME2 NULL
             );
 
-            CREATE INDEX IX_{_tableName}_ProcessedAt_SequencePosition
+            CREATE INDEX {SqlIdentifier.Quote("IX_" + _tableName + "_ProcessedAt_SequencePosition")}
             ON {_qualifiedTableName}(ProcessedAt, SequencePosition)
             WHERE ProcessedAt IS NULL;
 
-            CREATE INDEX IX_{_tableName}_CreatedAt
+            CREATE INDEX {SqlIdentifier.Quote("IX_" + _tableName + "_CreatedAt")}
             ON {_qualifiedTableName}(CreatedAt);
 
             EXEC sys.sp_addextendedproperty
                 @name = N'{SchemaFormatPropertyName}',
                 @value = N'{CurrentSchemaFormat}',
-                @level0type = N'SCHEMA', @level0name = N'{_schemaName}',
-                @level1type = N'TABLE',  @level1name = N'{_tableName}';";
+                @level0type = N'SCHEMA', @level0name = N'{SqlIdentifier.Literal(_schemaName)}',
+                @level1type = N'TABLE',  @level1name = N'{SqlIdentifier.Literal(_tableName)}';";
 
         using var command = new SqlCommand(sql, connection);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
         _logger?.LogInformation("Outbox schema initialized");
     }
@@ -329,7 +332,7 @@ public class SqlServerOutboxWriter : IOutboxWriter
         using var command = new SqlCommand(sql, connection);
         command.Parameters.AddWithValue("@Table", _qualifiedTableName);
         command.Parameters.AddWithValue("@Name", SchemaFormatPropertyName);
-        var result = await command.ExecuteScalarAsync(cancellationToken);
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return result is null or DBNull ? null : Convert.ToString(result);
     }
 

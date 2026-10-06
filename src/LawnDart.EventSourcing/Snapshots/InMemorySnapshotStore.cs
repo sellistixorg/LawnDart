@@ -133,7 +133,7 @@ public sealed class InMemorySnapshotStore : ISnapshotStore, IDcbSnapshotStore, I
             yield return id;
         }
 
-        await Task.CompletedTask;
+        await Task.CompletedTask.ConfigureAwait(false);
     }
 
     private static bool TryDeserialize<TState>(byte[] payload, out TState? state)
