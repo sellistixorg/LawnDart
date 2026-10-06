@@ -14,7 +14,7 @@ using LawnDart.Metadata;
 namespace LawnDart.Demo.Academy;
 
 /// <summary>
-/// LawnDart Academy — the definitive pattern showcase.
+/// LawnDart Academy: console tour of the hosted patterns.
 /// Runs zero-infrastructure by default (in-memory event store).
 ///
 /// Usage:

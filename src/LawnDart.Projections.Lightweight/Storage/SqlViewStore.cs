@@ -113,7 +113,7 @@ public class SqlViewStore : IViewStore
                         viewData?.Length ?? 0, instanceId?.Length ?? 0,
                         new SqlConnectionStringBuilder(_connectionString).InitialCatalog,
                         retryCount);
-                throw; // Re-throw to be caught by HybridViewStore
+                throw; // Projection runner flush records the error; dirty views stay for the next flush.
             }
             catch (Exception ex)
             {
@@ -121,7 +121,7 @@ public class SqlViewStore : IViewStore
                     SqlViewStoreLog.ViewSaveFailed(
                         _logger, ex, projectionType, instanceId, ex.GetType().FullName, ex.Message,
                         viewData?.Length ?? 0, instanceId?.Length ?? 0, retryCount);
-                throw; // Re-throw to be caught by HybridViewStore
+                throw; // Projection runner flush records the error; dirty views stay for the next flush.
             }
         }
     }
