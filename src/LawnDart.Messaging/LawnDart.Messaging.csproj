@@ -8,6 +8,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="LawnDart.Messaging.Tests" />
+    <InternalsVisibleTo Include="LawnDart.Testing" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\LawnDart\LawnDart.csproj" />
   </ItemGroup>
 

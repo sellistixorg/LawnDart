@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Options;
 using LawnDart.Messaging;
+using LawnDart.Messaging.Hosting;
 using LawnDart.Messaging.InMemory;
 using LawnDart.Patterns.EventProcessing;
 
@@ -46,22 +47,29 @@ public sealed class EventProcessorTestHarness<TProcessor, TEvent>
     {
         context ??= MessageContext.New();
 
-        if (context.MessageId is not null && await _inboxStore.IsProcessedAsync(context.MessageId, cancellationToken).ConfigureAwait(false))
+        var inboxKey = context.MessageId is null
+            ? null
+            : InboxConsumerKey.ForProcessor(typeof(TProcessor), context.MessageId);
+
+        if (inboxKey is not null && await _inboxStore.IsProcessedAsync(inboxKey, cancellationToken).ConfigureAwait(false))
             return [];
 
         var events = (await _processor.ProcessAsync(@event, context, cancellationToken).ConfigureAwait(false)).ToList();
 
-        if (context.MessageId is not null)
-            await _inboxStore.MarkProcessedAsync(context.MessageId, DateTimeOffset.UtcNow, cancellationToken).ConfigureAwait(false);
+        if (inboxKey is not null)
+            await _inboxStore.MarkProcessedAsync(inboxKey, DateTimeOffset.UtcNow, cancellationToken).ConfigureAwait(false);
 
         return events;
     }
 
     /// <summary>
-    /// Returns true if a message with the given ID has already been processed by this harness.
+    /// Returns true if this processor has already processed <paramref name="messageId"/>.
+    /// The key matches the hosted event processor service.
     /// </summary>
     public Task<bool> IsProcessedAsync(string messageId, CancellationToken cancellationToken = default)
-        => _inboxStore.IsProcessedAsync(messageId, cancellationToken);
+        => _inboxStore.IsProcessedAsync(
+            InboxConsumerKey.ForProcessor(typeof(TProcessor), messageId),
+            cancellationToken);
 
     /// <summary>
     /// Clears the inbox store. Call between test cases that should not share deduplication state.
