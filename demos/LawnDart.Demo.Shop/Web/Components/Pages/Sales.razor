@@ -1,0 +1,140 @@
+@page "/sales"
+@rendermode InteractiveServer
+@attribute [Authorize(Roles = "Seller")]
+@inject HttpClient Http
+@inject AuthenticationStateProvider AuthStateProvider
+@using System.Net.Http.Json
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+
+<PageTitle>My Sales - LawnDart Shop Demo</PageTitle>
+
+<div class="page-header">
+    <div class="page-title">My Sales</div>
+    <button class="btn btn-secondary btn-sm" @onclick="LoadSalesAsync">↻ Refresh</button>
+</div>
+
+<div class="page-body">
+    @if (_message is not null)
+    {
+        <div class="alert @(_isError ? "alert-danger" : "alert-success") mb-4">@_message</div>
+    }
+
+    @if (_loading)
+    {
+        <div class="loading-overlay"><div class="spinner"></div></div>
+    }
+    else if (!_sales.Any())
+    {
+        <div class="empty-state">
+            <h3>No sales yet</h3>
+            <p>When buyers purchase your products, their orders will appear here.</p>
+        </div>
+    }
+    else
+    {
+        <div class="card">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Fulfillment Ref</th>
+                        <th>Product</th>
+                        <th>SKU</th>
+                        <th>Buyer</th>
+                        <th>Qty</th>
+                        <th>Total</th>
+                        <th>Status</th>
+                        <th>Placed At</th>
+                        <th>EDA Progress</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var o in _sales)
+                    {
+                        <tr>
+                            <td class="font-mono text-sm">@o.SellerFulfillmentId.ToString("N")[..8]…</td>
+                            <td>@o.ProductName</td>
+                            <td class="font-mono text-sm">@(_productSkus.TryGetValue(o.ProductId, out var sku) ? sku : "-")</td>
+                            <td>@(string.IsNullOrEmpty(o.CustomerName) ? o.CustomerId : o.CustomerName)</td>
+                            <td>@o.Quantity</td>
+                            <td>$@o.Total.ToString("0.00")</td>
+                            <td><span class="badge @StatusBadge(o.Status)">@o.Status</span></td>
+                            <td class="text-sm text-muted">@o.PlacedAt.ToString("HH:mm:ss")</td>
+                            <td>
+                                <div class="flex gap-2" style="font-size:11px">
+                                    <span class="badge @(o.Status != "Cancelled" ? "badge-success" : "badge-danger")">Placed</span>
+                                    <span class="badge @(o.Status is "PaymentProcessed" or "Shipped" ? "badge-success" : o.Status == "Cancelled" ? "badge-danger" : "badge-muted")">Paid</span>
+                                    <span class="badge @(o.Status == "Shipped" ? "badge-success" : o.Status == "Cancelled" ? "badge-danger" : "badge-muted")">Shipped</span>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <div class="card-body" style="border-top:1px solid var(--border); font-size:13px; color:var(--text-muted)">
+                @_sales.Count sale(s) · Total revenue: $@_sales.Where(s => s.Status != "Cancelled").Sum(s => s.Total).ToString("0.00")
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    bool _loading = true;
+    bool _isError;
+    string? _message;
+    string? _currentTenantId;
+    List<OrderSummaryView> _sales = [];
+    Dictionary<Guid, string> _productSkus = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        _currentTenantId = authState.User.FindFirst("tenant_id")?.Value;
+        await LoadSalesAsync();
+    }
+
+    async Task LoadSalesAsync()
+    {
+        _loading = true;
+        try
+        {
+            var allOrdersResp = await Http.GetAsync("/api/views/orders");
+            var allOrders = allOrdersResp.IsSuccessStatusCode
+                ? await allOrdersResp.Content.ReadFromJsonAsync<List<OrderSummaryView>>() ?? []
+                : [];
+
+            _sales = string.IsNullOrEmpty(_currentTenantId)
+                ? allOrders
+                : allOrders.Where(o => o.SellerId.Equals(_currentTenantId, StringComparison.OrdinalIgnoreCase)).ToList();
+
+            // Build SKU lookup from product catalog
+            var productsResp = await Http.GetAsync("/api/views/products");
+            if (productsResp.IsSuccessStatusCode)
+            {
+                var products = await productsResp.Content.ReadFromJsonAsync<List<ProductCatalogView>>() ?? [];
+                _productSkus = products
+                    .Where(p => !string.IsNullOrEmpty(p.Sku))
+                    .ToDictionary(p => p.ProductId, p => p.Sku);
+            }
+
+            _message = null;
+        }
+        catch (Exception ex)
+        {
+            SetMsg($"Load failed: {ex.Message}", true);
+        }
+        _loading = false;
+    }
+
+    void SetMsg(string msg, bool error = false) { _message = msg; _isError = error; }
+
+    string StatusBadge(string status) => status switch
+    {
+        "Pending"          => "badge-warning",
+        "PaymentProcessed" => "badge-info",
+        "Shipped"          => "badge-success",
+        "Cancelled"        => "badge-danger",
+        _                  => "badge-muted"
+    };
+}

@@ -51,8 +51,9 @@ services.AddSqlInboxStore(cs);
 
 Call `InitializeSqlInboxStoreAsync` before hosted reactors start. The
 in-memory inbox is per process. Each reactor or processor deduplicates on
-its own key (`reactor:{type}:{message id}` or `processor:{type}:{message id}`),
-so two consumers of one message both run once.
+its own key (`reactor:{hash}:{message id}` or `processor:{hash}:{message id}`).
+That hash is taken from the consumer type's full name, so two consumers of
+one message both run once.
 
 ## Dead letters
 
@@ -60,8 +61,9 @@ When publish attempts reach the processor max (default 10), the row is marked
 with `DeadLetteredAt` and dropped from `GetUnprocessedAsync`. `ProcessedAt`
 is success only. A dead letter leaves `ProcessedAt` null.
 
-List failed rows with `GetDeadLetteredAsync`. Reset one row, or every
-dead-lettered row, and the processor publishes it again on the next poll:
+List failed rows with `GetDeadLetteredAsync`. The writer is keyed by
+bounded-context name. Reset one row, or every dead-lettered row, and the
+processor publishes it again on the next poll:
 
 ```csharp
 var writer = sp.GetRequiredKeyedService<IOutboxWriter>("default");
@@ -71,13 +73,14 @@ await writer.ResetDeadLetteredAsync(dead[0].Id);
 ```
 
 Reset clears `DeadLetteredAt` and sets `Attempts` to 0. `LastError` and
-`LastAttemptAt` stay until the next attempt overwrites them. An unknown id, a row that was never dead-lettered, and an already
-processed row each return `false` from `ResetDeadLetteredAsync` and stay
-as they were. `ResetAllDeadLetteredAsync` returns how many rows changed.
+`LastAttemptAt` stay until the next attempt overwrites them. An unknown id,
+a row that was never dead-lettered, and an already processed row each return
+`false` from `ResetDeadLetteredAsync` and stay as they were.
+`ResetAllDeadLetteredAsync` returns how many rows changed.
 
 The republished row keeps the same id.
 `MessageTransportOutboxPublisher` uses that id as
 `MessageContext.MessageId`. A consumer whose inbox already marked that id
 processed inside the dedup window drops the delivery. That is the expected
-at-least-once behavior. Reset after the window expires, or clear that
-inbox entry, when the consumer must run again.
+at-least-once behavior. Reset after the window expires when the consumer
+must run again.

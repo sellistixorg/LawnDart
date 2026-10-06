@@ -8,7 +8,7 @@ namespace LawnDart.Messaging.Hosting;
 /// <summary>
 /// Hosted service that drives a single <see cref="IReactor{TEvent}"/> instance.
 /// On startup it subscribes to <typeparamref name="TEvent"/> via <see cref="IMessageTransport"/>,
-/// applies inbox deduplication via <see cref="IInboxStore"/> (this reactor's type name plus the message id),
+/// applies inbox deduplication via <see cref="IInboxStore"/> (a hash of this reactor's type name plus the message id),
 /// invokes the reactor, then dispatches returned commands via <see cref="ICommandDispatcher"/> (if registered).
 /// </summary>
 /// <typeparam name="TReactor">The reactor implementation type.</typeparam>

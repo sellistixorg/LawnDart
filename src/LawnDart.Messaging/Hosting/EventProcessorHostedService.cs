@@ -8,7 +8,7 @@ namespace LawnDart.Messaging.Hosting;
 /// <summary>
 /// Hosted service that drives a single <see cref="IEventProcessor{TEvent}"/> instance.
 /// Subscribes to <typeparamref name="TEvent"/>, applies inbox deduplication
-/// (this processor's type name plus the message id), invokes the processor,
+/// (a hash of this processor's type name plus the message id), invokes the processor,
 /// then publishes returned derived events back through the transport.
 /// </summary>
 /// <typeparam name="TProcessor">The event processor implementation type.</typeparam>

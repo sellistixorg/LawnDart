@@ -1,0 +1,109 @@
+@page "/orders"
+@rendermode InteractiveServer
+@attribute [Authorize(Roles = "Customer")]
+@inject HttpClient Http
+@inject AuthenticationStateProvider AuthStateProvider
+@using System.Net.Http.Json
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+
+<PageTitle>My Orders - LawnDart Shop Demo</PageTitle>
+
+<div class="page-header">
+    <div class="page-title">My Orders</div>
+    <button class="btn btn-secondary btn-sm" @onclick="LoadOrdersAsync">↻ Refresh</button>
+</div>
+
+<div class="page-body">
+    @if (_loading)
+    {
+        <div class="loading-overlay"><div class="spinner"></div></div>
+    }
+    else if (!_orders.Any())
+    {
+        <div class="empty-state">
+            <h3>No orders yet</h3>
+            <p>Visit the <a href="/shop">Shop</a> to place your first order.</p>
+        </div>
+    }
+    else
+    {
+        <div class="card">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Order ID</th>
+                        <th>Seller</th>
+                        <th>Product</th>
+                        <th>Qty</th>
+                        <th>Total</th>
+                        <th>Status</th>
+                        <th>Placed At</th>
+                        <th>EDA Progress</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var o in _orders)
+                    {
+                        <tr>
+                            <td class="font-mono text-sm">@o.OrderId.ToString("N")[..8]…</td>
+                            <td class="text-sm">@(string.IsNullOrEmpty(o.SellerName) ? o.SellerId : o.SellerName)</td>
+                            <td>@o.ProductName</td>
+                            <td>@o.Quantity</td>
+                            <td>$@o.Total.ToString("0.00")</td>
+                            <td><span class="badge @StatusBadge(o.Status)">@o.Status</span></td>
+                            <td class="text-sm text-muted">@o.PlacedAt.ToString("HH:mm:ss")</td>
+                            <td>
+                                <div class="flex gap-2" style="font-size:11px">
+                                    <span class="badge @(o.Status != "Cancelled" ? "badge-success" : "badge-danger")">Placed</span>
+                                    <span class="badge @(o.Status is "PaymentProcessed" or "Shipped" ? "badge-success" : o.Status == "Cancelled" ? "badge-danger" : "badge-muted")">Paid</span>
+                                    <span class="badge @(o.Status == "Shipped" ? "badge-success" : o.Status == "Cancelled" ? "badge-danger" : "badge-muted")">Shipped</span>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    bool _loading = true;
+    List<OrderSummaryView> _orders = [];
+    string? _currentUserId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        _currentUserId = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        await LoadOrdersAsync();
+    }
+
+    async Task LoadOrdersAsync()
+    {
+        _loading = true;
+        var resp = await Http.GetAsync("/api/views/orders");
+        var allOrders = resp.IsSuccessStatusCode
+            ? await resp.Content.ReadFromJsonAsync<List<OrderSummaryView>>() ?? []
+            : [];
+
+        // Each customer only sees their own orders : AllOrders is a system-wide view used
+        // by Bob (Admin) unfiltered; here we scope it to the authenticated customer.
+        _orders = string.IsNullOrEmpty(_currentUserId)
+            ? allOrders
+            : allOrders.Where(o => o.CustomerId.Equals(_currentUserId, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        _loading = false;
+    }
+
+    string StatusBadge(string status) => status switch
+    {
+        "Pending"          => "badge-warning",
+        "PaymentProcessed" => "badge-info",
+        "Shipped"          => "badge-success",
+        "Cancelled"        => "badge-danger",
+        _                  => "badge-muted"
+    };
+}

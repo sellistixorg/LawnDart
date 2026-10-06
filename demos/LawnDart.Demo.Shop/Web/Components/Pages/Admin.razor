@@ -1,0 +1,300 @@
+@page "/admin"
+@rendermode InteractiveServer
+@attribute [Authorize(Roles = "Seller,Warehouse")]
+@inject HttpClient Http
+@inject AuthenticationStateProvider AuthStateProvider
+@using System.Net.Http.Json
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+
+<PageTitle>Seller Dashboard - LawnDart Shop Demo</PageTitle>
+
+<div class="page-header">
+    <div class="page-title">
+        <AuthorizeView Roles="Seller">
+            <Authorized>Seller Dashboard : @_sellerName</Authorized>
+        </AuthorizeView>
+        <AuthorizeView Roles="Warehouse">
+            <Authorized Context="_">Warehouse</Authorized>
+        </AuthorizeView>
+    </div>
+    <button class="btn btn-secondary btn-sm" @onclick="LoadAsync">↻ Refresh</button>
+</div>
+
+<div class="page-body">
+    @if (_message is not null)
+    {
+        <div class="alert @(_isError ? "alert-danger" : "alert-success") mb-4">@_message</div>
+    }
+
+    <!-- Create Product (Seller only) -->
+    <AuthorizeView Roles="Seller">
+        <Authorized>
+            <div class="card mb-6">
+                <div class="card-header">List a New Product</div>
+                <div class="card-body">
+                    <div class="grid-2 gap-4">
+                        <div class="form-group">
+                            <label class="form-label">SKU <span class="text-muted text-sm">(unique per your store)</span></label>
+                            <input class="form-control" @bind="_sku" @bind:event="oninput" placeholder="e.g. WIDGET-001" />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Name</label>
+                            <input class="form-control" @bind="_name" @bind:event="oninput" placeholder="e.g. Widget Pro" />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Description</label>
+                            <input class="form-control" @bind="_description" @bind:event="oninput" placeholder="Short description" />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Price ($)</label>
+                            <input class="form-control" type="number" @bind="_price" @bind:event="oninput" step="0.01" />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Initial Stock</label>
+                            <input class="form-control" type="number" @bind="_stock" @bind:event="oninput" />
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" @onclick="CreateProduct" disabled="@_saving">
+                        @if (_saving) { <div class="spinner"></div> } else { <span>＋ List Product</span> }
+                    </button>
+                </div>
+            </div>
+
+            <!-- My Products -->
+            <div class="card mb-6">
+                <div class="card-header">My Products</div>
+                @if (_myProducts.Any())
+                {
+                    <table class="table">
+                        <thead><tr><th>SKU</th><th>Name</th><th>Price</th><th>Stock</th><th>Actions</th></tr></thead>
+                        <tbody>
+                            @foreach (var p in _myProducts)
+                            {
+                                <tr>
+                                    <td class="font-mono text-sm">@p.Sku</td>
+                                    <td>@p.Name</td>
+                                    <td>$@p.Price.ToString("0.00")</td>
+                                    <td>
+                                        <span class="badge @(p.Stock == 0 ? "badge-danger" : p.Stock <= 2 ? "badge-warning" : "badge-success")">
+                                            @p.Stock
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <div class="flex gap-2">
+                                            <button class="btn btn-secondary btn-sm" @onclick="() => AddStock(p.ProductId, 10)">+10 Stock</button>
+                                            <button class="btn btn-warning btn-sm" @onclick="() => SetStock(p.ProductId, 1)">Set=1</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+                else
+                {
+                    <div class="card-body text-muted text-sm">No products listed yet. Create your first product above.</div>
+                }
+            </div>
+        </Authorized>
+    </AuthorizeView>
+
+    <!-- Orders / fulfillment (Warehouse ships; Seller can cancel own orders) -->
+    <div class="card">
+        <div class="card-header">
+            <AuthorizeView Roles="Seller">
+                <Authorized>Orders for My Products</Authorized>
+            </AuthorizeView>
+            <AuthorizeView Roles="Warehouse">
+                <Authorized Context="_">All Orders : Warehouse View</Authorized>
+            </AuthorizeView>
+        </div>
+        @if (_visibleOrders.Any())
+        {
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Fulfillment Ref</th>
+                        <th>Product</th>
+                        <th>Buyer</th>
+                        <th>Qty</th>
+                        <th>Total</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var o in _visibleOrders)
+                    {
+                        <tr>
+                            <td class="font-mono text-sm">@o.SellerFulfillmentId.ToString("N")[..8]…</td>
+                            <td>@o.ProductName</td>
+                            <td>@(string.IsNullOrEmpty(o.CustomerName) ? o.CustomerId : o.CustomerName)</td>
+                            <td>@o.Quantity</td>
+                            <td>$@o.Total.ToString("0.00")</td>
+                            <td><span class="badge @StatusBadge(o.Status)">@o.Status</span></td>
+                            <td>
+                                <AuthorizeView Roles="Seller">
+                                    <Authorized>
+                                        @if (o.Status is "Pending" or "PaymentProcessed")
+                                        {
+                                            <button class="btn btn-danger btn-sm" @onclick="() => CancelOrder(o)">Cancel</button>
+                                        }
+                                    </Authorized>
+                                </AuthorizeView>
+                                <AuthorizeView Roles="Warehouse">
+                                    <Authorized>
+                                        @if (o.Status == "PaymentProcessed")
+                                        {
+                                            <button class="btn btn-success btn-sm" @onclick="() => ShipOrder(o)">Ship</button>
+                                        }
+                                    </Authorized>
+                                </AuthorizeView>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        else
+        {
+            <div class="card-body text-muted text-sm">No orders yet.</div>
+        }
+    </div>
+</div>
+
+@code {
+    bool _saving;
+    bool _isError;
+    string? _message;
+    string _sku = "";
+    string _name = "";
+    string _description = "";
+    decimal _price = 9.99m;
+    int _stock = 10;
+    string? _currentTenantId;
+    string? _currentRole;
+    string? _sellerName;
+    List<ProductCatalogView> _myProducts = [];
+    List<OrderSummaryView> _visibleOrders = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        _currentTenantId = authState.User.FindFirst("tenant_id")?.Value;
+        _currentRole     = authState.User.FindFirst(ClaimTypes.Role)?.Value;
+        _sellerName      = authState.User.FindFirst(ClaimTypes.Name)?.Value;
+        await LoadAsync();
+    }
+
+    async Task LoadAsync()
+    {
+        try
+        {
+            var allProducts = await GetViewAsync<List<ProductCatalogView>>("/api/views/products") ?? [];
+            var allOrders   = await GetViewAsync<List<OrderSummaryView>>("/api/views/orders") ?? [];
+
+            // Sellers see only their own products and orders; Warehouse sees everything
+            if (string.Equals(_currentRole, "Seller", StringComparison.OrdinalIgnoreCase))
+            {
+                _myProducts    = allProducts.Where(p => p.SellerId.Equals(_currentTenantId, StringComparison.OrdinalIgnoreCase)).ToList();
+                _visibleOrders = allOrders.Where(o => o.SellerId.Equals(_currentTenantId, StringComparison.OrdinalIgnoreCase)).ToList();
+            }
+            else
+            {
+                // Warehouse role : all orders, no product management
+                _myProducts    = [];
+                _visibleOrders = allOrders;
+            }
+
+            _message = null;
+        }
+        catch (Exception ex)
+        {
+            SetMsg($"Load failed: {ex.Message}", true);
+        }
+    }
+
+    async Task<T?> GetViewAsync<T>(string url)
+    {
+        var resp = await Http.GetAsync(url);
+        if (resp.StatusCode == System.Net.HttpStatusCode.NotFound)
+            return default;
+        resp.EnsureSuccessStatusCode();
+        return await resp.Content.ReadFromJsonAsync<T>();
+    }
+
+    async Task CreateProduct()
+    {
+        if (string.IsNullOrWhiteSpace(_sku))   { SetMsg("SKU is required.", true);          return; }
+        if (string.IsNullOrWhiteSpace(_name))  { SetMsg("Product name is required.", true); return; }
+        _saving = true;
+        var cmd = new CreateProductCommand(Guid.NewGuid(), Guid.NewGuid(), _name, _description, _price, _stock, _sku.ToUpperInvariant(),
+            SellerId:   _currentTenantId ?? "",
+            SellerName: _sellerName ?? "");
+        var resp = await Http.PostAsJsonAsync("/api/product/create-product", cmd);
+        if (resp.IsSuccessStatusCode)
+        {
+            SetMsg($"Product '{_name}' (SKU: {_sku.ToUpperInvariant()}) listed!");
+            _sku = ""; _name = ""; _description = "";
+            await Task.Delay(400);
+            await LoadAsync();
+        }
+        else
+        {
+            var body = await resp.Content.ReadAsStringAsync();
+            // Surface duplicate SKU message clearly
+            SetMsg((int)resp.StatusCode == 409 ? $"SKU '{_sku.ToUpperInvariant()}' is already in use : choose a different SKU." : body, true);
+        }
+        _saving = false;
+    }
+
+    async Task AddStock(Guid productId, int delta)
+    {
+        var cmd = new UpdateStockCommand(Guid.NewGuid(), productId, delta);
+        var resp = await Http.PostAsJsonAsync("/api/product/update-stock", cmd);
+        if (resp.IsSuccessStatusCode) { SetMsg("Stock updated."); await Task.Delay(400); await LoadAsync(); }
+        else SetMsg(await resp.Content.ReadAsStringAsync(), true);
+    }
+
+    async Task SetStock(Guid productId, int target)
+    {
+        var product = _myProducts.FirstOrDefault(p => p.ProductId == productId);
+        if (product is null) return;
+        var delta = target - product.Stock;
+        if (delta == 0) { SetMsg("Stock is already at target."); return; }
+        await AddStock(productId, delta);
+    }
+
+    async Task CancelOrder(OrderSummaryView order)
+    {
+        var cmd = new CancelOrderCommand(Guid.NewGuid(), order.OrderId, "Cancelled by seller.", order.TenantId);
+        var resp = await Http.PostAsJsonAsync("/api/order/cancel-order", cmd);
+        if (resp.IsSuccessStatusCode) { SetMsg("Order cancelled."); await Task.Delay(400); await LoadAsync(); }
+        else SetMsg(await resp.Content.ReadAsStringAsync(), true);
+    }
+
+    async Task ShipOrder(OrderSummaryView order)
+    {
+        var cmd = new ShipOrderCommand(
+            Guid.NewGuid(),
+            order.OrderId,
+            $"MANUAL-{order.OrderId.ToString("N")[..8]}",
+            order.TenantId);
+        var resp = await Http.PostAsJsonAsync("/api/order/ship-order", cmd);
+        if (resp.IsSuccessStatusCode) { SetMsg("Order shipped!"); await Task.Delay(400); await LoadAsync(); }
+        else SetMsg(await resp.Content.ReadAsStringAsync(), true);
+    }
+
+    void SetMsg(string msg, bool error = false) { _message = msg; _isError = error; }
+
+    string StatusBadge(string status) => status switch
+    {
+        "Pending"          => "badge-warning",
+        "PaymentProcessed" => "badge-info",
+        "Shipped"          => "badge-success",
+        "Cancelled"        => "badge-danger",
+        _                  => "badge-muted"
+    };
+}

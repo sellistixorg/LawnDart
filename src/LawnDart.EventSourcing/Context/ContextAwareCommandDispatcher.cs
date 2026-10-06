@@ -22,9 +22,11 @@ namespace LawnDart.EventSourcing.Context;
 /// </para>
 /// <para>
 /// The handler is resolved as a <em>keyed</em> service using the context name returned by
-/// <see cref="ICommandContextRegistry"/>.  Because handlers are created with a
+/// <see cref="ICommandContextRegistry"/>, inside a new DI scope. Because handlers are created with a
 /// <see cref="ContextServiceProvider"/>, their own injected dependencies
 /// (e.g. <c>IAggregateRepository</c>) are automatically resolved from the correct context.
+/// Scoped services such as <c>AuthorizationService</c> resolve in that scope when a hosted
+/// reactor or task processor dispatches from the root provider.
 /// </para>
 /// </remarks>
 public sealed class ContextAwareCommandDispatcher : ICommandDispatcher
@@ -62,29 +64,39 @@ public sealed class ContextAwareCommandDispatcher : ICommandDispatcher
             "Dispatching command {CommandType} to bounded context '{ContextName}'",
             commandType.Name, contextName);
 
-        // Resolve the closed generic ICommandHandler<TCommand> for this context
+        // Resolve the closed generic ICommandHandler<TCommand> for this context.
+        // Reactors and task processors call this from the root provider. A scope is
+        // required so a scoped AuthorizationService can be built with the repository.
         var handlerType = typeof(ICommandHandler<>).MakeGenericType(commandType);
+        var scope = _serviceProvider.CreateAsyncScope();
+        try
+        {
+            var services = scope.ServiceProvider;
+            var handler = (services as IKeyedServiceProvider)
+                ?.GetRequiredKeyedService(handlerType, contextName)
+                ?? throw new InvalidOperationException(
+                    $"No keyed ICommandHandler<{commandType.Name}> registered for context '{contextName}'. " +
+                    "Ensure WithCommandHandlers() has been called on the BoundedContextBuilder for this context.");
 
-        var handler = (_serviceProvider as IKeyedServiceProvider)
-            ?.GetRequiredKeyedService(handlerType, contextName)
-            ?? throw new InvalidOperationException(
-                $"No keyed ICommandHandler<{commandType.Name}> registered for context '{contextName}'. " +
-                "Ensure WithCommandHandlers() has been called on the BoundedContextBuilder for this context.");
+            // Invoke HandleAsync(command, cancellationToken) through the closed interface
+            var handleMethod = handlerType.GetMethod(nameof(ICommandHandler<ICommand>.HandleAsync))
+                ?? throw new InvalidOperationException(
+                    $"HandleAsync method not found on {handlerType.FullName}.");
 
-        // Invoke HandleAsync(command, cancellationToken) through the closed interface
-        var handleMethod = handlerType.GetMethod(nameof(ICommandHandler<ICommand>.HandleAsync))
-            ?? throw new InvalidOperationException(
-                $"HandleAsync method not found on {handlerType.FullName}.");
+            using var activity = MessageTrace.Start(
+                ActivitySource,
+                $"command.{commandType.Name}",
+                context,
+                ActivityKind.Internal);
+            using var ambient = AmbientMessageContext.Push(context);
 
-        using var activity = MessageTrace.Start(
-            ActivitySource,
-            $"command.{commandType.Name}",
-            context,
-            ActivityKind.Internal);
-        using var ambient = AmbientMessageContext.Push(context);
-
-        var task = (Task)handleMethod.Invoke(handler, [command, cancellationToken])!;
-        await task.ConfigureAwait(false);
+            var task = (Task)handleMethod.Invoke(handler, [command, cancellationToken])!;
+            await task.ConfigureAwait(false);
+        }
+        finally
+        {
+            await scope.DisposeAsync().ConfigureAwait(false);
+        }
     }
 
 }

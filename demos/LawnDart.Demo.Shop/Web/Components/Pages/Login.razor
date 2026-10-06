@@ -1,0 +1,63 @@
+@page "/login"
+
+<PageTitle>Sign In - LawnDart Shop Demo</PageTitle>
+
+<div class="login-page">
+    <div class="login-container">
+        <div class="login-header">
+            <h1>LawnDart Shop <span style="color:#60a5fa">Demo</span></h1>
+            <p>Choose a demo user to sign in as</p>
+        </div>
+
+        <div>
+            <a class="user-card" href="/auth/login?user=alice">
+                <div class="user-card-avatar avatar-alice">A</div>
+                <div class="user-card-info">
+                    <h3>Alice</h3>
+                    <div class="role">Customer <span class="tenant-badge">tenant: buyers</span></div>
+                    <div class="perms">Order.Place · Order.View · Product.View</div>
+                </div>
+            </a>
+
+            <a class="user-card" href="/auth/login?user=maria">
+                <div class="user-card-avatar avatar-maria">M</div>
+                <div class="user-card-info">
+                    <h3>Maria</h3>
+                    <div class="role">Customer <span class="tenant-badge">tenant: buyers</span></div>
+                    <div class="perms">Order.Place · Order.View · Product.View</div>
+                </div>
+            </a>
+
+            <a class="user-card" href="/auth/login?user=bob">
+                <div class="user-card-avatar avatar-bob">B</div>
+                <div class="user-card-info">
+                    <h3>Bob</h3>
+                    <div class="role">Seller <span class="tenant-badge">tenant: bobs-store</span></div>
+                    <div class="perms">Product.Create · Product.Update · Inventory.View · Order.View</div>
+                </div>
+            </a>
+
+            <a class="user-card" href="/auth/login?user=larry">
+                <div class="user-card-avatar avatar-larry">L</div>
+                <div class="user-card-info">
+                    <h3>Larry</h3>
+                    <div class="role">Seller <span class="tenant-badge">tenant: larrys-emporium</span></div>
+                    <div class="perms">Product.Create · Product.Update · Inventory.View · Order.View</div>
+                </div>
+            </a>
+
+            <a class="user-card" href="/auth/login?user=carol">
+                <div class="user-card-avatar avatar-carol">C</div>
+                <div class="user-card-info">
+                    <h3>Carol</h3>
+                    <div class="role">Warehouse <span class="tenant-badge">tenant: system</span></div>
+                    <div class="perms">Order.Ship · Inventory.View</div>
+                </div>
+            </a>
+        </div>
+
+        <div class="text-muted text-sm mt-4" style="text-align:center">
+            No passwords required : this is a demo environment
+        </div>
+    </div>
+</div>

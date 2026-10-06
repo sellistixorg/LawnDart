@@ -4,7 +4,6 @@ using LawnDart.Demo.Academy.Domain.CourseSection.Events;
 using LawnDart.Aggregates;
 using LawnDart.Demo.Academy.Projections;
 using LawnDart.EventStore;
-using Microsoft.Data.SqlClient;
 
 namespace LawnDart.Demo.Academy.Showcases;
 
@@ -78,16 +77,7 @@ public class ShowcaseC_LiveProjectionPanel
                 catch (ConcurrencyException) when (attempt < maxAttempts)
                 {
                 }
-                catch (SqlException ex) when (ex.Number == 2627 && attempt < maxAttempts)
-                {
-                    // The version read and the insert are not one lock. Reload and try again.
-                }
                 catch (ConcurrencyException)
-                {
-                    lock (resultsLock) failureCount++;
-                    return (i, Success: false, Message: "No seats available (lost optimistic concurrency race)");
-                }
-                catch (SqlException ex) when (ex.Number == 2627)
                 {
                     lock (resultsLock) failureCount++;
                     return (i, Success: false, Message: "No seats available (lost optimistic concurrency race)");

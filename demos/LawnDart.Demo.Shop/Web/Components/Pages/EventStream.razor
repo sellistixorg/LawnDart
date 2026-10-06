@@ -1,0 +1,161 @@
+@page "/stream"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject CommandEventLog CmdLog
+@implements IDisposable
+@using Microsoft.AspNetCore.Authorization
+
+<PageTitle>Event Stream - LawnDart Shop Demo</PageTitle>
+
+<div class="page-header">
+    <div class="page-title">⚡ Event Stream Viewer</div>
+    <div class="flex gap-2">
+        <span class="badge badge-info">@_entries.Count commands</span>
+        <span class="badge badge-warning">@_entries.Sum(e => e.Events.Count) events</span>
+        <button class="btn btn-secondary btn-sm" @onclick="Clear">Clear</button>
+    </div>
+</div>
+
+<div class="page-body">
+    <div class="card mb-4">
+        <div class="card-body" style="font-size:13px">
+            <p>
+                This viewer shows every command dispatched to the API and the domain events it produced.
+                <strong style="color:var(--command-border)">Blue entries</strong> are HTTP commands issued by users.
+                <strong style="color:var(--reactor-border)">Amber entries</strong> are reactor/task-processor commands issued automatically.
+                Events are nested below the command that caused them, all sharing the same <code>correlationId</code>.
+                Click <strong>{ }</strong> on any event to expand its full payload and metadata.
+            </p>
+        </div>
+    </div>
+
+    @if (!_entries.Any())
+    {
+        <div class="empty-state">
+            <h3>No commands yet</h3>
+            <p>Place an order in the <a href="/shop">Shop</a> to see the event chain appear here in real time.</p>
+        </div>
+    }
+    else
+    {
+        <div class="stream-container">
+            @foreach (var cmd in _entries)
+            {
+                <div class="command-entry @(cmd.IsReactorIssued ? "reactor" : "")">
+                    <div class="command-header">
+                        <span class="command-type">@cmd.CommandType</span>
+
+                        <span class="command-user">
+                            <span class="user-avatar @AvatarClass(cmd.UserName)" style="width:20px;height:20px;font-size:10px">
+                                @UserInitial(cmd.UserName)
+                            </span>
+                            @cmd.UserName
+                        </span>
+
+                        @if (cmd.IsReactorIssued)
+                        {
+                            <span class="badge badge-warning" style="font-size:11px">⚡ @(cmd.ReactorName ?? "Reactor")</span>
+                        }
+
+                        <span class="command-time">@cmd.Timestamp.ToString("HH:mm:ss.fff")</span>
+                    </div>
+
+                    <div class="command-corr">
+                        corr: <code>@cmd.CorrelationId</code>
+                    </div>
+
+                    @if (cmd.Events.Any())
+                    {
+                        <div class="events-list">
+                            @foreach (var evt in cmd.Events)
+                            {
+                                var evtKey = $"{cmd.CorrelationId}:{evt.SequencePosition}:{evt.EventType}";
+                                var expanded = _expandedEvents.Contains(evtKey);
+
+                                <div class="event-row">
+                                    <span class="event-type">@evt.EventType</span>
+                                    <span class="event-stream">@evt.StreamId</span>
+                                    @if (evt.SequencePosition > 0)
+                                    {
+                                        <span class="badge badge-muted" style="font-size:10px">#@evt.SequencePosition</span>
+                                    }
+                                    <span class="event-time">@evt.Timestamp.ToString("HH:mm:ss.fff")</span>
+                                    <button class="btn-json-toggle @(expanded ? "active" : "")"
+                                            title="Toggle full JSON"
+                                            @onclick="() => ToggleEvent(evtKey)">{ }</button>
+                                </div>
+
+                                @if (expanded)
+                                {
+                                    <div class="event-json-panel">
+                                        <div class="event-json-section">
+                                            <div class="event-json-label">Payload</div>
+                                            <pre class="event-json-pre">@evt.EventJson</pre>
+                                        </div>
+                                        <div class="event-json-section">
+                                            <div class="event-json-label">Metadata</div>
+                                            <pre class="event-json-pre">@evt.MetadataJson</pre>
+                                        </div>
+                                    </div>
+                                }
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="command-corr" style="font-style:italic">No events yet…</div>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    IReadOnlyList<CommandLogEntry> _entries = [];
+    readonly HashSet<string> _expandedEvents = [];
+
+    protected override void OnInitialized()
+    {
+        CmdLog.OnChanged += HandleChanged;
+        _entries = CmdLog.GetSnapshot();
+    }
+
+    void HandleChanged()
+    {
+        _entries = CmdLog.GetSnapshot();
+        InvokeAsync(StateHasChanged);
+    }
+
+    void Clear()
+    {
+        _expandedEvents.Clear();
+        _entries = CmdLog.GetSnapshot();
+    }
+
+    void ToggleEvent(string key)
+    {
+        if (!_expandedEvents.Add(key))
+            _expandedEvents.Remove(key);
+    }
+
+    string AvatarClass(string? name) => name?.ToLower() switch
+    {
+        var n when n?.Contains("alice") == true => "avatar-alice",
+        var n when n?.Contains("maria") == true => "avatar-maria",
+        var n when n?.Contains("bob") == true   => "avatar-bob",
+        var n when n?.Contains("carol") == true => "avatar-carol",
+        _                                        => "avatar-system"
+    };
+
+    string UserInitial(string? name)
+    {
+        if (string.IsNullOrEmpty(name)) return "?";
+        return name[..1].ToUpper();
+    }
+
+    public void Dispose()
+    {
+        CmdLog.OnChanged -= HandleChanged;
+    }
+}

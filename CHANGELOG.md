@@ -12,7 +12,12 @@ changes to the public API.
 
 ### Fixed
 
-- Academy Showcase C retries a reservation that loses the SQL Server events primary key, so the SQL profile can finish the live projection panel.
+- Reactor and task-processor command dispatch creates a DI scope, so a scoped `AuthorizationService` resolves when the handler loads an aggregate.
+- The Shop demo loads cancel and ship on the buyer's order stream. A seller can cancel only their own orders. Paying an order requires `Order.Pay`. A repeated order id fails before stock is reserved.
+- A SQL Server append that loses the events-table key throws `ConcurrencyException` with the expected and actual stream version.
+- Hosted reactor and processor inbox keys hash the consumer type's full name, so a long or generic name stays within the SQL Server 256-character limit. A message marked with the previous key can run once more.
+- The InMemory subscriptions demo resets a checkpoint outside `[0, head)`, including one left by a partial write, so a second run finishes.
+- Projection telemetry docs name the read-source tags `memory` and `sql`.
 - Two reactors or processors that handle the same message no longer share one inbox entry; each consumer deduplicates on its own.
 - Projection store API docs name the shipped stores (InMemory and SQL Server) only.
 - Configured schema, table, constraint, and index names that contain `]` or `'` are escaped before they are placed in SQL text.
@@ -21,6 +26,7 @@ changes to the public API.
 
 ### Added
 
+- A Shop demo (`demos/LawnDart.Demo.Shop`): Blazor UI over aggregates, DCB stock reservation, a reactor chain, permissions, and tenant-prefixed streams. InMemory by default, SQL Server by launch profile.
 - A SQL Server subscriptions demo (`demos/LawnDart.Demo.SqlServerSubscriptions`) shows catch-up then poll-backed live delivery.
 - An InMemory subscriptions demo (`demos/LawnDart.Demo.InMemorySubscriptions`) shows catch-up then live delivery with a client checkpoint.
 - A multi-context demo (`demos/LawnDart.Demo.MultiContextInMemory`) runs two bounded contexts with separate InMemory stores in one host.
@@ -34,6 +40,7 @@ changes to the public API.
 
 ### Changed
 
+- The outbox guide keys `IOutboxWriter` by bounded-context name. A dead-letter reset runs the consumer again after the inbox window expires.
 - Academy WebApi's SqlServer profile stores projection views in SQL Server, writes the transactional outbox, and creates event-store, outbox, and view tables at startup.
 - Academy's SqlServer profile creates event-store and outbox tables at startup and publishes through the transactional outbox.
 - `Library.Host` `AddSqlLibrary` registers SQL projection stores, the loan-notice reactor, a SQL inbox, and the outbox. `InitializeSqlLibraryAsync` creates those tables.

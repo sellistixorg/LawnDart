@@ -33,9 +33,12 @@ await app.Services.InitializeSqlInboxStoreAsync();
 `MarkProcessedAsync` is idempotent. `PurgeExpiredAsync` deletes rows older
 than that window and returns the count.
 
-Hosted reactors store `reactor:{type}:{message id}`. Hosted processors
-store `processor:{type}:{message id}`. Two consumers of one message each
-keep their own row. The key must be 256 characters or fewer.
+Hosted reactors store `reactor:{hash}:{message id}`. Hosted processors
+store `processor:{hash}:{message id}`. `hash` is 32 hexadecimal characters
+from SHA-256 of the consumer type's full name, so a long or generic name
+stays inside the column. Two consumers of one message each keep their own
+row. The key must be 256 characters or fewer. A message id that would push
+the key over that limit is stored as a hash of the same length.
 
 An existing table with the wrong shape throws
 `IncompatibleInboxSchemaException`. Drop and recreate the table. There is

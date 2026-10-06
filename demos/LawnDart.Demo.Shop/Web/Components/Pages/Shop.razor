@@ -1,0 +1,212 @@
+@page "/shop"
+@rendermode InteractiveServer
+@attribute [Authorize(Roles = "Customer")]
+@inject HttpClient Http
+@inject NavigationManager Nav
+@using System.Net.Http.Json
+@using System.Text.Json
+@using Microsoft.AspNetCore.Authorization
+
+<PageTitle>Shop - LawnDart Shop Demo</PageTitle>
+
+<div class="page-header">
+    <div class="page-title">Shop</div>
+    <button class="btn btn-warning btn-sm" @onclick="DemoRace" disabled="@_racing">
+        ⚡ DCB Race: Buy Last Item
+    </button>
+</div>
+
+<div class="page-body">
+    @if (_message is not null)
+    {
+        <div class="alert @(_isError ? "alert-danger" : "alert-success") mb-4">@_message</div>
+    }
+
+    @if (_raceResult is not null)
+    {
+        <div class="card mb-4">
+            <div class="card-header">DCB Race Result : Distributed Consistency Boundary Demo</div>
+            <div class="card-body">
+                <p class="text-sm mb-4" style="color:var(--text-muted)">
+                    Two concurrent PlaceOrder requests were sent for the last unit in stock.
+                    Reservation and the order are two appends. One reservation committed. The other buy was rejected (409 or 422).
+                </p>
+                @foreach (var (label, ok, msg) in _raceResult)
+                {
+                    <div class="alert @(ok ? "alert-success" : "alert-danger") mb-4">
+                        <strong>Request @label:</strong> @msg
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    @if (_loading)
+    {
+        <div class="loading-overlay"><div class="spinner"></div><p class="mt-4">Loading products…</p></div>
+    }
+    else if (!_products.Any())
+    {
+        <div class="empty-state">
+            <h3>No products yet</h3>
+            <p>Sellers (Bob or Larry) need to list products first.</p>
+        </div>
+    }
+    else
+    {
+        <div class="product-grid">
+            @foreach (var p in _products)
+            {
+                <div class="product-card">
+                    <div class="product-card-body">
+                        <div class="product-name">@p.Name</div>
+                        <div class="product-desc">@p.Description</div>
+                        <div class="product-price">$@p.Price.ToString("0.00")</div>
+                        <div class="product-stock @StockClass(p.Stock)">
+                            Stock: @p.Stock @(p.Stock == 0 ? "(Out of stock)" : p.Stock == 1 ? "(Last one!)" : "")
+                        </div>
+                        <div class="text-sm text-muted" style="margin-top:4px">
+                            SKU: <span class="font-mono">@p.Sku</span>
+                            &nbsp;·&nbsp;
+                            Sold by <strong>@(string.IsNullOrEmpty(p.SellerName) ? p.SellerId : p.SellerName)</strong>
+                        </div>
+                    </div>
+                    <div class="product-card-footer">
+                        <button class="btn btn-primary btn-sm"
+                                disabled="@(p.Stock == 0 || _ordering)"
+                                @onclick="() => PlaceOrder(p)">
+                            🛒 Buy
+                        </button>
+                        @if (p.Stock == 1)
+                        {
+                            <span class="badge badge-warning">Last unit!</span>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    bool _loading = true;
+    bool _ordering;
+    bool _racing;
+    string? _message;
+    bool _isError;
+    List<ProductCatalogView> _products = [];
+    List<(string Label, bool Ok, string Message)>? _raceResult;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadProductsAsync();
+    }
+
+    async Task LoadProductsAsync()
+    {
+        _loading = true;
+        var resp = await Http.GetAsync("/api/views/products");
+        if (resp.IsSuccessStatusCode)
+            _products = await resp.Content.ReadFromJsonAsync<List<ProductCatalogView>>() ?? [];
+        else if (resp.StatusCode != System.Net.HttpStatusCode.NotFound)
+        {
+            _message = $"Load failed: {resp.StatusCode}";
+            _isError = true;
+        }
+        else
+            _products = [];
+        _loading = false;
+    }
+
+    async Task PlaceOrder(ProductCatalogView product)
+    {
+        _ordering = true;
+        _message  = null;
+        _isError  = false;
+
+        var cmd = new PlaceOrderCommand(
+            Guid.NewGuid(), Guid.NewGuid(),
+            product.ProductId, product.Name, 1, product.Price,
+            SellerId:          product.SellerId,
+            SellerName:        product.SellerName,
+            SellerFulfillmentId: Guid.NewGuid());
+
+        var resp = await Http.PostAsJsonAsync("/api/order/place-order", cmd);
+        if (resp.IsSuccessStatusCode)
+        {
+            _message = $"✓ Order placed for {product.Name} from {product.SellerName}! Check My Orders.";
+            await Task.Delay(400);
+            await LoadProductsAsync();
+        }
+        else
+        {
+            _message = await FriendlyErrorAsync(resp);
+            _isError = true;
+        }
+
+        _ordering = false;
+    }
+
+    async Task DemoRace()
+    {
+        var target = _products.FirstOrDefault(p => p.Stock >= 1);
+        if (target is null)
+        {
+            _message = "No products in stock to race with. Ask a Seller to add stock first.";
+            _isError = true;
+            return;
+        }
+
+        _racing    = true;
+        _raceResult = null;
+        _message   = null;
+
+        var orderId1 = Guid.NewGuid();
+        var orderId2 = Guid.NewGuid();
+
+        var cmd1 = new PlaceOrderCommand(Guid.NewGuid(), orderId1, target.ProductId, target.Name, 1, target.Price,
+            SellerId: target.SellerId, SellerName: target.SellerName, SellerFulfillmentId: Guid.NewGuid());
+        var cmd2 = new PlaceOrderCommand(Guid.NewGuid(), orderId2, target.ProductId, target.Name, 1, target.Price,
+            SellerId: target.SellerId, SellerName: target.SellerName, SellerFulfillmentId: Guid.NewGuid());
+
+        var t1 = Http.PostAsJsonAsync("/api/order/place-order", cmd1);
+        var t2 = Http.PostAsJsonAsync("/api/order/place-order", cmd2);
+        await Task.WhenAll(t1, t2);
+
+        var r1 = await t1;
+        var r2 = await t2;
+
+        _raceResult =
+        [
+            ("A", r1.IsSuccessStatusCode, r1.IsSuccessStatusCode ? "Succeeded : order placed ✓" : $"Rejected : {await FriendlyErrorAsync(r1)}"),
+            ("B", r2.IsSuccessStatusCode, r2.IsSuccessStatusCode ? "Succeeded : order placed ✓" : $"Rejected : {await FriendlyErrorAsync(r2)}")
+        ];
+
+        await LoadProductsAsync();
+        _racing = false;
+    }
+
+    string StockClass(int stock) => stock switch
+    {
+        0 => "stock-zero",
+        1 => "stock-low",
+        _ => "stock-ok"
+    };
+
+    static async Task<string> FriendlyErrorAsync(HttpResponseMessage resp)
+    {
+        var body = await resp.Content.ReadAsStringAsync();
+        if ((int)resp.StatusCode == 409)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(body);
+                if (doc.RootElement.TryGetProperty("detail", out var d))
+                    return d.GetString() ?? "Concurrency conflict : another buyer just got the last unit.";
+            }
+            catch { }
+            return "Concurrency conflict : another buyer just got the last unit.";
+        }
+        return $"{(int)resp.StatusCode} {resp.ReasonPhrase}: {body}";
+    }
+}

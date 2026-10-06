@@ -13,7 +13,8 @@ public interface IInboxStore
     /// </summary>
     /// <param name="messageId">
     /// Dedup key. Reactor and processor hosted services pass
-    /// <c>reactor:{type}:{message id}</c> or <c>processor:{type}:{message id}</c>.
+    /// <c>reactor:{hash}:{message id}</c> or <c>processor:{hash}:{message id}</c>.
+    /// <c>hash</c> is a fixed-length hash of the consumer type's full name.
     /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task<bool> IsProcessedAsync(string messageId, CancellationToken cancellationToken = default);
@@ -24,7 +25,8 @@ public interface IInboxStore
     /// </summary>
     /// <param name="messageId">
     /// Dedup key. Reactor and processor hosted services pass
-    /// <c>reactor:{type}:{message id}</c> or <c>processor:{type}:{message id}</c>.
+    /// <c>reactor:{hash}:{message id}</c> or <c>processor:{hash}:{message id}</c>.
+    /// <c>hash</c> is a fixed-length hash of the consumer type's full name.
     /// </param>
     /// <param name="processedAt">When the message was processed.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
