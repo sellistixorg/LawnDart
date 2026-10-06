@@ -21,6 +21,7 @@ changes to the public API.
 
 ### Added
 
+- A multi-context demo (`demos/LawnDart.Demo.MultiContextInMemory`) runs two bounded contexts with separate InMemory stores in one host.
 - Dead-lettered outbox messages can be reset with `ResetDeadLetteredAsync` or `ResetAllDeadLetteredAsync`. The outbox processor republishes them on its next poll with the same message id.
 - `LawnDart.Messaging.SqlServer` stores inbox deduplication in SQL Server (`AddSqlInboxStore`), so duplicate deliveries are dropped across restarts and instances.
 - `AGENTS.md` is the instruction file for coding agents in this repository. A cloud agent commit includes `Signed-off-by: Cursor Agent <cursoragent@cursor.com>`.
