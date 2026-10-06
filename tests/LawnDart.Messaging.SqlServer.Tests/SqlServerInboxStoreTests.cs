@@ -115,7 +115,7 @@ public class SqlServerInboxStoreTests
         Assert.Equal(1, await CountRowsAsync(store));
 
         var storedKey = await ReadSingleKeyAsync(store);
-        Assert.Contains("CountingReactor", storedKey, StringComparison.Ordinal);
+        Assert.Equal(InboxConsumerKey.ForReactor(typeof(CountingReactor), "dup-1"), storedKey);
         Assert.EndsWith(":dup-1", storedKey, StringComparison.Ordinal);
         Assert.NotEqual("dup-1", storedKey);
 
