@@ -327,7 +327,16 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
             var command = new SqlCommand(sql, connection, transaction);
             await using var commandDisposal = command.ConfigureAwait(false);
             command.Parameters.AddRange(parameters.ToArray());
-            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (SqlException ex) when (IsDuplicateKey(ex))
+            {
+                // The version check and this insert are not one lock. A concurrent
+                // append of the same stream version lands here as 2627 or 2601.
+                throw new EventsTableDuplicateKeyException(ex);
+            }
 
             await InsertEventTagsAsync(connection, transaction, envelopes, chunkStart, chunkSize, sequencePositions, cancellationToken)
                 .ConfigureAwait(false);
@@ -657,6 +666,76 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
     {
         // 1205 = deadlock victim, -2 = timeout, -1 = connection failure, 20 = general network
         return ex.Number is 1205 or -2 or -1 or 20;
+    }
+
+    private static bool IsDuplicateKey(SqlException ex)
+    {
+        foreach (SqlError error in ex.Errors)
+        {
+            if (error.Number is 2627 or 2601)
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Stream version after a lost events-table insert. Reads the events table,
+    /// not the registry, and does not skip locked rows.
+    /// </summary>
+    private async Task<long> ReadCommittedStreamVersionAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string streamId,
+        CancellationToken cancellationToken)
+    {
+        var sql = $@"
+            SELECT TOP 1 Version
+            FROM {_qTable}
+            WHERE StreamId = @StreamId
+            ORDER BY Version DESC";
+
+        var command = new SqlCommand(sql, connection, transaction);
+        await using var commandDisposal = command.ConfigureAwait(false);
+        command.Parameters.Add(new SqlParameter("@StreamId", streamId));
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return result is null or DBNull ? -1L : Convert.ToInt64(result);
+    }
+
+    private async Task<ConcurrencyException> EventVersionConflictAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string streamId,
+        long expected,
+        Exception inner,
+        CancellationToken cancellationToken)
+    {
+        long actual;
+        try
+        {
+            actual = await ReadCommittedStreamVersionAsync(connection, transaction, streamId, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The failed insert can leave the transaction unable to read.
+            // Still report a version conflict; the caller reloads and retries.
+            actual = expected;
+        }
+
+        return new ConcurrencyException(
+            $"Expected version {expected} but current version is {actual}",
+            inner,
+            expected,
+            actual);
+    }
+
+    private sealed class EventsTableDuplicateKeyException : Exception
+    {
+        public EventsTableDuplicateKeyException(SqlException inner)
+            : base(inner.Message, inner)
+        {
+        }
     }
 
     /// <summary>
@@ -1822,8 +1901,19 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
 
                 var streamCurrentVersion = await GetCurrentVersionAsync(connection, transaction, streamId, ct).ConfigureAwait(false);
                 var startingVersion = streamCurrentVersion < 0 ? 1 : streamCurrentVersion + 1;
-                var sequencePositions = await InsertEventsBatchAsync(
-                    connection, transaction, streamId, startingVersion, envelopes, ct).ConfigureAwait(false);
+                IReadOnlyList<long> sequencePositions;
+                try
+                {
+                    sequencePositions = await InsertEventsBatchAsync(
+                        connection, transaction, streamId, startingVersion, envelopes, ct).ConfigureAwait(false);
+                }
+                catch (EventsTableDuplicateKeyException ex)
+                {
+                    var expected = expectedVersion ?? streamCurrentVersion;
+                    throw await EventVersionConflictAsync(
+                        connection, transaction, streamId, expected, ex.InnerException ?? ex, ct)
+                        .ConfigureAwait(false);
+                }
 
                 if (_enableRegistry)
                 {
@@ -1904,8 +1994,18 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                 var streamId = !string.IsNullOrWhiteSpace(tenantId)
                     ? $"{tenantId}:dcb:{Guid.NewGuid()}"
                     : $"dcb:{Guid.NewGuid()}";
-                var sequencePositions = await InsertEventsBatchAsync(
-                    connection, transaction, streamId, 0, envelopes, ct).ConfigureAwait(false);
+                IReadOnlyList<long> sequencePositions;
+                try
+                {
+                    sequencePositions = await InsertEventsBatchAsync(
+                        connection, transaction, streamId, 0, envelopes, ct).ConfigureAwait(false);
+                }
+                catch (EventsTableDuplicateKeyException ex)
+                {
+                    throw await EventVersionConflictAsync(
+                        connection, transaction, streamId, -1, ex.InnerException ?? ex, ct)
+                        .ConfigureAwait(false);
+                }
 
                 if (_enableRegistry)
                 {

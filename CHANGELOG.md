@@ -12,7 +12,7 @@ changes to the public API.
 
 ### Fixed
 
-- Academy Showcase C retries a reservation that loses the SQL Server events primary key, so the SQL profile can finish the live projection panel.
+- A SQL Server append that loses the events-table key throws `ConcurrencyException` with the expected and actual stream version.
 - Two reactors or processors that handle the same message no longer share one inbox entry; each consumer deduplicates on its own.
 - Projection store API docs name the shipped stores (InMemory and SQL Server) only.
 - Configured schema, table, constraint, and index names that contain `]` or `'` are escaped before they are placed in SQL text.

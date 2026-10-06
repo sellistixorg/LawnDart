@@ -112,6 +112,59 @@ public class SqlServerEventStoreTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AppendAsync_ParallelAppendsToOneStream_DuplicateKeyIsConcurrencyException()
+    {
+        var streamId = $"test-tenant:TestAggregate:race-{Guid.NewGuid():N}";
+        ConcurrencyException? duplicateKey = null;
+
+        for (var round = 0; round < 25 && duplicateKey is null; round++)
+        {
+            var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var tasks = Enumerable.Range(0, 12).Select(_ => Task.Run(async () =>
+            {
+                await start.Task.ConfigureAwait(false);
+                try
+                {
+                    await _eventStore!.AppendAsync(
+                        streamId,
+                        new IEvent[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) });
+                    return (Exception?)null;
+                }
+                catch (Exception ex)
+                {
+                    return ex;
+                }
+            })).ToArray();
+
+            start.SetResult();
+            var results = await Task.WhenAll(tasks);
+
+            Assert.Contains(results, ex => ex is null);
+            foreach (var ex in results)
+            {
+                if (ex is null)
+                    continue;
+
+                var concurrency = Assert.IsType<ConcurrencyException>(ex);
+                Assert.NotNull(concurrency.ExpectedPosition);
+                Assert.NotNull(concurrency.ActualPosition);
+                Assert.True(concurrency.ActualPosition >= concurrency.ExpectedPosition);
+
+                if (concurrency.InnerException is SqlException sql && sql.Number is 2627 or 2601)
+                    duplicateKey ??= concurrency;
+            }
+        }
+
+        Assert.NotNull(duplicateKey);
+        Assert.True(duplicateKey.ActualPosition > duplicateKey.ExpectedPosition);
+
+        var stored = await _eventStore!.ReadStreamAsync(streamId);
+        Assert.NotEmpty(stored);
+        for (var i = 0; i < stored.Count; i++)
+            Assert.Equal(i + 1, stored[i].Version);
+    }
+
+    [Fact]
     public async Task AppendAsync_PropagatesMetadata()
     {
         // Arrange
