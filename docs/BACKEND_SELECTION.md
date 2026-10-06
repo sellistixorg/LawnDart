@@ -124,7 +124,7 @@ Console:
 dotnet run --project demos/LawnDart.Demo.Academy --launch-profile SqlServer
 ```
 
-WebApi (no source change: the `SqlServer` profile sets `EventStore__UseSqlServer=true`):
+WebApi (the `SqlServer` profile sets `EventStore__UseSqlServer=true`):
 
 ```bash
 dotnet run --project demos/LawnDart.Demo.Academy.WebApi --launch-profile SqlServer
@@ -135,11 +135,11 @@ Required: a local SQL Server and `ConnectionStrings__Academy`, or
 
 `Server=localhost;Database=LawnDartAcademy;Trusted_Connection=True;TrustServerCertificate=True`
 
-Create the database first. Academy does not call `InitializeSchemaAsync`; you
-must create the event-store schema (or run the SQL tests' init against that
-database) before the first command. Academy WebApi keeps
-`AddInMemoryProjectionStores` even on the SQL profile: views stay
-process-local. That is a named limitation, not a second event-store bug.
+Create the database first. The host creates event-store and outbox tables at
+startup. Both SQL profiles set `EnableOutbox` and register the in-memory
+outbox publisher. Academy WebApi also creates view and checkpoint tables and
+reads those views from SQL Server. Academy console keeps hand-written
+projectors, so that profile does not register Lightweight projection stores.
 
 ## Switching
 

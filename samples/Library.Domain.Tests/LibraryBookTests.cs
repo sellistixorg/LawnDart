@@ -1,5 +1,6 @@
 using LawnDart;
 using LawnDart.Aggregates;
+using LawnDart.EventStore;
 using LawnDart.Testing.Bdd;
 using Library.Domain;
 using Library.Host;
@@ -93,5 +94,18 @@ public sealed class LibraryBookTests
         using var sp = services.BuildServiceProvider();
         Assert.NotNull(sp.GetService<IAggregateRepository>());
         Assert.NotNull(sp.GetService<LawnDart.ICommandHandler<BorrowBookCommand>>());
+    }
+
+    [Fact]
+    public void add_sql_library_registers()
+    {
+        var services = new ServiceCollection();
+        LibraryHost.AddSqlLibrary(services, "Server=127.0.0.1;Database=unused;TrustServerCertificate=True");
+        using var sp = services.BuildServiceProvider();
+        Assert.NotNull(sp.GetService<IAggregateRepository>());
+        Assert.NotNull(sp.GetService<ICommandHandler<BorrowBookCommand>>());
+        Assert.Equal(
+            "SqlServerEventStore",
+            sp.GetRequiredKeyedService<IEventStore>("default").GetType().Name);
     }
 }
