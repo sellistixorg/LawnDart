@@ -8,8 +8,8 @@ namespace LawnDart.Messaging.Hosting;
 /// <summary>
 /// Hosted service that drives a single <see cref="IReactor{TEvent}"/> instance.
 /// On startup it subscribes to <typeparamref name="TEvent"/> via <see cref="IMessageTransport"/>,
-/// applies inbox deduplication via <see cref="IInboxStore"/>, invokes the reactor,
-/// then dispatches returned commands via <see cref="ICommandDispatcher"/> (if registered).
+/// applies inbox deduplication via <see cref="IInboxStore"/> (a hash of this reactor's type name plus the message id),
+/// invokes the reactor, then dispatches returned commands via <see cref="ICommandDispatcher"/> (if registered).
 /// </summary>
 /// <typeparam name="TReactor">The reactor implementation type.</typeparam>
 /// <typeparam name="TEvent">The event type the reactor handles.</typeparam>
@@ -46,8 +46,9 @@ public sealed class ReactorHostedService<TReactor, TEvent> : BackgroundService
     private async Task HandleAsync(TEvent @event, MessageContext context, CancellationToken ct)
     {
         var messageId = context.MessageId;
+        var inboxKey = messageId is null ? null : InboxConsumerKey.ForReactor(typeof(TReactor), messageId);
 
-        if (messageId is not null && await _inboxStore.IsProcessedAsync(messageId, ct))
+        if (inboxKey is not null && await _inboxStore.IsProcessedAsync(inboxKey, ct).ConfigureAwait(false))
         {
             MessagingTelemetry.RecordInboxDuplicate(EventTypeName);
             _logger.LogDebug(
@@ -61,13 +62,13 @@ public sealed class ReactorHostedService<TReactor, TEvent> : BackgroundService
 
         try
         {
-            var commands = (await _reactor.ReactAsync(@event, context, ct)).ToList();
+            var commands = (await _reactor.ReactAsync(@event, context, ct).ConfigureAwait(false)).ToList();
 
             if (_commandDispatcher is not null)
             {
                 foreach (var command in commands)
                 {
-                    await _commandDispatcher.DispatchAsync(command, context.CreateChild(), ct);
+                    await _commandDispatcher.DispatchAsync(command, context.CreateChild(), ct).ConfigureAwait(false);
                 }
             }
             else if (commands.Count > 0)
@@ -77,9 +78,9 @@ public sealed class ReactorHostedService<TReactor, TEvent> : BackgroundService
                     ReactorTypeName, commands.Count);
             }
 
-            if (messageId is not null)
+            if (inboxKey is not null)
             {
-                await _inboxStore.MarkProcessedAsync(messageId, DateTimeOffset.UtcNow, ct);
+                await _inboxStore.MarkProcessedAsync(inboxKey, DateTimeOffset.UtcNow, ct).ConfigureAwait(false);
             }
 
             var elapsed = TimeProvider.System.GetElapsedTime(start);

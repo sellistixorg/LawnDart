@@ -26,10 +26,10 @@ public static class WaitForAsync
 
         while (DateTime.UtcNow < deadline && !cancellationToken.IsCancellationRequested)
         {
-            if (await condition())
+            if (await condition().ConfigureAwait(false))
                 return;
 
-            await Task.Delay(interval, cancellationToken);
+            await Task.Delay(interval, cancellationToken).ConfigureAwait(false);
         }
 
         if (cancellationToken.IsCancellationRequested)
@@ -69,7 +69,7 @@ public static class WaitForAsync
             if (predicate(value))
                 return value;
 
-            await Task.Delay(interval, cancellationToken);
+            await Task.Delay(interval, cancellationToken).ConfigureAwait(false);
         }
 
         if (cancellationToken.IsCancellationRequested)

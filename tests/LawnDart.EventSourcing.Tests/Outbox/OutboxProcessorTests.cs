@@ -179,6 +179,50 @@ public class OutboxProcessorTests
     }
 
     [Fact]
+    public async Task ProcessBatch_AfterDeadLetterReset_PublishesAndMarksProcessed()
+    {
+        var writer = new InMemoryOutboxWriter();
+        var publisher = new TestOutboxPublisher(shouldFail: true);
+        var messageId = Guid.NewGuid();
+        await writer.WriteAsync(new OutboxMessage
+        {
+            Id = messageId,
+            EventType = "TestEvent",
+            Payload = "{}"u8.ToArray(),
+            Metadata = "{}",
+            CreatedAt = DateTime.UtcNow,
+            StreamId = "stream1",
+            SequencePosition = 1
+        });
+
+        var processor = new TestableOutboxProcessor(writer, publisher, maxAttempts: 3);
+        for (var i = 0; i < 5; i++)
+        {
+            await processor.ProcessBatchPublicAsync(CancellationToken.None);
+            if ((await writer.GetDeadLetteredAsync(10)).Count == 1)
+                break;
+        }
+
+        var dead = Assert.Single(await writer.GetDeadLetteredAsync(10));
+        Assert.Equal(messageId, dead.Id);
+        Assert.Null(dead.ProcessedAt);
+
+        Assert.True(await writer.ResetDeadLetteredAsync(messageId));
+        var queued = Assert.Single(await writer.GetUnprocessedAsync(10));
+        Assert.Equal(0, queued.Attempts);
+        Assert.Null(queued.DeadLetteredAt);
+        Assert.NotNull(queued.LastError);
+
+        publisher.ShouldFail = false;
+        await processor.ProcessBatchPublicAsync(CancellationToken.None);
+
+        Assert.Contains(publisher.PublishedMessages, m => m.Id == messageId);
+        Assert.NotNull(queued.ProcessedAt);
+        Assert.Empty(await writer.GetUnprocessedAsync(10));
+        Assert.Empty(await writer.GetDeadLetteredAsync(10));
+    }
+
+    [Fact]
     public async Task ProcessBatch_ProcessesMultipleMessages()
     {
         // Arrange
@@ -243,17 +287,17 @@ public class OutboxProcessorTests
 
 public class TestOutboxPublisher : IOutboxPublisher
 {
-    private readonly bool _shouldFail;
+    public bool ShouldFail { get; set; }
     public List<OutboxMessage> PublishedMessages { get; } = new();
 
     public TestOutboxPublisher(bool shouldFail = false)
     {
-        _shouldFail = shouldFail;
+        ShouldFail = shouldFail;
     }
 
     public Task PublishAsync(OutboxMessage message, CancellationToken cancellationToken = default)
     {
-        if (_shouldFail)
+        if (ShouldFail)
         {
             throw new InvalidOperationException("Simulated publish failure");
         }

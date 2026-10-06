@@ -212,8 +212,8 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
     /// <inheritdoc/>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation(
-            "[{Context}/{Projection}] Runner starting (kind={Kind}, node={Node}/{Total})",
+        LightweightProjectionRunnerServiceLog.RunnerStarting(
+            _logger,
             _options.ContextName ?? "default",
             DisplayName, _registration.Kind,
             _options.NodeInstance, _options.TotalInstances);
@@ -222,7 +222,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
         var checkpoint = await _checkpointStore.GetCheckpointAsync(
             StorageKey,
             _options.NodeInstance,
-            stoppingToken);
+            stoppingToken).ConfigureAwait(false);
 
         long lastPosition = checkpoint?.LastSequencePosition ?? -1;
         _lastAppliedSequence = lastPosition;
@@ -230,8 +230,8 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
         int eventsSinceCheckpoint = 0;
         bool isColdStart = checkpoint is null;
 
-        _logger.LogInformation(
-            "[{Projection}] {Mode}: resuming from global position {Position}",
+        LightweightProjectionRunnerServiceLog.Resuming(
+            _logger,
             DisplayName,
             isColdStart ? "Cold start" : "Warm start",
             lastPosition);
@@ -252,11 +252,11 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
             if (_registration.Kind == ProjectionKind.SingleStream
                 || _registration.Kind == ProjectionKind.MultiStream)
             {
-                await RestoreSingleStreamInstancesAsync(stoppingToken);
+                await RestoreSingleStreamInstancesAsync(stoppingToken).ConfigureAwait(false);
             }
             else
             {
-                await RestoreSingleInstanceAsync(stoppingToken);
+                await RestoreSingleInstanceAsync(stoppingToken).ConfigureAwait(false);
             }
 
             // Cap RAM immediately after eager warm-restore (all instances are clean).
@@ -268,9 +268,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
         }
         else
         {
-            _logger.LogInformation(
-                "[{Projection}] Lazy working-set mode: skipping bulk restore ({Count} will hydrate on demand)",
-                DisplayName, 0);
+            LightweightProjectionRunnerServiceLog.LazyWorkingSet(_logger, DisplayName, 0);
             ProjectionTelemetry.SetWorkingSetSize(StorageKey, 0);
         }
 
@@ -280,18 +278,14 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
         //    lifetime of this runner.
         try
         {
-            await _eventStore.GetCurrentSequenceAsync(stoppingToken);
+            await _eventStore.GetCurrentSequenceAsync(stoppingToken).ConfigureAwait(false);
             _supportsSequenceCheck = true;
-            _logger.LogDebug(
-                "[{Projection}] Store supports sequence check — idle polls will skip I/O when caught up",
-                DisplayName);
+            LightweightProjectionRunnerServiceLog.SequenceCheckSupported(_logger, DisplayName);
         }
         catch (NotSupportedException)
         {
             _supportsSequenceCheck = false;
-            _logger.LogDebug(
-                "[{Projection}] Store does not support sequence check — falling back to timed poll interval",
-                DisplayName);
+            LightweightProjectionRunnerServiceLog.SequenceCheckUnsupported(_logger, DisplayName);
         }
 
         // 4. Subscribe (when available) + poll fallback / recovery
@@ -304,7 +298,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
         if (UsesSharedPipe)
         {
             _sharedPipe!.Register(this, cursor.LastPosition);
-            await _sharedPipe.WaitUntilActivatedAsync(stoppingToken);
+            await _sharedPipe.WaitUntilActivatedAsync(stoppingToken).ConfigureAwait(false);
             _sharedPipePrivateCatchUp = !_sharedPipe.IsAttached(StorageKey);
         }
         else
@@ -318,7 +312,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
             {
                 if (_poisoned)
                 {
-                    await HaltOnPoisonAsync(lastPosition, totalEventsProcessed, stoppingToken);
+                    await HaltOnPoisonAsync(lastPosition, totalEventsProcessed, stoppingToken).ConfigureAwait(false);
                     break;
                 }
 
@@ -327,7 +321,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
                     cursor.LastPosition = lastPosition;
                     cursor.TotalEventsProcessed = totalEventsProcessed;
                     cursor.EventsSinceCheckpoint = eventsSinceCheckpoint;
-                    var ingested = await DrainSharedPipeAsync(cursor, stoppingToken);
+                    var ingested = await DrainSharedPipeAsync(cursor, stoppingToken).ConfigureAwait(false);
                     lastPosition = cursor.LastPosition;
                     totalEventsProcessed = cursor.TotalEventsProcessed;
                     eventsSinceCheckpoint = cursor.EventsSinceCheckpoint;
@@ -336,7 +330,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
 
                     if (_poisoned)
                     {
-                        await HaltOnPoisonAsync(lastPosition, totalEventsProcessed, stoppingToken);
+                        await HaltOnPoisonAsync(lastPosition, totalEventsProcessed, stoppingToken).ConfigureAwait(false);
                         break;
                     }
 
@@ -382,7 +376,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
                         cursor.LastPosition = lastPosition;
                         cursor.TotalEventsProcessed = totalEventsProcessed;
                         cursor.EventsSinceCheckpoint = eventsSinceCheckpoint;
-                        var ingested = await DrainSubscriptionAsync(cursor, stoppingToken);
+                        var ingested = await DrainSubscriptionAsync(cursor, stoppingToken).ConfigureAwait(false);
                         lastPosition = cursor.LastPosition;
                         totalEventsProcessed = cursor.TotalEventsProcessed;
                         eventsSinceCheckpoint = cursor.EventsSinceCheckpoint;
@@ -390,7 +384,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
 
                         if (_poisoned)
                         {
-                            await HaltOnPoisonAsync(lastPosition, totalEventsProcessed, stoppingToken);
+                            await HaltOnPoisonAsync(lastPosition, totalEventsProcessed, stoppingToken).ConfigureAwait(false);
                             break;
                         }
 
@@ -406,7 +400,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
 
                         if (IsSubscriptionLive)
                         {
-                            await RecoveryPollWindowAsync(cursor, stoppingToken);
+                            await RecoveryPollWindowAsync(cursor, stoppingToken).ConfigureAwait(false);
                             lastPosition = cursor.LastPosition;
                             totalEventsProcessed = cursor.TotalEventsProcessed;
                             eventsSinceCheckpoint = cursor.EventsSinceCheckpoint;
@@ -414,7 +408,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
 
                             if (_poisoned)
                             {
-                                await HaltOnPoisonAsync(lastPosition, totalEventsProcessed, stoppingToken);
+                                await HaltOnPoisonAsync(lastPosition, totalEventsProcessed, stoppingToken).ConfigureAwait(false);
                                 break;
                             }
 
@@ -445,9 +439,9 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
                 long toPosition = lastPosition + _options.BatchSize;
                 var pollSw = Stopwatch.StartNew();
 
-                await foreach (var se in ReadEventsAsync(fromPosition, toPosition, stoppingToken))
+                await foreach (var se in ReadEventsAsync(fromPosition, toPosition, stoppingToken).ConfigureAwait(false))
                 {
-                    if (!await DispatchEventAsync(se, stoppingToken))
+                    if (!await DispatchEventAsync(se, stoppingToken).ConfigureAwait(false))
                         break;
                     lastPosition = se.SequencePosition;
                     totalEventsProcessed++;
@@ -457,14 +451,14 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
                     if (eventsSinceCheckpoint >= _options.CheckpointInterval)
                     {
                         await FlushViewsAndCheckpointAsync(
-                            lastPosition, totalEventsProcessed, stoppingToken);
+                            lastPosition, totalEventsProcessed, stoppingToken).ConfigureAwait(false);
                         eventsSinceCheckpoint = 0;
                     }
                 }
 
                 if (_poisoned)
                 {
-                    await HaltOnPoisonAsync(lastPosition, totalEventsProcessed, stoppingToken);
+                    await HaltOnPoisonAsync(lastPosition, totalEventsProcessed, stoppingToken).ConfigureAwait(false);
                     break;
                 }
 
@@ -473,9 +467,9 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
                 // the batch as empty and walking the cursor forward without dispatching.
                 if (batchCount == 0 && UsesFilteredEventQuery())
                 {
-                    await foreach (var se in ReadEventsAsync(fromPosition, toPosition, stoppingToken))
+                    await foreach (var se in ReadEventsAsync(fromPosition, toPosition, stoppingToken).ConfigureAwait(false))
                     {
-                        if (!await DispatchEventAsync(se, stoppingToken))
+                        if (!await DispatchEventAsync(se, stoppingToken).ConfigureAwait(false))
                             break;
                         lastPosition = se.SequencePosition;
                         totalEventsProcessed++;
@@ -485,7 +479,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
                         if (eventsSinceCheckpoint >= _options.CheckpointInterval)
                         {
                             await FlushViewsAndCheckpointAsync(
-                                lastPosition, totalEventsProcessed, stoppingToken);
+                                lastPosition, totalEventsProcessed, stoppingToken).ConfigureAwait(false);
                             eventsSinceCheckpoint = 0;
                         }
                     }
@@ -493,7 +487,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
 
                 if (_poisoned)
                 {
-                    await HaltOnPoisonAsync(lastPosition, totalEventsProcessed, stoppingToken);
+                    await HaltOnPoisonAsync(lastPosition, totalEventsProcessed, stoppingToken).ConfigureAwait(false);
                     break;
                 }
 
@@ -512,10 +506,10 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
                 // Partial or empty batch → at or near the tail. Flush dirties unless we are still
                 // catching up (SkipTailFlushWhileCatchingUp) — interval/stop flushes still apply.
                 if (_dirtyInstances.Count > 0
-                    && !await ShouldSkipOpportunisticFlushAsync(lastPosition, stoppingToken))
+                    && !await ShouldSkipOpportunisticFlushAsync(lastPosition, stoppingToken).ConfigureAwait(false))
                 {
                     await FlushViewsAndCheckpointAsync(
-                        lastPosition, totalEventsProcessed, stoppingToken);
+                        lastPosition, totalEventsProcessed, stoppingToken).ConfigureAwait(false);
                     eventsSinceCheckpoint = 0;
                 }
 
@@ -524,7 +518,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
                     // Ask the store whether any new events exist beyond our last position.
                     // This is a cheap in-memory read for in-process stores and a lightweight
                     // round trip for remote ones.
-                    var headSeq = await _eventStore.GetCurrentSequenceAsync(stoppingToken);
+                    var headSeq = await _eventStore.GetCurrentSequenceAsync(stoppingToken).ConfigureAwait(false);
                     ProjectionTelemetry.RecordCheckpointLag(StorageKey, headSeq - lastPosition);
                     if (!IsFarBehind(lastPosition, headSeq))
                     {
@@ -550,22 +544,20 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
                             long newLast = Math.Min(windowEnd, headSeq);
                             if (newLast > lastPosition)
                             {
-                                _logger.LogDebug(
-                                    "[{Projection}] Filtered catch-up: advancing cursor from {Prev} to {New} " +
-                                    "(head={Head}, windowEnd={WindowEnd}) — empty typed window",
-                                    DisplayName, lastPosition, newLast, headSeq, windowEnd);
+                                LightweightProjectionRunnerServiceLog.FilteredCatchUp(
+                                    _logger, DisplayName, lastPosition, newLast, headSeq, windowEnd);
                                 lastPosition = newLast;
-                                if (!await ShouldSkipOpportunisticFlushAsync(lastPosition, stoppingToken))
+                                if (!await ShouldSkipOpportunisticFlushAsync(lastPosition, stoppingToken).ConfigureAwait(false))
                                 {
                                     await FlushViewsAndCheckpointAsync(
-                                        lastPosition, totalEventsProcessed, stoppingToken);
+                                        lastPosition, totalEventsProcessed, stoppingToken).ConfigureAwait(false);
                                     eventsSinceCheckpoint = 0;
                                 }
                             }
                             else
                             {
                                 // Tail band: head is close but nothing visible yet — poll again.
-                                await Task.Delay(_options.PollInterval, stoppingToken);
+                                await Task.Delay(_options.PollInterval, stoppingToken).ConfigureAwait(false);
                                 continue;
                             }
                         }
@@ -579,15 +571,13 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
                             long newLast    = Math.Min(windowEnd, headSeq);
                             if (newLast > lastPosition)
                             {
-                                _logger.LogDebug(
-                                    "[{Projection}] Sequence gap walk: advancing cursor from {Prev} to {New} " +
-                                    "(head={Head}, windowEnd={WindowEnd}) — empty global window",
-                                    DisplayName, lastPosition, newLast, headSeq, windowEnd);
+                                LightweightProjectionRunnerServiceLog.SequenceGapWalk(
+                                    _logger, DisplayName, lastPosition, newLast, headSeq, windowEnd);
                                 lastPosition = newLast;
-                                if (!await ShouldSkipOpportunisticFlushAsync(lastPosition, stoppingToken))
+                                if (!await ShouldSkipOpportunisticFlushAsync(lastPosition, stoppingToken).ConfigureAwait(false))
                                 {
                                     await FlushViewsAndCheckpointAsync(
-                                        lastPosition, totalEventsProcessed, stoppingToken);
+                                        lastPosition, totalEventsProcessed, stoppingToken).ConfigureAwait(false);
                                     eventsSinceCheckpoint = 0;
                                 }
                             }
@@ -599,7 +589,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
                     }
 
                     // Genuinely caught up: nothing new in the store.
-                    await Task.Delay(_options.PollInterval, stoppingToken);
+                    await Task.Delay(_options.PollInterval, stoppingToken).ConfigureAwait(false);
                 }
                 else
                 {
@@ -608,7 +598,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
                     // partial batch there may be more just below the batch ceiling, so loop
                     // immediately; otherwise wait the full poll interval.
                     if (batchCount == 0)
-                        await Task.Delay(_options.PollInterval, stoppingToken);
+                        await Task.Delay(_options.PollInterval, stoppingToken).ConfigureAwait(false);
                     // else: partial batch > 0 → loop immediately
                 }
             }
@@ -618,11 +608,9 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
             }
             catch (EventHydrationException ex)
             {
-                _logger.LogError(ex,
-                    "[{Projection}] Fail-closed event at or after sequence {Sequence}; backing off {Backoff}. " +
-                    "Deploy the missing type or upcaster. There is no skip override.",
-                    DisplayName, lastPosition + 1, FailClosedBackoff);
-                await Task.Delay(FailClosedBackoff, stoppingToken);
+                LightweightProjectionRunnerServiceLog.FailClosed(
+                    _logger, ex, DisplayName, lastPosition + 1, FailClosedBackoff);
+                await Task.Delay(FailClosedBackoff, stoppingToken).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -632,10 +620,9 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
                 totalEventsProcessed = Math.Max(totalEventsProcessed, cursor.TotalEventsProcessed);
                 eventsSinceCheckpoint = Math.Max(eventsSinceCheckpoint, cursor.EventsSinceCheckpoint);
                 _lastAppliedSequence = lastPosition;
-                _logger.LogError(ex,
-                    "[{Projection}] Error in poll loop; backing off {Backoff}",
-                    DisplayName, FailClosedBackoff);
-                await Task.Delay(FailClosedBackoff, stoppingToken);
+                LightweightProjectionRunnerServiceLog.PollLoopError(
+                    _logger, ex, DisplayName, FailClosedBackoff);
+                await Task.Delay(FailClosedBackoff, stoppingToken).ConfigureAwait(false);
             }
         }
 
@@ -645,23 +632,20 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
         try
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-            await DrainWriteBehindAsync(cts.Token);
+            await DrainWriteBehindAsync(cts.Token).ConfigureAwait(false);
             if (_dirtyInstances.Count > 0 || eventsSinceCheckpoint > 0 || lastPosition > _lastCheckpointSequence)
             {
                 // Stop path always uses the inline barrier (await durable ack).
-                await FlushViewsAndCheckpointCoreAsync(lastPosition, totalEventsProcessed, cts.Token);
+                await FlushViewsAndCheckpointCoreAsync(lastPosition, totalEventsProcessed, cts.Token).ConfigureAwait(false);
             }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex,
-                "[{Projection}] Final checkpoint flush did not complete cleanly",
-                DisplayName);
+            LightweightProjectionRunnerServiceLog.FinalFlushIncomplete(_logger, ex, DisplayName);
         }
 
-        _logger.LogInformation(
-            "[{Projection}] Runner stopped at position {Position} ({Total} events total)",
-            DisplayName, lastPosition, totalEventsProcessed);
+        LightweightProjectionRunnerServiceLog.RunnerStopped(
+            _logger, DisplayName, lastPosition, totalEventsProcessed);
     }
 
     // ── Event reading ──────────────────────────────────────────────────────────
@@ -758,7 +742,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
             return true;
 
         var instanceId = BuildInstanceId(se.StreamId);
-        var instance = await GetOrHydrateInstanceAsync(instanceId, ct);
+        var instance = await GetOrHydrateInstanceAsync(instanceId, ct).ConfigureAwait(false);
         return ApplyEvent(instance, instanceId, se);
     }
 
@@ -862,20 +846,17 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
             ?? throw new InvalidOperationException(
                 $"Cannot create instance of '{_registration.HandlerType.FullName}'.");
 
-        var saved = await _viewStore.GetViewWithCheckpointAsync(StorageKey, instanceId, ct);
+        var saved = await _viewStore.GetViewWithCheckpointAsync(StorageKey, instanceId, ct).ConfigureAwait(false);
         if (saved is not null)
         {
             SetProjectionState(instance, saved.Value.ViewData);
             _readCache?.Set(StorageKey, instanceId, saved.Value.ViewData, saved.Value.Checkpoint);
-            _logger.LogDebug(
-                "[{Projection}] Hydrated instance '{Instance}' from durable store at seq {Seq}",
-                DisplayName, instanceId, saved.Value.Checkpoint);
+            LightweightProjectionRunnerServiceLog.HydratedInstance(
+                _logger, DisplayName, instanceId, saved.Value.Checkpoint);
         }
         else
         {
-            _logger.LogDebug(
-                "[{Projection}] New empty instance created for '{Instance}'",
-                DisplayName, instanceId);
+            LightweightProjectionRunnerServiceLog.NewEmptyInstance(_logger, DisplayName, instanceId);
         }
 
         lock (_instanceStateGate)
@@ -899,7 +880,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
     private async Task<bool> DispatchToSingleInstanceAsync(SequencedEvent se, CancellationToken ct)
     {
         var singleInstanceId = ProjectionInstanceIds.ForUnpartitioned(_options);
-        var instance = await GetOrHydrateInstanceAsync(singleInstanceId, ct);
+        var instance = await GetOrHydrateInstanceAsync(singleInstanceId, ct).ConfigureAwait(false);
         return ApplyEvent(instance, singleInstanceId, se);
     }
 
@@ -916,7 +897,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
         if (!_partitioningService.OwnsStream(instanceId))
             return true;
 
-        var instance = await GetOrHydrateInstanceAsync(instanceId, ct);
+        var instance = await GetOrHydrateInstanceAsync(instanceId, ct).ConfigureAwait(false);
         return ApplyEvent(instance, instanceId, se);
     }
 
@@ -953,10 +934,8 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
                 lastEx = ex;
                 SetProjectionState(instance, preApplyJson);
                 ProjectionTelemetry.RecordEventFailed(StorageKey, eventType, ex.GetType().Name);
-                _logger.LogError(ex,
-                    "[{Projection}] Error processing event {EventType} for instance '{Instance}' " +
-                    "(attempt {Attempt}/{Max}) at sequence {Sequence}",
-                    DisplayName, eventType, instanceId, attempt, PoisonRetryAttempts, se.SequencePosition);
+                LightweightProjectionRunnerServiceLog.EventProcessingFailed(
+                    _logger, ex, DisplayName, eventType, instanceId, attempt, PoisonRetryAttempts, se.SequencePosition);
             }
         }
 
@@ -964,11 +943,8 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
         _poisonSequence = se.SequencePosition;
         _poisonInstanceId = instanceId;
         _poisonEventType = eventType;
-        _logger.LogError(lastEx,
-            "[{Projection}] Poison event halted runner after {Attempts} attempts. " +
-            "Event {EventType} at sequence {Sequence} instance '{Instance}'. " +
-            "Checkpoint will remain at the last successful sequence. Rebuild after a handler fix to recover.",
-            DisplayName, PoisonRetryAttempts, eventType, se.SequencePosition, instanceId);
+        LightweightProjectionRunnerServiceLog.PoisonHalted(
+            _logger, lastEx, DisplayName, PoisonRetryAttempts, eventType, se.SequencePosition, instanceId);
         return false;
     }
 
@@ -996,8 +972,8 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
             cts.CancelAfter(TimeSpan.FromSeconds(30));
-            await DrainWriteBehindAsync(cts.Token);
-            await FlushViewsAndCheckpointCoreAsync(lastSuccessfulPosition, totalEventsProcessed, cts.Token);
+            await DrainWriteBehindAsync(cts.Token).ConfigureAwait(false);
+            await FlushViewsAndCheckpointCoreAsync(lastSuccessfulPosition, totalEventsProcessed, cts.Token).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -1013,7 +989,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
 
         try
         {
-            await Task.Delay(Timeout.InfiniteTimeSpan, stoppingToken);
+            await Task.Delay(Timeout.InfiniteTimeSpan, stoppingToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
@@ -1024,7 +1000,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
 
     private async Task RestoreSingleStreamInstancesAsync(CancellationToken ct)
     {
-        var savedViews = await _viewStore.GetViewsByTypeAsync(StorageKey, ct);
+        var savedViews = await _viewStore.GetViewsByTypeAsync(StorageKey, ct).ConfigureAwait(false);
 
         foreach (var (instanceId, viewJson) in savedViews)
         {
@@ -1043,7 +1019,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
 
             // Prefer checkpoint column (last-applied) when available for freshness tracking.
             var withCheckpoint = await _viewStore.GetViewWithCheckpointAsync(
-                StorageKey, instanceId, ct);
+                StorageKey, instanceId, ct).ConfigureAwait(false);
             if (withCheckpoint is not null)
             {
                 _lastAppliedByInstance[instanceId] = withCheckpoint.Value.Checkpoint;
@@ -1061,7 +1037,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
         var singleInstanceId = ProjectionInstanceIds.ForUnpartitioned(_options);
 
         var saved = await _viewStore.GetViewWithCheckpointAsync(
-            StorageKey, singleInstanceId, ct);
+            StorageKey, singleInstanceId, ct).ConfigureAwait(false);
 
         if (saved is null)
             return;
@@ -1094,7 +1070,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
 
         try
         {
-            var headSeq = await _eventStore.GetCurrentSequenceAsync(ct);
+            var headSeq = await _eventStore.GetCurrentSequenceAsync(ct).ConfigureAwait(false);
             return ProjectionFlushPolicy.ShouldSkipOpportunisticFlush(
                 _options.SkipTailFlushWhileCatchingUp,
                 supportsSequenceCheck: true,
@@ -1104,9 +1080,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogDebug(ex,
-                "[{Projection}] Could not evaluate catch-up flush skip; allowing opportunistic flush",
-                DisplayName);
+            LightweightProjectionRunnerServiceLog.CatchUpFlushSkipFailed(_logger, ex, DisplayName);
             return false;
         }
     }
@@ -1133,11 +1107,11 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
     {
         if (!_options.EnableWriteBehind)
         {
-            await FlushViewsAndCheckpointCoreAsync(position, totalEventsProcessed, ct);
+            await FlushViewsAndCheckpointCoreAsync(position, totalEventsProcessed, ct).ConfigureAwait(false);
             return;
         }
 
-        await ScheduleWriteBehindFlushAsync(position, totalEventsProcessed, ct);
+        await ScheduleWriteBehindFlushAsync(position, totalEventsProcessed, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -1163,15 +1137,14 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
             flushTask = _writeBehindTail;
         }
 
-        _logger.LogDebug(
-            "[{Projection}] Write-behind scheduled at position {Position} ({DirtyCount} view(s), inFlight={InFlight})",
-            DisplayName, position, wave.Writes.Count, inFlight);
+        LightweightProjectionRunnerServiceLog.WriteBehindScheduled(
+            _logger, DisplayName, position, wave.Writes.Count, inFlight);
 
         // Allow up to MaxInFlight waves without awaiting so the poll loop overlaps SQL I/O.
         // Await only when we would exceed the budget (backpressure).
         var maxInFlight = Math.Max(1, _options.WriteBehindMaxInFlight);
         if (inFlight > maxInFlight)
-            await flushTask.WaitAsync(ct);
+            await flushTask.WaitAsync(ct).ConfigureAwait(false);
     }
 
     private async Task DrainWaveAfterAsync(Task previous, FlushWave wave)
@@ -1191,9 +1164,8 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex,
-                "[{Projection}] Write-behind flush failed at position {Position}; dirties retained for retry",
-                DisplayName, wave.Position);
+            LightweightProjectionRunnerServiceLog.WriteBehindFailed(
+                _logger, ex, DisplayName, wave.Position);
         }
         finally
         {
@@ -1209,7 +1181,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
             pending = _writeBehindTail;
 
         if (!pending.IsCompleted)
-            await pending.WaitAsync(ct);
+            await pending.WaitAsync(ct).ConfigureAwait(false);
     }
 
     private FlushWave CaptureFlushWave(long position, long totalEventsProcessed)
@@ -1260,18 +1232,18 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
             {
                 // Bulk path: SqlViewStore uses one OPENJSON MERGE round-trip; other stores
                 // override or fall back to looping SaveViewAsync via the interface default.
-                await _viewStore.SaveViewsAsync(StorageKey, wave.Writes, ct);
+                await _viewStore.SaveViewsAsync(StorageKey, wave.Writes, ct).ConfigureAwait(false);
             }
 
             // Advance checkpoint only after all view writes for this flush have succeeded.
-            await _checkpointStore.SaveCheckpointAsync(new LawnDart.Projections.ProjectionCheckpoint
+            await _checkpointStore.SaveCheckpointAsync(new ProjectionCheckpoint
             {
                 ProjectionType = StorageKey,
                 NodeId = _options.NodeInstance,
                 LastSequencePosition = wave.Position,
                 LastUpdated = DateTime.UtcNow,
                 TotalEventsProcessed = wave.TotalEventsProcessed
-            }, ct);
+            }, ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -1300,9 +1272,8 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
                 _lastCheckpointSequence = wave.Position;
         }
 
-        _logger.LogDebug(
-            "[{Projection}] Checkpoint saved at position {Position} ({DirtyCount} view(s))",
-            DisplayName, wave.Position, wave.Writes.Count);
+        LightweightProjectionRunnerServiceLog.CheckpointSaved(
+            _logger, DisplayName, wave.Position, wave.Writes.Count);
 
         ProjectionTelemetry.RecordCheckpointSaved(StorageKey, wave.Position);
     }
@@ -1335,18 +1306,16 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
             _lastAppliedByInstance.Remove(id);
             _lastAccessTicks.Remove(id);
             // Hot read cache is a separate accelerator with its own budget; leave it alone.
-            _logger.LogDebug(
-                "[{Projection}] Evicted clean instance '{Instance}' (working set {Count}/{Max})",
-                DisplayName, id, _instances.Count, max);
+            LightweightProjectionRunnerServiceLog.EvictedInstance(
+                _logger, DisplayName, id, _instances.Count, max);
         }
 
         if (victims.Count > 0)
         {
             ProjectionTelemetry.RecordWorkingSetEviction(StorageKey, victims.Count);
             ProjectionTelemetry.SetWorkingSetSize(StorageKey, _instances.Count);
-            _logger.LogInformation(
-                "[{Projection}] Evicted {Evicted} clean instance(s); working set now {Count} (max {Max})",
-                DisplayName, victims.Count, _instances.Count, max);
+            LightweightProjectionRunnerServiceLog.EvictedSummary(
+                _logger, DisplayName, victims.Count, _instances.Count, max);
         }
     }
 
@@ -1533,9 +1502,8 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
         if (!IsFarBehind(lastApplied, head))
             return false;
 
-        _logger.LogWarning(
-            "[{Projection}] Far behind store head ({Lag}); poll recover from {Position}",
-            DisplayName, head - lastApplied, lastApplied);
+        LightweightProjectionRunnerServiceLog.FarBehind(
+            _logger, DisplayName, head - lastApplied, lastApplied);
         _suppressResubscribe = true;
         FaultSubscription();
         return true;
@@ -1593,9 +1561,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
                 {
                     if (!await reader.WaitToReadAsync(timeoutCts.Token).ConfigureAwait(false))
                     {
-                        _logger.LogWarning(
-                            "[{Projection}] Subscription completed; poll recover",
-                            DisplayName);
+                        LightweightProjectionRunnerServiceLog.SubscriptionCompleted(_logger, DisplayName);
                         FaultSubscription();
                         return 0;
                     }
@@ -1619,9 +1585,8 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex,
-                "[{Projection}] Subscription fault; poll recover from {Position}",
-                DisplayName, cursor.LastPosition);
+            LightweightProjectionRunnerServiceLog.SubscriptionFault(
+                _logger, ex, DisplayName, cursor.LastPosition);
             FaultSubscription();
             return 0;
         }

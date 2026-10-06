@@ -6,7 +6,8 @@ namespace LawnDart.Messaging;
 public class InboxEntry
 {
     /// <summary>
-    /// The unique message ID that was processed (maps to <see cref="MessageContext.MessageId"/>).
+    /// Dedup key that was processed. Hosted consumers store the consumer type name plus
+    /// <see cref="MessageContext.MessageId"/>.
     /// </summary>
     public string MessageId { get; init; } = string.Empty;
 

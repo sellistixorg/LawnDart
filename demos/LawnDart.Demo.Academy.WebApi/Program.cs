@@ -15,11 +15,21 @@ using LawnDart.Demo.Academy.WebApi.Handlers;
 using LawnDart.Demo.Academy.WebApi.Projections;
 using LawnDart.EventSourcing;
 using LawnDart.EventSourcing.SqlServer;
+using LawnDart.EventSourcing.SqlServer.EventStore;
 using LawnDart.EventStore;
+using LawnDart.Messaging.InMemory;
+using LawnDart.Messaging.Outbox;
 using LawnDart.Metadata;
+using LawnDart.Outbox;
 using LawnDart.Projections.Lightweight;
 using LawnDart.Projections.Lightweight.Security;
 using System.Text;
+
+// DEMO ONLY: the issuer, audience, and fallback key exist so the demo runs with no setup.
+// Do not copy them into a real app.
+const string DemoIssuer = "lawndart-academy-demo";
+const string DemoAudience = "lawndart-academy-api";
+const string DemoFallbackKey = "Academy-Demo-Secret-Key-32-Chars!";
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -29,7 +39,6 @@ builder.Services.AddLawnDart(opts =>
     opts.EnableAuthorization = false;
 });
 
-builder.Services.AddInMemoryProjectionStores("default");
 var ctx = builder.Services.AddBoundedContext("default")
     .WithEventTypes<StudentRegistered>()
     .WithCommandHandlers<RegisterStudentCommandHandler>();
@@ -45,10 +54,14 @@ if (useSql)
         ?? throw new InvalidOperationException(
             "SQL mode requires ConnectionStrings:Academy or LAWNDART_SQL_CONNECTION.");
 
+    builder.Services.AddSqlProjectionStores("default", connectionString);
+    builder.Services.AddInMemoryMessaging();
+    builder.Services.AddMessageTransportOutboxPublisher();
     ctx.UseSqlServer(opts =>
         {
             opts.ConnectionString = connectionString;
             opts.RequireTenantId = false;
+            opts.EnableOutbox = true;
         })
         .WithProjections(
             [typeof(StudentSummaryProjection).Assembly],
@@ -60,6 +73,7 @@ if (useSql)
 }
 else
 {
+    builder.Services.AddInMemoryProjectionStores("default");
     ctx.UseInMemory()
         .WithProjections(
             [typeof(StudentSummaryProjection).Assembly],
@@ -79,7 +93,29 @@ builder.Services.AddScoped<IAuthorizationContextProvider, HttpAuthorizationConte
 
 builder.Services.AddLawnDartHttpCommands(typeof(RegisterStudentCommand).Assembly);
 
-var jwtKey = builder.Configuration["Jwt:Key"] ?? "Academy-Demo-Secret-Key-32-Chars!";
+var configuredKey = builder.Configuration["Jwt:Key"];
+string jwtKey;
+if (string.IsNullOrWhiteSpace(configuredKey))
+{
+    if (!builder.Environment.IsDevelopment())
+    {
+        throw new InvalidOperationException(
+            "Jwt:Key is not configured. The built-in demo key is only allowed when ASPNETCORE_ENVIRONMENT=Development. Set Jwt:Key (for example with the Jwt__Key environment variable).");
+    }
+
+    // DEMO ONLY: fallback so the demo runs with no setup. Do not copy it into a real app.
+    jwtKey = DemoFallbackKey;
+}
+else
+{
+    jwtKey = configuredKey;
+    if (Encoding.UTF8.GetByteCount(jwtKey) < 32)
+    {
+        throw new InvalidOperationException(
+            "Jwt:Key must be at least 32 bytes. HS256 needs a 256-bit key.");
+    }
+}
+
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(opts =>
@@ -87,10 +123,12 @@ builder.Services
         opts.MapInboundClaims = true;
         opts.TokenValidationParameters = new TokenValidationParameters
         {
-            ValidateIssuer = false,
-            ValidateAudience = false,
-            ValidateLifetime = false,
-            RequireExpirationTime = false,
+            ValidateIssuer = true,
+            ValidIssuer = DemoIssuer,
+            ValidateAudience = true,
+            ValidAudience = DemoAudience,
+            ValidateLifetime = true,
+            RequireExpirationTime = true,
             ValidateIssuerSigningKey = true,
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
             ClockSkew = TimeSpan.Zero
@@ -125,6 +163,22 @@ builder.Services.AddOpenApi(opts =>
 });
 
 var app = builder.Build();
+
+if (useSql)
+{
+    var store = app.Services.GetRequiredKeyedService<IEventStore>("default");
+    if (store is not SqlServerEventStore sql)
+    {
+        throw new InvalidOperationException(
+            "SQL mode did not resolve SqlServerEventStore for context 'default'.");
+    }
+
+    await sql.InitializeSchemaAsync().ConfigureAwait(false);
+    await app.Services.GetRequiredKeyedService<IOutboxWriter>("default")
+        .InitializeSchemaAsync()
+        .ConfigureAwait(false);
+    await app.Services.InitializeSqlProjectionStoresAsync("default").ConfigureAwait(false);
+}
 
 app.UseAuthentication();
 app.UseAuthorization();
@@ -166,12 +220,16 @@ app.MapPost("/token", async (HttpRequest request) =>
         var sub = string.IsNullOrWhiteSpace(req.Sub) ? "demo" : req.Sub.Trim();
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
         var token = new JwtSecurityTokenHandler().WriteToken(new JwtSecurityToken(
+            issuer: DemoIssuer,
+            audience: DemoAudience,
             claims:
             [
                 new Claim("role", role),
                 new Claim("tenant_id", tenantId),
                 new Claim("sub", sub)
             ],
+            notBefore: DateTime.UtcNow,
+            expires: DateTime.UtcNow.AddHours(8),
             signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256)));
 
         return Results.Ok(new { token, role });

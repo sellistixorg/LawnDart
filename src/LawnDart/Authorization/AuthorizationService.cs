@@ -45,7 +45,7 @@ public class AuthorizationService
         try
         {
             // Get authorization context from transport
-            var context = await _contextProvider.GetAuthorizationContextAsync(cancellationToken);
+            var context = await _contextProvider.GetAuthorizationContextAsync(cancellationToken).ConfigureAwait(false);
             if (context == null)
             {
                 _logger?.LogWarning("No authorization context available for command {CommandType}", typeof(TCommand).Name);
@@ -62,7 +62,7 @@ public class AuthorizationService
             
             foreach (var attr in permissionAttrs)
             {
-                var result = await _authorizationProvider.CheckPermissionAsync(context, attr.Permission, cancellationToken);
+                var result = await _authorizationProvider.CheckPermissionAsync(context, attr.Permission, cancellationToken).ConfigureAwait(false);
                 if (!result.IsAuthorized)
                 {
                     failedChecks.Add($"Permission: {attr.Permission}");
@@ -76,7 +76,7 @@ public class AuthorizationService
             
             foreach (var attr in entitlementAttrs)
             {
-                var result = await _authorizationProvider.CheckEntitlementAsync(context, attr.Entitlement, cancellationToken);
+                var result = await _authorizationProvider.CheckEntitlementAsync(context, attr.Entitlement, cancellationToken).ConfigureAwait(false);
                 if (!result.IsAuthorized)
                 {
                     failedChecks.Add($"Entitlement: {attr.Entitlement}");
@@ -90,7 +90,7 @@ public class AuthorizationService
             
             foreach (var attr in policyAttrs)
             {
-                var result = await _authorizationProvider.CheckPolicyAsync(context, attr.PolicyName, cancellationToken);
+                var result = await _authorizationProvider.CheckPolicyAsync(context, attr.PolicyName, cancellationToken).ConfigureAwait(false);
                 if (!result.IsAuthorized)
                 {
                     failedChecks.Add($"Policy: {attr.PolicyName}");

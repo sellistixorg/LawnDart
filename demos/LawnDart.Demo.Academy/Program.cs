@@ -1,20 +1,25 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using LawnDart;
 using LawnDart.EventSourcing;
 using LawnDart.EventSourcing.SqlServer;
+using LawnDart.EventSourcing.SqlServer.EventStore;
 using LawnDart.EventStore;
 using LawnDart.Demo.Academy.Projections;
 using LawnDart.Demo.Academy.Showcases;
 using LawnDart.Demo.Academy.Domain.Student.Events;
 using LawnDart.Demo.Academy.EDA;
+using LawnDart.Messaging.InMemory;
+using LawnDart.Messaging.Outbox;
 using LawnDart.Metadata;
+using LawnDart.Outbox;
 
 namespace LawnDart.Demo.Academy;
 
 /// <summary>
-/// LawnDart Academy — the definitive pattern showcase.
+/// LawnDart Academy: console tour of the hosted patterns.
 /// Runs zero-infrastructure by default (in-memory event store).
 ///
 /// Usage:
@@ -74,7 +79,10 @@ internal class Program
             {
                 opts.ConnectionString = connectionString;
                 opts.RequireTenantId = false;
+                opts.EnableOutbox = true;
             });
+            services.AddInMemoryMessaging();
+            services.AddMessageTransportOutboxPublisher();
         }
         else
         {
@@ -92,14 +100,47 @@ internal class Program
 
         var sp = services.BuildServiceProvider();
 
-        Console.WriteLine(useSql
-            ? " Event store: SQL Server"
-            : " Event store: InMemory (zero infrastructure)\n");
+        IHostedService[] hosted = [];
+        try
+        {
+            if (useSql)
+            {
+                await InitializeSqlAsync(sp);
+                hosted = sp.GetServices<IHostedService>().ToArray();
+                foreach (var service in hosted)
+                    await service.StartAsync(CancellationToken.None);
+            }
 
-        if (runAll)
-            await RunAllAsync(sp);
-        else
-            await RunMenuAsync(sp);
+            Console.WriteLine(useSql
+                ? " Event store: SQL Server (tables created at startup, outbox on)\n"
+                : " Event store: InMemory (zero infrastructure)\n");
+
+            if (runAll)
+                await RunAllAsync(sp);
+            else
+                await RunMenuAsync(sp);
+        }
+        finally
+        {
+            foreach (var service in hosted.Reverse())
+                await service.StopAsync(CancellationToken.None);
+            if (useSql)
+                await sp.DisposeAsync();
+        }
+    }
+
+    /// <summary>
+    /// Creates the event-store and outbox tables. Showcases use hand-written projectors,
+    /// so this host does not register Lightweight projection stores.
+    /// </summary>
+    static async Task InitializeSqlAsync(ServiceProvider sp)
+    {
+        var store = sp.GetRequiredKeyedService<IEventStore>("default");
+        if (store is not SqlServerEventStore sql)
+            throw new InvalidOperationException("SQL mode did not resolve SqlServerEventStore.");
+
+        await sql.InitializeSchemaAsync();
+        await sp.GetRequiredKeyedService<IOutboxWriter>("default").InitializeSchemaAsync();
     }
 
     static async Task RunAllAsync(IServiceProvider sp)

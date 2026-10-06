@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using LawnDart.Aggregates;
+using LawnDart.Authorization;
 using LawnDart.EventStore;
 using LawnDart.EventSourcing.Context;
 using LawnDart.Messaging;
@@ -88,6 +89,37 @@ public class WithCommandHandlersAndDispatcherTests
     }
 
     [Fact]
+    public async Task ContextAwareCommandDispatcher_ResolvesScopedAuthorizationServiceFromRoot()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IMetadataProvider>(new DefaultMetadataProvider());
+        services.AddSingleton<ITenantContextProvider>(new TestTenantContextProvider(null));
+        services.Configure<LawnDartOptions>(_ => { });
+        services.AddSingleton<IAuthorizationProvider, DefaultAuthorizationProvider>();
+        services.AddSingleton<IAuthorizationContextProvider, EmptyAuthorizationContextProvider>();
+        services.AddScoped<AuthorizationService>();
+
+        services.AddBoundedContext("default")
+            .UseInMemory()
+            .WithEventTypes(typeof(CatalogPlaceholderEvent))
+            .WithCommandHandlers([typeof(ScopedAuthRepositoryHandler)]);
+
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions
+        {
+            ValidateScopes = true
+        });
+
+        ScopedAuthRepositoryHandler.Resolutions = 0;
+        var dispatcher = provider.GetRequiredService<ICommandDispatcher>();
+        await dispatcher.DispatchAsync(
+            new ScopedAuthCommand(Guid.NewGuid()),
+            MessageContext.New(),
+            CancellationToken.None);
+
+        Assert.Equal(1, ScopedAuthRepositoryHandler.Resolutions);
+    }
+
+    [Fact]
     public async Task ContextAwareCommandDispatcher_UnregisteredCommand_Throws()
     {
         var sp         = BuildTwoContextProvider();
@@ -105,6 +137,7 @@ public class WithCommandHandlersAndDispatcherTests
     public sealed record PublishProductCommand(Guid Id) : ICommand;
     public sealed record CheckRepositoryCommand(Guid Id) : ICommand;
     public sealed record UnregisteredCommand(Guid Id) : ICommand;
+    public sealed record ScopedAuthCommand(Guid Id) : ICommand;
 
     // ── Handlers ──────────────────────────────────────────────────────────────
 
@@ -148,6 +181,32 @@ public class WithCommandHandlersAndDispatcherTests
             CapturedRepository = _repository;
             return Task.CompletedTask;
         }
+    }
+
+    /// <summary>
+    /// Loads <see cref="IAggregateRepository"/>, which asks the provider for a scoped
+    /// <see cref="AuthorizationService"/>.
+    /// </summary>
+    public sealed class ScopedAuthRepositoryHandler : ICommandHandler<ScopedAuthCommand>
+    {
+        public static int Resolutions;
+
+        public ScopedAuthRepositoryHandler(IAggregateRepository repository)
+        {
+            ArgumentNullException.ThrowIfNull(repository);
+            Resolutions++;
+        }
+
+        public Task HandleAsync(ScopedAuthCommand command, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+    }
+
+    private sealed class EmptyAuthorizationContextProvider : IAuthorizationContextProvider
+    {
+        public bool CanProvideContext() => false;
+
+        public Task<AuthorizationContext?> GetAuthorizationContextAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<AuthorizationContext?>(null);
     }
 
     // ── Stubs ──────────────────────────────────────────────────────────────────

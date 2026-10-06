@@ -9,3 +9,4 @@ Core messaging abstractions and hosted processing runtime.
 - Shared messaging options and processing primitives
 
 Pair with `LawnDart.Messaging.InMemory` for zero-broker delivery.
+Pair with `LawnDart.Messaging.SqlServer` when inbox dedup must survive a restart.

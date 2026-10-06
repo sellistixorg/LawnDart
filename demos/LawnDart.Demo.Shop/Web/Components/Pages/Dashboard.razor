@@ -1,0 +1,132 @@
+@page "/"
+@rendermode InteractiveServer
+@inject HttpClient Http
+@inject CommandEventLog CmdLog
+@inject NavigationManager Nav
+@using System.Net.Http.Json
+
+<PageTitle>Dashboard - LawnDart Shop Demo</PageTitle>
+
+<div class="page-header">
+    <div class="page-title">Dashboard</div>
+    <AuthorizeView>
+        <Authorized>
+            <span class="badge badge-info">Logged in as @context.User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value</span>
+        </Authorized>
+    </AuthorizeView>
+</div>
+
+<div class="page-body">
+    <!-- Stats row -->
+    <div class="grid-4 mb-6">
+        <div class="stat-card">
+            <div class="stat-value">@_productCount</div>
+            <div class="stat-label">Products</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">@_orderCount</div>
+            <div class="stat-label">Total Orders</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">@_pendingCount</div>
+            <div class="stat-label">Pending Orders</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">@_eventCount</div>
+            <div class="stat-label">Commands Logged</div>
+        </div>
+    </div>
+
+    <!-- Architecture info -->
+    <div class="card mb-6">
+        <div class="card-header">What this demo shows</div>
+        <div class="card-body">
+            <div class="grid-2 gap-4">
+                <div>
+                    <h4 style="font-size:14px;margin-bottom:8px">Patterns Demonstrated</h4>
+                    <ul style="padding-left:20px;line-height:1.8;font-size:13px">
+                        <li><strong>Aggregates</strong> : Product and Order aggregates with event sourcing</li>
+                        <li><strong>DCB</strong> : InventoryEntity reserves stock, then the order is a second append. The other buy is rejected (409 or 422).</li>
+                        <li><strong>EDA</strong> : OrderReactor then FulfillmentReactor (place, pay, ship)</li>
+                        <li><strong>Task Processor</strong> : OverdueOrderProcessor cancels stale orders</li>
+                        <li><strong>Projections</strong> : Lightweight projections serve all read data</li>
+                        <li><strong>MultiStream</strong> : OrderFulfillmentProjection combines order + inventory events</li>
+                        <li><strong>Authorization</strong> : Role-based permissions per command</li>
+                        <li><strong>Multi-Tenancy</strong> : Bob (bobs-store) and Larry (larrys-emporium) are isolated seller tenants</li>
+                    </ul>
+                </div>
+                <div>
+                    <h4 style="font-size:14px;margin-bottom:8px">Demo Users</h4>
+                    <table class="table">
+                        <thead><tr><th>User</th><th>Role</th><th>Tenant</th><th>Key Permissions</th></tr></thead>
+                        <tbody>
+                            <tr><td><span class="badge badge-info">Alice</span></td><td>Customer</td><td><code>buyers</code></td><td>Order.Place, Product.View</td></tr>
+                            <tr><td><span class="badge" style="background:#0d9488;color:#fff">Maria</span></td><td>Customer</td><td><code>buyers</code></td><td>Order.Place, Product.View</td></tr>
+                            <tr><td><span class="badge badge-success">Bob</span></td><td>Seller</td><td><code>bobs-store</code></td><td>Product.Create, Product.Update, Inventory.View</td></tr>
+                            <tr><td><span class="badge" style="background:#7c3aed;color:#fff">Larry</span></td><td>Seller</td><td><code>larrys-emporium</code></td><td>Product.Create, Product.Update, Inventory.View</td></tr>
+                            <tr><td><span class="badge badge-warning">Carol</span></td><td>Warehouse</td><td><code>system</code></td><td>Order.Ship, Inventory.View</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent stream activity -->
+    <div class="card">
+        <div class="card-header">
+            Recent Activity
+            <a href="/stream" class="btn btn-secondary btn-sm">View Full Stream -></a>
+        </div>
+        <div class="card-body">
+            @if (!_recentCommands.Any())
+            {
+                <div class="text-muted text-sm">No commands yet. Visit the <a href="/shop">Shop</a> page to place an order!</div>
+            }
+            else
+            {
+                @foreach (var cmd in _recentCommands.Take(5))
+                {
+                    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+                        <span class="badge @(cmd.IsReactorIssued ? "badge-warning" : "badge-info")">
+                            @(cmd.IsReactorIssued ? "⚡ Reactor" : "-> Command")
+                        </span>
+                        <span style="font-weight:600;font-size:13px">@cmd.CommandType</span>
+                        <span class="text-muted text-sm">by @cmd.UserName</span>
+                        <span class="text-muted text-sm" style="margin-left:auto">@cmd.Timestamp.ToString("HH:mm:ss")</span>
+                        <span class="badge badge-muted">@cmd.Events.Count event(s)</span>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    int _productCount;
+    int _orderCount;
+    int _pendingCount;
+    int _eventCount;
+    IReadOnlyList<CommandLogEntry> _recentCommands = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshAsync();
+    }
+
+    async Task RefreshAsync()
+    {
+        try
+        {
+            var products = await Http.GetFromJsonAsync<List<ProductCatalogView>>("/api/views/products");
+            var orders   = await Http.GetFromJsonAsync<List<OrderSummaryView>>("/api/views/orders");
+            _productCount = products?.Count ?? 0;
+            _orderCount   = orders?.Count ?? 0;
+            _pendingCount = orders?.Count(o => o.Status == "Pending") ?? 0;
+        }
+        catch { /* projections may be empty on first load */ }
+
+        _recentCommands = CmdLog.GetSnapshot();
+        _eventCount     = _recentCommands.Count;
+    }
+}

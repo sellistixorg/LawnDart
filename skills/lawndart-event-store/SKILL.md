@@ -35,13 +35,31 @@ ctx.WithEventTypes<BookAdded>();
 Excerpt from `samples/Library.Host/LibraryHost.cs` (`AddSqlLibrary`):
 
 ```csharp
+services.AddInMemoryMessaging();
+services.AddSqlInboxStore(connectionString);
+services.AddMessageTransportOutboxPublisher();
+services.AddReactor<LoanNoticeReactor, BookBorrowed>();
+services.AddSqlProjectionStores("default", connectionString);
+var ctx = services.AddBoundedContext("default");
 ctx.UseSqlServer(o =>
 {
     o.ConnectionString = connectionString;
     o.RequireTenantId = false;
+    o.EnableOutbox = true;
 });
+ctx.WithCommandHandlers<BorrowBookHandler>();
 ctx.WithEventTypes<BookAdded>();
+ctx.WithProjections(
+    [typeof(LibraryCatalogProjection).Assembly],
+    opts =>
+    {
+        opts.PollInterval = TimeSpan.FromMilliseconds(200);
+        opts.CheckpointInterval = 100;
+    });
 ```
+
+Call `InitializeSqlLibraryAsync` before the first command. It creates the
+event-store, outbox, projection, and inbox tables.
 
 Align `RequireTenantId` on `AddLawnDart` and `SqlServerEventStoreOptions`.
 

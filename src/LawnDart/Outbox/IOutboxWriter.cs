@@ -63,7 +63,43 @@ public interface IOutboxWriter
     /// <param name="batchSize">Maximum number of messages to return.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task<IReadOnlyList<OutboxMessage>> GetDeadLetteredAsync(int batchSize, CancellationToken cancellationToken = default);
-    
+
+    /// <summary>
+    /// Returns one dead-lettered message to the publish queue.
+    /// Clears <see cref="OutboxMessage.DeadLetteredAt"/> and sets
+    /// <see cref="OutboxMessage.Attempts"/> to 0 so the outbox processor
+    /// publishes it again. <see cref="OutboxMessage.LastError"/> and
+    /// <see cref="OutboxMessage.LastAttemptAt"/> stay until the next attempt.
+    /// </summary>
+    /// <param name="messageId">ID of the message.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>
+    /// <see langword="true"/> when a dead-lettered, unprocessed row was reset.
+    /// <see langword="false"/> when the id is unknown, not dead-lettered, or already processed.
+    /// </returns>
+    /// <remarks>
+    /// The row keeps its id. <c>MessageTransportOutboxPublisher</c> uses that
+    /// id as <c>MessageContext.MessageId</c>. A consumer whose inbox already
+    /// marked the id processed inside the deduplication window drops the
+    /// redelivery. That is the expected at-least-once behavior.
+    /// </remarks>
+    Task<bool> ResetDeadLetteredAsync(Guid messageId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns every dead-lettered, unprocessed message to the publish queue.
+    /// Clears <see cref="OutboxMessage.DeadLetteredAt"/> and sets
+    /// <see cref="OutboxMessage.Attempts"/> to 0 on each row. Processed rows
+    /// are left alone. <see cref="OutboxMessage.LastError"/> and
+    /// <see cref="OutboxMessage.LastAttemptAt"/> stay until the next attempt.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The number of rows reset.</returns>
+    /// <remarks>
+    /// Republished rows keep their ids. A consumer that already recorded an
+    /// id in its inbox drops that redelivery inside the deduplication window.
+    /// </remarks>
+    Task<int> ResetAllDeadLetteredAsync(CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Initializes the outbox schema (creates tables if they don't exist).
     /// </summary>

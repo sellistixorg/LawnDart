@@ -1,8 +1,8 @@
 namespace LawnDart.Projections.Storage;
 
 /// <summary>
-/// Interface for storing and retrieving projection views.
-/// Implementations may use Redis, SQL, or a hybrid approach.
+/// Stores and retrieves projection views.
+/// LawnDart ships <see cref="InMemoryViewStore"/> and <see cref="SqlViewStore"/>.
 /// </summary>
 public interface IViewStore
 {
@@ -101,8 +101,8 @@ public interface IViewStore
     /// ensuring the store is clean before a cold restart replays from sequence 0.
     /// </summary>
     /// <remarks>
-    /// For Redis this is an O(keyspace) SCAN-based delete; document this when deploying against
-    /// large Redis keyspaces.
+    /// <see cref="SqlViewStore"/> runs one <c>DELETE</c> filtered by projection type.
+    /// <see cref="InMemoryViewStore"/> removes the matching entries.
     /// </remarks>
     /// <param name="projectionType">The projection type whose views should be deleted.</param>
     /// <param name="cancellationToken">Cancellation token.</param>

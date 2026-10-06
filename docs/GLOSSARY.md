@@ -92,10 +92,10 @@ See [DCB_PATTERNS.md](DCB_PATTERNS.md).
 Base type for tag-based entities (`DcbEntity` / `DcbEntity<TState>`).
 
 **Delegation**
-Command → Command. Roadmap cell; no public type and no host yet.
+Command → Command. Planned for a later release. No public type until a host exists.
 
 **Downstream Activity**
-Command → State. Roadmap cell; no public type and no host yet.
+Command → State. Planned for a later release. No public type until a host exists.
 
 ## E
 
@@ -132,7 +132,7 @@ family. Deploy the missing type. It does not invent a stand-in event.
 session. Unchanged for handlers and aggregates.
 
 **Event Generator**
-State → Event. Roadmap cell; no public type and no host yet.
+State → Event. Planned for a later release. No public type until a host exists.
 
 **Event Processing**  
 Event → Event. Transform or enrich events without a command.
@@ -172,8 +172,9 @@ publishes it on `AmbientMessageContext` and continues `traceparent` before
 ## N
 
 **Nine common patterns**
-The command-event-state matrix. Five cells are hosted; four are roadmap
-(no public type yet). See the [CES matrix](CES_MATRIX.md).
+The command-event-state matrix. Five cells are hosted; four are planned
+for a later release (no public type until a host exists). See the
+[CES matrix](CES_MATRIX.md).
 
 ## O
 
@@ -223,7 +224,7 @@ Durable event store and projection store.
 Present view: aggregate state, DCB state, or a projection read model.
 
 **State Transformation**
-State → State. Roadmap cell; no public type and no host yet.
+State → State. Planned for a later release. No public type until a host exists.
 
 **Stream ID**  
 Identity of an event stream. See [STREAM_IDS.md](STREAM_IDS.md).

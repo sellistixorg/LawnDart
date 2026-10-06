@@ -137,7 +137,7 @@ public class InMemoryCheckpointStore : ICheckpointStore
     {
         // Delegate to view store to read checkpoint from view metadata
         var result = await _viewStore.GetViewWithCheckpointAsync(
-            projectionType, streamId, cancellationToken);
+            projectionType, streamId, cancellationToken).ConfigureAwait(false);
         
         return result?.Checkpoint;
     }

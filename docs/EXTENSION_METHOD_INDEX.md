@@ -58,6 +58,8 @@ These live on `IAggregateRepository` in Core (not `Add*` extensions). Guid overl
 |---|---|---|
 | `AddMessaging` | `LawnDart.Messaging` | Reactor / processor host |
 | `AddInMemoryMessaging` | `LawnDart.Messaging.InMemory` | In-process transport |
+| `AddSqlInboxStore` | `LawnDart.Messaging.SqlServer` | Durable inbox. Replaces the in-memory inbox in either call order |
+| `InitializeSqlInboxStoreAsync` | `LawnDart.Messaging.SqlServer` | Create the inbox table |
 | `AddReactor<TReactor, TEvent>` | `LawnDart.Messaging` | Event → command |
 | `AddEventProcessor<TProcessor, TEvent>` | `LawnDart.Messaging` | Event → event / work |
 | `AddTaskProcessor<TProcessor>` | `LawnDart.Messaging` | State → command |

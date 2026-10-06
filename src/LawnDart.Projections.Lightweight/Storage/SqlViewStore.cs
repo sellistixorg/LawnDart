@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
+using LawnDart.Sql;
 
 namespace LawnDart.Projections.Storage;
 
@@ -14,6 +15,8 @@ public class SqlViewStore : IViewStore
     private readonly string _tableName = "ProjectionViews";
     private readonly string _schemaName;
     private readonly string _qualifiedTableName;
+
+    internal string QualifiedTableName => _qualifiedTableName;
 
     /// <summary>
     /// Creates a SQL Server view store.
@@ -33,7 +36,7 @@ public class SqlViewStore : IViewStore
         _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
         _logger = logger;
         _schemaName = string.IsNullOrWhiteSpace(schemaName) ? "dbo" : schemaName;
-        _qualifiedTableName = $"[{_schemaName}].[{_tableName}]";
+        _qualifiedTableName = SqlIdentifier.Qualify(_schemaName, _tableName);
     }
 
     public async Task SaveViewAsync(
@@ -50,8 +53,9 @@ public class SqlViewStore : IViewStore
         {
             try
             {
-                await using var connection = new SqlConnection(_connectionString);
-                await connection.OpenAsync(cancellationToken);
+                var connection = new SqlConnection(_connectionString);
+                await using var connectionDisposal = connection.ConfigureAwait(false);
+                await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
                 // PERFORMANCE FIX: Use UPDATE/INSERT pattern instead of MERGE for better performance
                 // MERGE has higher lock overhead and can cause blocking in high-concurrency scenarios
@@ -69,17 +73,18 @@ public class SqlViewStore : IViewStore
                         VALUES (@ProjectionType, @InstanceId, @ViewData, @Checkpoint, @LastUpdated);
                     END";
 
-                await using var command = new SqlCommand(sql, connection);
+                var command = new SqlCommand(sql, connection);
+                await using var commandDisposal = command.ConfigureAwait(false);
                 command.Parameters.AddWithValue("@ProjectionType", projectionType);
                 command.Parameters.AddWithValue("@InstanceId", instanceId);
                 command.Parameters.AddWithValue("@ViewData", viewData);
                 command.Parameters.AddWithValue("@Checkpoint", checkpoint);
                 command.Parameters.AddWithValue("@LastUpdated", DateTime.UtcNow);
 
-                await command.ExecuteNonQueryAsync(cancellationToken);
+                await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
                 
-                _logger?.LogDebug("Saved view to SQL: {ProjectionType}:{InstanceId} | ViewData size: {Size} bytes | Checkpoint: {Checkpoint}", 
-                    projectionType, instanceId, viewData?.Length ?? 0, checkpoint);
+                if (_logger is not null)
+                    SqlViewStoreLog.ViewSaved(_logger, projectionType, instanceId, viewData?.Length ?? 0, checkpoint);
                 return; // Success - exit retry loop
             }
             catch (SqlException sqlEx) when (
@@ -92,40 +97,31 @@ public class SqlViewStore : IViewStore
                 retryCount++;
                 var delay = TimeSpan.FromMilliseconds(50 * Math.Pow(2, retryCount)); // 100ms, 200ms, 400ms
                 var errorType = sqlEx.Number == 2627 ? "Primary key violation" : "Connection pool timeout";
-                _logger?.LogWarning(
-                    "{ErrorType} (retry {RetryCount}/{MaxRetries}) for {ProjectionType}:{InstanceId}, retrying in {Delay}ms",
-                    errorType, retryCount, maxRetries, projectionType, instanceId, delay.TotalMilliseconds);
-                await Task.Delay(delay, cancellationToken);
+                if (_logger is not null)
+                    SqlViewStoreLog.ViewSaveRetry(
+                        _logger, errorType, retryCount, maxRetries, projectionType, instanceId, delay.TotalMilliseconds);
+                await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
             }
             catch (SqlException sqlEx)
             {
                 // Log detailed SQL exception with context
-                _logger?.LogError(sqlEx,
-                    "SQL error saving view: {ProjectionType}:{InstanceId} | " +
-                    "SQL Error {Number}: {Message} | " +
-                    "State: {State} | Class: {Class} | " +
-                    "Procedure: {Procedure} | LineNumber: {LineNumber} | " +
-                    "ViewData size: {ViewDataSize} bytes | " +
-                    "InstanceId length: {InstanceIdLength} | Connection string database: {ConnectionDatabase} | " +
-                    "Retry count: {RetryCount}",
-                    projectionType, instanceId,
-                    sqlEx.Number, sqlEx.Message, sqlEx.State, sqlEx.Class,
-                    sqlEx.Procedure, sqlEx.LineNumber,
-                    viewData?.Length ?? 0, instanceId?.Length ?? 0,
-                    new SqlConnectionStringBuilder(_connectionString).InitialCatalog,
-                    retryCount);
-                throw; // Re-throw to be caught by HybridViewStore
+                if (_logger is not null)
+                    SqlViewStoreLog.ViewSaveSqlFailed(
+                        _logger, sqlEx, projectionType, instanceId,
+                        sqlEx.Number, sqlEx.Message, sqlEx.State, sqlEx.Class,
+                        sqlEx.Procedure, sqlEx.LineNumber,
+                        viewData?.Length ?? 0, instanceId?.Length ?? 0,
+                        new SqlConnectionStringBuilder(_connectionString).InitialCatalog,
+                        retryCount);
+                throw; // Projection runner flush records the error; dirty views stay for the next flush.
             }
             catch (Exception ex)
             {
-                _logger?.LogError(ex,
-                    "Non-SQL error saving view: {ProjectionType}:{InstanceId} | " +
-                    "Error Type: {ErrorType} | Message: {Message} | " +
-                    "ViewData size: {ViewDataSize} bytes | InstanceId length: {InstanceIdLength} | " +
-                    "Retry count: {RetryCount}",
-                    projectionType, instanceId, ex.GetType().FullName, ex.Message,
-                    viewData?.Length ?? 0, instanceId?.Length ?? 0, retryCount);
-                throw; // Re-throw to be caught by HybridViewStore
+                if (_logger is not null)
+                    SqlViewStoreLog.ViewSaveFailed(
+                        _logger, ex, projectionType, instanceId, ex.GetType().FullName, ex.Message,
+                        viewData?.Length ?? 0, instanceId?.Length ?? 0, retryCount);
+                throw; // Projection runner flush records the error; dirty views stay for the next flush.
             }
         }
     }
@@ -150,7 +146,7 @@ public class SqlViewStore : IViewStore
                 single.InstanceId,
                 single.ViewData,
                 single.Checkpoint,
-                cancellationToken);
+                cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -165,12 +161,11 @@ public class SqlViewStore : IViewStore
         for (var offset = 0; offset < items.Count; offset += chunkSize)
         {
             var chunk = items.Skip(offset).Take(chunkSize).ToList();
-            await SaveViewsChunkAsync(projectionType, chunk, cancellationToken);
+            await SaveViewsChunkAsync(projectionType, chunk, cancellationToken).ConfigureAwait(false);
         }
 
-        _logger?.LogDebug(
-            "Bulk-saved {Count} view(s) to SQL for {ProjectionType}",
-            items.Count, projectionType);
+        if (_logger is not null)
+            SqlViewStoreLog.ViewsSaved(_logger, items.Count, projectionType);
     }
 
     private async Task SaveViewsChunkAsync(
@@ -186,8 +181,9 @@ public class SqlViewStore : IViewStore
         {
             try
             {
-                await using var connection = new SqlConnection(_connectionString);
-                await connection.OpenAsync(cancellationToken);
+                var connection = new SqlConnection(_connectionString);
+                await using var connectionDisposal = connection.ConfigureAwait(false);
+                await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
                 // Single round-trip upsert; OPENJSON avoids requiring a persisted TVP type.
                 var sql = $@"
@@ -216,13 +212,14 @@ public class SqlViewStore : IViewStore
                         INSERT (ProjectionType, InstanceId, ViewData, [Checkpoint], LastUpdated)
                         VALUES (source.ProjectionType, source.InstanceId, source.ViewData, source.[Checkpoint], @LastUpdated);";
 
-                await using var command = new SqlCommand(sql, connection);
+                var command = new SqlCommand(sql, connection);
+                await using var commandDisposal = command.ConfigureAwait(false);
                 command.Parameters.AddWithValue("@ProjectionType", projectionType);
                 command.Parameters.AddWithValue("@Json", json);
                 command.Parameters.AddWithValue("@LastUpdated", DateTime.UtcNow);
                 command.CommandTimeout = Math.Max(command.CommandTimeout, 120);
 
-                await command.ExecuteNonQueryAsync(cancellationToken);
+                await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
                 return;
             }
             catch (SqlException sqlEx) when (
@@ -231,16 +228,15 @@ public class SqlViewStore : IViewStore
             {
                 retryCount++;
                 var delay = TimeSpan.FromMilliseconds(50 * Math.Pow(2, retryCount));
-                _logger?.LogWarning(
-                    "Bulk view save retry {RetryCount}/{MaxRetries} for {ProjectionType} ({Count} rows) in {Delay}ms: {Number}",
-                    retryCount, maxRetries, projectionType, chunk.Count, delay.TotalMilliseconds, sqlEx.Number);
-                await Task.Delay(delay, cancellationToken);
+                if (_logger is not null)
+                    SqlViewStoreLog.ViewsSaveRetry(
+                        _logger, retryCount, maxRetries, projectionType, chunk.Count, delay.TotalMilliseconds, sqlEx.Number);
+                await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                _logger?.LogError(ex,
-                    "Bulk view save failed for {ProjectionType} ({Count} rows) after {RetryCount} retries",
-                    projectionType, chunk.Count, retryCount);
+                if (_logger is not null)
+                    SqlViewStoreLog.ViewsSaveFailed(_logger, ex, projectionType, chunk.Count, retryCount);
                 throw;
             }
         }
@@ -256,19 +252,21 @@ public class SqlViewStore : IViewStore
         string instanceId,
         CancellationToken cancellationToken = default)
     {
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         var sql = $@"
             SELECT ViewData
             FROM {_qualifiedTableName}
             WHERE ProjectionType = @ProjectionType AND InstanceId = @InstanceId";
 
-        await using var command = new SqlCommand(sql, connection);
+        var command = new SqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("@ProjectionType", projectionType);
         command.Parameters.AddWithValue("@InstanceId", instanceId);
 
-        var result = await command.ExecuteScalarAsync(cancellationToken);
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return result as string;
     }
 
@@ -276,8 +274,9 @@ public class SqlViewStore : IViewStore
         string projectionType,
         CancellationToken cancellationToken = default)
     {
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         var sql = $@"
             SELECT InstanceId, ViewData
@@ -285,12 +284,14 @@ public class SqlViewStore : IViewStore
             WHERE ProjectionType = @ProjectionType
             ORDER BY LastUpdated DESC";
 
-        await using var command = new SqlCommand(sql, connection);
+        var command = new SqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("@ProjectionType", projectionType);
 
         var results = new List<(string, string)>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
+        var reader = (await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false));
+        await using var readerDisposal = reader.ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             results.Add((reader.GetString(0), reader.GetString(1)));
         }
@@ -303,18 +304,20 @@ public class SqlViewStore : IViewStore
         string instanceId,
         CancellationToken cancellationToken = default)
     {
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         var sql = $@"
             DELETE FROM {_qualifiedTableName}
             WHERE ProjectionType = @ProjectionType AND InstanceId = @InstanceId";
 
-        await using var command = new SqlCommand(sql, connection);
+        var command = new SqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("@ProjectionType", projectionType);
         command.Parameters.AddWithValue("@InstanceId", instanceId);
 
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         
         _logger?.LogDebug("Deleted view from SQL: {ProjectionType}:{InstanceId}", projectionType, instanceId);
     }
@@ -324,27 +327,29 @@ public class SqlViewStore : IViewStore
         string instanceId,
         CancellationToken cancellationToken = default)
     {
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         var sql = $@"
             SELECT ViewData, [Checkpoint]
             FROM {_qualifiedTableName}
             WHERE ProjectionType = @ProjectionType AND InstanceId = @InstanceId";
 
-        await using var command = new SqlCommand(sql, connection);
+        var command = new SqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("@ProjectionType", projectionType);
         command.Parameters.AddWithValue("@InstanceId", instanceId);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (await reader.ReadAsync(cancellationToken))
+        var reader = (await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false));
+        await using var readerDisposal = reader.ConfigureAwait(false);
+        if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             var viewData = reader.GetString(0);
             var checkpoint = reader.GetInt64(1);
             
-            _logger?.LogDebug(
-                "Retrieved view with checkpoint from SQL: {ProjectionType}:{InstanceId} | Checkpoint: {Checkpoint}",
-                projectionType, instanceId, checkpoint);
+            if (_logger is not null)
+                SqlViewStoreLog.ViewRetrieved(_logger, projectionType, instanceId, checkpoint);
             
             return (viewData, checkpoint);
         }
@@ -356,14 +361,16 @@ public class SqlViewStore : IViewStore
         string projectionType,
         CancellationToken cancellationToken = default)
     {
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         var sql = $"DELETE FROM {_qualifiedTableName} WHERE ProjectionType = @ProjectionType";
-        await using var command = new SqlCommand(sql, connection);
+        var command = new SqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("@ProjectionType", projectionType);
 
-        var rows = await command.ExecuteNonQueryAsync(cancellationToken);
+        var rows = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         _logger?.LogDebug("Deleted {Rows} view row(s) for {ProjectionType}", rows, projectionType);
     }
 
@@ -376,21 +383,23 @@ public class SqlViewStore : IViewStore
     /// </summary>
     public async Task InitializeSchemaAsync(CancellationToken cancellationToken = default)
     {
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         var schemaSql = $@"
-            IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = '{_schemaName}')
+            IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = '{SqlIdentifier.Literal(_schemaName)}')
             BEGIN
-                EXEC('CREATE SCHEMA [{_schemaName}] AUTHORIZATION dbo');
+                EXEC('CREATE SCHEMA {SqlIdentifier.Literal(SqlIdentifier.Quote(_schemaName))} AUTHORIZATION dbo');
             END";
-        await using (var schemaCmd = new SqlCommand(schemaSql, connection))
+        var schemaCmd = new SqlCommand(schemaSql, connection);
+        await using (schemaCmd.ConfigureAwait(false))
         {
-            await schemaCmd.ExecuteNonQueryAsync(cancellationToken);
+            await schemaCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
         var createTableSql = $@"
-            IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'{_qualifiedTableName}') AND type in (N'U'))
+            IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qualifiedTableName)}') AND type in (N'U'))
             BEGIN
                 CREATE TABLE {_qualifiedTableName} (
                     [ProjectionType] NVARCHAR(200) NOT NULL,
@@ -406,31 +415,33 @@ public class SqlViewStore : IViewStore
         // Required: composite for GetViewsByTypeAsync (WHERE ProjectionType ORDER BY LastUpdated DESC).
         // Obsolete: IX_ProjectionType, IX_LastUpdated, IX_Checkpoint (unused or superseded).
         var indexSql = $@"
-            IF EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'{_qualifiedTableName}') AND type in (N'U'))
+            IF EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qualifiedTableName)}') AND type in (N'U'))
             BEGIN
-                IF EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Checkpoint' AND object_id = OBJECT_ID(N'{_qualifiedTableName}'))
+                IF EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Checkpoint' AND object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qualifiedTableName)}'))
                     DROP INDEX [IX_Checkpoint] ON {_qualifiedTableName};
 
-                IF EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_ProjectionType' AND object_id = OBJECT_ID(N'{_qualifiedTableName}'))
+                IF EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_ProjectionType' AND object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qualifiedTableName)}'))
                     DROP INDEX [IX_ProjectionType] ON {_qualifiedTableName};
 
-                IF EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_LastUpdated' AND object_id = OBJECT_ID(N'{_qualifiedTableName}'))
+                IF EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_LastUpdated' AND object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qualifiedTableName)}'))
                     DROP INDEX [IX_LastUpdated] ON {_qualifiedTableName};
 
-                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_ProjectionType_LastUpdated' AND object_id = OBJECT_ID(N'{_qualifiedTableName}'))
+                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_ProjectionType_LastUpdated' AND object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qualifiedTableName)}'))
                     CREATE INDEX [IX_ProjectionType_LastUpdated] ON {_qualifiedTableName} ([ProjectionType], [LastUpdated] DESC);
             END";
 
         try
         {
-            await using (var createCommand = new SqlCommand(createTableSql, connection))
+            var createCommand = new SqlCommand(createTableSql, connection);
+            await using (createCommand.ConfigureAwait(false))
             {
-                await createCommand.ExecuteNonQueryAsync(cancellationToken);
+                await createCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            await using (var indexCommand = new SqlCommand(indexSql, connection))
+            var indexCommand = new SqlCommand(indexSql, connection);
+            await using (indexCommand.ConfigureAwait(false))
             {
-                await indexCommand.ExecuteNonQueryAsync(cancellationToken);
+                await indexCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
             
             _logger?.LogInformation(

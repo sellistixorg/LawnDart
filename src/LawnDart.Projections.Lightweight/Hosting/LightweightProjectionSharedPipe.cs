@@ -208,8 +208,8 @@ internal sealed class LightweightProjectionSharedPipe : IAsyncDisposable
             slot.Attached = !farBehind;
         }
 
-        _logger.LogInformation(
-            "Shared pipe join={Join} (live={Live}, private={Private}, threshold={Threshold})",
+        LightweightProjectionSharedPipeLog.ClassifiedSlots(
+            _logger,
             join,
             string.Join(",", live.Select(s => s.Runner.StorageKey)),
             string.Join(",", snapshot.Where(s => !s.Attached).Select(s => s.Runner.StorageKey)),
@@ -290,7 +290,7 @@ internal sealed class LightweightProjectionSharedPipe : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Shared pipe pump fault; runners will poll-recover");
+            LightweightProjectionSharedPipeLog.PumpFault(_logger, ex);
             _faulted = true;
             lock (_gate)
                 StopPump_NoLock();

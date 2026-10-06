@@ -216,7 +216,7 @@ public abstract partial class AggregateRoot<TState> : AggregateRoot where TState
     public override async Task<SnapshotInfo?> TryRestoreFromSnapshotAsync(
         ISnapshotStore store, CancellationToken ct)
     {
-        var (state, info) = await store.LoadSnapshotAsync<TState>(StreamId, ct);
+        var (state, info) = await store.LoadSnapshotAsync<TState>(StreamId, ct).ConfigureAwait(false);
         if (info == null || state == null) return null;
 
         State = state;

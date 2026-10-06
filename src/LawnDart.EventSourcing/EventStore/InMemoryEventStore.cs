@@ -327,7 +327,8 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         }
         catch (Exception ex)
         {
-            _logger?.LogError(ex, "InMemory subscription {SubscriberId} failed.", handle.SubscriberId);
+            if (_logger is not null)
+                InMemoryEventStoreLog.SubscriptionFailed(_logger, ex, handle.SubscriberId);
         }
         finally
         {
@@ -590,12 +591,13 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
             UpdateStreamRegistry(streamId, streamVersion, sequencePositions.Last(), envelopes.Count, UnionTags(envelopes));
         }
 
-        _logger?.LogDebug(
-            "Appended {Count} events to stream {StreamId}, versions {FromVersion}-{ToVersion}",
-            envelopes.Count,
-            streamId,
-            streamVersion - envelopes.Count + 1,
-            streamVersion);
+        if (_logger is not null)
+            InMemoryEventStoreLog.StreamEventsAppended(
+                _logger,
+                envelopes.Count,
+                streamId,
+                streamVersion - envelopes.Count + 1,
+                streamVersion);
 
         return new AppendResult(sequencePositions.AsReadOnly(), null, streamVersion);
     }
@@ -634,11 +636,12 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
             UpdateStreamRegistry(streamId, 0, sequencePositions.Last(), envelopes.Count, UnionTags(envelopes));
         }
 
-        _logger?.LogDebug(
-            "Appended {Count} events with DCB condition, sequence positions {FromPosition}-{ToPosition}",
-            envelopes.Count,
-            sequencePositions.FirstOrDefault(),
-            sequencePositions.LastOrDefault());
+        if (_logger is not null)
+            InMemoryEventStoreLog.DcbEventsAppended(
+                _logger,
+                envelopes.Count,
+                sequencePositions.FirstOrDefault(),
+                sequencePositions.LastOrDefault());
 
         return new AppendResult(sequencePositions.AsReadOnly());
     }

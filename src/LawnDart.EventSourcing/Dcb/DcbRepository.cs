@@ -119,16 +119,15 @@ public class DcbRepository : IDcbRepository
                 var restoreSw = Stopwatch.StartNew();
                 try
                 {
-                    var (snappedState, info) = await _dcbSnapshotStore.LoadDcbSnapshotAsync<TState>(dcbId, cancellationToken);
+                    var (snappedState, info) = await _dcbSnapshotStore.LoadDcbSnapshotAsync<TState>(dcbId, cancellationToken).ConfigureAwait(false);
                     restoreSw.Stop();
                     snapshotRestoreElapsed = restoreSw.Elapsed;
                     if (info != null && snappedState != null)
                     {
                         state        = snappedState;
                         snapshotInfo = info;
-                        _logger?.LogDebug(
-                            "Restored DCB state {StateType} from snapshot at global seq {Seq}",
-                            typeof(TState).Name, info.GlobalSequence);
+                        if (_logger is not null)
+                            DcbRepositoryLog.StateRestored(_logger, typeof(TState).Name, info.GlobalSequence);
                         // Hit telemetry recorded after delta scan so delta count is known.
                     }
                     else
@@ -139,9 +138,8 @@ public class DcbRepository : IDcbRepository
                 catch (Exception ex)
                 {
                     restoreSw.Stop();
-                    _logger?.LogWarning(ex,
-                        "DCB snapshot restore failed for {DcbId}; falling back to full scan",
-                        dcbId);
+                    if (_logger is not null)
+                        DcbRepositoryLog.StateRestoreFailed(_logger, ex, dcbId);
                     SnapshotTelemetry.RecordMiss(typeof(TState).Name, "dcb", restoreSw.Elapsed);
                     state = new TState();
                 }
@@ -159,7 +157,7 @@ public class DcbRepository : IDcbRepository
             await foreach (var evt in _eventStore.ReadByQueryStreamAsync(
                 query,
                 fromSequencePosition,
-                cancellationToken: cancellationToken))
+                cancellationToken: cancellationToken).ConfigureAwait(false))
             {
                 events.Add(evt);
             }
@@ -175,9 +173,8 @@ public class DcbRepository : IDcbRepository
             }
             
             DcbTelemetry.RecordGetState(events.Count, stopwatch.Elapsed);
-            _logger?.LogDebug(
-                "Rebuilt state {StateType} from {EventCount} delta events (snapshot: {HasSnapshot})",
-                typeof(TState).Name, events.Count, snapshotInfo != null);
+            if (_logger is not null)
+                DcbRepositoryLog.StateRebuilt(_logger, typeof(TState).Name, events.Count, snapshotInfo != null);
             
             return state;
         }
@@ -215,7 +212,7 @@ public class DcbRepository : IDcbRepository
             fromSequencePosition: null,
             toSequencePosition: asOfSequencePosition,
             toTimestamp: asOfTimestamp,
-            cancellationToken: cancellationToken))
+            cancellationToken: cancellationToken).ConfigureAwait(false))
         {
             events.Add(evt);
         }
@@ -241,7 +238,7 @@ public class DcbRepository : IDcbRepository
         }
 
         var query = Query.FromItems(QueryItem.ByTags(tagsList.ToArray()));
-        return await _eventStore.GetMaxSequencePositionAsync(query, cancellationToken: cancellationToken);
+        return await _eventStore.GetMaxSequencePositionAsync(query, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
     
     /// <inheritdoc/>
@@ -300,7 +297,7 @@ public class DcbRepository : IDcbRepository
                     condition,
                     eventMetadata,
                     tagsList,
-                    cancellationToken);
+                    cancellationToken).ConfigureAwait(false);
                 sequencePositions = appendResult.SequencePositions;
             }
             else
@@ -317,12 +314,13 @@ public class DcbRepository : IDcbRepository
                     null,
                     eventMetadata,
                     tagsList,
-                    cancellationToken);
+                    cancellationToken).ConfigureAwait(false);
                 sequencePositions = appendResult.SequencePositions;
             }
             
             DcbTelemetry.RecordAppend(eventsList.Count, stopwatch.Elapsed);
-            _logger?.LogDebug("Appended {Count} DCB events with {TagCount} tags", eventsList.Count, tagsList.Count);
+            if (_logger is not null)
+                DcbRepositoryLog.EventsAppended(_logger, eventsList.Count, tagsList.Count);
             
             return sequencePositions;
         }
@@ -349,9 +347,10 @@ public class DcbRepository : IDcbRepository
         entity.SetTags(loadTags);
         entity.SetConsistencyTags(loadTags);
         
-        _logger?.LogDebug("Created new DCB entity {EntityType} with {TagCount} tags", typeof(TEntity).Name, tagsList.Count);
+        if (_logger is not null)
+            DcbRepositoryLog.EntityCreated(_logger, typeof(TEntity).Name, tagsList.Count);
         
-        return await Task.FromResult(entity);
+        return await Task.FromResult(entity).ConfigureAwait(false);
     }
     
     /// <inheritdoc/>
@@ -380,7 +379,7 @@ public class DcbRepository : IDcbRepository
             try
             {
                 // Snapshot for DcbEntity: we store the entity itself (as TEntity) and restore it directly.
-                var (snappedEntity, info) = await _dcbSnapshotStore.LoadDcbSnapshotAsync<TEntity>(dcbId, cancellationToken);
+                var (snappedEntity, info) = await _dcbSnapshotStore.LoadDcbSnapshotAsync<TEntity>(dcbId, cancellationToken).ConfigureAwait(false);
                 restoreSw.Stop();
                 entitySnapshotRestoreElapsed = restoreSw.Elapsed;
                 if (info != null && snappedEntity != null)
@@ -389,18 +388,16 @@ public class DcbRepository : IDcbRepository
                     ApplyLoadTags(entity, loadTags);
                     entity.SetSnapshotCursor(info.GlobalSequence, info.TakenAtUtc);
                     snapshotInfo  = info;
-                    _logger?.LogDebug(
-                        "Restored DCB entity {EntityType} from snapshot at global seq {Seq}",
-                        typeof(TEntity).Name, info.GlobalSequence);
+                    if (_logger is not null)
+                        DcbRepositoryLog.EntityRestored(_logger, typeof(TEntity).Name, info.GlobalSequence);
                     // Hit telemetry recorded after delta replay so delta count is known.
                 }
             }
             catch (Exception ex)
             {
                 restoreSw.Stop();
-                _logger?.LogWarning(ex,
-                    "DCB entity snapshot restore failed for {DcbId}; falling back to full scan",
-                    dcbId);
+                if (_logger is not null)
+                    DcbRepositoryLog.EntityRestoreFailed(_logger, ex, dcbId);
                 SnapshotTelemetry.RecordMiss(typeof(TEntity).Name, "dcb", restoreSw.Elapsed);
                 entity = new TEntity();
                 ApplyLoadTags(entity, loadTags);
@@ -411,7 +408,7 @@ public class DcbRepository : IDcbRepository
         // The consistency marker is always recomputed from delta events — never reuse the stored marker.
         var fromSequencePosition = snapshotInfo != null ? snapshotInfo.GlobalSequence + 1 : (long?)null;
         var query = Query.FromItems(QueryItem.ByTags(tagsList.ToArray()));
-        var queryResult = await _eventStore.ReadByQueryAsync(query, fromSequencePosition, limit: null, cancellationToken: cancellationToken);
+        var queryResult = await _eventStore.ReadByQueryAsync(query, fromSequencePosition, limit: null, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         // Record snapshot hit now that delta count is known.
         if (snapshotInfo != null)
@@ -420,13 +417,14 @@ public class DcbRepository : IDcbRepository
         if (queryResult.Events.Count > 0)
         {
             entity.ReplayEvents(queryResult.Events);
-            _logger?.LogDebug(
-                "Loaded DCB entity {EntityType} with {EventCount} delta events (snapshot: {HasSnapshot})",
-                typeof(TEntity).Name, queryResult.Events.Count, snapshotInfo != null);
+            if (_logger is not null)
+                DcbRepositoryLog.EntityLoaded(
+                    _logger, typeof(TEntity).Name, queryResult.Events.Count, snapshotInfo != null);
         }
         else if (snapshotInfo == null)
         {
-            _logger?.LogDebug("Created new DCB entity {EntityType} (no existing events)", typeof(TEntity).Name);
+            if (_logger is not null)
+                DcbRepositoryLog.EntityCreatedEmpty(_logger, typeof(TEntity).Name);
         }
 
         // Carry the fresh consistency marker forward so HandleCommandAsync can forward it
@@ -457,7 +455,7 @@ public class DcbRepository : IDcbRepository
             // Authorization check (if enabled and service is registered)
             if (_options.EnableAuthorization && _authorizationService != null)
             {
-                var authResult = await _authorizationService.AuthorizeCommandAsync(command, cancellationToken);
+                var authResult = await _authorizationService.AuthorizeCommandAsync(command, cancellationToken).ConfigureAwait(false);
                 if (!authResult.IsAuthorized)
                 {
                     throw new UnauthorizedAccessException(
@@ -473,11 +471,11 @@ public class DcbRepository : IDcbRepository
             if (CompiledCommandApplicator.OverridesHandleAsync(entity.GetType()))
             {
 #pragma warning disable CS0618
-                await entity.HandleAsync(command, cancellationToken);
+                await entity.HandleAsync(command, cancellationToken).ConfigureAwait(false);
 #pragma warning restore CS0618
             }
             else
-                await CompiledCommandApplicator.DispatchAsync(entity, command, cancellationToken);
+                await CompiledCommandApplicator.DispatchAsync(entity, command, cancellationToken).ConfigureAwait(false);
 
             var pendingCount = entity.PendingEvents.Count();
             
@@ -498,7 +496,7 @@ public class DcbRepository : IDcbRepository
                 entity.Tags,
                 condition,
                 commandMetadata,
-                cancellationToken);
+                cancellationToken).ConfigureAwait(false);
             
             // Update entity's last sequence position
             if (sequencePositions.Count > 0)
@@ -510,8 +508,8 @@ public class DcbRepository : IDcbRepository
             entity.ClearPendingEvents();
 
             DcbTelemetry.RecordHandleCommand(typeof(TCommand).Name, stopwatch.Elapsed);
-            _logger?.LogDebug("Handled command {CommandType} on DCB entity {EntityType}", 
-                typeof(TCommand).Name, typeof(TEntity).Name);
+            if (_logger is not null)
+                DcbRepositoryLog.CommandHandled(_logger, typeof(TCommand).Name, typeof(TEntity).Name);
 
             // Capture on this thread, enqueue wait-free. The hosted consumer writes.
             if (_dcbSnapshotStore != null && _strategyResolver != null && _snapshotWriteQueue != null
@@ -591,7 +589,8 @@ public class DcbRepository : IDcbRepository
         {
             // Auto-inject tenant tag
             tags.Add($"tenant:{tenantId}");
-            _logger?.LogDebug("Auto-injected tenant tag: tenant:{TenantId}", tenantId);
+            if (_logger is not null)
+                DcbRepositoryLog.TenantTagInjected(_logger, tenantId);
         }
         else
         {

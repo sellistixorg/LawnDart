@@ -51,14 +51,14 @@ public class OutboxProcessor : BackgroundService
         {
             try
             {
-                await ProcessBatchAsync(stoppingToken);
+                await ProcessBatchAsync(stoppingToken).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error processing outbox batch");
             }
             
-            await Task.Delay(_pollingInterval, stoppingToken);
+            await Task.Delay(_pollingInterval, stoppingToken).ConfigureAwait(false);
         }
         
         _logger.LogInformation("Outbox processor stopping");
@@ -69,7 +69,7 @@ public class OutboxProcessor : BackgroundService
     /// </summary>
     private async Task ProcessBatchAsync(CancellationToken cancellationToken)
     {
-        var messages = await _outboxWriter.GetUnprocessedAsync(_batchSize, cancellationToken);
+        var messages = await _outboxWriter.GetUnprocessedAsync(_batchSize, cancellationToken).ConfigureAwait(false);
         
         if (messages.Count == 0)
         {
@@ -85,27 +85,27 @@ public class OutboxProcessor : BackgroundService
                 _logger.LogWarning(
                     "Outbox message {MessageId} has exceeded max attempts ({MaxAttempts}), dead-lettering",
                     message.Id, _maxAttempts);
-                await _outboxWriter.MarkAsDeadLetteredAsync(message.Id, cancellationToken);
+                await _outboxWriter.MarkAsDeadLetteredAsync(message.Id, cancellationToken).ConfigureAwait(false);
                 continue;
             }
             
             try
             {
-                await _outboxPublisher.PublishAsync(message, cancellationToken);
-                await _outboxWriter.MarkAsProcessedAsync(message.Id, cancellationToken);
+                await _outboxPublisher.PublishAsync(message, cancellationToken).ConfigureAwait(false);
+                await _outboxWriter.MarkAsProcessedAsync(message.Id, cancellationToken).ConfigureAwait(false);
                 
                 _logger.LogDebug("Successfully published outbox message {MessageId}", message.Id);
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to publish outbox message {MessageId}", message.Id);
-                await _outboxWriter.RecordFailureAsync(message.Id, ex.Message, cancellationToken);
+                await _outboxWriter.RecordFailureAsync(message.Id, ex.Message, cancellationToken).ConfigureAwait(false);
                 if (message.Attempts + 1 >= _maxAttempts)
                 {
                     _logger.LogWarning(
                         "Outbox message {MessageId} reached max attempts ({MaxAttempts}), dead-lettering",
                         message.Id, _maxAttempts);
-                    await _outboxWriter.MarkAsDeadLetteredAsync(message.Id, cancellationToken);
+                    await _outboxWriter.MarkAsDeadLetteredAsync(message.Id, cancellationToken).ConfigureAwait(false);
                 }
             }
         }

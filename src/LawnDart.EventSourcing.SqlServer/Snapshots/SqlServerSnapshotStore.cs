@@ -8,6 +8,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 using LawnDart.Dcb;
 using LawnDart.Snapshots;
+using LawnDart.Sql;
 
 namespace LawnDart.EventSourcing.SqlServer.Snapshots;
 
@@ -77,19 +78,21 @@ public sealed class SqlServerSnapshotStore : ISnapshotStore, IDcbSnapshotStore, 
     /// </summary>
     public async Task InitializeSchemaAsync(CancellationToken cancellationToken = default)
     {
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         var schemaSql = $@"
-            IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = '{SqlServerSnapshotSchema.Quote(_schemaName)}')
+            IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = '{SqlIdentifier.Literal(_schemaName)}')
             BEGIN
-                EXEC('CREATE SCHEMA [{SqlServerSnapshotSchema.Quote(_schemaName)}] AUTHORIZATION dbo');
+                EXEC('CREATE SCHEMA {SqlIdentifier.Literal(SqlIdentifier.Quote(_schemaName))} AUTHORIZATION dbo');
             END";
-        await using (var schemaCmd = new SqlCommand(schemaSql, connection))
-            await schemaCmd.ExecuteNonQueryAsync(cancellationToken);
+        var schemaCmd = new SqlCommand(schemaSql, connection);
+        await using (schemaCmd.ConfigureAwait(false))
+            await schemaCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
         await SqlServerSnapshotSchema.EnsureCreatedAsync(
-            connection, _schemaName, _dcbTableName, _eventTableName, cancellationToken);
+            connection, _schemaName, _dcbTableName, _eventTableName, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -100,12 +103,14 @@ public sealed class SqlServerSnapshotStore : ISnapshotStore, IDcbSnapshotStore, 
         string dcbId,
         CancellationToken ct = default)
     {
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(ct);
-        await using var command = new SqlCommand(
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+        var command = new SqlCommand(
             $"SELECT [Tags] FROM {_qDcb} WHERE [DcbId] = @DcbId", connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         AddChar64(command, "@DcbId", dcbId);
-        var result = await command.ExecuteScalarAsync(ct);
+        var result = await command.ExecuteScalarAsync(ct).ConfigureAwait(false);
         if (result is null or DBNull)
             return null;
         return JsonSerializer.Deserialize<string[]>((string)result, JsonOptions);
@@ -120,16 +125,19 @@ public sealed class SqlServerSnapshotStore : ISnapshotStore, IDcbSnapshotStore, 
     {
         try
         {
-            await using var connection = new SqlConnection(_connectionString);
-            await connection.OpenAsync(ct);
-            await using var command = new SqlCommand(
+            var connection = new SqlConnection(_connectionString);
+            await using var connectionDisposal = connection.ConfigureAwait(false);
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var command = new SqlCommand(
                 $@"SELECT [GlobalSequence], [TakenAtUtc], [StateData], [Checksum]
                    FROM {_qDcb} WHERE [DcbId] = @DcbId",
                 connection);
+            await using var commandDisposal = command.ConfigureAwait(false);
             AddChar64(command, "@DcbId", dcbId);
 
-            await using var reader = await command.ExecuteReaderAsync(ct);
-            if (!await reader.ReadAsync(ct))
+            var reader = (await command.ExecuteReaderAsync(ct).ConfigureAwait(false));
+            await using var readerDisposal = reader.ConfigureAwait(false);
+            if (!await reader.ReadAsync(ct).ConfigureAwait(false))
                 return (default, null);
 
             var seq = reader.GetInt64(0);
@@ -139,8 +147,8 @@ public sealed class SqlServerSnapshotStore : ISnapshotStore, IDcbSnapshotStore, 
 
             if (!ChecksumMatches(data, checksum))
             {
-                _logger?.LogWarning(
-                    "DCB snapshot checksum mismatch for {DcbId}; discarding", dcbId);
+                if (_logger is not null)
+                    SqlServerSnapshotStoreLog.DcbChecksumMismatch(_logger, dcbId);
                 return (default, null);
             }
 
@@ -152,12 +160,14 @@ public sealed class SqlServerSnapshotStore : ISnapshotStore, IDcbSnapshotStore, 
         }
         catch (JsonException ex)
         {
-            _logger?.LogWarning(ex, "DCB snapshot deserialize failed for {DcbId}; discarding", dcbId);
+            if (_logger is not null)
+                SqlServerSnapshotStoreLog.DcbDeserializeFailed(_logger, ex, dcbId);
             return (default, null);
         }
         catch (SqlException ex)
         {
-            _logger?.LogWarning(ex, "DCB snapshot load failed for {DcbId}; discarding", dcbId);
+            if (_logger is not null)
+                SqlServerSnapshotStoreLog.DcbLoadFailed(_logger, ex, dcbId);
             return (default, null);
         }
     }
@@ -176,10 +186,11 @@ public sealed class SqlServerSnapshotStore : ISnapshotStore, IDcbSnapshotStore, 
         var taken = DateTime.UtcNow;
         var stateType = typeof(TState).FullName ?? typeof(TState).Name;
 
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(ct);
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
 
-        await using var command = new SqlCommand(
+        var command = new SqlCommand(
             $@"
             UPDATE {_qDcb}
             SET [GlobalSequence] = @Seq,
@@ -198,6 +209,7 @@ public sealed class SqlServerSnapshotStore : ISnapshotStore, IDcbSnapshotStore, 
                     (@DcbId, @Seq, @Taken, @StateType, @StateData, @Tags, @Marker, @Checksum);
             END",
             connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         AddChar64(command, "@DcbId", dcbId);
         command.Parameters.AddWithValue("@Seq", globalSequence);
         command.Parameters.AddWithValue("@Taken", taken);
@@ -208,9 +220,10 @@ public sealed class SqlServerSnapshotStore : ISnapshotStore, IDcbSnapshotStore, 
         var markerParam = command.Parameters.Add("@Marker", SqlDbType.VarBinary, 512);
         markerParam.Value = consistencyMarker is null ? DBNull.Value : consistencyMarker;
         AddChar64(command, "@Checksum", checksum);
-        await command.ExecuteNonQueryAsync(ct);
+        await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
-        _logger?.LogDebug("Saved DCB snapshot for {DcbId} at global seq {Seq}", dcbId, globalSequence);
+        if (_logger is not null)
+            SqlServerSnapshotStoreLog.DcbSaved(_logger, dcbId, globalSequence);
     }
 
     // ── ISnapshotStore ────────────────────────────────────────────────────────
@@ -222,16 +235,19 @@ public sealed class SqlServerSnapshotStore : ISnapshotStore, IDcbSnapshotStore, 
     {
         try
         {
-            await using var connection = new SqlConnection(_connectionString);
-            await connection.OpenAsync(ct);
-            await using var command = new SqlCommand(
+            var connection = new SqlConnection(_connectionString);
+            await using var connectionDisposal = connection.ConfigureAwait(false);
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var command = new SqlCommand(
                 $@"SELECT [Version], [GlobalSequence], [TakenAtUtc], [StateData], [Checksum]
                    FROM {_qEvent} WHERE [StreamId] = @StreamId",
                 connection);
+            await using var commandDisposal = command.ConfigureAwait(false);
             command.Parameters.AddWithValue("@StreamId", streamId);
 
-            await using var reader = await command.ExecuteReaderAsync(ct);
-            if (!await reader.ReadAsync(ct))
+            var reader = (await command.ExecuteReaderAsync(ct).ConfigureAwait(false));
+            await using var readerDisposal = reader.ConfigureAwait(false);
+            if (!await reader.ReadAsync(ct).ConfigureAwait(false))
                 return (default, null);
 
             var version = reader.GetInt64(0);
@@ -242,8 +258,8 @@ public sealed class SqlServerSnapshotStore : ISnapshotStore, IDcbSnapshotStore, 
 
             if (!ChecksumMatches(data, checksum))
             {
-                _logger?.LogWarning(
-                    "Stream snapshot checksum mismatch for {StreamId}; discarding", streamId);
+                if (_logger is not null)
+                    SqlServerSnapshotStoreLog.StreamChecksumMismatch(_logger, streamId);
                 return (default, null);
             }
 
@@ -255,12 +271,14 @@ public sealed class SqlServerSnapshotStore : ISnapshotStore, IDcbSnapshotStore, 
         }
         catch (JsonException ex)
         {
-            _logger?.LogWarning(ex, "Stream snapshot deserialize failed for {StreamId}; discarding", streamId);
+            if (_logger is not null)
+                SqlServerSnapshotStoreLog.StreamDeserializeFailed(_logger, ex, streamId);
             return (default, null);
         }
         catch (SqlException ex)
         {
-            _logger?.LogWarning(ex, "Stream snapshot load failed for {StreamId}; discarding", streamId);
+            if (_logger is not null)
+                SqlServerSnapshotStoreLog.StreamLoadFailed(_logger, ex, streamId);
             return (default, null);
         }
     }
@@ -278,9 +296,10 @@ public sealed class SqlServerSnapshotStore : ISnapshotStore, IDcbSnapshotStore, 
         var taken = DateTime.UtcNow;
         var stateType = typeof(TState).FullName ?? typeof(TState).Name;
 
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(ct);
-        await using var command = new SqlCommand(
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+        var command = new SqlCommand(
             $@"
             UPDATE {_qEvent}
             SET [Version] = @Version,
@@ -298,6 +317,7 @@ public sealed class SqlServerSnapshotStore : ISnapshotStore, IDcbSnapshotStore, 
                     (@StreamId, @Version, @Seq, @Taken, @StateType, @StateData, @Checksum);
             END",
             connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("@StreamId", streamId);
         command.Parameters.AddWithValue("@Version", version);
         command.Parameters.AddWithValue("@Seq", globalSequence);
@@ -305,11 +325,10 @@ public sealed class SqlServerSnapshotStore : ISnapshotStore, IDcbSnapshotStore, 
         command.Parameters.AddWithValue("@StateType", stateType);
         command.Parameters.AddWithValue("@StateData", data);
         AddChar64(command, "@Checksum", checksum);
-        await command.ExecuteNonQueryAsync(ct);
+        await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
-        _logger?.LogDebug(
-            "Saved snapshot for {StreamId} at version {Version} (global seq {Seq})",
-            streamId, version, globalSequence);
+        if (_logger is not null)
+            SqlServerSnapshotStoreLog.StreamSaved(_logger, streamId, version, globalSequence);
     }
 
     // ── ISnapshotAdmin ────────────────────────────────────────────────────────
@@ -317,43 +336,50 @@ public sealed class SqlServerSnapshotStore : ISnapshotStore, IDcbSnapshotStore, 
     /// <inheritdoc/>
     public async Task DeleteSnapshotAsync(string streamId, CancellationToken ct = default)
     {
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(ct);
-        await using var command = new SqlCommand(
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+        var command = new SqlCommand(
             $@"
             DELETE FROM {_qEvent} WHERE [StreamId] = @Id;
             DELETE FROM {_qDcb} WHERE [DcbId] = @Id;",
             connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("@Id", streamId);
-        await command.ExecuteNonQueryAsync(ct);
+        await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         _logger?.LogInformation("Deleted snapshots for {StreamId}", streamId);
     }
 
     /// <inheritdoc/>
     public async Task DeleteAllSnapshotsAsync(CancellationToken ct = default)
     {
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(ct);
-        await using var command = new SqlCommand(
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+        var command = new SqlCommand(
             $"DELETE FROM {_qEvent}; DELETE FROM {_qDcb};", connection);
-        await command.ExecuteNonQueryAsync(ct);
+        await using var commandDisposal = command.ConfigureAwait(false);
+        await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         _logger?.LogInformation("Deleted all snapshots from store");
     }
 
     /// <inheritdoc/>
     public async Task<SnapshotInfo?> GetSnapshotInfoAsync(string streamId, CancellationToken ct = default)
     {
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(ct);
-        await using var command = new SqlCommand(
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+        var command = new SqlCommand(
             $@"
             SELECT [Version], [GlobalSequence], [TakenAtUtc] FROM {_qEvent} WHERE [StreamId] = @Id
             UNION ALL
             SELECT CAST(0 AS BIGINT), [GlobalSequence], [TakenAtUtc] FROM {_qDcb} WHERE [DcbId] = @Id",
             connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("@Id", streamId);
-        await using var reader = await command.ExecuteReaderAsync(ct);
-        if (!await reader.ReadAsync(ct))
+        var reader = (await command.ExecuteReaderAsync(ct).ConfigureAwait(false));
+        await using var readerDisposal = reader.ConfigureAwait(false);
+        if (!await reader.ReadAsync(ct).ConfigureAwait(false))
             return null;
         return new SnapshotInfo(
             reader.GetInt64(0),
@@ -365,16 +391,19 @@ public sealed class SqlServerSnapshotStore : ISnapshotStore, IDcbSnapshotStore, 
     public async IAsyncEnumerable<string> EnumerateSnapshotStreamsAsync(
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(ct);
-        await using var command = new SqlCommand(
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+        var command = new SqlCommand(
             $@"
             SELECT [StreamId] FROM {_qEvent}
             UNION ALL
             SELECT [DcbId] FROM {_qDcb}",
             connection);
-        await using var reader = await command.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct))
+        await using var commandDisposal = command.ConfigureAwait(false);
+        var reader = (await command.ExecuteReaderAsync(ct).ConfigureAwait(false));
+        await using var readerDisposal = reader.ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
             yield return reader.GetString(0);
     }
 

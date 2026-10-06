@@ -53,7 +53,7 @@ public abstract class DcbReactor<TEvent> : IDcbReactor where TEvent : IEvent
     {
         if (@event is TEvent typedEvent)
         {
-            return await ReactToEventAsync(typedEvent, metadata, cancellationToken);
+            return await ReactToEventAsync(typedEvent, metadata, cancellationToken).ConfigureAwait(false);
         }
         
         return Array.Empty<ICommand>();

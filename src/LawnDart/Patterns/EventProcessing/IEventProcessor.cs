@@ -6,8 +6,8 @@ namespace LawnDart.Patterns.EventProcessing;
 /// Broker-driven event processor: transforms an incoming event into zero or more derived events
 /// (Event → Event pattern). Derived events are typically written back through the event store
 /// and published via the outbox for transactional consistency.
-/// At-least-once delivery is expected; infrastructure applies inbox deduplication
-/// using <see cref="MessageContext.MessageId"/> before invoking this handler.
+/// At-least-once delivery is expected. The hosted service deduplicates on this processor's
+/// type name plus <see cref="MessageContext.MessageId"/>, so another consumer of the same message still runs.
 /// </summary>
 /// <typeparam name="TEvent">The input event type this processor handles.</typeparam>
 public interface IEventProcessor<TEvent> where TEvent : IEvent

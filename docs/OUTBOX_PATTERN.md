@@ -41,9 +41,46 @@ services.AddMessageTransportOutboxPublisher();
 Pair the outbox with `LawnDart.Messaging.InMemory` for single-process tests,
 or your own `IMessageTransport` implementation.
 
+Delivery to the transport is at least once. A consumer that must ignore a
+redelivery after a restart stores that fact in SQL Server:
+
+```csharp
+services.AddInMemoryMessaging();
+services.AddSqlInboxStore(cs);
+```
+
+Call `InitializeSqlInboxStoreAsync` before hosted reactors start. The
+in-memory inbox is per process. Each reactor or processor deduplicates on
+its own key (`reactor:{hash}:{message id}` or `processor:{hash}:{message id}`).
+That hash is taken from the consumer type's full name, so two consumers of
+one message both run once.
+
 ## Dead letters
 
 When publish attempts reach the processor max (default 10), the row is marked
-with `DeadLetteredAt` and dropped from `GetUnprocessedAsync`. Query failed rows
-with `GetDeadLetteredAsync`. `ProcessedAt` is success only; dead letters do not
-set it. Inspect those rows in place. This version has no reset or replay API.
+with `DeadLetteredAt` and dropped from `GetUnprocessedAsync`. `ProcessedAt`
+is success only. A dead letter leaves `ProcessedAt` null.
+
+List failed rows with `GetDeadLetteredAsync`. The writer is keyed by
+bounded-context name. Reset one row, or every dead-lettered row, and the
+processor publishes it again on the next poll:
+
+```csharp
+var writer = sp.GetRequiredKeyedService<IOutboxWriter>("default");
+var dead = await writer.GetDeadLetteredAsync(100);
+await writer.ResetDeadLetteredAsync(dead[0].Id);
+// or: var reset = await writer.ResetAllDeadLetteredAsync();
+```
+
+Reset clears `DeadLetteredAt` and sets `Attempts` to 0. `LastError` and
+`LastAttemptAt` stay until the next attempt overwrites them. An unknown id,
+a row that was never dead-lettered, and an already processed row each return
+`false` from `ResetDeadLetteredAsync` and stay as they were.
+`ResetAllDeadLetteredAsync` returns how many rows changed.
+
+The republished row keeps the same id.
+`MessageTransportOutboxPublisher` uses that id as
+`MessageContext.MessageId`. A consumer whose inbox already marked that id
+processed inside the dedup window drops the delivery. That is the expected
+at-least-once behavior. Reset after the window expires when the consumer
+must run again.

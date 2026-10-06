@@ -45,7 +45,7 @@ public class CachedStreamRegistry : IStreamRegistry
         }
         
         _logger?.LogDebug("Stream registry cache miss for stream: {StreamId}", streamId);
-        var result = await _inner.GetStreamAsync(streamId, cancellationToken);
+        var result = await _inner.GetStreamAsync(streamId, cancellationToken).ConfigureAwait(false);
         
         if (result != null)
         {
@@ -72,7 +72,7 @@ public class CachedStreamRegistry : IStreamRegistry
         }
         
         _logger?.LogDebug("Stream registry cache miss for aggregate type: {AggregateType}", aggregateType);
-        var result = await _inner.GetStreamsByAggregateTypeAsync(aggregateType, cancellationToken);
+        var result = await _inner.GetStreamsByAggregateTypeAsync(aggregateType, cancellationToken).ConfigureAwait(false);
         
         _cache.Set(cacheKey, result, new MemoryCacheEntryOptions
         {
@@ -96,7 +96,7 @@ public class CachedStreamRegistry : IStreamRegistry
         }
         
         _logger?.LogDebug("Stream registry cache miss for tag: {Tag}", tag);
-        var result = await _inner.GetStreamsByTagAsync(tag, cancellationToken);
+        var result = await _inner.GetStreamsByTagAsync(tag, cancellationToken).ConfigureAwait(false);
         
         // Shorter cache for tag queries as they're more dynamic
         _cache.Set(cacheKey, result, new MemoryCacheEntryOptions
@@ -121,7 +121,7 @@ public class CachedStreamRegistry : IStreamRegistry
         }
         
         _logger?.LogDebug("Stream registry cache miss for enumerate with prefix: {Prefix}", prefix);
-        var result = await _inner.EnumerateStreamIdsAsync(prefix, cancellationToken);
+        var result = await _inner.EnumerateStreamIdsAsync(prefix, cancellationToken).ConfigureAwait(false);
         
         _cache.Set(cacheKey, result, new MemoryCacheEntryOptions
         {
@@ -138,7 +138,7 @@ public class CachedStreamRegistry : IStreamRegistry
         CancellationToken cancellationToken = default)
     {
         // Don't cache this - it's used for incremental processing and should always be fresh
-        return await _inner.GetStreamsUpdatedAfterAsync(afterSequencePosition, limit, cancellationToken);
+        return await _inner.GetStreamsUpdatedAfterAsync(afterSequencePosition, limit, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>

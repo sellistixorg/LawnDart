@@ -59,28 +59,34 @@ public class ShowcaseC_LiveProjectionPanel
         var tasks = Enumerable.Range(1, totalStudents).Select(async i =>
         {
             var studentId = Guid.NewGuid();
-            try
+            const int maxAttempts = 8;
+            for (var attempt = 1; ; attempt++)
             {
-                // Each student loads its own copy of the section and tries to reserve
-                var s = await _repository.GetOrCreateAsync<CourseSection>(sectionId);
-                await _repository.HandleCommandAsync(s,
-                    new ReserveSeatCommand(Guid.NewGuid(), sectionId, studentId));
+                try
+                {
+                    // Each student loads its own copy of the section and tries to reserve
+                    var s = await _repository.GetOrCreateAsync<CourseSection>(sectionId);
+                    await _repository.HandleCommandAsync(s,
+                        new ReserveSeatCommand(Guid.NewGuid(), sectionId, studentId));
 
-                _projector.Apply(new SeatReserved(Guid.NewGuid(), DateTime.UtcNow, sectionId, studentId));
+                    _projector.Apply(new SeatReserved(Guid.NewGuid(), DateTime.UtcNow, sectionId, studentId));
 
-                lock (resultsLock) successCount++;
-                return (i, Success: true, Message: "Seat reserved");
-            }
-            catch (LawnDart.EventStore.ConcurrencyException)
-            {
-                // Lost the race — another student grabbed the last seat(s) concurrently.
-                lock (resultsLock) failureCount++;
-                return (i, Success: false, Message: "No seats available (lost optimistic concurrency race)");
-            }
-            catch (InvalidOperationException ex)
-            {
-                lock (resultsLock) failureCount++;
-                return (i, Success: false, Message: ex.Message);
+                    lock (resultsLock) successCount++;
+                    return (i, Success: true, Message: "Seat reserved");
+                }
+                catch (ConcurrencyException) when (attempt < maxAttempts)
+                {
+                }
+                catch (ConcurrencyException)
+                {
+                    lock (resultsLock) failureCount++;
+                    return (i, Success: false, Message: "No seats available (lost optimistic concurrency race)");
+                }
+                catch (InvalidOperationException ex)
+                {
+                    lock (resultsLock) failureCount++;
+                    return (i, Success: false, Message: ex.Message);
+                }
             }
         }).ToList();
 

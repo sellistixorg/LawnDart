@@ -251,13 +251,13 @@ public static class LightweightProjectionsExtensions
 
                     LawnDart.Authorization.AuthorizationContext? authzCtx = null;
                     if (authzCtxProvider is not null)
-                        authzCtx = await authzCtxProvider.GetAuthorizationContextAsync(ctx.RequestAborted);
+                        authzCtx = await authzCtxProvider.GetAuthorizationContextAsync(ctx.RequestAborted).ConfigureAwait(false);
 
                     // Build a minimal context from claims if no provider present
                     authzCtx ??= BuildAuthContextFromClaims(ctx);
 
                     var result = await authzProvider.CheckPermissionAsync(
-                        authzCtx, requiredPermission, ctx.RequestAborted);
+                        authzCtx, requiredPermission, ctx.RequestAborted).ConfigureAwait(false);
 
                     if (!result.IsAuthorized)
                         return Results.Forbid();
@@ -356,7 +356,7 @@ public static class LightweightProjectionsExtensions
             else
             {
                 var loaded = await viewStore.GetViewWithCheckpointAsync(
-                    reg.StorageKey, instanceId, ctx.RequestAborted);
+                    reg.StorageKey, instanceId, ctx.RequestAborted).ConfigureAwait(false);
 
                 if (loaded is null)
                     return Results.NotFound();
@@ -435,7 +435,7 @@ public static class LightweightProjectionsExtensions
                 var aliasRoute = version.IsLatest && version.Endpoint is not null
                     ? BuildLatestAliasRoute(version.Endpoint.Route)
                     : null;
-                var count = (await viewStore.GetViewsByTypeAsync(version.StorageKey, ctx.RequestAborted)).Count();
+                var count = (await viewStore.GetViewsByTypeAsync(version.StorageKey, ctx.RequestAborted).ConfigureAwait(false)).Count();
 
                 versions.Add(new
                 {
@@ -819,7 +819,7 @@ public static class LightweightProjectionsExtensions
             }
 
             var result = await services.Timeline.GetInstancePageAsync(
-                name, tenantId, page, pageSize ?? defaultPgSize, ctx.RequestAborted, version);
+                name, tenantId, page, pageSize ?? defaultPgSize, ctx.RequestAborted, version).ConfigureAwait(false);
 
             return Results.Ok(result);
         })
@@ -847,7 +847,7 @@ public static class LightweightProjectionsExtensions
             {
                 var services = ResolveProjectionDebugEndpointServices(ctx.RequestServices, endpoint);
                 var result = await services.Timeline.GetTimelinePageAsync(
-                    name, instanceId, fromIndex, pageSize, ctx.RequestAborted, version);
+                    name, instanceId, fromIndex, pageSize, ctx.RequestAborted, version).ConfigureAwait(false);
                 return Results.Ok(result);
             }
             catch (InvalidOperationException ex)
@@ -899,7 +899,7 @@ public static class LightweightProjectionsExtensions
                 {
                     // atAppliedIndex is 0-based last-event index; appliedCount = atAppliedIndex + 1.
                     var result = await services.Timeline.BuildAtAppliedIndexAsync(
-                        name, instanceId, atAppliedIndex.Value + 1, ctx.RequestAborted, version);
+                        name, instanceId, atAppliedIndex.Value + 1, ctx.RequestAborted, version).ConfigureAwait(false);
                     return Results.Ok(ToDebugStateResponse(result));
                 }
                 else
@@ -908,7 +908,7 @@ public static class LightweightProjectionsExtensions
                                : atVersion.HasValue  ? ProjectionCutoff.AtVersion(atVersion.Value)
                                :                       ProjectionCutoff.AtTimestamp(atTimestamp!.Value);
 
-                    var result = await services.AdHoc.BuildAtAsync(name, instanceId, cutoff, ctx.RequestAborted, version);
+                    var result = await services.AdHoc.BuildAtAsync(name, instanceId, cutoff, ctx.RequestAborted, version).ConfigureAwait(false);
                     return Results.Ok(ToDebugStateResponse(result));
                 }
             }
@@ -941,7 +941,7 @@ public static class LightweightProjectionsExtensions
                 body = await JsonSerializer.DeserializeAsync<ProjectionDebugStepRequest>(
                     ctx.Request.Body,
                     new JsonSerializerOptions { PropertyNameCaseInsensitive = true },
-                    ctx.RequestAborted);
+                    ctx.RequestAborted).ConfigureAwait(false);
             }
             catch
             {
@@ -969,7 +969,7 @@ public static class LightweightProjectionsExtensions
             {
                 var services = ResolveProjectionDebugEndpointServices(ctx.RequestServices, endpoint);
                 var (atTarget, atPrevious, targetEvent) = await services.Timeline.BuildStepAsync(
-                    name, instanceId, targetIndex, ctx.RequestAborted, version);
+                    name, instanceId, targetIndex, ctx.RequestAborted, version).ConfigureAwait(false);
 
                 ViewStateDiff? diff = null;
                 if (atPrevious is not null)

@@ -11,7 +11,11 @@ public interface IInboxStore
     /// Returns true if the message with the given ID has already been successfully processed
     /// within the configured deduplication window.
     /// </summary>
-    /// <param name="messageId">The message's unique identifier (<see cref="MessageContext.MessageId"/>).</param>
+    /// <param name="messageId">
+    /// Dedup key. Reactor and processor hosted services pass
+    /// <c>reactor:{hash}:{message id}</c> or <c>processor:{hash}:{message id}</c>.
+    /// <c>hash</c> is a fixed-length hash of the consumer type's full name.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task<bool> IsProcessedAsync(string messageId, CancellationToken cancellationToken = default);
 
@@ -19,7 +23,11 @@ public interface IInboxStore
     /// Records a message as successfully processed.
     /// Idempotent — calling again for the same ID should not throw.
     /// </summary>
-    /// <param name="messageId">The message's unique identifier.</param>
+    /// <param name="messageId">
+    /// Dedup key. Reactor and processor hosted services pass
+    /// <c>reactor:{hash}:{message id}</c> or <c>processor:{hash}:{message id}</c>.
+    /// <c>hash</c> is a fixed-length hash of the consumer type's full name.
+    /// </param>
     /// <param name="processedAt">When the message was processed.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task MarkProcessedAsync(string messageId, DateTimeOffset processedAt, CancellationToken cancellationToken = default);

@@ -45,8 +45,7 @@ public interface ICheckpointStore
         CancellationToken cancellationToken = default);
     
     /// <summary>
-    /// Gets the checkpoint for a specific stream instance.
-    /// Used by per-stream projections for seamless scaling.
+    /// Gets the per-stream checkpoint for one projection type and stream id.
     /// </summary>
     /// <param name="projectionType">The projection type name.</param>
     /// <param name="streamId">The stream identifier.</param>
@@ -58,8 +57,7 @@ public interface ICheckpointStore
         CancellationToken cancellationToken = default);
     
     /// <summary>
-    /// Saves a checkpoint for a specific stream instance.
-    /// Used by per-stream projections for seamless scaling.
+    /// Saves the per-stream checkpoint for one projection type and stream id.
     /// </summary>
     /// <param name="projectionType">The projection type name.</param>
     /// <param name="streamId">The stream identifier.</param>

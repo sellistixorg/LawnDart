@@ -32,7 +32,7 @@ public sealed class ProjectionTimelineService(
         int? version = null)
     {
         var registration = _catalog.Resolve(projectionName, version);
-        var stored = await viewStore.GetViewsByTypeAsync(registration.StorageKey, cancellationToken);
+        var stored = await viewStore.GetViewsByTypeAsync(registration.StorageKey, cancellationToken).ConfigureAwait(false);
 
         var filtered = stored
             .Select(v => v.InstanceId)
@@ -86,7 +86,7 @@ public sealed class ProjectionTimelineService(
             instanceId,
             cutoff: null,
             entityResolver,
-            cancellationToken))
+            cancellationToken).ConfigureAwait(false))
         {
             if (appliedIndex >= safeFromIndex && entries.Count < safePageSize)
                 entries.Add(ToAppliedEventEntry(appliedIndex, se));
@@ -136,7 +136,7 @@ public sealed class ProjectionTimelineService(
             instanceId,
             cutoff: null,
             entityResolver,
-            cancellationToken))
+            cancellationToken).ConfigureAwait(false))
         {
             if (eventsApplied >= appliedCount)
                 break;
@@ -176,7 +176,7 @@ public sealed class ProjectionTimelineService(
                 instanceId,
                 appliedCount: 0,
                 cancellationToken,
-                version);
+                version).ConfigureAwait(false);
             return (empty, null, null);
         }
 
@@ -185,14 +185,14 @@ public sealed class ProjectionTimelineService(
             instanceId,
             appliedCount: targetAppliedIndex + 1,
             cancellationToken,
-            version);
+            version).ConfigureAwait(false);
 
         var atPrevious = await BuildAtAppliedIndexAsync(
             projectionName,
             instanceId,
             appliedCount: targetAppliedIndex,
             cancellationToken,
-            version);
+            version).ConfigureAwait(false);
 
         var timeline = await GetTimelinePageAsync(
             projectionName,
@@ -200,7 +200,7 @@ public sealed class ProjectionTimelineService(
             fromIndex: (int)targetAppliedIndex,
             pageSize: 1,
             cancellationToken,
-            version);
+            version).ConfigureAwait(false);
 
         return (atTarget, atPrevious, timeline.Events.FirstOrDefault());
     }

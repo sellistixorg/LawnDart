@@ -1,0 +1,92 @@
+@inherits LayoutComponentBase
+@inject NavigationManager Nav
+
+<div class="app-shell">
+    <div class="sidebar">
+        <div class="sidebar-brand">
+            LawnDart <span>Shop</span>
+        </div>
+        <AuthorizeView>
+            <Authorized>
+                <div class="sidebar-user">
+                    <div class="user-avatar @GetAvatarClass(context.User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value)">
+                        @(context.User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value?[..1].ToUpper() ?? "?")
+                    </div>
+                    <div>
+                        <div>@context.User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value</div>
+                        <div style="font-size:11px">@context.User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value</div>
+                    </div>
+                </div>
+            </Authorized>
+        </AuthorizeView>
+        <nav>
+            <NavLink class="nav-item" href="/" Match="NavLinkMatch.All">
+                <span class="icon">⊞</span> Dashboard
+            </NavLink>
+            <AuthorizeView Roles="Customer">
+                <Authorized>
+                    <NavLink class="nav-item" href="/shop">
+                        <span class="icon">🛒</span> Shop
+                    </NavLink>
+                    <NavLink class="nav-item" href="/orders">
+                        <span class="icon">📦</span> My Orders
+                    </NavLink>
+                </Authorized>
+            </AuthorizeView>
+            <AuthorizeView Roles="Seller">
+                <Authorized>
+                    <NavLink class="nav-item" href="/admin">
+                        <span class="icon">🏪</span> My Products
+                    </NavLink>
+                    <NavLink class="nav-item" href="/sales">
+                        <span class="icon">💰</span> My Sales
+                    </NavLink>
+                </Authorized>
+            </AuthorizeView>
+            <AuthorizeView Roles="Warehouse">
+                <Authorized>
+                    <NavLink class="nav-item" href="/admin">
+                        <span class="icon">⚙</span> Warehouse
+                    </NavLink>
+                </Authorized>
+            </AuthorizeView>
+            <NavLink class="nav-item" href="/stream">
+                <span class="icon">⚡</span> Event Stream
+            </NavLink>
+            <AuthorizeView>
+                <Authorized>
+                    <NavLink class="nav-item" href="/internal/projections/debug/projections">
+                        <span class="icon">🔍</span> Proj. Debug API
+                    </NavLink>
+                </Authorized>
+            </AuthorizeView>
+        </nav>
+        <div class="sidebar-footer">
+            <AuthorizeView>
+                <Authorized>
+                    <form action="/logout" method="post" style="margin:0">
+                        <button type="submit" class="btn btn-secondary w-full btn-sm">Sign out</button>
+                    </form>
+                </Authorized>
+                <NotAuthorized>
+                    <a href="/login" class="btn btn-primary w-full btn-sm">Sign in</a>
+                </NotAuthorized>
+            </AuthorizeView>
+        </div>
+    </div>
+    <div class="main-content">
+        @Body
+    </div>
+</div>
+
+@code {
+    string GetAvatarClass(string? name) => name?.ToLower() switch
+    {
+        "alice" => "avatar-alice",
+        "maria" => "avatar-maria",
+        "bob"   => "avatar-bob",
+        "larry" => "avatar-larry",
+        "carol" => "avatar-carol",
+        _       => "avatar-system"
+    };
+}
