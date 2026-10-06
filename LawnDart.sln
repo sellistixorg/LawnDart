@@ -71,6 +71,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LawnDart.Messaging.SqlServe
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LawnDart.Messaging.SqlServer.Tests", "tests\LawnDart.Messaging.SqlServer.Tests\LawnDart.Messaging.SqlServer.Tests.csproj", "{80759F4A-629B-42D8-A6C3-1A49A65E18B2}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LawnDart.Demo.MultiContextInMemory", "demos\LawnDart.Demo.MultiContextInMemory\LawnDart.Demo.MultiContextInMemory.csproj", "{2E09118F-91C6-493A-BBEF-C905BA80FB51}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -441,6 +443,18 @@ Global
 		{80759F4A-629B-42D8-A6C3-1A49A65E18B2}.Release|x64.Build.0 = Release|Any CPU
 		{80759F4A-629B-42D8-A6C3-1A49A65E18B2}.Release|x86.ActiveCfg = Release|Any CPU
 		{80759F4A-629B-42D8-A6C3-1A49A65E18B2}.Release|x86.Build.0 = Release|Any CPU
+		{2E09118F-91C6-493A-BBEF-C905BA80FB51}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2E09118F-91C6-493A-BBEF-C905BA80FB51}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2E09118F-91C6-493A-BBEF-C905BA80FB51}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{2E09118F-91C6-493A-BBEF-C905BA80FB51}.Debug|x64.Build.0 = Debug|Any CPU
+		{2E09118F-91C6-493A-BBEF-C905BA80FB51}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{2E09118F-91C6-493A-BBEF-C905BA80FB51}.Debug|x86.Build.0 = Debug|Any CPU
+		{2E09118F-91C6-493A-BBEF-C905BA80FB51}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2E09118F-91C6-493A-BBEF-C905BA80FB51}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2E09118F-91C6-493A-BBEF-C905BA80FB51}.Release|x64.ActiveCfg = Release|Any CPU
+		{2E09118F-91C6-493A-BBEF-C905BA80FB51}.Release|x64.Build.0 = Release|Any CPU
+		{2E09118F-91C6-493A-BBEF-C905BA80FB51}.Release|x86.ActiveCfg = Release|Any CPU
+		{2E09118F-91C6-493A-BBEF-C905BA80FB51}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -476,5 +490,6 @@ Global
 		{CDF5D366-E0C7-42AE-8719-4EF7595ABBBD} = {5D20AA90-6969-D8BD-9DCD-8634F4692FDA}
 		{31875D2C-3A4F-44E1-8A8B-4CC93AD604B2} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{80759F4A-629B-42D8-A6C3-1A49A65E18B2} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{2E09118F-91C6-493A-BBEF-C905BA80FB51} = {FA8A28C8-4B59-8028-2ACF-626D05B08DB7}
 	EndGlobalSection
 EndGlobal
