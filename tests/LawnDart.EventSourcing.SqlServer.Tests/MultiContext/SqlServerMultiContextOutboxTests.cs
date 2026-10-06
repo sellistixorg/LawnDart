@@ -115,6 +115,57 @@ public class SqlServerMultiContextOutboxTests : IAsyncLifetime
         Assert.Empty(unprocessed);
     }
 
+    [Fact]
+    public async Task ResetDeadLettered_DoesNotTouchAnotherContextsTable()
+    {
+        var writerOrdering = new SqlServerOutboxWriter(_connectionString, "Outbox", null, "ordering");
+        var writerContext2 = new SqlServerOutboxWriter(_connectionString, "Outbox", null, "context2");
+
+        await writerOrdering.InitializeSchemaAsync();
+        await writerContext2.InitializeSchemaAsync();
+
+        var orderingId = Guid.NewGuid();
+        var context2Id = Guid.NewGuid();
+        await writerOrdering.WriteAsync(DeadLetterCandidate(orderingId, 1));
+        await writerContext2.WriteAsync(DeadLetterCandidate(context2Id, 1));
+        await writerOrdering.MarkAsDeadLetteredAsync(orderingId);
+        await writerContext2.MarkAsDeadLetteredAsync(context2Id);
+
+        Assert.True(await writerOrdering.ResetDeadLetteredAsync(orderingId));
+
+        var orderingQueued = Assert.Single(await writerOrdering.GetUnprocessedAsync(10));
+        Assert.Equal(orderingId, orderingQueued.Id);
+        Assert.Equal(0, orderingQueued.Attempts);
+        Assert.Null(orderingQueued.DeadLetteredAt);
+
+        var context2Dead = Assert.Single(await writerContext2.GetDeadLetteredAsync(10));
+        Assert.Equal(context2Id, context2Dead.Id);
+        Assert.NotNull(context2Dead.DeadLetteredAt);
+        Assert.Empty(await writerContext2.GetUnprocessedAsync(10));
+
+        await writerOrdering.MarkAsDeadLetteredAsync(orderingId);
+        var extra = DeadLetterCandidate(Guid.NewGuid(), 2);
+        await writerOrdering.WriteAsync(extra);
+        await writerOrdering.MarkAsDeadLetteredAsync(extra.Id);
+
+        Assert.Equal(2, await writerOrdering.ResetAllDeadLetteredAsync());
+        Assert.Empty(await writerOrdering.GetDeadLetteredAsync(10));
+        Assert.Equal(context2Id, Assert.Single(await writerContext2.GetDeadLetteredAsync(10)).Id);
+    }
+
+    private static OutboxMessage DeadLetterCandidate(Guid id, long sequence)
+        => new()
+        {
+            Id = id,
+            EventType = "OrderPlaced",
+            Payload = "{}"u8.ToArray(),
+            Metadata = "{}",
+            CreatedAt = DateTime.UtcNow,
+            Attempts = 4,
+            StreamId = "no-tenant:Order:order-reset",
+            SequencePosition = sequence
+        };
+
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------

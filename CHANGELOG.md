@@ -20,6 +20,7 @@ changes to the public API.
 
 ### Added
 
+- Dead-lettered outbox messages can be reset with `ResetDeadLetteredAsync` or `ResetAllDeadLetteredAsync`. The outbox processor republishes them on its next poll with the same message id.
 - `LawnDart.Messaging.SqlServer` stores inbox deduplication in SQL Server (`AddSqlInboxStore`), so duplicate deliveries are dropped across restarts and instances.
 - `AGENTS.md` is the instruction file for coding agents in this repository. A cloud agent commit includes `Signed-off-by: Cursor Agent <cursoragent@cursor.com>`.
 - [Metadata](docs/METADATA.md) covers `MessageContext`, `CommandMetadata`, `EventMetadata`, and what the default provider fills.
@@ -29,6 +30,7 @@ changes to the public API.
 
 ### Changed
 
+- `IOutboxWriter` has two new members. Custom outbox writers must implement them.
 - README and Why say the event store, views, and checkpoints swap to SQL Server by DI. Message transport and inbox stay in-process. When the outbox is on, SQL Server rows commit with events.
 - The CES matrix and glossary describe the four unhosted cells as planned for a later release, with no public type until a host exists.
 - Academy demo tokens expire after 8 hours and are checked for issuer, audience, and lifetime. The built-in signing key is used only in Development.
