@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="LawnDart.Messaging.Tests" />
+    <InternalsVisibleTo Include="LawnDart.Messaging.SqlServer.Tests" />
     <InternalsVisibleTo Include="LawnDart.Testing" />
   </ItemGroup>
 
