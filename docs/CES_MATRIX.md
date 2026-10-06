@@ -1,7 +1,8 @@
 # Command-event-state shapes
 
 These are the shapes an event model compiles into. Five are hosted today
-(runtime, DI, tests). Four are roadmap: no public type and no host.
+(runtime, DI, tests). Four are planned for a later release. They have no
+public type until a host exists.
 
 | From \ To | **Command** | **Event** | **State** |
 |---|---|---|---|
@@ -9,7 +10,7 @@ These are the shapes an event model compiles into. Five are hosted today
 | **Event** | Reaction ✅ | Event Processing ✅ | Projection ✅ |
 | **State** | Task Processing ✅ | Event Generator 🔧 | State Transformation 🔧 |
 
-✅ Hosted (runtime, DI, tests). 🔧 Roadmap: no public type.
+✅ Hosted (runtime, DI, tests). 🔧 Planned for a later release (no public type).
 
 Most apps start with aggregate or DCB plus a projection (both hosted).
 
@@ -23,10 +24,10 @@ Most apps start with aggregate or DCB plus a projection (both hosted).
 | Event Processing | Event → Event | [Step 6](learning-path/06-reactions.md) (`IEventProcessor`) |
 | Task Processing | State → Command | [Step 6](learning-path/06-reactions.md) (`ITaskProcessor`) |
 
-## Roadmap cells
+## Planned cells
 
 Delegation (Command to Command), Downstream Activity (Command to State),
 Event Generator (State to Event), and State Transformation (State to State)
-are named shapes with no host and no public type. Implementing a type by
-those names does not register or run anything. They come back when a host
-exists.
+are planned for a later release. They stay out of scope until LawnDart hosts
+them. Until then LawnDart ships no public type for them, and a class named
+after one is not discovered or run. Build on the five hosted shapes above.

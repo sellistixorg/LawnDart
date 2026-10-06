@@ -26,6 +26,7 @@ changes to the public API.
 
 ### Changed
 
+- The CES matrix and glossary describe the four unhosted cells as planned for a later release, with no public type until a host exists.
 - Academy demo tokens expire after 8 hours and are checked for issuer, audience, and lifetime. The built-in signing key is used only in Development.
 - Library awaits resume without capturing the caller's synchronization context.
 - The skill kit frozen surface lives on `lawndart-host-setup`. Aggregate load is `GetOrCreateAsync`. DCB load is `GetOrCreateEntityAsync`. Projection scopes include `[MultiStreamProjection]`.
