@@ -36,6 +36,7 @@ changes to the public API.
 
 ### Changed
 
+- The outbox guide keys `IOutboxWriter` by bounded-context name. A dead-letter reset runs the consumer again after the inbox window expires.
 - Academy WebApi's SqlServer profile stores projection views in SQL Server, writes the transactional outbox, and creates event-store, outbox, and view tables at startup.
 - Academy's SqlServer profile creates event-store and outbox tables at startup and publishes through the transactional outbox.
 - `Library.Host` `AddSqlLibrary` registers SQL projection stores, the loan-notice reactor, a SQL inbox, and the outbox. `InitializeSqlLibraryAsync` creates those tables.
