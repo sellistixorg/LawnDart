@@ -29,7 +29,7 @@
             <div class="card-body">
                 <p class="text-sm mb-4" style="color:var(--text-muted)">
                     Two concurrent PlaceOrder requests were sent for the last unit in stock.
-                    The DCB (InventoryEntity) guaranteed exactly one succeeded. The other received a concurrency error.
+                    Reservation and the order are two appends. One reservation committed. The other buy was rejected (409 or 422).
                 </p>
                 @foreach (var (label, ok, msg) in _raceResult)
                 {

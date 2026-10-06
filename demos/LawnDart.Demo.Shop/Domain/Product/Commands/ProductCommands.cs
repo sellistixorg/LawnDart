@@ -4,6 +4,9 @@ using LawnDart.Demo.Shop.Authorization;
 
 namespace LawnDart.Demo.Shop.Domain.Product.Commands;
 
+/// <summary>
+/// Creates a catalog product and its opening stock.
+/// </summary>
 [RequiresPermission(ShopPermissions.ProductCreate)]
 public record CreateProductCommand(
     Guid Id,
@@ -33,12 +36,18 @@ public record InitializeInventoryCommand(
     Guid ProductId,
     int InitialQuantity) : ICommand;
 
+/// <summary>
+/// Adds or removes on-hand stock for a product.
+/// </summary>
 [RequiresPermission(ShopPermissions.ProductUpdate)]
 public record UpdateStockCommand(
     Guid Id,
     Guid ProductId,
     int Delta) : ICommand;
 
+/// <summary>
+/// Sets a new price on a product.
+/// </summary>
 [RequiresPermission(ShopPermissions.ProductUpdate)]
 public record UpdatePriceCommand(
     Guid Id,

@@ -5,12 +5,9 @@ using LawnDart.Demo.Shop.Domain.Product.Events;
 namespace LawnDart.Demo.Shop.Inventory;
 
 /// <summary>
-/// DCB entity that spans both the Product stream and the Order stream, ensuring
-/// stock reservation and order placement happen atomically. This is the key demonstration
-/// of the Distributed Consistency Boundary pattern:
-///
-/// Two concurrent "Buy last item" requests both see stock=1, but only ONE succeeds because
-/// the DCB AppendCondition detects the conflicting append and rejects the second attempt.
+/// DCB entity that reserves stock for one product. The reservation is its own append.
+/// The order aggregate is a second append. Two buys of the last unit conflict on this
+/// reservation: one commit wins, and the other is rejected (409 or 422).
 /// </summary>
 public class InventoryEntity : DcbEntity<InventoryState>
 {

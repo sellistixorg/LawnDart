@@ -5,6 +5,9 @@ using LawnDart.Demo.Shop.Domain.Order.Events;
 
 namespace LawnDart.Demo.Shop.Domain.Order;
 
+/// <summary>
+/// One order stream: place, pay, ship, or cancel.
+/// </summary>
 public class OrderAggregate : AggregateRoot<OrderState>
 {
     public OrderAggregate()

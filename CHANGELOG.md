@@ -12,6 +12,7 @@ changes to the public API.
 
 ### Fixed
 
+- The Shop demo loads cancel and ship on the buyer's order stream. A seller can cancel only their own orders. Paying an order requires `Order.Pay`. A repeated order id fails before stock is reserved.
 - A SQL Server append that loses the events-table key throws `ConcurrencyException` with the expected and actual stream version.
 - Hosted reactor and processor inbox keys hash the consumer type's full name, so a long or generic name stays within the SQL Server 256-character limit. A message marked with the previous key can run once more.
 - The InMemory subscriptions demo resets a checkpoint outside `[0, head)`, including one left by a partial write, so a second run finishes.

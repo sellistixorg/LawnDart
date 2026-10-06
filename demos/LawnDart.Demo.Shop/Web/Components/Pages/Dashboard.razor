@@ -46,7 +46,7 @@
                     <h4 style="font-size:14px;margin-bottom:8px">Patterns Demonstrated</h4>
                     <ul style="padding-left:20px;line-height:1.8;font-size:13px">
                         <li><strong>Aggregates</strong> : Product and Order aggregates with event sourcing</li>
-                        <li><strong>DCB</strong> : InventoryEntity atomically reserves stock + places order</li>
+                        <li><strong>DCB</strong> : InventoryEntity reserves stock, then the order is a second append. The other buy is rejected (409 or 422).</li>
                         <li><strong>EDA</strong> : OrderReactor then FulfillmentReactor (place, pay, ship)</li>
                         <li><strong>Task Processor</strong> : OverdueOrderProcessor cancels stale orders</li>
                         <li><strong>Projections</strong> : Lightweight projections serve all read data</li>

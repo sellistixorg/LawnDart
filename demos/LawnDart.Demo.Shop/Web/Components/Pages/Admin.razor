@@ -139,7 +139,7 @@
                                     <Authorized>
                                         @if (o.Status is "Pending" or "PaymentProcessed")
                                         {
-                                            <button class="btn btn-danger btn-sm" @onclick="() => CancelOrder(o.OrderId)">Cancel</button>
+                                            <button class="btn btn-danger btn-sm" @onclick="() => CancelOrder(o)">Cancel</button>
                                         }
                                     </Authorized>
                                 </AuthorizeView>
@@ -147,7 +147,7 @@
                                     <Authorized>
                                         @if (o.Status == "PaymentProcessed")
                                         {
-                                            <button class="btn btn-success btn-sm" @onclick="() => ShipOrder(o.OrderId)">Ship</button>
+                                            <button class="btn btn-success btn-sm" @onclick="() => ShipOrder(o)">Ship</button>
                                         }
                                     </Authorized>
                                 </AuthorizeView>
@@ -267,17 +267,21 @@
         await AddStock(productId, delta);
     }
 
-    async Task CancelOrder(Guid orderId)
+    async Task CancelOrder(OrderSummaryView order)
     {
-        var cmd = new CancelOrderCommand(Guid.NewGuid(), orderId, "Cancelled by seller.");
+        var cmd = new CancelOrderCommand(Guid.NewGuid(), order.OrderId, "Cancelled by seller.", order.TenantId);
         var resp = await Http.PostAsJsonAsync("/api/order/cancel-order", cmd);
         if (resp.IsSuccessStatusCode) { SetMsg("Order cancelled."); await Task.Delay(400); await LoadAsync(); }
         else SetMsg(await resp.Content.ReadAsStringAsync(), true);
     }
 
-    async Task ShipOrder(Guid orderId)
+    async Task ShipOrder(OrderSummaryView order)
     {
-        var cmd = new ShipOrderCommand(Guid.NewGuid(), orderId, $"MANUAL-{orderId:N[..8]}");
+        var cmd = new ShipOrderCommand(
+            Guid.NewGuid(),
+            order.OrderId,
+            $"MANUAL-{order.OrderId.ToString("N")[..8]}",
+            order.TenantId);
         var resp = await Http.PostAsJsonAsync("/api/order/ship-order", cmd);
         if (resp.IsSuccessStatusCode) { SetMsg("Order shipped!"); await Task.Delay(400); await LoadAsync(); }
         else SetMsg(await resp.Content.ReadAsStringAsync(), true);

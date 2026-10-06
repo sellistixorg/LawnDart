@@ -1,5 +1,6 @@
 using LawnDart;
 using LawnDart.Aggregates;
+using LawnDart.Authorization;
 using LawnDart.Dcb;
 using LawnDart.Demo.Shop.Domain.Order;
 using LawnDart.Demo.Shop.Domain.Order.Commands;
@@ -12,8 +13,30 @@ using LawnDart.Messaging;
 using LawnDart.Metadata;
 namespace LawnDart.Demo.Shop.Handlers;
 
-// ── Product Handlers ─────────────────────────────────────────────────────────
+/// <summary>
+/// Buyer-tenant stream id for an order: <c>{buyerTenant}:OrderAggregate:{id}</c>.
+/// </summary>
+internal static class OrderStreams
+{
+    public static string Id(Guid orderId, string buyerTenant)
+        => $"{buyerTenant}:OrderAggregate:{orderId}";
 
+    public static Task<OrderAggregate> LoadAsync(
+        IAggregateRepository repository,
+        Guid orderId,
+        string buyerTenant,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrEmpty(buyerTenant))
+            return repository.GetOrCreateAsync<OrderAggregate>(orderId, cancellationToken);
+
+        return repository.GetOrCreateAsync<OrderAggregate>(Id(orderId, buyerTenant), cancellationToken);
+    }
+}
+
+/// <summary>
+/// Creates a product, reserves its SKU, and opens the inventory stream.
+/// </summary>
 public sealed class CreateProductCommandHandler : ICommandHandler<CreateProductCommand>
 {
     private readonly IDcbRepository _dcb;
@@ -54,6 +77,9 @@ public sealed class CreateProductCommandHandler : ICommandHandler<CreateProductC
     }
 }
 
+/// <summary>
+/// Applies a stock delta on <see cref="InventoryAggregate"/>.
+/// </summary>
 public sealed class UpdateStockCommandHandler : ICommandHandler<UpdateStockCommand>
 {
     private readonly IAggregateRepository _repo;
@@ -74,6 +100,9 @@ public sealed class UpdateStockCommandHandler : ICommandHandler<UpdateStockComma
     }
 }
 
+/// <summary>
+/// Updates the price on <see cref="ProductAggregate"/>.
+/// </summary>
 public sealed class UpdatePriceCommandHandler : ICommandHandler<UpdatePriceCommand>
 {
     private readonly IAggregateRepository _repo;
@@ -96,7 +125,8 @@ public sealed class UpdatePriceCommandHandler : ICommandHandler<UpdatePriceComma
 // ── Order Handlers ────────────────────────────────────────────────────────────
 
 /// <summary>
-/// Places an order using the DCB InventoryEntity to atomically reserve stock and create the order.
+/// Places an order. If that order id already exists, this fails before stock is reserved.
+/// Stock reservation and the order append are two writes.
 /// </summary>
 public sealed class PlaceOrderCommandHandler : ICommandHandler<PlaceOrderCommand>
 {
@@ -122,30 +152,32 @@ public sealed class PlaceOrderCommandHandler : ICommandHandler<PlaceOrderCommand
 
     public async Task HandleAsync(PlaceOrderCommand command, CancellationToken cancellationToken = default)
     {
-        var meta   = _metadata.CaptureCommandMetadata();
-        // Load entity with product-only tag so the DCB query (AND semantics) finds
-        // ProductCreated/StockUpdated events that only carry the product tag.
-        // The order tag is added to emitted events inside the entity for traceability.
-        var tags   = InventoryEntity.GetProductTags(command.ProductId);
-        var entity = await _dcb.GetOrCreateEntityAsync<InventoryEntity>(tags, cancellationToken);
-        await _dcb.HandleCommandAsync<InventoryEntity, PlaceOrderCommand>(entity, command, meta, cancellationToken);
+        var meta = _metadata.CaptureCommandMetadata();
+        var buyerTenant = meta.TenantId ?? command.TenantId;
+        var order = await OrderStreams.LoadAsync(_repo, command.OrderId, buyerTenant, cancellationToken)
+            .ConfigureAwait(false);
+        if (order.State.Exists)
+            throw new DomainException($"Order {command.OrderId} already exists.");
 
-        // Generate the seller's unique reference for this fulfillment.
+        // Load with the product tag so the DCB query finds product and stock events.
+        var tags = InventoryEntity.GetProductTags(command.ProductId);
+        var entity = await _dcb.GetOrCreateEntityAsync<InventoryEntity>(tags, cancellationToken)
+            .ConfigureAwait(false);
+        await _dcb.HandleCommandAsync<InventoryEntity, PlaceOrderCommand>(entity, command, meta, cancellationToken)
+            .ConfigureAwait(false);
+
         var sellerFulfillmentId = command.SellerFulfillmentId == default
             ? Guid.NewGuid()
             : command.SellerFulfillmentId;
 
-        // Create the OrderAggregate stream so the payment/ship/cancel lifecycle works.
-        // Enrich the command with the authenticated user so the event carries customer info.
         var enriched = command with
         {
             CustomerId          = meta.UserId   ?? command.CustomerId,
             CustomerName        = meta.UserName ?? command.CustomerName,
             SellerFulfillmentId = sellerFulfillmentId,
-            TenantId            = meta.TenantId ?? command.TenantId
+            TenantId            = buyerTenant
         };
-        var order = await _repo.GetOrCreateAsync<OrderAggregate>(command.OrderId, cancellationToken);
-        await _repo.HandleCommandAsync(order, enriched, meta, cancellationToken);
+        await _repo.HandleCommandAsync(order, enriched, meta, cancellationToken).ConfigureAwait(false);
 
         var orderPlaced = new OrderPlaced(Guid.NewGuid(), DateTime.UtcNow,
             command.OrderId, enriched.CustomerId, enriched.CustomerName,
@@ -157,6 +189,9 @@ public sealed class PlaceOrderCommandHandler : ICommandHandler<PlaceOrderCommand
     }
 }
 
+/// <summary>
+/// Records payment and publishes <see cref="OrderPaymentProcessed"/> when direct publish is on.
+/// </summary>
 public sealed class ProcessPaymentCommandHandler : ICommandHandler<ProcessPaymentCommand>
 {
     private readonly IAggregateRepository _repo;
@@ -190,6 +225,9 @@ public sealed class ProcessPaymentCommandHandler : ICommandHandler<ProcessPaymen
     }
 }
 
+/// <summary>
+/// Ships an order on the buyer-tenant stream named by <see cref="ShipOrderCommand.TenantId"/>.
+/// </summary>
 public sealed class ShipOrderCommandHandler : ICommandHandler<ShipOrderCommand>
 {
     private readonly IAggregateRepository _repo;
@@ -203,31 +241,62 @@ public sealed class ShipOrderCommandHandler : ICommandHandler<ShipOrderCommand>
 
     public async Task HandleAsync(ShipOrderCommand command, CancellationToken cancellationToken = default)
     {
-        var meta  = _metadata.CaptureCommandMetadata();
-        var order = await _repo.GetOrCreateAsync<OrderAggregate>(command.OrderId, cancellationToken);
-        await _repo.HandleCommandAsync(order, command, meta, cancellationToken);
+        var meta = _metadata.CaptureCommandMetadata();
+        var order = await OrderStreams.LoadAsync(_repo, command.OrderId, command.TenantId, cancellationToken)
+            .ConfigureAwait(false);
+        await _repo.HandleCommandAsync(order, command, meta, cancellationToken).ConfigureAwait(false);
     }
 }
 
+/// <summary>
+/// Cancels an order on the buyer-tenant stream. A signed-in seller can cancel only their own orders.
+/// </summary>
 public sealed class CancelOrderCommandHandler : ICommandHandler<CancelOrderCommand>
 {
     private readonly IAggregateRepository _repo;
     private readonly IMetadataProvider _metadata;
+    private readonly IAuthorizationContextProvider _authorization;
 
-    public CancelOrderCommandHandler(IAggregateRepository repo, IMetadataProvider metadata)
+    public CancelOrderCommandHandler(
+        IAggregateRepository repo,
+        IMetadataProvider metadata,
+        IAuthorizationContextProvider authorization)
     {
-        _repo     = repo;
+        _repo = repo;
         _metadata = metadata;
+        _authorization = authorization;
     }
 
     public async Task HandleAsync(CancelOrderCommand command, CancellationToken cancellationToken = default)
     {
         var meta = _metadata.CaptureCommandMetadata();
-        var order = string.IsNullOrEmpty(command.TenantId)
-            ? await _repo.GetOrCreateAsync<OrderAggregate>(command.OrderId, cancellationToken).ConfigureAwait(false)
-            : await _repo.GetOrCreateAsync<OrderAggregate>(
-                $"{command.TenantId}:OrderAggregate:{command.OrderId}",
-                cancellationToken).ConfigureAwait(false);
+        var order = await OrderStreams.LoadAsync(_repo, command.OrderId, command.TenantId, cancellationToken)
+            .ConfigureAwait(false);
+        await RejectOtherSellersAsync(order, meta, cancellationToken).ConfigureAwait(false);
         await _repo.HandleCommandAsync(order, command, meta, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task RejectOtherSellersAsync(
+        OrderAggregate order,
+        CommandMetadata meta,
+        CancellationToken cancellationToken)
+    {
+        if (!order.State.Exists)
+            return;
+
+        var caller = await _authorization.GetAuthorizationContextAsync(cancellationToken).ConfigureAwait(false);
+        if (caller is null)
+            return;
+
+        var isSeller = caller.UserRoles.Contains("Seller", StringComparer.OrdinalIgnoreCase);
+        var isBackground = string.Equals(caller.UserName, "system", StringComparison.OrdinalIgnoreCase);
+        if (!isSeller || isBackground)
+            return;
+
+        if (!string.Equals(order.State.SellerId, meta.TenantId, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new DomainException(
+                $"Order {order.State.OrderId} belongs to seller '{order.State.SellerId}'.");
+        }
     }
 }

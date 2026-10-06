@@ -29,6 +29,7 @@ public sealed class ShopAuthorizationProvider : DefaultAuthorizationProvider
                 ShopPermissions.ProductUpdate,
                 ShopPermissions.ProductView,
                 ShopPermissions.OrderView,
+                ShopPermissions.OrderPay,
                 ShopPermissions.OrderCancel,
                 ShopPermissions.InventoryView
             },

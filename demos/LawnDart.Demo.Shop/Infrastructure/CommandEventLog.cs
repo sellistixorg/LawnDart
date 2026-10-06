@@ -4,6 +4,9 @@ using LawnDart.Metadata;
 
 namespace LawnDart.Demo.Shop.Infrastructure;
 
+/// <summary>
+/// One command and the events appended while it ran.
+/// </summary>
 public sealed record CommandLogEntry(
     Guid CommandId,
     string CommandType,
@@ -15,6 +18,9 @@ public sealed record CommandLogEntry(
     string? ReactorName,
     List<EventLogEntry> Events);
 
+/// <summary>
+/// One event recorded against a command in <see cref="CommandEventLog"/>.
+/// </summary>
 public sealed record EventLogEntry(
     string EventType,
     string StreamId,

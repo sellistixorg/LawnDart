@@ -219,23 +219,6 @@ app.MapProjectionDebugApi(opts =>
     opts.RequireAuthentication = true;
 });
 
-app.MapGet("/api/debug/events", async (IEventStore store, CancellationToken ct) =>
-{
-    var events = new List<object>();
-    await foreach (var sequenced in store.ReadByQueryStreamAsync(Query.All(), fromSequencePosition: 0, cancellationToken: ct)
-        .ConfigureAwait(false))
-    {
-        events.Add(new
-        {
-            sequenced.SequencePosition,
-            sequenced.StreamId,
-            EventType = sequenced.Event?.GetType().Name ?? "null"
-        });
-    }
-
-    return Results.Ok(new { Count = events.Count, Events = events });
-}).AllowAnonymous();
-
 app.MapRazorComponents<LawnDart.Demo.Shop.Web.App>()
     .AddInteractiveServerRenderMode();
 

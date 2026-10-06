@@ -62,6 +62,9 @@ public class ProductCatalogV1View
     public DateTime LastUpdated { get; set; }
 }
 
+/// <summary>
+/// One order row, including the buyer tenant that owns the order stream.
+/// </summary>
 public class OrderSummaryView
 {
     public Guid OrderId { get; set; }
@@ -81,6 +84,9 @@ public class OrderSummaryView
     public DateTime LastUpdated { get; set; }
 }
 
+/// <summary>
+/// Orders collected for one customer.
+/// </summary>
 public class CustomerOrdersView
 {
     public string CustomerId { get; set; } = string.Empty;

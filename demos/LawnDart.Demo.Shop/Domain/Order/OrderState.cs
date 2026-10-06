@@ -2,8 +2,14 @@ using LawnDart;
 
 namespace LawnDart.Demo.Shop.Domain.Order;
 
+/// <summary>
+/// Lifecycle of one shop order.
+/// </summary>
 public enum OrderStatus { Pending, PaymentProcessed, Shipped, Cancelled }
 
+/// <summary>
+/// State of <see cref="OrderAggregate"/>.
+/// </summary>
 public class OrderState : IState
 {
     public Guid OrderId { get; set; }

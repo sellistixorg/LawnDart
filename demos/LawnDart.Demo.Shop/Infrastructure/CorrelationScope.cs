@@ -13,6 +13,9 @@ public sealed record CorrelationContext(
     public bool IsReactorIssued => ReactorName is not null;
 }
 
+/// <summary>
+/// Async-local holder for the active <see cref="CorrelationContext"/>.
+/// </summary>
 public static class CorrelationScope
 {
     private static readonly AsyncLocal<CorrelationContext?> _current = new();

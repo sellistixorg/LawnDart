@@ -1,7 +1,9 @@
 @page "/stream"
 @rendermode InteractiveServer
+@attribute [Authorize]
 @inject CommandEventLog CmdLog
 @implements IDisposable
+@using Microsoft.AspNetCore.Authorization
 
 <PageTitle>Event Stream - LawnDart Shop Demo</PageTitle>
 
