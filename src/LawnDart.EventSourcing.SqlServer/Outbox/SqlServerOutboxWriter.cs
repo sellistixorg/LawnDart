@@ -252,6 +252,47 @@ public class SqlServerOutboxWriter : IOutboxWriter
         _logger?.LogWarning("Dead-lettered outbox message {MessageId}", messageId);
     }
 
+    /// <inheritdoc/>
+    public async Task<bool> ResetDeadLetteredAsync(Guid messageId, CancellationToken cancellationToken = default)
+    {
+        var sql = $@"
+            UPDATE {_qualifiedTableName}
+            SET DeadLetteredAt = NULL,
+                Attempts = 0
+            WHERE Id = @Id AND DeadLetteredAt IS NOT NULL AND ProcessedAt IS NULL";
+
+        using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        using var command = new SqlCommand(sql, connection);
+        command.Parameters.Add("@Id", SqlDbType.UniqueIdentifier).Value = messageId;
+
+        var updated = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        if (updated > 0)
+            _logger?.LogInformation("Reset dead-lettered outbox message {MessageId}", messageId);
+
+        return updated > 0;
+    }
+
+    /// <inheritdoc/>
+    public async Task<int> ResetAllDeadLetteredAsync(CancellationToken cancellationToken = default)
+    {
+        var sql = $@"
+            UPDATE {_qualifiedTableName}
+            SET DeadLetteredAt = NULL,
+                Attempts = 0
+            WHERE DeadLetteredAt IS NOT NULL AND ProcessedAt IS NULL";
+
+        using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        using var command = new SqlCommand(sql, connection);
+        var updated = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+        _logger?.LogInformation("Reset {Count} dead-lettered outbox messages", updated);
+        return updated;
+    }
+
     /// <summary>
     /// Initializes the outbox table schema.
     /// </summary>
