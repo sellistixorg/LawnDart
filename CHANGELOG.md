@@ -24,6 +24,7 @@ changes to the public API.
 
 ### Added
 
+- A Shop demo (`demos/LawnDart.Demo.Shop`): Blazor UI over aggregates, DCB stock reservation, a reactor chain, permissions, and tenant-prefixed streams. InMemory by default, SQL Server by launch profile.
 - A SQL Server subscriptions demo (`demos/LawnDart.Demo.SqlServerSubscriptions`) shows catch-up then poll-backed live delivery.
 - An InMemory subscriptions demo (`demos/LawnDart.Demo.InMemorySubscriptions`) shows catch-up then live delivery with a client checkpoint.
 - A multi-context demo (`demos/LawnDart.Demo.MultiContextInMemory`) runs two bounded contexts with separate InMemory stores in one host.
