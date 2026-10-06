@@ -10,6 +10,8 @@ changes to the public API.
 
 ## [Unreleased]
 
+## [0.5.0-alpha.1] — 2026-10-06
+
 ### Fixed
 
 - Reactor and task-processor command dispatch creates a DI scope, so a scoped `AuthorizationService` resolves when the handler loads an aggregate.
