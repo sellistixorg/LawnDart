@@ -1,0 +1,15 @@
+{
+  "profiles": {
+    "InMemory": {
+      "commandName": "Project",
+      "commandLineArgs": "--run-all"
+    },
+    "SqlServer": {
+      "commandName": "Project",
+      "commandLineArgs": "--run-all --backend sqlserver",
+      "environmentVariables": {
+        "LAWNDART_SQL_CONNECTION": "Server=localhost;Database=LawnDartECommerce;Trusted_Connection=True;TrustServerCertificate=True"
+      }
+    }
+  }
+}

@@ -25,6 +25,7 @@ changes to the public API.
 
 ### Added
 
+- An ECommerce console demo (`demos/LawnDart.Demo.ECommerce`) runs cart and order scenarios as aggregates, DCB, a hybrid of both, and EDA, on InMemory or SQL Server. The SQL path also runs the transactional outbox, including a dead-letter reset.
 - A Shop demo (`demos/LawnDart.Demo.Shop`): Blazor UI over aggregates, DCB stock reservation, a reactor chain, permissions, and tenant-prefixed streams. InMemory by default, SQL Server by launch profile.
 - A SQL Server subscriptions demo (`demos/LawnDart.Demo.SqlServerSubscriptions`) shows catch-up then poll-backed live delivery.
 - An InMemory subscriptions demo (`demos/LawnDart.Demo.InMemorySubscriptions`) shows catch-up then live delivery with a client checkpoint.
