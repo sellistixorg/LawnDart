@@ -4,8 +4,8 @@
 //   dotnet run --project demos/LawnDart.Demo.InMemorySubscriptions
 //
 // Re-run resumes from subscribe-checkpoint.txt. A new process starts with an
-// empty InMemory store, so the demo seeds events again and subscribes from
-// lastApplied + 1. A checkpoint ahead of the new store head is reset.
+// empty InMemory store, so the demo seeds events again. A cursor outside
+// [0, head), or one left by a partial write, is reset before subscribe.
 
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -107,11 +107,14 @@ internal sealed class DemoRunner : IHostedService
         }
 
         var head = await _store.GetCurrentSequenceAsync(cancellationToken);
-        // A checkpoint from a prior process is ahead of this empty store. Reset so the demo cannot hang.
-        if (lastApplied >= head)
+        // [0, head) still replays every seeded event only when the cursor is 0.
+        // A previous process can leave lastApplied ahead of head, or a partial
+        // write inside that range. Either one skips events and the loop waits.
+        var inRange = lastApplied >= 0 && lastApplied < head;
+        if (!inRange || lastApplied > 0)
         {
             Console.WriteLine(
-                $"Checkpoint ({lastApplied}) >= store head ({head}); resetting cursor (InMemory is empty each process).");
+                $"Checkpoint ({lastApplied}) is outside [0, {head}) or would skip seeded events; resetting cursor (InMemory is empty each process).");
             lastApplied = 0;
         }
 

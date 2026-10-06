@@ -14,6 +14,7 @@ changes to the public API.
 
 - A SQL Server append that loses the events-table key throws `ConcurrencyException` with the expected and actual stream version.
 - Hosted reactor and processor inbox keys hash the consumer type's full name, so a long or generic name stays within the SQL Server 256-character limit. A message marked with the previous key can run once more.
+- The InMemory subscriptions demo resets a checkpoint outside `[0, head)`, including one left by a partial write, so a second run finishes.
 - Two reactors or processors that handle the same message no longer share one inbox entry; each consumer deduplicates on its own.
 - Projection store API docs name the shipped stores (InMemory and SQL Server) only.
 - Configured schema, table, constraint, and index names that contain `]` or `'` are escaped before they are placed in SQL text.
