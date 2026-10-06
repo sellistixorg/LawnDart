@@ -36,6 +36,7 @@
     <ProjectReference Include="..\..\src\LawnDart.Projections.Lightweight\LawnDart.Projections.Lightweight.csproj" />
     <ProjectReference Include="..\..\src\LawnDart.Testing\LawnDart.Testing.csproj" />
     <ProjectReference Include="..\LawnDart.TestUtilities\LawnDart.TestUtilities.csproj" />
+    <ProjectReference Include="..\..\samples\Library.Host\Library.Host.csproj" />
   </ItemGroup>
 
 </Project>

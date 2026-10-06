@@ -30,7 +30,8 @@ ctx.WithProjections(
 app.MapProjectionQueries("default");
 ```
 
-`AddSqlProjectionStores(name, cs)` is the SQL store twin; the slice hosts InMemory.
-After SQL stores, call `InitializeSqlProjectionStoresAsync` before runners start.
+`AddSqlLibrary` calls `AddSqlProjectionStores("default", connectionString)`.
+`InitializeSqlLibraryAsync` creates the event-store, outbox, view, checkpoint,
+and inbox tables before runners start.
 
 See `docs/LIGHTWEIGHT_PROJECTIONS.md`.

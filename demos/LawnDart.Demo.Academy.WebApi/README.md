@@ -27,6 +27,10 @@ dotnet run --project demos/LawnDart.Demo.Academy.WebApi --launch-profile SqlServ
 Or `dotnet run -- --sql` with `ConnectionStrings:Academy` or
 `LAWNDART_SQL_CONNECTION`.
 
+Create the `LawnDartAcademy` database first. The host creates event-store,
+outbox, view, and checkpoint tables at startup. Projection GETs read SQL
+views. `EnableOutbox` is on, and the in-memory outbox publisher is registered.
+
 `GET /health` and `POST /token` are unauthenticated.
 
 ## Endpoints

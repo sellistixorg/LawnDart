@@ -30,6 +30,9 @@ changes to the public API.
 
 ### Changed
 
+- Academy WebApi's SqlServer profile stores projection views in SQL Server, writes the transactional outbox, and creates event-store, outbox, and view tables at startup.
+- Academy's SqlServer profile creates event-store and outbox tables at startup and publishes through the transactional outbox.
+- `Library.Host` `AddSqlLibrary` registers SQL projection stores, the loan-notice reactor, a SQL inbox, and the outbox. `InitializeSqlLibraryAsync` creates those tables.
 - `IOutboxWriter` has two new members. Custom outbox writers must implement them.
 - README and Why say the event store, views, and checkpoints swap to SQL Server by DI. Message transport and inbox stay in-process. When the outbox is on, SQL Server rows commit with events.
 - The CES matrix and glossary describe the four unhosted cells as planned for a later release, with no public type until a host exists.

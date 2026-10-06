@@ -15,8 +15,12 @@ using LawnDart.Demo.Academy.WebApi.Handlers;
 using LawnDart.Demo.Academy.WebApi.Projections;
 using LawnDart.EventSourcing;
 using LawnDart.EventSourcing.SqlServer;
+using LawnDart.EventSourcing.SqlServer.EventStore;
 using LawnDart.EventStore;
+using LawnDart.Messaging.InMemory;
+using LawnDart.Messaging.Outbox;
 using LawnDart.Metadata;
+using LawnDart.Outbox;
 using LawnDart.Projections.Lightweight;
 using LawnDart.Projections.Lightweight.Security;
 using System.Text;
@@ -35,7 +39,6 @@ builder.Services.AddLawnDart(opts =>
     opts.EnableAuthorization = false;
 });
 
-builder.Services.AddInMemoryProjectionStores("default");
 var ctx = builder.Services.AddBoundedContext("default")
     .WithEventTypes<StudentRegistered>()
     .WithCommandHandlers<RegisterStudentCommandHandler>();
@@ -51,10 +54,14 @@ if (useSql)
         ?? throw new InvalidOperationException(
             "SQL mode requires ConnectionStrings:Academy or LAWNDART_SQL_CONNECTION.");
 
+    builder.Services.AddSqlProjectionStores("default", connectionString);
+    builder.Services.AddInMemoryMessaging();
+    builder.Services.AddMessageTransportOutboxPublisher();
     ctx.UseSqlServer(opts =>
         {
             opts.ConnectionString = connectionString;
             opts.RequireTenantId = false;
+            opts.EnableOutbox = true;
         })
         .WithProjections(
             [typeof(StudentSummaryProjection).Assembly],
@@ -66,6 +73,7 @@ if (useSql)
 }
 else
 {
+    builder.Services.AddInMemoryProjectionStores("default");
     ctx.UseInMemory()
         .WithProjections(
             [typeof(StudentSummaryProjection).Assembly],
@@ -155,6 +163,22 @@ builder.Services.AddOpenApi(opts =>
 });
 
 var app = builder.Build();
+
+if (useSql)
+{
+    var store = app.Services.GetRequiredKeyedService<IEventStore>("default");
+    if (store is not SqlServerEventStore sql)
+    {
+        throw new InvalidOperationException(
+            "SQL mode did not resolve SqlServerEventStore for context 'default'.");
+    }
+
+    await sql.InitializeSchemaAsync().ConfigureAwait(false);
+    await app.Services.GetRequiredKeyedService<IOutboxWriter>("default")
+        .InitializeSchemaAsync()
+        .ConfigureAwait(false);
+    await app.Services.InitializeSqlProjectionStoresAsync("default").ConfigureAwait(false);
+}
 
 app.UseAuthentication();
 app.UseAuthorization();

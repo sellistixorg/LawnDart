@@ -16,7 +16,9 @@ Non-interactive (CI / smoke test):
 dotnet run --project demos/LawnDart.Demo.Academy -- --run-all
 ```
 
-Optional SQL Server (requires a running instance and a connection string):
+Optional SQL Server. Create the database first. The host creates event-store
+and outbox tables at startup. `EnableOutbox` is on, and the in-memory
+publisher is registered. Showcases still use hand-written projectors.
 
 ```bash
 dotnet run --project demos/LawnDart.Demo.Academy --launch-profile SqlServer
@@ -37,7 +39,7 @@ issues a demo JWT. See [WebApi README](../LawnDart.Demo.Academy.WebApi/README.md
 |---|---|
 | 1 | Traditional aggregate root + EDA choreography |
 | 2 | DCB in-process (atomic append, no broker) |
-| 3 | Live Lightweight projections |
+| 3 | Live projection panel |
 | 4 | InMemory throughput |
 | 5 | Task processor (state → command) |
 | 6 | Temporal queries |
