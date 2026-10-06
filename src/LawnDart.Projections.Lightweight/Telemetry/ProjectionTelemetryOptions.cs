@@ -31,7 +31,8 @@ public sealed class ProjectionTelemetryOptions
 
     /// <summary>
     /// When <see langword="true"/>, <c>projections.read.total</c> includes a low-cardinality
-    /// <c>source</c> tag (<c>memory|sql|redis</c>). Never tags instance/stream/tenant ids.
+    /// <c>source</c> tag (<c><see cref="LawnDart.Projections.Lightweight.Hosting.ProjectionFreshness.ReadSourceMemory">memory</see>|<see cref="LawnDart.Projections.Lightweight.Hosting.ProjectionFreshness.ReadSourceSql">sql</see></c>).
+    /// Never tags instance/stream/tenant ids.
     /// <para>Default: <see langword="false"/>.</para>
     /// </summary>
     public bool EnableHighDetailTags { get; set; }
