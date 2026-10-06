@@ -24,6 +24,9 @@ Leaving InMemory also means:
   not create tables on first append).
 - `AddInMemoryProjectionStores` → `AddSqlProjectionStores` plus
   `InitializeSqlProjectionStoresAsync` if you materialise views.
+- `AddSqlInboxStore` plus `InitializeSqlInboxStoreAsync` when reactor or
+  processor deduplication must survive a restart. The in-memory inbox is
+  per process.
 - SQL snapshots are opt-in (`WithSnapshots` plus a strategy). `UseInMemory`
   registers the store automatically but still needs an
   `ISnapshotStrategyResolver` before anything is written.

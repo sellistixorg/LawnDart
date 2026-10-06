@@ -15,6 +15,10 @@ services.AddInMemoryMessaging();
 That registers the transport and calls `AddMessaging()`. Then add reactors
 or processors from `LawnDart.Messaging`.
 
+`AddSqlInboxStore(connectionString)` replaces the inbox this method
+registers. The transport stays in-process. See
+[SQL Server inbox](messaging-sqlserver.md).
+
 ## Related
 
 - [Package map](README.md)

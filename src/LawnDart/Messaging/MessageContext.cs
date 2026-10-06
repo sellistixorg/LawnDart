@@ -7,7 +7,8 @@ namespace LawnDart.Messaging;
 public class MessageContext
 {
     /// <summary>
-    /// Unique identifier for this message. Used as the idempotency key for inbox deduplication.
+    /// Unique identifier for this message. Hosted reactors and processors combine it with
+    /// the consumer type name when they record inbox deduplication.
     /// </summary>
     public string? MessageId { get; init; }
 

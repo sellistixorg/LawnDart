@@ -1,6 +1,6 @@
 # Package map
 
-Ten packages. Take `LawnDart` + `LawnDart.EventSourcing` first; add the
+Eleven packages. Take `LawnDart` + `LawnDart.EventSourcing` first; add the
 others when you need a durable store, read models, HTTP, tests, or
 compile-time schema checks.
 
@@ -24,6 +24,7 @@ Host grammar: [DI Grammar](../DI_GRAMMAR.md). Envelope fields:
 | [`LawnDart.Projections.Lightweight`](projections-lightweight.md) | You need read models. | `WithProjections` / `MapProjectionQueries` |
 | [`LawnDart.Messaging`](messaging.md) | You need reactors or task processors. | `AddMessaging` / `AddReactor` |
 | [`LawnDart.Messaging.InMemory`](messaging-inmemory.md) | You want choreography without a broker. | `AddInMemoryMessaging()` |
+| [`LawnDart.Messaging.SqlServer`](messaging-sqlserver.md) | Inbox dedup must survive a restart. | `AddSqlInboxStore` |
 | [`LawnDart.AspNetCore`](aspnetcore.md) | You want HTTP POST to a command. | `AddLawnDartHttpCommands` / `MapLawnDartCommands` |
 | [`LawnDart.Authorization.AspNetCore`](authorization-aspnetcore.md) | You want HTTP claims on those commands. | `AddHttpAuthorizationContext()` |
 | [`LawnDart.Testing`](testing.md) | You want given / when / then against InMemory. | `BddTestContext.CreateInMemory(...)` |
@@ -50,12 +51,13 @@ Swap `.UseInMemory()` for `.UseSqlServer(...)` and
 `AddInMemoryProjectionStores` for `AddSqlProjectionStores` when you leave
 dev. The bounded-context name stays the same. That swap is verified for
 command dispatch, persist, reload, project, and read-back. Outbox and
-subscriptions have their own tests. See
+subscriptions have their own tests. Inbox dedup swaps with `AddSqlInboxStore`
+and `InitializeSqlInboxStoreAsync`. The transport stays in-process. See
 [BACKEND_SELECTION.md](../BACKEND_SELECTION.md).
 
 Log frames store a `CodecId` (`byte`), not a MIME string. SQL Server uses
 one `EventData` (`VARBINARY`) column. `WithEventTypes` is required. Drop
-and recreate SQL event and outbox tables on a pre-1.0 schema change.
+and recreate SQL event, outbox, and inbox tables on a pre-1.0 schema change.
 There is no in-place migration.
 
 See the [extension method index](../EXTENSION_METHOD_INDEX.md).

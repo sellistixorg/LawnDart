@@ -31,3 +31,4 @@ services.AddTaskProcessor<OverdueRegistrationProcessor>();
 - [EDA patterns](../EDA-Patterns.md)
 - [Reactions](../learning-path/06-reactions.md)
 - [InMemory messaging](messaging-inmemory.md)
+- [SQL Server inbox](messaging-sqlserver.md)
