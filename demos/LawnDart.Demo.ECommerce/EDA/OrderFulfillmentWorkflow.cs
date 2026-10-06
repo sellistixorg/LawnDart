@@ -198,7 +198,7 @@ public class OrderFulfillmentWorkflow
 
                 foreach (var reactor in reactors)
                 {
-                    if (!reactor.GetTagsForReaction().Any(tag => tags.Contains(tag)))
+                    if (!reactor.GetTagsForReaction().Any(pattern => TagMatches(tags, pattern)))
                         continue;
 
                     var commands = await reactor.ReactAsync(evt, new EventMetadata(), CancellationToken.None);
@@ -247,6 +247,21 @@ public class OrderFulfillmentWorkflow
             SendNotificationCommand => [],  // terminal - no further events
             _ => [],
         };
+    }
+
+    /// <summary>
+    /// <paramref name="pattern"/> <c>order:*</c> matches any tag that starts with <c>order:</c>.
+    /// A pattern without <c>*</c> must match the tag exactly.
+    /// </summary>
+    private static bool TagMatches(HashSet<string> tags, string pattern)
+    {
+        if (pattern.EndsWith(":*", StringComparison.Ordinal))
+        {
+            var prefix = pattern[..^1];
+            return tags.Any(tag => tag.StartsWith(prefix, StringComparison.Ordinal));
+        }
+
+        return tags.Contains(pattern);
     }
 
     private static string[] GetTagsForEvent(IEvent evt, string orderId) => evt switch
@@ -388,6 +403,6 @@ public class OrderFulfillmentWorkflow
             => _entries.Add((evt, [.. tags]));
 
         public IReadOnlyList<(IEvent Event, HashSet<string> Tags)> GetAll()
-            => _entries.AsReadOnly();
+            => _entries.ToArray();
     }
 }

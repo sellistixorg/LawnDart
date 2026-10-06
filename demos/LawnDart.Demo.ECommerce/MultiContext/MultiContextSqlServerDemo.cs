@@ -207,8 +207,6 @@ internal sealed class SqlServerMultiContextDemoRunner : IHostedService
         var orderingResult = await orderingStore.ReadByQueryAsync(Query.All(), cancellationToken: ct);
         var catalogResult  = await catalogStore.ReadByQueryAsync(Query.All(),  cancellationToken: ct);
 
-        _logger.LogInformation("  Events in ordering: {Count}", orderingResult.Events.Count);
-        _logger.LogInformation("  Events in catalog: {Count}", catalogResult.Events.Count);
         if (orderingResult.Events.Count != 3 || catalogResult.Events.Count != 3)
         {
             throw new InvalidOperationException(
@@ -218,14 +216,24 @@ internal sealed class SqlServerMultiContextDemoRunner : IHostedService
         if (ReferenceEquals(orderingStore, catalogStore))
             throw new InvalidOperationException("ordering and catalog resolved the same event store.");
 
-        // Verify independent sequences
-        var orderSeq   = await orderingStore.GetCurrentSequenceAsync(ct);
-        var catalogSeq = await catalogStore.GetCurrentSequenceAsync(ct);
-        _logger.LogInformation("  [ordering] global sequence position: {Seq}", orderSeq);
-        _logger.LogInformation("  [catalog]  global sequence position: {Seq}", catalogSeq);
+        var shipped = await orderingStore.ReadStreamAsync($"Order:{orderId1}", cancellationToken: ct);
+        if (shipped.Count != 2)
+            throw new InvalidOperationException($"Place and ship did not share Order:{orderId1}. Count was {shipped.Count}.");
 
-        _logger.LogInformation("\n=== Multi-Context SQL Server Demo Complete ===");
-        _logger.LogInformation("Note: Cross-context queries intentionally absent - contexts are isolated.");
+        var discontinued = await catalogStore.ReadStreamAsync($"Product:{productId2}", cancellationToken: ct);
+        if (discontinued.Count != 2)
+            throw new InvalidOperationException($"List and discontinue did not share Product:{productId2}. Count was {discontinued.Count}.");
+
+        var orderSeq = await orderingStore.GetCurrentSequenceAsync(ct);
+        var catalogSeq = await catalogStore.GetCurrentSequenceAsync(ct);
+        Console.WriteLine($"ordering events: {orderingResult.Events.Count}, sequence {orderSeq}, shipped stream Order:{orderId1} has {shipped.Count} events");
+        Console.WriteLine($"catalog events: {catalogResult.Events.Count}, sequence {catalogSeq}, discontinued stream Product:{productId2} has {discontinued.Count} events");
+
+        Console.WriteLine("ordering and catalog are separate stores.");
+        _logger.LogInformation(
+            "Multi-context finished. ordering sequence {OrderSeq}, catalog sequence {CatalogSeq}",
+            orderSeq,
+            catalogSeq);
 
         _lifetime.StopApplication();
     }
@@ -239,8 +247,8 @@ internal sealed class SqlServerMultiContextDemoRunner : IHostedService
 
 /// <summary>
 /// Two bounded contexts, ordering and catalog, each with its own store.
-/// InMemory when <paramref name="connectionString"/> is null. SQL Server uses
-/// schemas <c>ordering</c> and <c>catalog</c> in that database.
+/// Pass a connection string for SQL Server schemas <c>ordering</c> and <c>catalog</c>.
+/// A null connection string uses InMemory.
 /// </summary>
 public static class MultiContextDemo
 {

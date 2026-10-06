@@ -123,7 +123,7 @@ public class HybridPatternDemo
             await _aggregateRepository.HandleCommandAsync(product, createCommand, metadata);
 
             Console.WriteLine($"[ok] Created Product Aggregate:");
-            Console.WriteLine($"   Stream: Product:{productId}");
+            Console.WriteLine($"   Stream: {product.StreamId}");
             Console.WriteLine($"   Name: {name} ({sku})");
             Console.WriteLine($"   Price: ${price:F2}, Stock: {stock}");
             Console.WriteLine($"   Pattern: Stream-per-aggregate");
@@ -134,7 +134,7 @@ public class HybridPatternDemo
         Console.WriteLine("* Products have clear boundaries (each product is independent)");
         Console.WriteLine("* Simple lifecycle: create -> update -> archive");
         Console.WriteLine("* No cross-product coordination needed");
-        Console.WriteLine("* Easy to load: just read stream 'Product:{id}'");
+        Console.WriteLine("* Easy to load: GetOrCreateAsync uses {tenant}:Product:{id}");
         Console.WriteLine("* Standard version-based concurrency works perfectly\n");
 
         // Store for later use
@@ -429,8 +429,9 @@ public class HybridPatternDemo
         var productId = _productIds[0];
 
         Console.WriteLine("  Traditional Aggregate Queries:\n");
+        var loaded = await _aggregateRepository.GetOrCreateAsync<Product>(productId);
         Console.WriteLine($"Query: 'Get Product {productId}'");
-        Console.WriteLine($"  -> Read stream: 'Product:{productId}'");
+        Console.WriteLine($"  -> Read stream: '{loaded.StreamId}'");
         Console.WriteLine($"  -> Rebuild Product aggregate from events");
         Console.WriteLine($"  -> Result: Product state (name, price, stock)");
         Console.WriteLine($"  [ok] Simple, direct, efficient for single aggregate\n");

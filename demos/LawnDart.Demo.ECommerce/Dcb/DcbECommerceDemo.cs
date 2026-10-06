@@ -57,7 +57,7 @@ public class DcbECommerceDemo
     {
         Console.WriteLine("\n=== DCB APPROACH ===");
         Console.WriteLine("Using: Dynamic Consistency Boundaries");
-        Console.WriteLine("- Single bounded context stream (ecommerce-context)");
+        Console.WriteLine("- Each append is its own write. Queries use tags.");
         Console.WriteLine("- Events tagged with entity IDs (cart:{id}, order:{id}, product:{id})");
         Console.WriteLine("- Tag-based queries for state reconstruction");
         Console.WriteLine("- Sequence position-based optimistic concurrency control");
