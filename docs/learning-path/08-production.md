@@ -51,8 +51,9 @@ fields: [Metadata](../METADATA.md).
 
 ## Wipe, then recreate
 
-Drop and recreate SQL event and outbox tables, then run
-`InitializeSchemaAsync`. Opening an older table throws and names
+Drop and recreate SQL event, outbox, and inbox tables, then run
+`InitializeSchemaAsync` and, when the inbox is SQL Server,
+`InitializeSqlInboxStoreAsync`. Opening an older table throws and names
 drop-and-recreate. There is no in-place `ALTER` and no migration tool.
 
 Checklist:

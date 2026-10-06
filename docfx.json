@@ -9,6 +9,7 @@
             "src/LawnDart.EventSourcing/bin/Release/net10.0/LawnDart.EventSourcing.dll",
             "src/LawnDart.Messaging/bin/Release/net10.0/LawnDart.Messaging.dll",
             "src/LawnDart.Messaging.InMemory/bin/Release/net10.0/LawnDart.Messaging.InMemory.dll",
+            "src/LawnDart.Messaging.SqlServer/bin/Release/net10.0/LawnDart.Messaging.SqlServer.dll",
             "src/LawnDart.EventSourcing.SqlServer/bin/Release/net10.0/LawnDart.EventSourcing.SqlServer.dll",
             "src/LawnDart.Projections.Lightweight/bin/Release/net10.0/LawnDart.Projections.Lightweight.dll",
             "src/LawnDart.AspNetCore/bin/Release/net10.0/LawnDart.AspNetCore.dll",

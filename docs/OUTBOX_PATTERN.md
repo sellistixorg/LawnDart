@@ -41,6 +41,19 @@ services.AddMessageTransportOutboxPublisher();
 Pair the outbox with `LawnDart.Messaging.InMemory` for single-process tests,
 or your own `IMessageTransport` implementation.
 
+Delivery to the transport is at least once. A consumer that must ignore a
+redelivery after a restart stores that fact in SQL Server:
+
+```csharp
+services.AddInMemoryMessaging();
+services.AddSqlInboxStore(cs);
+```
+
+Call `InitializeSqlInboxStoreAsync` before hosted reactors start. The
+in-memory inbox is per process. Each reactor or processor deduplicates on
+its own key (`reactor:{type}:{message id}` or `processor:{type}:{message id}`),
+so two consumers of one message both run once.
+
 ## Dead letters
 
 When publish attempts reach the processor max (default 10), the row is marked

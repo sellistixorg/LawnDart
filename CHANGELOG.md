@@ -12,6 +12,7 @@ changes to the public API.
 
 ### Fixed
 
+- Two reactors or processors that handle the same message no longer share one inbox entry; each consumer deduplicates on its own.
 - Projection store API docs name the shipped stores (InMemory and SQL Server) only.
 - Configured schema, table, constraint, and index names that contain `]` or `'` are escaped before they are placed in SQL text.
 - The tenant prefix check on a stream id uses an ordinal comparison.
@@ -19,6 +20,7 @@ changes to the public API.
 
 ### Added
 
+- `LawnDart.Messaging.SqlServer` stores inbox deduplication in SQL Server (`AddSqlInboxStore`), so duplicate deliveries are dropped across restarts and instances.
 - `AGENTS.md` is the instruction file for coding agents in this repository. A cloud agent commit includes `Signed-off-by: Cursor Agent <cursoragent@cursor.com>`.
 - [Metadata](docs/METADATA.md) covers `MessageContext`, `CommandMetadata`, `EventMetadata`, and what the default provider fills.
 - A DCB Library sample (`samples/Library.Dcb.Domain`) implements the same book intents as a `BookLoan` entity that spans book and member. Input is `build-kit/library-dcb-slice.json`.

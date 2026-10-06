@@ -7,7 +7,8 @@ namespace LawnDart.Messaging.Hosting;
 
 /// <summary>
 /// Hosted service that drives a single <see cref="IEventProcessor{TEvent}"/> instance.
-/// Subscribes to <typeparamref name="TEvent"/>, applies inbox deduplication, invokes the processor,
+/// Subscribes to <typeparamref name="TEvent"/>, applies inbox deduplication
+/// (this processor's type name plus the message id), invokes the processor,
 /// then publishes returned derived events back through the transport.
 /// </summary>
 /// <typeparam name="TProcessor">The event processor implementation type.</typeparam>
@@ -42,8 +43,9 @@ public sealed class EventProcessorHostedService<TProcessor, TEvent> : Background
     private async Task HandleAsync(TEvent @event, MessageContext context, CancellationToken ct)
     {
         var messageId = context.MessageId;
+        var inboxKey = messageId is null ? null : InboxConsumerKey.ForProcessor(typeof(TProcessor), messageId);
 
-        if (messageId is not null && await _inboxStore.IsProcessedAsync(messageId, ct).ConfigureAwait(false))
+        if (inboxKey is not null && await _inboxStore.IsProcessedAsync(inboxKey, ct).ConfigureAwait(false))
         {
             MessagingTelemetry.RecordInboxDuplicate(EventTypeName);
             _logger.LogDebug(
@@ -66,9 +68,9 @@ public sealed class EventProcessorHostedService<TProcessor, TEvent> : Background
                 await _transport.PublishEventAsync(derived, context.CreateChild(), ct).ConfigureAwait(false);
             }
 
-            if (messageId is not null)
+            if (inboxKey is not null)
             {
-                await _inboxStore.MarkProcessedAsync(messageId, DateTimeOffset.UtcNow, ct).ConfigureAwait(false);
+                await _inboxStore.MarkProcessedAsync(inboxKey, DateTimeOffset.UtcNow, ct).ConfigureAwait(false);
             }
 
             var elapsed = TimeProvider.System.GetElapsedTime(start);

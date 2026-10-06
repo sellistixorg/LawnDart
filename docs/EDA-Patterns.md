@@ -48,3 +48,14 @@ demonstrates this without a broker.
 
 Use SQL Server plus `EnableOutbox` when the consumer is another process.
 See [OUTBOX_PATTERN.md](OUTBOX_PATTERN.md). InMemory publishes in-process.
+
+## Inbox
+
+Hosted reactors and processors drop a second delivery of the same message.
+The key is the consumer type name plus `MessageContext.MessageId`, so two
+consumers of one message both run.
+
+`AddInMemoryMessaging` keeps that record in the process.
+`AddSqlInboxStore` stores it in SQL Server. Call
+`InitializeSqlInboxStoreAsync` at startup. See
+[SQL Server inbox](packages/messaging-sqlserver.md).

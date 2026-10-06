@@ -33,6 +33,7 @@ app.MapLawnDartCommands();
 | `LawnDart.EventSourcing.SqlServer` | First durable store |
 | `LawnDart.Messaging` | Reactors, processors, transports |
 | `LawnDart.Messaging.InMemory` | In-process messaging |
+| `LawnDart.Messaging.SqlServer` | Durable inbox deduplication |
 | `LawnDart.Projections.Lightweight` | Read-model host (InMemory / SQL) |
 | `LawnDart.AspNetCore` | HTTP command mapping |
 | `LawnDart.Authorization.AspNetCore` | HTTP claims to `AuthorizationContext` |

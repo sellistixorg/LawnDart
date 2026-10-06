@@ -8,6 +8,9 @@ description: Author LawnDart reactions. IReactor plus AddInMemoryMessaging and A
 `IReactor<TEvent>` turns an event into commands (broker transport).
 `IDcbReactor` is the in-process tag/metadata twin. Register the broker
 path with `AddInMemoryMessaging()` and `AddReactor<TReactor, TEvent>()`.
+`AddSqlInboxStore(connectionString)` replaces the in-memory inbox when
+dedup must survive a restart. Call `InitializeSqlInboxStoreAsync` at startup.
+The transport stays in-process.
 
 `IEventProcessor` (event to event) and `ITaskProcessor` (state to command)
 are also hosted. See `docs/learning-path/06-reactions.md`.
