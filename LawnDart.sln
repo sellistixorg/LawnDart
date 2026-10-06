@@ -75,6 +75,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LawnDart.Demo.MultiContextI
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LawnDart.Demo.InMemorySubscriptions", "demos\LawnDart.Demo.InMemorySubscriptions\LawnDart.Demo.InMemorySubscriptions.csproj", "{8DA172AF-BDF3-4E3C-AC49-AF704D730E7D}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LawnDart.Demo.SqlServerSubscriptions", "demos\LawnDart.Demo.SqlServerSubscriptions\LawnDart.Demo.SqlServerSubscriptions.csproj", "{0512B04C-3DF3-4111-8E74-3DEE5F22ADCD}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -469,6 +471,18 @@ Global
 		{8DA172AF-BDF3-4E3C-AC49-AF704D730E7D}.Release|x64.Build.0 = Release|Any CPU
 		{8DA172AF-BDF3-4E3C-AC49-AF704D730E7D}.Release|x86.ActiveCfg = Release|Any CPU
 		{8DA172AF-BDF3-4E3C-AC49-AF704D730E7D}.Release|x86.Build.0 = Release|Any CPU
+		{0512B04C-3DF3-4111-8E74-3DEE5F22ADCD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0512B04C-3DF3-4111-8E74-3DEE5F22ADCD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0512B04C-3DF3-4111-8E74-3DEE5F22ADCD}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{0512B04C-3DF3-4111-8E74-3DEE5F22ADCD}.Debug|x64.Build.0 = Debug|Any CPU
+		{0512B04C-3DF3-4111-8E74-3DEE5F22ADCD}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{0512B04C-3DF3-4111-8E74-3DEE5F22ADCD}.Debug|x86.Build.0 = Debug|Any CPU
+		{0512B04C-3DF3-4111-8E74-3DEE5F22ADCD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0512B04C-3DF3-4111-8E74-3DEE5F22ADCD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0512B04C-3DF3-4111-8E74-3DEE5F22ADCD}.Release|x64.ActiveCfg = Release|Any CPU
+		{0512B04C-3DF3-4111-8E74-3DEE5F22ADCD}.Release|x64.Build.0 = Release|Any CPU
+		{0512B04C-3DF3-4111-8E74-3DEE5F22ADCD}.Release|x86.ActiveCfg = Release|Any CPU
+		{0512B04C-3DF3-4111-8E74-3DEE5F22ADCD}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -506,5 +520,6 @@ Global
 		{80759F4A-629B-42D8-A6C3-1A49A65E18B2} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{2E09118F-91C6-493A-BBEF-C905BA80FB51} = {FA8A28C8-4B59-8028-2ACF-626D05B08DB7}
 		{8DA172AF-BDF3-4E3C-AC49-AF704D730E7D} = {FA8A28C8-4B59-8028-2ACF-626D05B08DB7}
+		{0512B04C-3DF3-4111-8E74-3DEE5F22ADCD} = {FA8A28C8-4B59-8028-2ACF-626D05B08DB7}
 	EndGlobalSection
 EndGlobal
