@@ -12,6 +12,7 @@ changes to the public API.
 
 ### Fixed
 
+- Projection store API docs name the shipped stores (InMemory and SQL Server) only.
 - Configured schema, table, constraint, and index names that contain `]` or `'` are escaped before they are placed in SQL text.
 - The tenant prefix check on a stream id uses an ordinal comparison.
 - The BDD testing guide links to `build-kit/library-dcb-slice.json`.
