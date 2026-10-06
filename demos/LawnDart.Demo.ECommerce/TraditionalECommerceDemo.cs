@@ -13,7 +13,7 @@ namespace LawnDart.Demo.ECommerce;
 /// <summary>
 /// Traditional e-commerce demo using stream-per-aggregate pattern.
 /// Demonstrates:
-/// - Each aggregate has its own stream (Cart:{id}, Order:{id}, Product:{id})
+/// - Each aggregate has its own stream ({tenant}:Cart:{id}, {tenant}:Order:{id}, {tenant}:Product:{id})
 /// - State reconstructed from stream events
 /// - Version-based optimistic concurrency control
 /// - Stream-based projections
@@ -56,7 +56,8 @@ public class TraditionalECommerceDemo
     {
         Console.WriteLine("\n=== TRADITIONAL APPROACH ===");
         Console.WriteLine("Using: Stream-per-Aggregate pattern");
-        Console.WriteLine("- Each aggregate has its own stream (Cart:{id}, Order:{id}, Product:{id})");
+        Console.WriteLine("- Each aggregate stream is {tenant}:Cart:{id}, {tenant}:Order:{id}, or {tenant}:Product:{id}.");
+        Console.WriteLine("- This host uses demo-tenant, for example demo-tenant:Cart:{id}.");
         Console.WriteLine("- State reconstructed from stream events");
         Console.WriteLine("- Version-based optimistic concurrency control");
         Console.WriteLine("- Stream-based projections\n");
@@ -260,7 +261,17 @@ public class TraditionalECommerceDemo
         Console.WriteLine($"Cart streams: {cartStreams.Count}");
         Console.WriteLine($"Order streams: {orderStreams.Count}");
         Console.WriteLine($"Product streams: {productStreams.Count}");
-        Console.WriteLine($"Stream ids are {{tenant}}:Cart:{{id}}, {{tenant}}:Order:{{id}}, and {{tenant}}:Product:{{id}}.");
+        Console.WriteLine($"Stream ids use the host tenant. Cart is {cart.StreamId}.");
+        if (cart.StreamId != $"demo-tenant:Cart:{cartId}")
+            throw new InvalidOperationException($"Cart stream was '{cart.StreamId}'. Expected 'demo-tenant:Cart:{cartId}'.");
+        if (order.StreamId != $"demo-tenant:Order:{orderId}")
+            throw new InvalidOperationException($"Order stream was '{order.StreamId}'. Expected 'demo-tenant:Order:{orderId}'.");
+        foreach (var product in products)
+        {
+            var expected = $"demo-tenant:Product:{product.State.ProductId}";
+            if (product.StreamId != expected)
+                throw new InvalidOperationException($"Product stream was '{product.StreamId}'. Expected '{expected}'.");
+        }
         if (cartView?.IsCheckedOut != true || cartView.OrderId is null)
             throw new InvalidOperationException("Cart did not check out.");
         if (orderView?.IsCompleted != true)

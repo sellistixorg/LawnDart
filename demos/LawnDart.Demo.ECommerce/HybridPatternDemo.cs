@@ -122,6 +122,17 @@ public class HybridPatternDemo
 
             await _aggregateRepository.HandleCommandAsync(product, createCommand, metadata);
 
+            var expectedStream = $"demo-tenant:Product:{productId}";
+            if (!string.Equals(product.StreamId, expectedStream, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Product stream was '{product.StreamId}'. Expected '{expectedStream}'.");
+            }
+
+            var written = await _eventStore.ReadStreamAsync(product.StreamId);
+            if (written.Count == 0)
+                throw new InvalidOperationException($"No events on {product.StreamId}.");
+
             Console.WriteLine($"[ok] Created Product Aggregate:");
             Console.WriteLine($"   Stream: {product.StreamId}");
             Console.WriteLine($"   Name: {name} ({sku})");
@@ -243,14 +254,32 @@ public class HybridPatternDemo
 
         // One append. A later write is a separate append.
         // An AppendCondition would fence a concurrent transfer of the same stock.
-        await _dcbRepository.AppendWithContextAsync(events, transferTags);
+        var positions = await _dcbRepository.AppendWithContextAsync(events, transferTags);
+        if (positions.Count != 2)
+        {
+            throw new InvalidOperationException(
+                $"Transfer append returned {positions.Count} positions. Expected one append of two events.");
+        }
+
+        var transferred = (await _eventStore.ReadByQueryAsync(
+            Query.FromItems(QueryItem.ByTags($"transfer:{transferId}")))).Events;
+        var transferStreams = transferred
+            .Select(e => e.StreamId)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (transferred.Count != 2 || transferStreams.Count != 1)
+        {
+            throw new InvalidOperationException(
+                $"Transfer tag matched {transferred.Count} events on {transferStreams.Count} streams. Expected 2 events on 1 stream.");
+        }
 
         Console.WriteLine($"[ok] Transferred Inventory:");
         Console.WriteLine($"   Transfer ID: {transferId}");
         Console.WriteLine($"   Product: {productId}");
         Console.WriteLine($"   From: {fromWarehouse} -> To: {toWarehouse}");
         Console.WriteLine($"   Quantity: {transferQuantity}");
-        Console.WriteLine($"   Coordination: one append writes both events");
+        Console.WriteLine($"   Stream: {transferStreams[0]}");
+        Console.WriteLine("   Coordination: one append wrote both events");
         Console.WriteLine($"     This would be complex with traditional aggregates");
         Console.WriteLine($"     In production: Use AppendCondition to prevent race conditions\n");
     }
@@ -520,7 +549,7 @@ public class HybridPatternDemo
         Console.WriteLine("4   INTEGRATION PATTERNS:");
         Console.WriteLine("   * Aggregate can emit events with tags (becomes DCB-queryable)");
         Console.WriteLine("   * DCB reactor can load aggregate and execute command");
-        Console.WriteLine("   * Both share same EventStore, Metadata, Authorization");
+        Console.WriteLine("   * Both share the same event store and metadata");
         Console.WriteLine("   * Use projections to build read models from both\n");
 
         Console.WriteLine("[warn]  ANTI-PATTERNS TO AVOID:");

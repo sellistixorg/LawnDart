@@ -27,7 +27,7 @@ dotnet run --project demos/LawnDart.Demo.ECommerce -- multicontext
 | traditional | `Cart`, `Order`, and `Product` aggregates. Hand-rolled projectors fold each stream. |
 | dcb | The same lifecycle by tag. One append writes the fulfillment events together. A second append on the same order tag fails the condition. |
 | hybrid | The product catalog is an aggregate. Warehouse stock and a transfer are tagged writes. The transfer is one append of two events. |
-| eda | A reactor, an event processor, and a task processor on the in-process transport. Then a four-step choreography and one in-process pass. |
+| eda | A reactor, an event processor, and a task processor on the in-process transport. Then a four-step choreography and one in-process pass. This mode does not open the event store, including when `--backend sqlserver` is set. |
 | multicontext | `ordering` and `catalog` each have their own store. Place and ship use `Order:{orderId}`. List and discontinue use `Product:{productId}`. |
 
 Stream ids for aggregates are `{tenant}:Cart:{id}`, `{tenant}:Order:{id}`, and `{tenant}:Product:{id}`. The host tenant is `demo-tenant`.
@@ -38,7 +38,7 @@ EDA dedup in this console uses the message id for the subscriber in that section
 
 ## SQL Server
 
-Create the database first when you bring your own server. The host creates event and outbox tables at startup. These scenarios use hand-rolled projectors, so this host does not create projection view tables.
+A supplied connection string must already name a database. The host creates event and outbox tables at startup. These scenarios use hand-rolled projectors, so this host does not create projection view tables. The `eda` mode stays on the in-process transport and does not use that database.
 
 ```bash
 dotnet run --project demos/LawnDart.Demo.ECommerce -- --run-all --backend sqlserver

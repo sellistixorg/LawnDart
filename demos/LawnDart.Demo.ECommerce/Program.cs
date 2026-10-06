@@ -29,7 +29,8 @@ namespace LawnDart.Demo.ECommerce;
 ///   dotnet run --project demos/LawnDart.Demo.ECommerce -- outbox --backend sqlserver
 ///   dotnet run --project demos/LawnDart.Demo.ECommerce -- --run-all
 ///
-/// Backend is InMemory unless you pass --backend sqlserver.
+/// Backend is InMemory unless --backend sqlserver is set.
+/// The eda approach stays in-process and does not open that store.
 /// SQL uses LAWNDART_SQL_CONNECTION or ConnectionStrings:ECommerce.
 /// When neither is set, --backend sqlserver starts a local container.
 /// </summary>
@@ -87,9 +88,13 @@ internal static class Program
             return 1;
         }
 
+        var edaOnly = !runAll && approach == "eda";
         Console.WriteLine("=== LawnDart ECommerce ===");
-        Console.WriteLine(runAll ? "Run: all InMemory paths, plus outbox when the backend is SQL Server." : $"Approach: {approach}");
-        Console.WriteLine($"Backend: {backend}");
+        Console.WriteLine(runAll ? "Run: store scenarios, plus outbox when the backend is SQL Server." : $"Approach: {approach}");
+        if (edaOnly)
+            Console.WriteLine("Backend: in-process. eda does not use the event store.");
+        else
+            Console.WriteLine($"Backend: {backend}");
         Console.WriteLine();
 
         var config = new ConfigurationBuilder()
@@ -100,7 +105,7 @@ internal static class Program
 
         string? connectionString = null;
         MsSqlContainer? container = null;
-        if (backend == "sqlserver")
+        if (backend == "sqlserver" && !edaOnly)
         {
             connectionString = config.GetConnectionString("ECommerce")
                 ?? Environment.GetEnvironmentVariable("LAWNDART_SQL_CONNECTION");
@@ -135,6 +140,8 @@ internal static class Program
 
                 if (step == "eda")
                 {
+                    if (backend == "sqlserver")
+                        Console.WriteLine("eda stays in-process. It does not use the SQL store.");
                     await new EDADemo().RunAsync();
                     continue;
                 }
@@ -272,7 +279,7 @@ internal static class Program
         Console.WriteLine();
         Console.WriteLine("InMemory is the default. It needs no database.");
         Console.WriteLine("SQL Server needs Docker, or LAWNDART_SQL_CONNECTION / ConnectionStrings:ECommerce.");
-        Console.WriteLine("Create the database first when you bring your own server. The host creates tables.");
+        Console.WriteLine("A supplied connection string must already name a database. The host creates tables.");
     }
 }
 
