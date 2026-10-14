@@ -42,8 +42,59 @@ services.AddBoundedContext("default")
 services.AddMessageTransportOutboxPublisher();
 ```
 
-Pair the outbox with `LawnDart.Messaging.InMemory` for single-process tests,
-or your own `IMessageTransport` implementation.
+Register one transport before the publisher. The publisher hands each row
+to the registered `IMessageTransport`.
+
+In-process, for a single process:
+
+```csharp
+services.AddInMemoryMessaging();
+services.AddMessageTransportOutboxPublisher();
+```
+
+RabbitMQ:
+
+```csharp
+services.AddRabbitMqTransport(options =>
+{
+    options.Uri = "amqp://rabbitmq:rabbitmq@localhost:5672/";
+    options.SubscriptionName = "billing";
+});
+services.AddSqlInboxStore(cs);
+services.AddMessageTransportOutboxPublisher();
+```
+
+Azure Service Bus:
+
+```csharp
+services.AddAzureServiceBusTransport(options =>
+{
+    options.ConnectionString = cs;
+    options.SubscriptionName = "billing";
+});
+services.AddSqlInboxStore(cs);
+services.AddMessageTransportOutboxPublisher();
+```
+
+`DeadLetterFailedMessages` defaults to false. A publish that throws is a
+failure the outbox processor records. The row stays unpublished. The
+processor tries it again until its own limit (default 10), then marks the
+row with `DeadLetteredAt`. That processor limit is separate from the
+transport flag.
+
+On the in-process transport, the handler runs inside the publish call.
+After `MaxDeliveryAttempts` the last exception is thrown, so the outbox
+keeps the row. Set `DeadLetterFailedMessages` to true when the transport
+should park the message and return. The outbox then marks the row processed.
+
+On RabbitMQ and Azure Service Bus, a publish the broker rejects throws, and
+the outbox keeps the row. RabbitMQ's default for a publish that reaches no
+queue is `UnroutablePublish` `Warn`: the call returns, the message was not
+queued, and the outbox marks the row processed. Set `UnroutablePublish` to
+`Throw` when that case should stay on the outbox. A handler failure after
+the broker accepted the message is the transport's retry. With the flag left
+false, that message is not parked. See
+[Message transports](MESSAGE_TRANSPORTS.md).
 
 Delivery to the transport is at least once. A consumer that must ignore a
 redelivery after a restart stores that fact in SQL Server:

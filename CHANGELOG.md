@@ -17,6 +17,10 @@ changes to the public API.
 
 ### Added
 
+- The README shows what the in-process, RabbitMQ, and Azure Service Bus transports are, how to install them, and a minimal registration for each.
+- The outbox guide registers the publisher with the in-process transport, RabbitMQ, and Azure Service Bus. `DeadLetterFailedMessages` stays off unless you set it. A publish that throws leaves the outbox row in place.
+- [Telemetry](docs/TELEMETRY.md) lists every LawnDart meter and activity source, each instrument, the `messaging.retry` and `messaging.deadlettered` span events, and an OpenTelemetry registration.
+- [Message transports](docs/MESSAGE_TRANSPORTS.md) covers retry delay, attempt counting, the dead-letter option, the Service Bus property `lawndart_target`, `BrokerMaxDeliveryCount` (1 to 10 on the emulator), Azure Service Bus `OperationTimeout` (default 30 seconds), and RabbitMQ `UnroutablePublish`.
 - `LawnDart.Messaging.AzureServiceBus` publishes and consumes through Azure Service Bus (`AddAzureServiceBusTransport`). The topic is the declared message type. Each subscriber has one subscription on that topic. Connect with a connection string, a fully qualified namespace and a token credential, or a `ServiceBusClient` already registered. A failed delivery is scheduled again after `RetryDelay` (default 5 seconds) for that subscription only. A message with no `lawndart_target` reaches every subscription. `BrokerMaxDeliveryCount` defaults to 2000 (1 to 10 on the emulator). With dead-letter handling on, a message that used its attempts is dead-lettered on the subscription. With it off, the message is scheduled again and the wait still applies. A cancelled delivery uses that same wait.
 - `LawnDart.Messaging.RabbitMQ` publishes and consumes through RabbitMQ (`AddRabbitMqTransport`). Publish declares the exchange named by the message type. Consumers declare their queue. An unroutable publish logs a warning unless `UnroutablePublish` is `Throw`. A failed delivery waits on a retry queue (default 5 seconds) before it returns. With dead-letter handling on, a message that used its attempts is nacked to a dead-letter exchange. With it off, the message stays on the queue and the wait still applies.
 - `MessagingJson.Options` is the JSON setting for message bodies and the outbox publisher. Property names are PascalCase. Reads ignore case. Null values are omitted.
@@ -32,6 +36,8 @@ changes to the public API.
 
 ### Changed
 
+- The README states that `LawnDart.Messaging.RabbitMQ` and `LawnDart.Messaging.AzureServiceBus` are available starting with 0.6.0-alpha.1. The transport registrations are alternatives: pick one. A later RabbitMQ or Service Bus registration replaces `IMessageTransport`.
+- Inbox docs name the in-process, RabbitMQ, and Azure Service Bus transports. The SQL inbox replaces the inbox store. The transport you registered stays.
 - The build kit (`skills/BUILD_KIT.md`) now targets LawnDart 0.5, matching the 0.5.0-alpha.1 packages.
 - Reactor and event processor logs use the declared event type name.
 

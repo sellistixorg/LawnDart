@@ -10,12 +10,13 @@ namespace LawnDart.Messaging.Outbox;
 /// <summary>
 /// Sample <see cref="IOutboxPublisher"/> that hydrates <see cref="OutboxMessage"/>
 /// rows through <see cref="EventSession"/> and publishes them through
-/// <see cref="IMessageTransport"/> (InMemory in these packages).
+/// <see cref="IMessageTransport"/>.
+/// The shipped transports are the in-process, RabbitMQ, and Azure Service Bus implementations.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Delivery is <b>at-least-once</b>. This adapter does not claim exactly-once semantics —
-/// register an <see cref="IInboxStore"/> (or equivalent) on consumers and use a stable
+/// Delivery is <b>at-least-once</b>. This adapter does not claim exactly-once semantics.
+/// Register an <see cref="IInboxStore"/> (or equivalent) on consumers and use a stable
 /// <see cref="MessageContext.MessageId"/> (this type uses the outbox row id).
 /// </para>
 /// <para>
@@ -33,7 +34,10 @@ public sealed class MessageTransportOutboxPublisher : IOutboxPublisher
     /// <summary>
     /// Creates a publisher that hydrates through <paramref name="catalog"/>.
     /// </summary>
-    /// <param name="transport">Transport used to publish (InMemory in these packages).</param>
+    /// <param name="transport">
+    /// Transport used to publish. The shipped transports are the in-process,
+    /// RabbitMQ, and Azure Service Bus implementations.
+    /// </param>
     /// <param name="catalog">
     /// Scoped catalog. Resolve uses family token plus
     /// <see cref="OutboxMessage.SchemaVersion"/>.

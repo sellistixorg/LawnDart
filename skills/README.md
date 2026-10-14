@@ -16,7 +16,7 @@ The nine skills teach LawnDart. They do not name a modelling tool.
 | `lawndart-bounded-context` | Named contexts and command handlers |
 | `lawndart-domain-model` | Events, commands, aggregates, DCB, stream IDs |
 | `lawndart-testing` | `AggregateSpec` / `DcbSpec` given / when / then |
-| `lawndart-reactions` | `IReactor`, `AddInMemoryMessaging`, `AddReactor` |
+| `lawndart-reactions` | `IReactor`, `AddReactor`, in-process / RabbitMQ / Azure Service Bus |
 | `lawndart-lightweight-projections` | `WithProjections`, stores, `MapProjectionQueries` |
 | `lawndart-projection-authoring` | Projection classes and view keys |
 | `lawndart-aspnet-hosting` | `MapLawnDartCommands`, HTTP auth |

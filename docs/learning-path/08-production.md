@@ -16,6 +16,13 @@ path (`Trusted_Connection=True`); see [BACKEND_SELECTION.md](../BACKEND_SELECTIO
 
 Host grammar: [DI Grammar](../DI_GRAMMAR.md).
 
+The store snippet below leaves the message transport to you.
+`AddMessageTransportOutboxPublisher` publishes outbox rows through the
+registered `IMessageTransport`. Register `AddInMemoryMessaging`,
+`AddRabbitMqTransport`, or `AddAzureServiceBusTransport` before that call.
+See [Message transports](../MESSAGE_TRANSPORTS.md) and
+[Outbox](../OUTBOX_PATTERN.md).
+
 ```csharp
 services.AddLawnDart(o => o.RequireTenantId = false);
 services.AddSqlProjectionStores("default", cs);
@@ -60,6 +67,7 @@ Checklist:
 
 - [BACKEND_SELECTION.md](../BACKEND_SELECTION.md): InMemory vs SQL
 - [OUTBOX_PATTERN.md](../OUTBOX_PATTERN.md): durable publish
+- [MESSAGE_TRANSPORTS.md](../MESSAGE_TRANSPORTS.md): in-process, RabbitMQ, Azure Service Bus
 - [AUTHORIZATION.md](../AUTHORIZATION.md): HTTP claims
 - [HTTP_COMMANDS.md](../HTTP_COMMANDS.md): POST mapping
 - [EVENT_SCHEMA_VERSIONING.md](../EVENT_SCHEMA_VERSIONING.md): family tokens, upcast, expand-contract

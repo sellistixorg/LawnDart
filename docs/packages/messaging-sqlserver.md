@@ -3,10 +3,10 @@
 SQL Server `IInboxStore`. Reactor and event-processor deduplication survives
 a process restart and is shared by every instance that uses the same table.
 
-The transport stays in-process (`LawnDart.Messaging.InMemory`) unless you
-register your own `IMessageTransport`. `AddRabbitMqTransport` is the
-RabbitMQ registration. `AddAzureServiceBusTransport` is the Azure Service Bus
-registration.
+Pair it with the in-process transport (`LawnDart.Messaging.InMemory`),
+RabbitMQ (`AddRabbitMqTransport`), or Azure Service Bus
+(`AddAzureServiceBusTransport`). This package replaces the inbox. The
+transport you registered stays.
 
 ## Registration
 
@@ -15,9 +15,10 @@ services.AddInMemoryMessaging();
 services.AddSqlInboxStore(connectionString);
 ```
 
-`AddSqlInboxStore` replaces the in-memory inbox, whether you call it before
-or after `AddInMemoryMessaging`. `AddInMemoryMessaging` still registers the
-transport.
+`AddSqlInboxStore` replaces the inbox, whether you call it before or after
+the transport registration. The snippet above uses the in-process transport.
+`AddRabbitMqTransport` and `AddAzureServiceBusTransport` keep their transport
+the same way.
 
 After the host is built, create the table once:
 
@@ -54,5 +55,7 @@ Defaults are schema `dbo` and table `Inbox`. Pass a configure delegate to
 - [Package map](README.md)
 - [Messaging](messaging.md)
 - [InMemory messaging](messaging-inmemory.md)
+- [RabbitMQ](messaging-rabbitmq.md)
+- [Azure Service Bus](messaging-azureservicebus.md)
 - [Outbox](../OUTBOX_PATTERN.md)
 - [EDA patterns](../EDA-Patterns.md)

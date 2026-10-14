@@ -44,4 +44,6 @@ app.MapLawnDartCommands();
 | `LawnDart.Analyzers` | Optional `LDT*` schema-versioning diagnostics |
 
 Academy + `UseInMemory()` is the zero-infra path. Per-package landing pages:
-[Package map](packages/README.md).
+[Package map](packages/README.md). Transports:
+[Message transports](MESSAGE_TRANSPORTS.md). Meters and activity sources:
+[Telemetry](TELEMETRY.md).

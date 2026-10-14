@@ -61,6 +61,12 @@ ctx.WithProjections(
 Call `InitializeSqlLibraryAsync` before the first command. It creates the
 event-store, outbox, projection, and inbox tables.
 
+The SQL excerpt publishes on the in-process transport.
+A RabbitMQ host calls `AddRabbitMqTransport`.
+An Azure Service Bus host calls `AddAzureServiceBusTransport`.
+`AddMessageTransportOutboxPublisher` uses the registered `IMessageTransport`.
+See `docs/MESSAGE_TRANSPORTS.md` and `docs/OUTBOX_PATTERN.md`.
+
 Align `RequireTenantId` on `AddLawnDart` and `SqlServerEventStoreOptions`.
 
 See `docs/BACKEND_SELECTION.md`.

@@ -18,7 +18,8 @@ services.AddReactor<PaymentReactor, SeatReservationConfirmed>();
 services.AddTaskProcessor<OverdueRegistrationProcessor>();
 ```
 
-`AddInMemoryMessaging()` calls `AddMessaging()` for you.
+`AddInMemoryMessaging()`, `AddRabbitMqTransport`, and
+`AddAzureServiceBusTransport` each call `AddMessaging()` for you.
 
 | Method | Pattern |
 |---|---|
@@ -61,7 +62,9 @@ The `LawnDart.Messaging` meter carries:
 
 Retry and dead-letter measurements carry `messaging.message_type` and
 `messaging.subscription_name`. Publish and consume spans use the same activity
-source name.
+source name. Every LawnDart meter and activity source is on
+[Telemetry](../TELEMETRY.md). Transport settings are on
+[Message transports](../MESSAGE_TRANSPORTS.md).
 
 ## Related
 

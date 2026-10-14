@@ -16,8 +16,10 @@ public static class MessagingExtensions
 {
     /// <summary>
     /// Registers messaging options, <see cref="MessageTransportStartupCheck"/>, and the transport settings.
-    /// Call this once per application, then call a transport-specific extension
-    /// (e.g. <c>AddInMemoryMessaging()</c>).
+    /// Call this once per application, then call a transport registration:
+    /// <c>AddInMemoryMessaging()</c>, <c>AddRabbitMqTransport</c>, or
+    /// <c>AddAzureServiceBusTransport</c>.
+    /// Those transport methods call this method themselves.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="configure">Optional options configurator.</param>
