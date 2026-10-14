@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
+using RabbitMQ.Client.Exceptions;
 using LawnDart.Messaging.Telemetry;
 
 namespace LawnDart.Messaging.RabbitMQ;
@@ -12,9 +13,10 @@ namespace LawnDart.Messaging.RabbitMQ;
 /// <summary>
 /// RabbitMQ <see cref="IMessageTransport"/>.
 /// The exchange and the routing key are the declared message type name.
-/// A failed handler is retried until <see cref="MessageTransportOptions.MaxDeliveryAttempts"/>.
+/// Publish declares that exchange. A subscription declares its own queue.
+/// A failed handler waits on a retry queue, then returns, until <see cref="MessageTransportOptions.MaxDeliveryAttempts"/>.
 /// When dead-letter handling is on, the last failure is nacked to the dead-letter exchange.
-/// When it is off, the last failure is nacked and the message stays on the queue.
+/// When it is off, the message waits and returns to the same queue.
 /// </summary>
 public sealed class RabbitMqMessageTransport : IMessageTransport, IDisposable, IAsyncDisposable
 {
@@ -83,13 +85,13 @@ public sealed class RabbitMqMessageTransport : IMessageTransport, IDisposable, I
         cancellationToken.ThrowIfCancellationRequested();
 
         using var publish = MessagingTelemetry.StartPublish(declaredName);
-        publish?.SetTag("messaging.rabbitmq.queue", RabbitMqNames.Queue(declaredName, _options.SubscriptionName));
         publish?.SetTag("messaging.rabbitmq.exchange", RabbitMqNames.Exchange(declaredName));
+        publish?.SetTag("messaging.rabbitmq.routing_key", RabbitMqNames.RoutingKey(declaredName));
         var started = TimeProvider.System.GetTimestamp();
 
         try
         {
-            await _connector.DeclareAsync(declaredName, _options.SubscriptionName, cancellationToken).ConfigureAwait(false);
+            await _connector.DeclareExchangeAsync(declaredName, cancellationToken).ConfigureAwait(false);
 
             var headers = new Dictionary<string, string>(StringComparer.Ordinal);
             MessageEnvelopeHeaders.Write(context, declaredName, headers);
@@ -113,13 +115,27 @@ public sealed class RabbitMqMessageTransport : IMessageTransport, IDisposable, I
             await _publishLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                await channel.BasicPublishAsync(
-                    RabbitMqNames.Exchange(declaredName),
-                    RabbitMqNames.RoutingKey(declaredName),
-                    mandatory: true,
-                    properties,
-                    body,
-                    cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    await channel.BasicPublishAsync(
+                        RabbitMqNames.Exchange(declaredName),
+                        RabbitMqNames.RoutingKey(declaredName),
+                        mandatory: true,
+                        properties,
+                        body,
+                        cancellationToken).ConfigureAwait(false);
+                }
+                catch (PublishException ex) when (IsUnroutable(ex) &&
+                    _options.UnroutablePublish == RabbitMqUnroutablePublish.Warn)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "No queue is bound for {MessageType}. The message was not queued. Exchange {Exchange}, routing key {RoutingKey}, message {MessageId}.",
+                        declaredName,
+                        RabbitMqNames.Exchange(declaredName),
+                        RabbitMqNames.RoutingKey(declaredName),
+                        context.MessageId);
+                }
             }
             finally
             {
@@ -155,9 +171,11 @@ public sealed class RabbitMqMessageTransport : IMessageTransport, IDisposable, I
         lock (subscription.Handlers)
             subscription.Handlers.Add(registration);
 
-        var starting = EnsureConsumerAsync<TMessage>(subscription);
+        // The queue is bound before this method returns a task, so the next publish can route.
+        EnsureConsumerAsync<TMessage>(subscription).GetAwaiter().GetResult();
+
         if (!cancellationToken.CanBeCanceled)
-            return starting;
+            return Task.CompletedTask;
 
         var unregister = cancellationToken.Register(() =>
         {
@@ -167,7 +185,22 @@ public sealed class RabbitMqMessageTransport : IMessageTransport, IDisposable, I
             _ = StopIfIdleAsync(subscription);
         });
 
-        return WaitUntilCancelledAsync(starting, registration, unregister);
+        return WaitUntilCancelledAsync(Task.CompletedTask, registration, unregister);
+    }
+
+    /// <summary>
+    /// Drops the handlers for <typeparamref name="TMessage"/> and leaves the consumer running.
+    /// A delivery then waits on the retry queue instead of calling a handler.
+    /// </summary>
+    /// <typeparam name="TMessage">The message type whose handlers to drop.</typeparam>
+    internal void RemoveHandlers<TMessage>()
+        where TMessage : class
+    {
+        if (!_subscriptions.TryGetValue(typeof(TMessage), out var subscription))
+            return;
+
+        lock (subscription.Handlers)
+            subscription.Handlers.Clear();
     }
 
     /// <summary>Closes consumers and the connection this transport opened.</summary>
@@ -239,7 +272,7 @@ public sealed class RabbitMqMessageTransport : IMessageTransport, IDisposable, I
     private async Task StartConsumerAsync<TMessage>(Subscription subscription)
         where TMessage : class
     {
-        await _connector.DeclareAsync(subscription.DeclaredName, _options.SubscriptionName, CancellationToken.None)
+        await _connector.DeclareSubscriptionAsync(subscription.DeclaredName, _options.SubscriptionName, CancellationToken.None)
             .ConfigureAwait(false);
 
         var concurrency = checked((ushort)_options.Concurrency);
@@ -283,14 +316,15 @@ public sealed class RabbitMqMessageTransport : IMessageTransport, IDisposable, I
     {
         var body = delivery.Body.ToArray();
         var rawHeaders = RabbitMqHeaders.Copy(delivery.BasicProperties.Headers);
-        var attempt = RabbitMqHeaders.ReadDeliveryCount(rawHeaders) + 1;
+        var completed = RabbitMqHeaders.CompletedAttempts(rawHeaders);
+        var attempt = completed + 1;
         var envelope = MessageEnvelopeHeaders.Read(
             RabbitMqHeaders.ToEnvelope(rawHeaders),
             TransportTypeName);
 
         using var consume = MessagingTelemetry.StartConsume(subscription.DeclaredName, envelope.Context.MessageId);
         consume?.SetTag("messaging.rabbitmq.queue", subscription.Queue);
-        consume?.SetTag("messaging.rabbitmq.redelivered", delivery.Redelivered);
+        consume?.SetTag("messaging.rabbitmq.redelivered", delivery.Redelivered || completed > 0);
         var started = TimeProvider.System.GetTimestamp();
         var settled = false;
         var acquired = false;
@@ -306,7 +340,18 @@ public sealed class RabbitMqMessageTransport : IMessageTransport, IDisposable, I
 
             if (handlers.Count == 0)
             {
-                await NackAsync(channel, delivery.DeliveryTag, requeue: true).ConfigureAwait(false);
+                _logger.LogDebug(
+                    "No handler is registered for {MessageType} on {Queue}. The message returns after {Delay}.",
+                    subscription.DeclaredName,
+                    subscription.Queue,
+                    _options.RetryDelay);
+                await DelayRedeliveryAsync(
+                    channel,
+                    delivery.DeliveryTag,
+                    subscription,
+                    body,
+                    rawHeaders,
+                    completedAttempts: Math.Max(0, attempt - 1)).ConfigureAwait(false);
                 settled = true;
                 return;
             }
@@ -324,6 +369,8 @@ public sealed class RabbitMqMessageTransport : IMessageTransport, IDisposable, I
                     subscription,
                     envelope.Context,
                     body,
+                    rawHeaders,
+                    body,
                     attempt,
                     ex,
                     consume).ConfigureAwait(false);
@@ -338,6 +385,8 @@ public sealed class RabbitMqMessageTransport : IMessageTransport, IDisposable, I
                     delivery.DeliveryTag,
                     subscription,
                     envelope.Context,
+                    body,
+                    rawHeaders,
                     body,
                     attempt,
                     new InvalidOperationException("The message body was empty."),
@@ -382,6 +431,8 @@ public sealed class RabbitMqMessageTransport : IMessageTransport, IDisposable, I
                     subscription,
                     envelope.Context,
                     message,
+                    rawHeaders,
+                    body,
                     attempt,
                     result.Error!,
                     consume).ConfigureAwait(false);
@@ -403,7 +454,15 @@ public sealed class RabbitMqMessageTransport : IMessageTransport, IDisposable, I
                 subscription.DeclaredName,
                 subscription.Queue);
             if (!settled)
-                await NackAsync(channel, delivery.DeliveryTag, requeue: true).ConfigureAwait(false);
+            {
+                await DelayRedeliveryAsync(
+                    channel,
+                    delivery.DeliveryTag,
+                    subscription,
+                    body,
+                    rawHeaders,
+                    completedAttempts: attempt).ConfigureAwait(false);
+            }
         }
         finally
         {
@@ -418,48 +477,100 @@ public sealed class RabbitMqMessageTransport : IMessageTransport, IDisposable, I
         Subscription subscription,
         MessageContext context,
         object message,
+        IReadOnlyDictionary<string, object?>? headers,
+        ReadOnlyMemory<byte> body,
         int attempt,
         Exception error,
         Activity? consume)
     {
         consume?.SetStatus(ActivityStatusCode.Error, error.Message);
         var willRetry = attempt < _options.MaxDeliveryAttempts;
-        if (willRetry)
+        if (willRetry || !_options.DeadLetterFailedMessages)
         {
-            MessagingTelemetry.RecordDeliveryRetry(
-                subscription.DeclaredName,
-                _options.SubscriptionName,
-                attempt,
-                context.MessageId,
-                _logger);
-            await NackAsync(channel, deliveryTag, requeue: true).ConfigureAwait(false);
+            if (willRetry)
+            {
+                MessagingTelemetry.RecordDeliveryRetry(
+                    subscription.DeclaredName,
+                    _options.SubscriptionName,
+                    attempt,
+                    context.MessageId,
+                    _logger);
+            }
+
+            await DelayRedeliveryAsync(
+                channel,
+                deliveryTag,
+                subscription,
+                body,
+                headers,
+                completedAttempts: attempt).ConfigureAwait(false);
             return;
         }
 
-        if (_options.DeadLetterFailedMessages)
-        {
-            var errorType = error.GetType().Name;
-            var errorText = $"{errorType}: {error.Message}";
-            MessagingTelemetry.RecordDeadLettered(
-                subscription.DeclaredName,
-                _options.SubscriptionName,
-                attempt,
-                errorType,
-                context.MessageId,
-                errorText,
-                _logger);
-            _deadLetters.Enqueue(new DeadLetteredMessage(
-                subscription.DeclaredName,
-                message,
-                context,
-                attempt,
-                errorText));
-            await NackAsync(channel, deliveryTag, requeue: false).ConfigureAwait(false);
-            return;
-        }
-
-        await NackAsync(channel, deliveryTag, requeue: true).ConfigureAwait(false);
+        var errorType = error.GetType().Name;
+        var errorText = $"{errorType}: {error.Message}";
+        MessagingTelemetry.RecordDeadLettered(
+            subscription.DeclaredName,
+            _options.SubscriptionName,
+            attempt,
+            errorType,
+            context.MessageId,
+            errorText,
+            _logger);
+        _deadLetters.Enqueue(new DeadLetteredMessage(
+            subscription.DeclaredName,
+            message,
+            context,
+            attempt,
+            errorText));
+        await NackAsync(channel, deliveryTag, requeue: false).ConfigureAwait(false);
     }
+
+    private async Task DelayRedeliveryAsync(
+        IChannel consumerChannel,
+        ulong deliveryTag,
+        Subscription subscription,
+        ReadOnlyMemory<byte> body,
+        IReadOnlyDictionary<string, object?>? headers,
+        int completedAttempts)
+    {
+        var table = new Dictionary<string, object?>(StringComparer.Ordinal);
+        if (headers is not null)
+        {
+            foreach (var pair in headers)
+                table[pair.Key] = pair.Value;
+        }
+
+        table[RabbitMqHeaders.Attempt] = completedAttempts;
+        var properties = new BasicProperties
+        {
+            ContentType = "application/json",
+            DeliveryMode = DeliveryModes.Persistent,
+            Headers = table,
+        };
+
+        var publishChannel = await PublishChannelAsync(CancellationToken.None).ConfigureAwait(false);
+        await _publishLock.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+        try
+        {
+            await publishChannel.BasicPublishAsync(
+                exchange: string.Empty,
+                routingKey: RabbitMqNames.RetryQueue(subscription.DeclaredName, _options.SubscriptionName),
+                mandatory: true,
+                basicProperties: properties,
+                body: body,
+                cancellationToken: CancellationToken.None).ConfigureAwait(false);
+        }
+        finally
+        {
+            _publishLock.Release();
+        }
+
+        await consumerChannel.BasicAckAsync(deliveryTag, multiple: false, CancellationToken.None).ConfigureAwait(false);
+    }
+
+    private static bool IsUnroutable(PublishException exception)
+        => exception.IsReturn || exception is PublishReturnException;
 
     private async Task NackAsync(IChannel channel, ulong deliveryTag, bool requeue)
     {

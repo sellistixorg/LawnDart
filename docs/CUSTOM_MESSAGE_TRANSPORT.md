@@ -94,8 +94,7 @@ per delivery, then dead-letters when the broker's count reaches
 redeliver multiplies the attempts.
 
 `LawnDart.Messaging.RabbitMQ` follows that rule. Each delivery calls
-`TryOnceAsync`. The broker redelivers until `MaxDeliveryAttempts`. With
-dead-letter handling off, the message is nacked and stays on the queue.
+`TryOnceAsync`. A failed delivery waits on a retry queue, then returns.
 The package page is [RabbitMQ](packages/messaging-rabbitmq.md).
 
 `MemoryDeadLetterQueue` is an in-process queue. A broker transport can park

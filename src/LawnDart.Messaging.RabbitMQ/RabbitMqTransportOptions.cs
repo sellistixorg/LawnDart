@@ -28,22 +28,40 @@ public sealed class RabbitMqTransportOptions : MessageTransportOptions
     public string VirtualHost { get; set; } = "/";
 
     /// <summary>
+    /// How long a failed delivery waits before it returns to the subscription queue.
+    /// The wait is the TTL on that subscription's retry queue. Defaults to 5 seconds.
+    /// </summary>
+    public TimeSpan RetryDelay { get; set; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// What to do when a publish is mandatory and no queue is bound.
+    /// Defaults to <see cref="RabbitMqUnroutablePublish.Warn"/>.
+    /// </summary>
+    public RabbitMqUnroutablePublish UnroutablePublish { get; set; } = RabbitMqUnroutablePublish.Warn;
+
+    /// <summary>
     /// Checks the shared settings and the RabbitMQ connection settings.
     /// </summary>
     public override void EnsureValid()
     {
-        base.EnsureValid();
-
-        if (Concurrency > ushort.MaxValue)
+        if (Concurrency < 1 || Concurrency > ushort.MaxValue)
         {
             throw new InvalidOperationException(
-                "RabbitMqTransportOptions.Concurrency must be 65535 or less.");
+                "RabbitMqTransportOptions.Concurrency must be from 1 to 65535.");
         }
+
+        base.EnsureValid();
 
         if (Prefetch > ushort.MaxValue)
         {
             throw new InvalidOperationException(
                 "RabbitMqTransportOptions.Prefetch must be 65535 or less.");
+        }
+
+        if (RetryDelay <= TimeSpan.Zero || RetryDelay.TotalMilliseconds > int.MaxValue)
+        {
+            throw new InvalidOperationException(
+                "RabbitMqTransportOptions.RetryDelay must be greater than zero and at most 24.8 days.");
         }
 
         if (!string.IsNullOrWhiteSpace(Uri))
@@ -82,4 +100,14 @@ public sealed class RabbitMqTransportOptions : MessageTransportOptions
                 "RabbitMqTransportOptions.VirtualHost is required when Uri is not set.");
         }
     }
+}
+
+/// <summary>What a mandatory publish does when the broker cannot route the message.</summary>
+public enum RabbitMqUnroutablePublish
+{
+    /// <summary>Log a warning and return. The broker did not queue the message.</summary>
+    Warn = 0,
+
+    /// <summary>Throw when the broker returns the message.</summary>
+    Throw = 1,
 }

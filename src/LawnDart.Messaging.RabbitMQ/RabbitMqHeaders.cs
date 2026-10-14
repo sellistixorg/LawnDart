@@ -10,6 +10,9 @@ internal static class RabbitMqHeaders
 {
     public const string DeliveryCount = "x-delivery-count";
 
+    /// <summary>Completed handler attempts carried across a retry delay. The value is <c>x-lawndart-attempt</c>.</summary>
+    public const string Attempt = "x-lawndart-attempt";
+
     public static Dictionary<string, string> ToEnvelope(IReadOnlyDictionary<string, object?>? headers)
     {
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -36,6 +39,23 @@ internal static class RabbitMqHeaders
         if (headers is null || !headers.TryGetValue(DeliveryCount, out var value) || value is null)
             return 0;
 
+        return ToInt(DeliveryCount, value);
+    }
+
+    /// <summary>
+    /// How many handler attempts have already finished.
+    /// Prefers <see cref="Attempt"/> when this transport wrote it. Otherwise uses <see cref="DeliveryCount"/>.
+    /// </summary>
+    public static int CompletedAttempts(IReadOnlyDictionary<string, object?>? headers)
+    {
+        if (headers is not null && headers.TryGetValue(Attempt, out var value) && value is not null)
+            return ToInt(Attempt, value);
+
+        return ReadDeliveryCount(headers);
+    }
+
+    private static int ToInt(string name, object value)
+    {
         if (value is byte[] bytes &&
             int.TryParse(System.Text.Encoding.UTF8.GetString(bytes), NumberStyles.Integer, CultureInfo.InvariantCulture, out var fromBytes))
         {
@@ -49,7 +69,7 @@ internal static class RabbitMqHeaders
         catch (Exception ex) when (ex is InvalidCastException or FormatException or OverflowException)
         {
             throw new InvalidOperationException(
-                $"Header '{DeliveryCount}' could not be read. The runtime type was '{value.GetType().FullName}'.",
+                $"Header '{name}' could not be read. The runtime type was '{value.GetType().FullName}'.",
                 ex);
         }
     }

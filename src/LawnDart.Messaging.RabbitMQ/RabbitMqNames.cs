@@ -53,4 +53,26 @@ public static class RabbitMqNames
     /// <param name="subscriptionName">Consumer name from <see cref="MessageTransportOptions.SubscriptionName"/>.</param>
     public static string DeadLetterQueue(string messageType, string subscriptionName)
         => messageType + "." + subscriptionName + ".dlq";
+
+    /// <summary>
+    /// Exchange that returns a delayed message to one subscription queue.
+    /// The value is <c>{messageType}.{subscriptionName}.delay</c>.
+    /// </summary>
+    /// <param name="messageType">Declared message type name.</param>
+    /// <param name="subscriptionName">Consumer name from <see cref="MessageTransportOptions.SubscriptionName"/>.</param>
+    public static string DelayExchange(string messageType, string subscriptionName)
+        => messageType + "." + subscriptionName + ".delay";
+
+    /// <summary>
+    /// Queue that holds a delivery for <see cref="RabbitMqTransportOptions.RetryDelay"/>
+    /// and then dead-letters it back to the subscription queue.
+    /// The value is <c>{messageType}.{subscriptionName}.retry</c>.
+    /// </summary>
+    /// <param name="messageType">Declared message type name.</param>
+    /// <param name="subscriptionName">Consumer name from <see cref="MessageTransportOptions.SubscriptionName"/>.</param>
+    public static string RetryQueue(string messageType, string subscriptionName)
+        => messageType + "." + subscriptionName + ".retry";
+
+    /// <summary>Routing key from the delay exchange back to the subscription queue. The value is <c>return</c>.</summary>
+    public const string DelayRoutingKey = "return";
 }

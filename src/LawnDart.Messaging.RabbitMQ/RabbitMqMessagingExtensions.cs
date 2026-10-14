@@ -28,6 +28,15 @@ public static class RabbitMqMessagingExtensions
 
         services.AddMessaging();
         services.AddOptions<RabbitMqTransportOptions>();
+        if (!services.Any(d => d.ServiceType == typeof(ApplyCommonMessageTransportOptions)))
+        {
+            services.AddSingleton<ApplyCommonMessageTransportOptions>();
+            services.AddSingleton<IConfigureOptions<RabbitMqTransportOptions>>(sp =>
+                sp.GetRequiredService<ApplyCommonMessageTransportOptions>());
+            services.AddSingleton<IPostConfigureOptions<RabbitMqTransportOptions>>(sp =>
+                sp.GetRequiredService<ApplyCommonMessageTransportOptions>());
+        }
+
         if (configure is not null)
             services.Configure(configure);
 

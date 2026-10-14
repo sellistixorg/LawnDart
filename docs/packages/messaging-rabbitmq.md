@@ -31,38 +31,50 @@ Set `Uri`, or set `HostName`, `Port`, `UserName`, `Password`, and
 
 ## Names
 
-The exchange and the routing key are the `[EventTypeName]` token.
-The queue is `{token}.{subscription}`. The dead-letter exchange is
-`{token}.dlx`. Its routing key and the dead-letter queue are
-`{token}.{subscription}` and `{token}.{subscription}.dlq`.
-Queues are quorum queues. Messages are persistent. The broker delivery
-limit is off, so a message stays on the queue when dead-letter handling
-is off. Turn dead-letter handling on to park it.
+Publish declares the exchange. The exchange and the routing key are the
+`[EventTypeName]` token. A publish does not declare a queue.
 
-`Prefetch` is passed to BasicQos. `Concurrency` is how many handlers may
-run at once.
+The subscriber declares the queue `{token}.{subscription}`, the retry queue
+`{token}.{subscription}.retry`, and the dead-letter queue
+`{token}.{subscription}.dlq`. The dead-letter exchange is `{token}.dlx`.
+`SetupTopology` true runs the same declarations at startup for every event
+type recorded by `AddReactor` and `AddEventProcessor`.
+
+Queues are quorum queues. Messages are persistent.
+
+`Prefetch` is passed to BasicQos. `Concurrency` must be from 1 to 65535.
+It is how many handlers may run at once.
+
+`Configure<MessageTransportOptions>` is applied to `RabbitMqTransportOptions`.
+A setting on the RabbitMQ configure delegate wins when both set the same field.
 
 ## Delivery
 
 A handler that throws is tried again until `MaxDeliveryAttempts` (default 5).
-The broker redelivers the same message. With `DeadLetterFailedMessages` left
-false, the attempt past that limit is nacked and the message stays on the
-queue. Set the flag true to nack it onto the dead-letter exchange. A warning
-is written, and `messaging.deadlettered` increments.
+Between tries the message sits on the retry queue for `RetryDelay`
+(default 5 seconds), then returns to the same subscription queue.
+With `DeadLetterFailedMessages` left false, the attempt past that limit
+waits the same way and stays on the queue. Set the flag true to nack it
+onto the dead-letter exchange. A warning is written, and
+`messaging.deadlettered` increments.
+
+A delivery that arrives with no handler waits on the retry queue too.
+It does not spin on the subscription queue.
+
+Several handlers on one subscription share that queue. If one throws, the
+message is delayed and every handler runs again.
 
 The cancellation token passed to `SubscribeAsync` is the token the handler
 receives. Cancelling it stops that subscription. The message is nacked back
 onto the queue.
 
+A mandatory publish with no queue bound logs a warning and returns.
+Set `UnroutablePublish` to `Throw` when the caller should see that failure.
+
 User, tenant, and custom headers the publisher set are the values the
 handler sees. Publish and consume durations are recorded on the
 `LawnDart.Messaging` meter. Consume spans carry `messaging.rabbitmq.queue`
 and `messaging.rabbitmq.redelivered`.
-
-`SetupTopology` true runs `RabbitMqTopologySetup` at startup for every event
-type recorded by `AddReactor` and `AddEventProcessor`. Publish and subscribe
-declare the same exchanges, queues, and bindings, so a message waits on the
-queue when the consumer is not running yet.
 
 ## Related
 

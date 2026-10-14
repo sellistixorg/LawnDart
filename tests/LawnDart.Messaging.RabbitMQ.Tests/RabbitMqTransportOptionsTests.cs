@@ -11,6 +11,8 @@ public class RabbitMqTransportOptionsTests
         Assert.Equal("order.placed.dlx", RabbitMqNames.DeadLetterExchange("order.placed"));
         Assert.Equal("order.placed.billing", RabbitMqNames.DeadLetterRoutingKey("order.placed", "billing"));
         Assert.Equal("order.placed.billing.dlq", RabbitMqNames.DeadLetterQueue("order.placed", "billing"));
+        Assert.Equal("order.placed.billing.delay", RabbitMqNames.DelayExchange("order.placed", "billing"));
+        Assert.Equal("order.placed.billing.retry", RabbitMqNames.RetryQueue("order.placed", "billing"));
     }
 
     [Fact]
@@ -34,6 +36,26 @@ public class RabbitMqTransportOptionsTests
         var options = new RabbitMqTransportOptions { Prefetch = ushort.MaxValue + 1 };
         var ex = Assert.Throws<InvalidOperationException>(options.EnsureValid);
         Assert.Contains("Prefetch", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Concurrency_outside_the_ushort_range_is_rejected()
+    {
+        var options = new RabbitMqTransportOptions { Concurrency = ushort.MaxValue + 1 };
+        var ex = Assert.Throws<InvalidOperationException>(options.EnsureValid);
+        Assert.Contains("Concurrency", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("1 to 65535", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Retry_delay_defaults_to_five_seconds_and_must_be_positive()
+    {
+        Assert.Equal(TimeSpan.FromSeconds(5), new RabbitMqTransportOptions().RetryDelay);
+        Assert.Equal(RabbitMqUnroutablePublish.Warn, new RabbitMqTransportOptions().UnroutablePublish);
+
+        var options = new RabbitMqTransportOptions { RetryDelay = TimeSpan.Zero };
+        var ex = Assert.Throws<InvalidOperationException>(options.EnsureValid);
+        Assert.Contains("RetryDelay", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]

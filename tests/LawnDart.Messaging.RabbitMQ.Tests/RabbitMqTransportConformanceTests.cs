@@ -40,7 +40,11 @@ internal sealed class RabbitMqTransportFixture : TransportConformanceFixture
         IMessagePreHandler? preHandler,
         ILogger<RabbitMqMessageTransport>? logger = null)
     {
-        var options = new RabbitMqTransportOptions { Uri = amqpUri };
+        var options = new RabbitMqTransportOptions
+        {
+            Uri = amqpUri,
+            RetryDelay = TimeSpan.FromMilliseconds(200),
+        };
         var subscription = options.SubscriptionName;
         configure?.Invoke(options);
         if (options.SubscriptionName == subscription)

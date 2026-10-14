@@ -43,7 +43,7 @@ public sealed class RabbitMqTopologySetup : IMessageTopologySetup
         {
             cancellationToken.ThrowIfCancellationRequested();
             var messageType = MessageTypeNames.Require(subscription.MessageType);
-            await _connector.DeclareAsync(messageType, _options.SubscriptionName, cancellationToken)
+            await _connector.DeclareSubscriptionAsync(messageType, _options.SubscriptionName, cancellationToken)
                 .ConfigureAwait(false);
 
             var queue = RabbitMqNames.Queue(messageType, _options.SubscriptionName);
