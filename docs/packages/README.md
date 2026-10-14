@@ -55,9 +55,11 @@ Swap `.UseInMemory()` for `.UseSqlServer(...)` and
 dev. The bounded-context name stays the same. That swap is verified for
 command dispatch, persist, reload, project, and read-back. Outbox and
 subscriptions have their own tests. Inbox dedup swaps with `AddSqlInboxStore`
-and `InitializeSqlInboxStoreAsync`. That swap leaves the transport in-process.
+and `InitializeSqlInboxStoreAsync`. The transport you registered stays.
+`AddInMemoryMessaging` is the in-process transport.
 `AddRabbitMqTransport` is the RabbitMQ transport.
 `AddAzureServiceBusTransport` is the Azure Service Bus transport. See
+[Message transports](../MESSAGE_TRANSPORTS.md) and
 [BACKEND_SELECTION.md](../BACKEND_SELECTION.md).
 
 Log frames store a `CodecId` (`byte`), not a MIME string. SQL Server uses

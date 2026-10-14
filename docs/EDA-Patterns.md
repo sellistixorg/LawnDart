@@ -1,7 +1,10 @@
 # EDA patterns
 
-Event-driven choreography uses `LawnDart.Messaging` plus
-`LawnDart.Messaging.InMemory` for zero-infra hops.
+Event-driven choreography uses `LawnDart.Messaging` plus a transport.
+`LawnDart.Messaging.InMemory` delivers in-process.
+`LawnDart.Messaging.RabbitMQ` delivers through RabbitMQ.
+`LawnDart.Messaging.AzureServiceBus` delivers through Azure Service Bus.
+See [Message transports](MESSAGE_TRANSPORTS.md).
 
 ## Reaction (Event → Command)
 
@@ -47,7 +50,9 @@ demonstrates this without a broker.
 ## Outbox
 
 Use SQL Server plus `EnableOutbox` when the consumer is another process.
-See [OUTBOX_PATTERN.md](OUTBOX_PATTERN.md). InMemory publishes in-process.
+`AddMessageTransportOutboxPublisher` hands each row to the registered
+transport: in-process, RabbitMQ, or Azure Service Bus.
+See [OUTBOX_PATTERN.md](OUTBOX_PATTERN.md).
 
 ## Inbox
 

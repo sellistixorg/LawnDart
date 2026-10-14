@@ -33,3 +33,5 @@ Guide: [Custom message transport](../CUSTOM_MESSAGE_TRANSPORT.md).
 - [Package map](README.md)
 - [Messaging](messaging.md)
 - [InMemory messaging](messaging-inmemory.md)
+- [RabbitMQ](messaging-rabbitmq.md)
+- [Azure Service Bus](messaging-azureservicebus.md)

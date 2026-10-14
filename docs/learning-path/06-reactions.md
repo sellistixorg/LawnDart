@@ -2,9 +2,11 @@
 
 **Previous:** [DCB](05-dcb-patterns.md) · **Next:** [Testing EDA](07-testing-eda.md)
 
-`IReactor<TEvent>` turns an event into commands. Pair it with
-`AddInMemoryMessaging()` when you want Academy-style choreography without a
-broker.
+`IReactor<TEvent>` turns an event into commands. Pair it with a transport.
+`AddInMemoryMessaging()` is the in-process transport.
+`AddRabbitMqTransport` is the RabbitMQ transport.
+`AddAzureServiceBusTransport` is the Azure Service Bus transport.
+See [Message transports](../MESSAGE_TRANSPORTS.md).
 
 ```
 SeatReservationConfirmed → PaymentReactor → ProcessPaymentCommand
@@ -36,6 +38,9 @@ public sealed class PaymentReactor : IReactor<SeatReservationConfirmed>
 services.AddInMemoryMessaging();
 services.AddReactor<PaymentReactor, SeatReservationConfirmed>();
 ```
+
+A RabbitMQ host calls `AddRabbitMqTransport` with the same `AddReactor`
+line. An Azure Service Bus host calls `AddAzureServiceBusTransport`.
 
 `AddReactor` registers a hosted service that pulls from `IMessageTransport`.
 The event type must declare `[EventTypeName]`. Host startup fails when that

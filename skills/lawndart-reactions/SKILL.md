@@ -1,16 +1,18 @@
 ---
 name: lawndart-reactions
-description: Author LawnDart reactions. IReactor plus AddInMemoryMessaging and AddReactor. Use when an event should emit follow-on commands.
+description: Author LawnDart reactions. IReactor plus AddReactor on the in-process, RabbitMQ, or Azure Service Bus transport. Use when an event should emit follow-on commands.
 ---
 
 # Reactions
 
 `IReactor<TEvent>` turns an event into commands (broker transport).
 `IDcbReactor` is the in-process tag/metadata twin. Register the broker
-path with `AddInMemoryMessaging()` and `AddReactor<TReactor, TEvent>()`.
+path with `AddReactor<TReactor, TEvent>()` and a transport:
+`AddInMemoryMessaging()`, `AddRabbitMqTransport`, or
+`AddAzureServiceBusTransport`.
 `AddSqlInboxStore(connectionString)` replaces the in-memory inbox when
 dedup must survive a restart. Call `InitializeSqlInboxStoreAsync` at startup.
-This page registers the in-process transport. A RabbitMQ host calls
+The excerpt below uses the in-process transport. A RabbitMQ host calls
 `AddRabbitMqTransport` from `LawnDart.Messaging.RabbitMQ`. An Azure Service Bus
 host calls `AddAzureServiceBusTransport` from `LawnDart.Messaging.AzureServiceBus`.
 The event passed to `AddReactor` must declare `[EventTypeName]`.

@@ -122,4 +122,6 @@ dotnet run --project demos/LawnDart.Demo.Academy.WebApi
 ## Next
 
 - [Learning path](learning-path/README.md)
+- [Message transports](MESSAGE_TRANSPORTS.md)
+- [Telemetry](TELEMETRY.md)
 - [Eventhesis adapter](EVENTHESIS.md)

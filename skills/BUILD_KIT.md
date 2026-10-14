@@ -51,7 +51,7 @@ doc and **zero skill changes**.
    3. [`lawndart-bounded-context`](lawndart-bounded-context/SKILL.md): named contexts, handlers
    4. [`lawndart-domain-model`](lawndart-domain-model/SKILL.md): commands, events, aggregates, DCB
    5. [`lawndart-testing`](lawndart-testing/SKILL.md): `AggregateSpec` / `DcbSpec`
-   6. [`lawndart-reactions`](lawndart-reactions/SKILL.md): `IReactor` / `AddInMemoryMessaging`
+   6. [`lawndart-reactions`](lawndart-reactions/SKILL.md): `IReactor`, `AddInMemoryMessaging`, `AddRabbitMqTransport`, `AddAzureServiceBusTransport`
    7. [`lawndart-lightweight-projections`](lawndart-lightweight-projections/SKILL.md): host the read model
    8. [`lawndart-projection-authoring`](lawndart-projection-authoring/SKILL.md): projection classes
    9. [`lawndart-aspnet-hosting`](lawndart-aspnet-hosting/SKILL.md): HTTP commands and auth

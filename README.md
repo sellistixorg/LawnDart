@@ -148,6 +148,41 @@ Backend choice: [docs/BACKEND_SELECTION.md](docs/BACKEND_SELECTION.md).
 
 Details: [Package map](docs/packages/README.md).
 
+## Message transports
+
+Three transports. The in-process transport delivers on the publish call.
+RabbitMQ and Azure Service Bus deliver to another process. Reactors and
+processors live in `LawnDart.Messaging` and subscribe through the transport
+you register. Each transport package brings `LawnDart.Messaging`.
+
+Packages are on nuget.org as a prerelease. Add the package for the
+transport you register.
+
+```bash
+dotnet add package LawnDart.Messaging.InMemory --prerelease
+dotnet add package LawnDart.Messaging.RabbitMQ --prerelease
+dotnet add package LawnDart.Messaging.AzureServiceBus --prerelease
+```
+
+```csharp
+services.AddInMemoryMessaging();
+
+services.AddRabbitMqTransport(options =>
+{
+    options.Uri = "amqp://rabbitmq:rabbitmq@localhost:5672/";
+});
+
+services.AddAzureServiceBusTransport(options =>
+{
+    options.ConnectionString = connectionString;
+});
+```
+
+Retry delay, attempt counting, the dead-letter option, the Service Bus
+`lawndart_target` property, `BrokerMaxDeliveryCount`, and RabbitMQ
+`UnroutablePublish`: [Message transports](docs/MESSAGE_TRANSPORTS.md).
+Meters and activity sources: [Telemetry](docs/TELEMETRY.md).
+
 ## Documentation
 
 - [Documentation site](https://sellistixorg.github.io/LawnDart/)
@@ -158,6 +193,8 @@ Details: [Package map](docs/packages/README.md).
 - [Learning path](docs/learning-path/README.md)
 - [CES matrix](docs/CES_MATRIX.md)
 - [Glossary](docs/GLOSSARY.md)
+- [Message transports](docs/MESSAGE_TRANSPORTS.md)
+- [Telemetry](docs/TELEMETRY.md)
 
 ## Status
 

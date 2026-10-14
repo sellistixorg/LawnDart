@@ -9,5 +9,6 @@ same table.
 - `SqlServerInboxStore` (`IInboxStore`)
 - `AddSqlInboxStore` and `InitializeSqlInboxStoreAsync`
 
-The transport stays `LawnDart.Messaging.InMemory` unless you register your own
-`IMessageTransport`.
+Pair it with `LawnDart.Messaging.InMemory`, `LawnDart.Messaging.RabbitMQ`,
+or `LawnDart.Messaging.AzureServiceBus`. This package replaces the inbox.
+The transport you registered stays.

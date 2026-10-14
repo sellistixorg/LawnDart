@@ -34,10 +34,14 @@
   href: LIGHTWEIGHT_PROJECTIONS.md
 - name: EDA
   href: EDA-Patterns.md
+- name: Message transports
+  href: MESSAGE_TRANSPORTS.md
 - name: Custom message transport
   href: CUSTOM_MESSAGE_TRANSPORT.md
 - name: Outbox
   href: OUTBOX_PATTERN.md
+- name: Telemetry
+  href: TELEMETRY.md
 - name: HTTP commands
   href: HTTP_COMMANDS.md
 - name: Authorization

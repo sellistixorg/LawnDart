@@ -10,8 +10,9 @@ public static class SqlServerInboxStoreExtensions
 {
     /// <summary>
     /// Registers <see cref="SqlServerInboxStore"/> as <see cref="IInboxStore"/>.
-    /// Replaces an inbox registered by <c>AddInMemoryMessaging</c>, before or after that call.
-    /// The in-memory transport is left in place.
+    /// Replaces an inbox already registered by a transport package, before or after that call.
+    /// The registered <see cref="IMessageTransport"/> stays in place, including the
+    /// in-process, RabbitMQ, and Azure Service Bus transports.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="connectionString">SQL Server connection string.</param>
