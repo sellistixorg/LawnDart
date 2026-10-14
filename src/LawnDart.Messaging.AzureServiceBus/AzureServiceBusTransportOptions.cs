@@ -48,6 +48,18 @@ public sealed class AzureServiceBusTransportOptions : MessageTransportOptions
     public TimeSpan OperationTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
+    /// How many times the broker may deliver one locked message before it dead-letters on its own.
+    /// A scheduled retry completes the current delivery, so this is not
+    /// <see cref="MessageTransportOptions.MaxDeliveryAttempts"/>.
+    /// Defaults to <see cref="BrokerMaxDeliveryCountLimit"/>, which Azure Service Bus accepts.
+    /// The emulator accepts 1 to 10.
+    /// </summary>
+    public int BrokerMaxDeliveryCount { get; set; } = BrokerMaxDeliveryCountLimit;
+
+    /// <summary>Highest <see cref="BrokerMaxDeliveryCount"/> Azure Service Bus accepts.</summary>
+    public const int BrokerMaxDeliveryCountLimit = 2000;
+
+    /// <summary>
     /// Checks the shared settings and the Service Bus connection settings.
     /// An empty connection is valid when a <c>ServiceBusClient</c> is registered separately.
     /// </summary>
@@ -66,6 +78,12 @@ public sealed class AzureServiceBusTransportOptions : MessageTransportOptions
         {
             throw new InvalidOperationException(
                 "AzureServiceBusTransportOptions.OperationTimeout must be greater than zero.");
+        }
+
+        if (BrokerMaxDeliveryCount < 1 || BrokerMaxDeliveryCount > BrokerMaxDeliveryCountLimit)
+        {
+            throw new InvalidOperationException(
+                "AzureServiceBusTransportOptions.BrokerMaxDeliveryCount must be from 1 to 2000.");
         }
 
         var hasConnectionString = !string.IsNullOrWhiteSpace(ConnectionString);

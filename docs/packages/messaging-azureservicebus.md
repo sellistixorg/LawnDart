@@ -55,15 +55,22 @@ A setting on the Service Bus configure delegate wins when both set the same fiel
 
 A handler that throws is tried again until `MaxDeliveryAttempts` (default 5).
 Between tries the message is scheduled for `RetryDelay` (default 5 seconds),
-then delivered to the same subscription. With `DeadLetterFailedMessages` left
-false, the attempt past that limit waits the same way and stays available.
+then delivered to the same subscription. The retry sets `lawndart_target` to
+that subscription name. Each subscription's rule accepts a publish
+(`lawndart_target` is `*`) or a retry addressed to itself. Another subscriber
+on the same topic does not receive the retry. With `DeadLetterFailedMessages`
+left false, the attempt past that limit waits the same way and stays available.
 Set the flag true to dead-letter it on the subscription. A warning is written,
 and `messaging.deadlettered` increments.
 
-The subscription's broker delivery cap is 2000 where the namespace allows it.
-The Service Bus emulator allows 10, and this transport uses 10 there.
-A scheduled retry completes the current delivery, so that cap is not the
-attempt limit. The attempt limit is `MaxDeliveryAttempts`.
+`BrokerMaxDeliveryCount` is how many times the broker may deliver one locked
+message before it dead-letters on its own. The default is 2000. Valid values
+are 1 to 2000. The emulator accepts 1 to 10, so a test against the emulator
+sets 10 or less. A scheduled retry completes the current delivery, so this
+cap is not `MaxDeliveryAttempts`.
+
+The retry is scheduled, then the original is completed. If the complete fails
+after the schedule succeeds, both copies can be delivered.
 
 A delivery that arrives with no handler waits `RetryDelay` too. It does not
 spin on the subscription.

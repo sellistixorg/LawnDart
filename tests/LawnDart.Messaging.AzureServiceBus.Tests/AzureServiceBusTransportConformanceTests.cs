@@ -50,6 +50,7 @@ internal sealed class AzureServiceBusTransportFixture : TransportConformanceFixt
             ConnectionString = amqpConnectionString,
             AdministrationConnectionString = adminConnectionString,
             RetryDelay = TimeSpan.FromMilliseconds(200),
+            BrokerMaxDeliveryCount = 10,
         };
         var subscription = options.SubscriptionName;
         configure?.Invoke(options);

@@ -108,10 +108,34 @@ public class AzureServiceBusTransportOptionsTests
     {
         Assert.Equal(TimeSpan.FromSeconds(5), new AzureServiceBusTransportOptions().RetryDelay);
         Assert.Equal(TimeSpan.FromSeconds(30), new AzureServiceBusTransportOptions().OperationTimeout);
+        Assert.Equal(2000, new AzureServiceBusTransportOptions().BrokerMaxDeliveryCount);
 
         var options = new AzureServiceBusTransportOptions { RetryDelay = TimeSpan.Zero };
         var ex = Assert.Throws<InvalidOperationException>(options.EnsureValid);
         Assert.Contains("RetryDelay", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Broker_max_delivery_count_must_be_from_1_to_2000()
+    {
+        var low = new AzureServiceBusTransportOptions { BrokerMaxDeliveryCount = 0 };
+        var lowError = Assert.Throws<InvalidOperationException>(low.EnsureValid);
+        Assert.Contains("BrokerMaxDeliveryCount", lowError.Message, StringComparison.Ordinal);
+
+        var high = new AzureServiceBusTransportOptions { BrokerMaxDeliveryCount = 2001 };
+        var highError = Assert.Throws<InvalidOperationException>(high.EnsureValid);
+        Assert.Contains("1 to 2000", highError.Message, StringComparison.Ordinal);
+
+        var emulator = new AzureServiceBusTransportOptions { BrokerMaxDeliveryCount = 10 };
+        emulator.EnsureValid();
+    }
+
+    [Fact]
+    public void Retry_filter_accepts_a_publish_and_one_subscription()
+    {
+        var filter = AzureServiceBusHeaders.RetryFilter("billing");
+        Assert.Contains("user.lawndart_target = '*'", filter, StringComparison.Ordinal);
+        Assert.Contains("user.lawndart_target = 'billing'", filter, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -123,6 +147,7 @@ public class AzureServiceBusTransportOptionsTests
             [MessageHeaders.TenantId] = "tenant-7",
             [MessageHeaders.CustomPrefix + "region"] = "east",
             [AzureServiceBusHeaders.Attempt] = 2,
+            [AzureServiceBusHeaders.TargetSubscription] = "billing",
         };
 
         var envelope = MessageEnvelopeHeaders.Read(
@@ -133,6 +158,7 @@ public class AzureServiceBusTransportOptionsTests
         Assert.Equal("tenant-7", envelope.Context.TenantId);
         Assert.Equal("east", envelope.Context.Headers["region"]);
         Assert.False(envelope.Context.Headers.ContainsKey(AzureServiceBusHeaders.Attempt));
+        Assert.False(envelope.Context.Headers.ContainsKey(AzureServiceBusHeaders.TargetSubscription));
         Assert.Equal(2, AzureServiceBusHeaders.CompletedAttempts(properties));
     }
 

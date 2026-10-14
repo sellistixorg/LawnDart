@@ -6,7 +6,7 @@ Azure Service Bus transport for `LawnDart.Messaging`.
 
 - `AddAzureServiceBusTransport(...)` registration
 - Topics named with the declared message type. Publish creates the topic. Each subscriber creates one subscription.
-- A retry delay (default 5 seconds). With dead-letter handling on, the last failure uses the subscription dead-letter subqueue.
+- A retry delay (default 5 seconds) that returns only to the subscription that failed. With dead-letter handling on, the last failure uses the subscription dead-letter subqueue.
 
 Pair with `LawnDart.Messaging` for reactors and processors.
 Pair with `LawnDart.Messaging.SqlServer` when inbox dedup must survive a restart.

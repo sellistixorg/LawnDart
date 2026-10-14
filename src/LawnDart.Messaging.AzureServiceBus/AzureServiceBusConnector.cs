@@ -10,18 +10,6 @@ namespace LawnDart.Messaging.AzureServiceBus;
 /// </summary>
 internal sealed class AzureServiceBusConnector : IDisposable, IAsyncDisposable
 {
-    /// <summary>
-    /// Broker delivery cap on a namespace that allows it.
-    /// A scheduled retry completes the current delivery, so this cap is not <see cref="MessageTransportOptions.MaxDeliveryAttempts"/>.
-    /// </summary>
-    public const int BrokerMaxDeliveryCount = 2000;
-
-    /// <summary>
-    /// Highest delivery cap the Service Bus emulator accepts.
-    /// Used when the namespace rejects <see cref="BrokerMaxDeliveryCount"/>.
-    /// </summary>
-    public const int EmulatorMaxDeliveryCount = 10;
-
     private readonly AzureServiceBusTransportOptions _options;
     private readonly Func<ServiceBusClient> _clientFactory;
     private readonly Func<ServiceBusAdministrationClient> _adminFactory;
@@ -89,24 +77,79 @@ internal sealed class AzureServiceBusConnector : IDisposable, IAsyncDisposable
                 MarkReady("topic\n" + topic);
 
                 var admin = GetAdmin();
-                if (await admin.SubscriptionExistsAsync(topic, subscriptionName, ct).ConfigureAwait(false))
-                    return;
+                if (!await admin.SubscriptionExistsAsync(topic, subscriptionName, ct).ConfigureAwait(false))
+                {
+                    var create = new CreateSubscriptionOptions(topic, subscriptionName)
+                    {
+                        MaxDeliveryCount = _options.BrokerMaxDeliveryCount,
+                        DeadLetteringOnMessageExpiration = false,
+                    };
+                    var rule = new CreateRuleOptions(
+                        AzureServiceBusHeaders.RouteRuleName,
+                        new SqlRuleFilter(AzureServiceBusHeaders.RetryFilter(subscriptionName)));
 
-                var create = new CreateSubscriptionOptions(topic, subscriptionName)
-                {
-                    MaxDeliveryCount = BrokerMaxDeliveryCount,
-                    DeadLetteringOnMessageExpiration = false,
-                };
+                    try
+                    {
+                        await admin.CreateSubscriptionAsync(create, rule, ct).ConfigureAwait(false);
+                    }
+                    catch (Exception ex) when (IsAlreadyExists(ex))
+                    {
+                    }
+                }
 
-                try
-                {
-                    await CreateSubscriptionAsync(admin, create, ct).ConfigureAwait(false);
-                }
-                catch (Exception ex) when (IsAlreadyExists(ex))
-                {
-                }
+                await EnsureRouteRuleAsync(admin, topic, subscriptionName, ct).ConfigureAwait(false);
             },
             cancellationToken);
+
+    private static async Task EnsureRouteRuleAsync(
+        ServiceBusAdministrationClient admin,
+        string topic,
+        string subscriptionName,
+        CancellationToken cancellationToken)
+    {
+        var expression = AzureServiceBusHeaders.RetryFilter(subscriptionName);
+        var current = await TryGetRuleAsync(admin, topic, subscriptionName, AzureServiceBusHeaders.RouteRuleName, cancellationToken)
+            .ConfigureAwait(false);
+        if (current?.Filter is not SqlRuleFilter sql || sql.SqlExpression != expression)
+        {
+            if (current is not null)
+            {
+                await admin.DeleteRuleAsync(topic, subscriptionName, AzureServiceBusHeaders.RouteRuleName, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            await admin.CreateRuleAsync(
+                topic,
+                subscriptionName,
+                new CreateRuleOptions(AzureServiceBusHeaders.RouteRuleName, new SqlRuleFilter(expression)),
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        var fallback = await TryGetRuleAsync(admin, topic, subscriptionName, "$Default", cancellationToken)
+            .ConfigureAwait(false);
+        if (fallback?.Filter is TrueRuleFilter)
+        {
+            await admin.DeleteRuleAsync(topic, subscriptionName, "$Default", cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private static async Task<RuleProperties?> TryGetRuleAsync(
+        ServiceBusAdministrationClient admin,
+        string topic,
+        string subscriptionName,
+        string ruleName,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return (await admin.GetRuleAsync(topic, subscriptionName, ruleName, cancellationToken).ConfigureAwait(false)).Value;
+        }
+        catch (Exception ex) when (IsNotFound(ex))
+        {
+            return null;
+        }
+    }
 
     private async Task CreateTopicAsync(string topic, CancellationToken cancellationToken)
     {
@@ -257,37 +300,15 @@ internal sealed class AzureServiceBusConnector : IDisposable, IAsyncDisposable
             disposable.Dispose();
     }
 
-    private static async Task CreateSubscriptionAsync(
-        ServiceBusAdministrationClient admin,
-        CreateSubscriptionOptions create,
-        CancellationToken cancellationToken)
+    private static bool IsNotFound(Exception exception)
     {
-        try
+        if (exception is ServiceBusException serviceBus &&
+            serviceBus.Reason == ServiceBusFailureReason.MessagingEntityNotFound)
         {
-            await admin.CreateSubscriptionAsync(create, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (IsDeliveryCountRejected(ex))
-        {
-            create.MaxDeliveryCount = EmulatorMaxDeliveryCount;
-            await admin.CreateSubscriptionAsync(create, cancellationToken).ConfigureAwait(false);
-        }
-    }
-
-    private static bool IsDeliveryCountRejected(Exception exception)
-    {
-        for (Exception? current = exception; current is not null; current = current.InnerException)
-        {
-            if (current is ArgumentException argument &&
-                string.Equals(argument.ParamName, "MaxDeliveryCount", StringComparison.Ordinal))
-            {
-                return true;
-            }
-
-            if (current.Message.Contains("MaxDeliveryCount", StringComparison.Ordinal))
-                return true;
+            return true;
         }
 
-        return false;
+        return exception is RequestFailedException request && request.Status == 404;
     }
 
     private static bool IsAlreadyExists(Exception exception)

@@ -301,6 +301,51 @@ public sealed class AzureServiceBusTransportBehaviorTests
     }
 
     [Fact]
+    public async Task A_retry_is_delivered_only_to_the_subscription_that_failed()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        await using var first = AzureServiceBusTransportFixture.Create(
+            _container.AmqpConnectionString,
+            _container.AdminConnectionString,
+            options =>
+            {
+                options.SubscriptionName = "a-" + suffix;
+                options.MaxDeliveryAttempts = 3;
+            },
+            preHandler: null);
+        await using var second = AzureServiceBusTransportFixture.Create(
+            _container.AmqpConnectionString,
+            _container.AdminConnectionString,
+            options => options.SubscriptionName = "b-" + suffix,
+            preHandler: null);
+
+        var firstCalls = 0;
+        var secondCalls = 0;
+        var firstDone = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await first.Transport.SubscribeAsync<TwoSubPing>((_, _, _) =>
+        {
+            if (Interlocked.Increment(ref firstCalls) == 1)
+                throw new InvalidOperationException("again");
+            firstDone.TrySetResult();
+            return Task.CompletedTask;
+        });
+        await second.Transport.SubscribeAsync<TwoSubPing>((_, _, _) =>
+        {
+            Interlocked.Increment(ref secondCalls);
+            return Task.CompletedTask;
+        });
+
+        await first.Transport.PublishAsync(
+            new TwoSubPing(Guid.NewGuid(), DateTime.UtcNow, "one-subscriber"),
+            MessageContext.New());
+        await firstDone.Task.WaitAsync(TimeSpan.FromSeconds(15));
+        await Task.Delay(600);
+
+        Assert.Equal(2, Volatile.Read(ref firstCalls));
+        Assert.Equal(1, Volatile.Read(ref secondCalls));
+    }
+
+    [Fact]
     public async Task Topology_setup_creates_the_topic_and_subscription()
     {
         var subscriptionName = "topology-" + Guid.NewGuid().ToString("N")[..8];
@@ -311,6 +356,7 @@ public sealed class AzureServiceBusTransportBehaviorTests
             options.ConnectionString = _container.AmqpConnectionString;
             options.AdministrationConnectionString = _container.AdminConnectionString;
             options.SubscriptionName = subscriptionName;
+            options.BrokerMaxDeliveryCount = 10;
             options.SetupTopology = true;
         });
         services.AddSingleton(new MessageSubscription(typeof(TopologyPing)));
@@ -362,6 +408,9 @@ public sealed class AzureServiceBusTransportBehaviorTests
 
     [EventTypeName("messaging.servicebus.publish-only")]
     private sealed record PublishOnlyPing(Guid Id, DateTime Timestamp, string Text) : IEvent;
+
+    [EventTypeName("messaging.servicebus.two-subs")]
+    private sealed record TwoSubPing(Guid Id, DateTime Timestamp, string Text) : IEvent;
 
     [EventTypeName("messaging.servicebus.topology-ping")]
     private sealed record TopologyPing(Guid Id, DateTime Timestamp, string Text) : IEvent;
