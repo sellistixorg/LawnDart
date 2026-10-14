@@ -11,10 +11,16 @@ namespace LawnDart.Messaging.AzureServiceBus;
 internal sealed class AzureServiceBusConnector : IDisposable, IAsyncDisposable
 {
     /// <summary>
-    /// Broker delivery cap. This transport decides dead-letter from <see cref="MessageTransportOptions.DeadLetterFailedMessages"/>,
-    /// so the subscription does not park a message on its own after the default of 10 deliveries.
+    /// Broker delivery cap on a namespace that allows it.
+    /// A scheduled retry completes the current delivery, so this cap is not <see cref="MessageTransportOptions.MaxDeliveryAttempts"/>.
     /// </summary>
     public const int BrokerMaxDeliveryCount = 2000;
+
+    /// <summary>
+    /// Highest delivery cap the Service Bus emulator accepts.
+    /// Used when the namespace rejects <see cref="BrokerMaxDeliveryCount"/>.
+    /// </summary>
+    public const int EmulatorMaxDeliveryCount = 10;
 
     private readonly AzureServiceBusTransportOptions _options;
     private readonly Func<ServiceBusClient> _clientFactory;
@@ -94,7 +100,7 @@ internal sealed class AzureServiceBusConnector : IDisposable, IAsyncDisposable
 
                 try
                 {
-                    await admin.CreateSubscriptionAsync(create, ct).ConfigureAwait(false);
+                    await CreateSubscriptionAsync(admin, create, ct).ConfigureAwait(false);
                 }
                 catch (Exception ex) when (IsAlreadyExists(ex))
                 {
@@ -249,6 +255,39 @@ internal sealed class AzureServiceBusConnector : IDisposable, IAsyncDisposable
             await asyncDisposable.DisposeAsync().ConfigureAwait(false);
         else if (_admin is IDisposable disposable)
             disposable.Dispose();
+    }
+
+    private static async Task CreateSubscriptionAsync(
+        ServiceBusAdministrationClient admin,
+        CreateSubscriptionOptions create,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await admin.CreateSubscriptionAsync(create, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsDeliveryCountRejected(ex))
+        {
+            create.MaxDeliveryCount = EmulatorMaxDeliveryCount;
+            await admin.CreateSubscriptionAsync(create, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static bool IsDeliveryCountRejected(Exception exception)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is ArgumentException argument &&
+                string.Equals(argument.ParamName, "MaxDeliveryCount", StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            if (current.Message.Contains("MaxDeliveryCount", StringComparison.Ordinal))
+                return true;
+        }
+
+        return false;
     }
 
     private static bool IsAlreadyExists(Exception exception)

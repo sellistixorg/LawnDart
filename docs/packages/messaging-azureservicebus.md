@@ -60,9 +60,10 @@ false, the attempt past that limit waits the same way and stays available.
 Set the flag true to dead-letter it on the subscription. A warning is written,
 and `messaging.deadlettered` increments.
 
-The subscription's broker delivery cap is 2000. This transport decides when
-to dead-letter. The broker does not park the message after the default of 10
-deliveries.
+The subscription's broker delivery cap is 2000 where the namespace allows it.
+The Service Bus emulator allows 10, and this transport uses 10 there.
+A scheduled retry completes the current delivery, so that cap is not the
+attempt limit. The attempt limit is `MaxDeliveryAttempts`.
 
 A delivery that arrives with no handler waits `RetryDelay` too. It does not
 spin on the subscription.
