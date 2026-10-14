@@ -376,7 +376,9 @@ public sealed class AzureServiceBusTransportBehaviorTests
 
         await using var client = new ServiceBusClient(_container.AmqpConnectionString);
         await using var sender = client.CreateSender(topic);
-        await sender.SendMessageAsync(new ServiceBusMessage(Encoding.UTF8.GetBytes("topology-binding")));
+        var message = new ServiceBusMessage(Encoding.UTF8.GetBytes("topology-binding"));
+        message.ApplicationProperties[AzureServiceBusHeaders.TargetSubscription] = AzureServiceBusHeaders.TargetAll;
+        await sender.SendMessageAsync(message);
         await using var receiver = client.CreateReceiver(topic, subscriptionName);
         var got = await receiver.ReceiveMessageAsync(TimeSpan.FromSeconds(10));
         Assert.NotNull(got);
