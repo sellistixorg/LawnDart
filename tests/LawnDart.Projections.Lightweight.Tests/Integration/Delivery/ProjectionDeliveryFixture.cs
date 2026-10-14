@@ -48,8 +48,8 @@ public sealed class ProjectionDeliveryFixture
             row.Enumerated < row.Head,
             $"Live filters should not enumerate the full log × runners ({row.Enumerated} vs H={row.Head}).");
         Assert.True(
-            row.Enumerated <= MatchCount * 2,
-            $"Shared pipe should enumerate about {MatchCount} unique matches, not 3× ({row.Enumerated}).");
+            row.Enumerated <= 1500,
+            $"Shared pipe should enumerate ~1000 unique matches, not 3× ({row.Enumerated}).");
         WriteResultsRow("InMemory (Slice 0)", row);
     }
 
