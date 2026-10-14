@@ -18,6 +18,8 @@ changes to the public API.
 ### Added
 
 - `MessagingJson.Options` is the JSON setting for message bodies and the outbox publisher. Property names are PascalCase. Reads ignore case. Null values are omitted.
+- The `LawnDart.Messaging` meter counts `messaging.delivery.retries` and `messaging.deadlettered`. A retry is a debug log and a `messaging.retry` span event. A dead-letter is a warning and a `messaging.deadlettered` span event, and the span status is Error.
+- The `LawnDart.Outbox` meter counts `outbox.publish.failures` and `outbox.deadlettered` on the outbox processor's warning paths.
 - `MessageHeaders` names the envelope headers: message id, type, correlation, causation, user, tenant, enqueued time, a prefix for custom headers, the outbox headers, and the W3C trace headers.
 - `MessageTransportOptions` sets the subscription name, concurrency, prefetch, max delivery attempts, and dead-letter handling.
 - `IMessageTopologySetup` creates topics, queues, or exchanges when `SetupTopology` is true. Startup skips that step when the flag is false.

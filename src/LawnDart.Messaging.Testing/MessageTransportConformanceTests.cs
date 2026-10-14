@@ -1,3 +1,5 @@
+using System.Diagnostics.Metrics;
+
 namespace LawnDart.Messaging.Testing;
 
 /// <summary>
@@ -177,6 +179,55 @@ public abstract class MessageTransportConformanceTests
         Assert.Equal("msg-dead", parked.Context.MessageId);
         Assert.Equal("messaging.conformance-ping", parked.MessageType);
         Assert.Contains("nope", parked.Error, StringComparison.Ordinal);
+    }
+
+    /// <summary>Parking a message increments <c>messaging.deadlettered</c> for that type and subscription.</summary>
+    [Fact]
+    public async Task Dead_letter_increments_the_meter_counter()
+    {
+        await using var fixture = CreateFixture(options =>
+        {
+            options.MaxDeliveryAttempts = 2;
+            options.DeadLetterFailedMessages = true;
+            options.SubscriptionName = "conformance-dead-letter";
+        });
+
+        var deadLettered = 0L;
+        using var listener = new MeterListener();
+        listener.InstrumentPublished = (instrument, meterListener) =>
+        {
+            if (instrument.Meter.Name == "LawnDart.Messaging" &&
+                instrument.Name == "messaging.deadlettered")
+            {
+                meterListener.EnableMeasurementEvents(instrument);
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((_, value, tags, _) =>
+        {
+            string? messageType = null;
+            string? subscription = null;
+            foreach (var tag in tags)
+            {
+                if (tag.Key == "messaging.message_type")
+                    messageType = tag.Value as string;
+                else if (tag.Key == "messaging.subscription_name")
+                    subscription = tag.Value as string;
+            }
+
+            if (messageType == "messaging.conformance-ping" && subscription == "conformance-dead-letter")
+                Interlocked.Add(ref deadLettered, value);
+        });
+        listener.Start();
+
+        await fixture.Transport.SubscribeAsync<ConformancePing>((_, _, _) =>
+            throw new InvalidOperationException("park"));
+
+        await fixture.Transport.PublishAsync(
+            new ConformancePing(Guid.NewGuid(), DateTime.UtcNow, "meter"),
+            new MessageContext { MessageId = "msg-meter" });
+
+        await WaitUntilAsync(() => fixture.DeadLetters.Count >= 1, Timeout);
+        Assert.Equal(1, Volatile.Read(ref deadLettered));
     }
 
     /// <summary>Cancelling the subscription stops later publishes from reaching that handler.</summary>

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using LawnDart.EventSourcing.Telemetry;
 using LawnDart.Outbox;
 
 namespace LawnDart.EventSourcing.Outbox;
@@ -85,6 +86,7 @@ public class OutboxProcessor : BackgroundService
                 _logger.LogWarning(
                     "Outbox message {MessageId} has exceeded max attempts ({MaxAttempts}), dead-lettering",
                     message.Id, _maxAttempts);
+                OutboxTelemetry.RecordDeadLettered(message.EventType);
                 await _outboxWriter.MarkAsDeadLetteredAsync(message.Id, cancellationToken).ConfigureAwait(false);
                 continue;
             }
@@ -99,12 +101,14 @@ public class OutboxProcessor : BackgroundService
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to publish outbox message {MessageId}", message.Id);
+                OutboxTelemetry.RecordPublishFailure(message.EventType);
                 await _outboxWriter.RecordFailureAsync(message.Id, ex.Message, cancellationToken).ConfigureAwait(false);
                 if (message.Attempts + 1 >= _maxAttempts)
                 {
                     _logger.LogWarning(
                         "Outbox message {MessageId} reached max attempts ({MaxAttempts}), dead-lettering",
                         message.Id, _maxAttempts);
+                    OutboxTelemetry.RecordDeadLettered(message.EventType);
                     await _outboxWriter.MarkAsDeadLetteredAsync(message.Id, cancellationToken).ConfigureAwait(false);
                 }
             }

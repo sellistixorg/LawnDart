@@ -45,6 +45,23 @@ or exchanges at startup. The host skips that step when the flag is false.
 Write a transport with [Custom message transport](../CUSTOM_MESSAGE_TRANSPORT.md).
 Prove it with [`LawnDart.Messaging.Testing`](messaging-testing.md).
 
+## Meter
+
+The `LawnDart.Messaging` meter carries:
+
+| Instrument | When |
+|---|---|
+| `messaging.publish.duration` | A publish finishes |
+| `messaging.consume.duration` | One subscriber finishes a delivery |
+| `messaging.publish.errors` | A publish throws |
+| `messaging.inbox.duplicates` | The inbox drops a duplicate |
+| `messaging.delivery.retries` | A failed attempt will be tried again |
+| `messaging.deadlettered` | A message is parked |
+
+Retry and dead-letter measurements carry `messaging.message_type` and
+`messaging.subscription_name`. Publish and consume spans use the same activity
+source name.
+
 ## Related
 
 - [Package map](README.md)

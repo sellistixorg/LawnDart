@@ -17,6 +17,10 @@ in-process.
 2. A background publisher reads unpublished rows.
 3. `AddMessageTransportOutboxPublisher` hands payloads to `IMessageTransport`.
 
+The outbox processor counts `outbox.publish.failures` on the `LawnDart.Outbox`
+meter when a publish throws, and `outbox.deadlettered` when it parks a row
+that used its attempts. Both are tagged with `outbox.event_type`.
+
 The outbox row is a copy of the appended frame, written in the same
 transaction: family token, payload **bytes**, metadata as UTF-8 JSON
 text, plus first-class `SchemaVersion` and `CodecId` (`TINYINT`, no

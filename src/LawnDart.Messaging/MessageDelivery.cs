@@ -1,4 +1,6 @@
 using System.Runtime.ExceptionServices;
+using Microsoft.Extensions.Logging;
+using LawnDart.Messaging.Telemetry;
 
 namespace LawnDart.Messaging;
 
@@ -97,6 +99,9 @@ public static class MessageDelivery
     /// <param name="preHandlers">Hooks to run first, in order. May be empty.</param>
     /// <param name="deadLetters">Queue used when dead-letter handling is on.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="logger">
+    /// Optional logger. A debug line is written for each retry, and a warning when the message is parked.
+    /// </param>
     public static async Task DeliverAsync<TMessage>(
         TMessage message,
         MessageContext context,
@@ -104,7 +109,8 @@ public static class MessageDelivery
         MessageTransportOptions options,
         IReadOnlyList<IMessagePreHandler> preHandlers,
         IDeadLetterQueue deadLetters,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken = default,
+        ILogger? logger = null)
         where TMessage : class
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -127,14 +133,32 @@ public static class MessageDelivery
                 return;
 
             last = result.Error;
+            if (attempt < options.MaxDeliveryAttempts)
+            {
+                MessagingTelemetry.RecordDeliveryRetry(
+                    messageType,
+                    options.SubscriptionName,
+                    attempt,
+                    context.MessageId,
+                    logger);
+            }
         }
 
         if (options.DeadLetterFailedMessages)
         {
+            var errorType = last?.GetType().Name ?? "Exception";
             var error = last is null
                 ? "Delivery failed."
-                : $"{last.GetType().Name}: {last.Message}";
+                : $"{errorType}: {last.Message}";
             deadLetters.Enqueue(new DeadLetteredMessage(messageType, message, context, options.MaxDeliveryAttempts, error));
+            MessagingTelemetry.RecordDeadLettered(
+                messageType,
+                options.SubscriptionName,
+                options.MaxDeliveryAttempts,
+                errorType,
+                context.MessageId,
+                error,
+                logger);
             return;
         }
 

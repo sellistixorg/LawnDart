@@ -1,9 +1,11 @@
+using System.Diagnostics.Metrics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using LawnDart;
 using LawnDart.EventSourcing.Outbox;
+using LawnDart.EventSourcing.Telemetry;
 using LawnDart.EventStore;
 using LawnDart.Messaging.InMemory;
 using LawnDart.Messaging.Outbox;
@@ -206,6 +208,69 @@ public class MessageTransportOutboxPublisherTests
         Assert.Contains("handler failed", row.LastError, StringComparison.Ordinal);
         Assert.Equal(new MessageTransportOptions().MaxDeliveryAttempts, attempts);
         Assert.False(new MessageTransportOptions().DeadLetterFailedMessages);
+    }
+
+    [Fact]
+    public async Task OutboxProcessor_counts_a_publish_failure_and_a_dead_letter()
+    {
+        var failures = 0L;
+        var dead = 0L;
+        using var listener = new MeterListener();
+        listener.InstrumentPublished = (instrument, meterListener) =>
+        {
+            if (instrument.Meter.Name != OutboxTelemetry.MeterName)
+                return;
+            if (instrument.Name is "outbox.publish.failures" or "outbox.deadlettered")
+                meterListener.EnableMeasurementEvents(instrument);
+        };
+        listener.SetMeasurementEventCallback<long>((instrument, value, tags, _) =>
+        {
+            if (!HasEventType(tags, "test-types.order-placed-event"))
+                return;
+            if (instrument.Name == "outbox.publish.failures")
+                Interlocked.Add(ref failures, value);
+            else if (instrument.Name == "outbox.deadlettered")
+                Interlocked.Add(ref dead, value);
+        });
+        listener.Start();
+
+        var transport = new InMemoryMessageTransport(NullLogger<InMemoryMessageTransport>.Instance);
+        await transport.SubscribeAsync<OrderPlacedEvent>((_, _, _) =>
+            throw new InvalidOperationException("handler failed"));
+        var publisher = new MessageTransportOutboxPublisher(transport, [typeof(OrderPlacedEvent)]);
+        var writer = new InMemoryOutboxWriter();
+        var evt = new OrderPlacedEvent(Guid.NewGuid(), DateTime.UtcNow, "order-metric");
+        await writer.WriteAsync(new OutboxMessage
+        {
+            Id = Guid.NewGuid(),
+            EventType = EventTypeCatalog.TryGetDeclaredName(typeof(OrderPlacedEvent))!,
+            SchemaVersion = 1,
+            CodecId = EventCodec.Json,
+            Payload = JsonSerializer.SerializeToUtf8Bytes(evt, evt.GetType(), JsonOptions),
+            Metadata = "{}",
+            CreatedAt = DateTime.UtcNow,
+            StreamId = "Order:metric",
+            SequencePosition = 1,
+            Attempts = 9,
+        });
+
+        var processor = new TestableOutboxProcessor(writer, publisher);
+        await processor.ProcessBatchPublicAsync(CancellationToken.None);
+
+        Assert.Equal(1, Volatile.Read(ref failures));
+        Assert.Equal(1, Volatile.Read(ref dead));
+        Assert.Single(await writer.GetDeadLetteredAsync(10));
+    }
+
+    private static bool HasEventType(ReadOnlySpan<KeyValuePair<string, object?>> tags, string eventType)
+    {
+        foreach (var tag in tags)
+        {
+            if (tag.Key == "outbox.event_type" && tag.Value as string == eventType)
+                return true;
+        }
+
+        return false;
     }
 
     [Fact]

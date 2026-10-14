@@ -97,6 +97,21 @@ redeliver multiplies the attempts.
 on its own dead-letter destination and still expose those messages through
 `IDeadLetterQueue` so the conformance suite can read them.
 
+`MessageDelivery.DeliverAsync` records the counters, logs, and activity events
+below. A broker that calls `TryOnceAsync` records them itself:
+
+- After a failed attempt that will be redelivered, call
+  `MessagingTelemetry.RecordDeliveryRetry`. That increments
+  `messaging.delivery.retries`, adds a `messaging.retry` event on the current
+  span (tag `messaging.attempt`), and writes a debug log when you pass a logger.
+- When you park the message, call `MessagingTelemetry.RecordDeadLettered`.
+  That increments `messaging.deadlettered` once, adds a `messaging.deadlettered`
+  event (attempt count and `error.type`), sets the span status to Error, and
+  writes a warning with the message id, type, attempt count, and last error.
+
+Both counters are on the `LawnDart.Messaging` meter. Each measurement is tagged
+with `messaging.message_type` (the declared name) and `messaging.subscription_name`.
+
 ## Topology
 
 Implement `IMessageTopologySetup` when the transport can create topics, queues,
@@ -136,6 +151,7 @@ checks:
 - the pre-handler hook runs before the handler
 - a handler that fails and then succeeds is retried within the max attempts and is not dead-lettered
 - a handler that keeps failing is dead-lettered after the max attempts
+- that dead-letter increments `messaging.deadlettered`
 - cancelling the subscription stops later delivery
 - a type without `[EventTypeName]` is rejected
 

@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using LawnDart.Messaging.Telemetry;
 
 namespace LawnDart.Messaging.InMemory;
 
@@ -53,33 +55,59 @@ public sealed class InMemoryMessageTransport : IMessageTransport
         var declaredName = MessageTypeNames.Require(typeof(TMessage));
         cancellationToken.ThrowIfCancellationRequested();
 
-        var messageType = typeof(TMessage);
-        if (!_handlers.TryGetValue(messageType, out var handlers) || handlers.Count == 0)
+        using var publish = MessagingTelemetry.StartPublish(declaredName);
+        var publishStart = TimeProvider.System.GetTimestamp();
+        try
         {
+            var messageType = typeof(TMessage);
+            if (!_handlers.TryGetValue(messageType, out var handlers) || handlers.Count == 0)
+            {
+                _logger.LogDebug(
+                    "InMemoryTransport: No subscribers for {MessageType} (MessageId={MessageId})",
+                    declaredName, context.MessageId);
+                MessagingTelemetry.RecordPublish(declaredName, TimeProvider.System.GetElapsedTime(publishStart));
+                return;
+            }
+
+            List<Delegate> snapshot;
+            lock (handlers) { snapshot = [.. handlers]; }
+
             _logger.LogDebug(
-                "InMemoryTransport: No subscribers for {MessageType} (MessageId={MessageId})",
-                declaredName, context.MessageId);
-            return;
+                "InMemoryTransport: Delivering {MessageType} to {HandlerCount} subscriber(s) (MessageId={MessageId})",
+                declaredName, snapshot.Count, context.MessageId);
+
+            foreach (var handler in snapshot)
+            {
+                var typed = (Func<TMessage, MessageContext, CancellationToken, Task>)handler;
+                using var consume = MessagingTelemetry.StartConsume(declaredName, context.MessageId);
+                var consumeStart = TimeProvider.System.GetTimestamp();
+                try
+                {
+                    await MessageDelivery.DeliverAsync(
+                        message,
+                        context,
+                        typed,
+                        _options,
+                        _preHandlers,
+                        _deadLetters,
+                        cancellationToken,
+                        _logger).ConfigureAwait(false);
+                    MessagingTelemetry.RecordConsume(declaredName, TimeProvider.System.GetElapsedTime(consumeStart));
+                }
+                catch (Exception ex)
+                {
+                    consume?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                    throw;
+                }
+            }
+
+            MessagingTelemetry.RecordPublish(declaredName, TimeProvider.System.GetElapsedTime(publishStart));
         }
-
-        List<Delegate> snapshot;
-        lock (handlers) { snapshot = [.. handlers]; }
-
-        _logger.LogDebug(
-            "InMemoryTransport: Delivering {MessageType} to {HandlerCount} subscriber(s) (MessageId={MessageId})",
-            declaredName, snapshot.Count, context.MessageId);
-
-        foreach (var handler in snapshot)
+        catch (Exception ex)
         {
-            var typed = (Func<TMessage, MessageContext, CancellationToken, Task>)handler;
-            await MessageDelivery.DeliverAsync(
-                message,
-                context,
-                typed,
-                _options,
-                _preHandlers,
-                _deadLetters,
-                cancellationToken).ConfigureAwait(false);
+            MessagingTelemetry.RecordPublishError(declaredName);
+            publish?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            throw;
         }
     }
 
