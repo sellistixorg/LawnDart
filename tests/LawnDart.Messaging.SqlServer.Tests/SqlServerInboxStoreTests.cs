@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using LawnDart;
+using LawnDart.EventStore;
 using LawnDart.Messaging;
 using LawnDart.Messaging.Hosting;
 using LawnDart.Messaging.InMemory;
@@ -229,6 +230,7 @@ public class SqlServerInboxStoreTests
         }
     }
 
+    [EventTypeName("sql-inbox.ping")]
     private sealed record PingEvent(Guid Id, DateTime Timestamp) : IEvent;
 
     private sealed class CountingReactor : IReactor<PingEvent>
