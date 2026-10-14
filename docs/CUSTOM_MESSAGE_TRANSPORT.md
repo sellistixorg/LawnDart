@@ -97,6 +97,10 @@ redeliver multiplies the attempts.
 `TryOnceAsync`. A failed delivery waits on a retry queue, then returns.
 The package page is [RabbitMQ](packages/messaging-rabbitmq.md).
 
+`LawnDart.Messaging.AzureServiceBus` follows that rule. Each delivery calls
+`TryOnceAsync`. A failed delivery is scheduled again after `RetryDelay`.
+The package page is [Azure Service Bus](packages/messaging-azureservicebus.md).
+
 `MemoryDeadLetterQueue` is an in-process queue. A broker transport can park
 on its own dead-letter destination and still expose those messages through
 `IDeadLetterQueue` so the conformance suite can read them.

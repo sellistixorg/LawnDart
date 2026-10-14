@@ -8,7 +8,8 @@ The suite checks delivery, user / tenant / custom header pass-through, the
 pre-handler hook, retries up to the max attempts, dead-letter, cancellation,
 and a missing `[EventTypeName]`. `InMemoryTransportConformanceTests` is the
 in-process run of that suite. `RabbitMqTransportConformanceTests` runs it
-against RabbitMQ.
+against RabbitMQ. `AzureServiceBusTransportConformanceTests` runs it against
+the Service Bus emulator.
 
 ## Registration
 

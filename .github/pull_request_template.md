@@ -6,7 +6,7 @@
 
 - [ ] `dotnet build --configuration Release`
 - [ ] `dotnet test --filter "Category!=Integration" --configuration Release` (no Docker)
-- [ ] CI also runs `Category=Integration` (SQL Server and RabbitMQ / Testcontainers)
+- [ ] CI also runs `Category=Integration` (SQL Server, RabbitMQ, and Azure Service Bus / Testcontainers)
 - [ ] If docs changed: `dotnet docfx metadata docfx.json` (when API DLLs exist)
 - [ ] If docs changed: `dotnet docfx build docfx.json`
 - [ ] Public and protected members have XML `<summary>` docs

@@ -60,6 +60,7 @@ These live on `IAggregateRepository` in Core (not `Add*` extensions). Guid overl
 | `AddMessagePreHandler<THandler>` | `LawnDart.Messaging` | Hook that runs before each handler attempt |
 | `AddInMemoryMessaging` | `LawnDart.Messaging.InMemory` | In-process transport |
 | `AddRabbitMqTransport` | `LawnDart.Messaging.RabbitMQ` | RabbitMQ transport, prefetch, retries, and a dead-letter exchange |
+| `AddAzureServiceBusTransport` | `LawnDart.Messaging.AzureServiceBus` | Azure Service Bus transport, topics, retries, and subscription dead-letter |
 | `AddSqlInboxStore` | `LawnDart.Messaging.SqlServer` | Durable inbox. Replaces the in-memory inbox in either call order |
 | `InitializeSqlInboxStoreAsync` | `LawnDart.Messaging.SqlServer` | Create the inbox table |
 | `AddReactor<TReactor, TEvent>` | `LawnDart.Messaging` | Event → command |
