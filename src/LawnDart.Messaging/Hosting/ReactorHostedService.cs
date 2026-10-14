@@ -24,7 +24,7 @@ public sealed class ReactorHostedService<TReactor, TEvent> : BackgroundService
     private readonly ILogger<ReactorHostedService<TReactor, TEvent>> _logger;
 
     private static readonly string ReactorTypeName = typeof(TReactor).Name;
-    private static readonly string EventTypeName = typeof(TEvent).Name;
+    private string _eventTypeName = "";
 
     public ReactorHostedService(
         TReactor reactor,
@@ -40,6 +40,29 @@ public sealed class ReactorHostedService<TReactor, TEvent> : BackgroundService
         _commandDispatcher = commandDispatcher;
     }
 
+    /// <summary>
+    /// Subscribes to <typeparamref name="TEvent"/>.
+    /// A missing <c>[EventTypeName]</c> is logged and thrown to the caller.
+    /// </summary>
+    public override Task StartAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            _eventTypeName = MessageTypeNames.Require(typeof(TEvent));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Reactor {Reactor} failed to start. Event type {EventType} must declare [EventTypeName].",
+                ReactorTypeName,
+                typeof(TEvent).FullName);
+            throw;
+        }
+
+        return base.StartAsync(cancellationToken);
+    }
+
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
         => _transport.SubscribeAsync<TEvent>(HandleAsync, stoppingToken);
 
@@ -50,14 +73,14 @@ public sealed class ReactorHostedService<TReactor, TEvent> : BackgroundService
 
         if (inboxKey is not null && await _inboxStore.IsProcessedAsync(inboxKey, ct).ConfigureAwait(false))
         {
-            MessagingTelemetry.RecordInboxDuplicate(EventTypeName);
+            MessagingTelemetry.RecordInboxDuplicate(_eventTypeName);
             _logger.LogDebug(
                 "Reactor {Reactor} skipping duplicate message {MessageId} for event {EventType}",
-                ReactorTypeName, messageId, EventTypeName);
+                ReactorTypeName, messageId, _eventTypeName);
             return;
         }
 
-        using var activity = ReactorTelemetry.StartHandle(ReactorTypeName, EventTypeName, context);
+        using var activity = ReactorTelemetry.StartHandle(ReactorTypeName, _eventTypeName, context);
         var start = TimeProvider.System.GetTimestamp();
 
         try
@@ -84,19 +107,19 @@ public sealed class ReactorHostedService<TReactor, TEvent> : BackgroundService
             }
 
             var elapsed = TimeProvider.System.GetElapsedTime(start);
-            ReactorTelemetry.RecordHandle(ReactorTypeName, EventTypeName, elapsed, commands.Count);
+            ReactorTelemetry.RecordHandle(ReactorTypeName, _eventTypeName, elapsed, commands.Count);
 
             _logger.LogDebug(
                 "Reactor {Reactor} handled {EventType} in {ElapsedMs:F1}ms, emitted {CommandCount} command(s)",
-                ReactorTypeName, EventTypeName, elapsed.TotalMilliseconds, commands.Count);
+                ReactorTypeName, _eventTypeName, elapsed.TotalMilliseconds, commands.Count);
         }
         catch (Exception ex)
         {
-            ReactorTelemetry.RecordError(ReactorTypeName, EventTypeName);
+            ReactorTelemetry.RecordError(ReactorTypeName, _eventTypeName);
             activity?.SetStatus(System.Diagnostics.ActivityStatusCode.Error, ex.Message);
             _logger.LogError(ex,
                 "Reactor {Reactor} failed while handling {EventType} (MessageId={MessageId})",
-                ReactorTypeName, EventTypeName, messageId);
+                ReactorTypeName, _eventTypeName, messageId);
             throw;
         }
     }

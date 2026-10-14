@@ -38,6 +38,8 @@ services.AddReactor<PaymentReactor, SeatReservationConfirmed>();
 ```
 
 `AddReactor` registers a hosted service that pulls from `IMessageTransport`.
+The event type must declare `[EventTypeName]`. Host startup fails when that
+attribute is missing. The message type is that token.
 You can also call the reactor directly to see the command it emits:
 
 ```csharp

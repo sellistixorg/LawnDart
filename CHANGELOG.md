@@ -10,9 +10,28 @@ changes to the public API.
 
 ## [Unreleased]
 
+### Breaking
+
+- Reactors, event processors, and anything published or subscribed on the in-memory transport must declare `[EventTypeName]`. A missing name fails when that consumer starts. The message type is that token.
+- The in-memory transport calls a failed handler again until `MaxDeliveryAttempts` (default 5). Dead-letter handling is off unless `DeadLetterFailedMessages` is set. After the last attempt the exception is thrown, so the outbox keeps the row for another try.
+
+### Added
+
+- `MessagingJson.Options` is the JSON setting for message bodies and the outbox publisher. Property names are PascalCase. Reads ignore case. Null values are omitted.
+- The `LawnDart.Messaging` meter counts `messaging.delivery.retries` and `messaging.deadlettered`. A retry is a debug log and a `messaging.retry` span event. A dead-letter is a warning and a `messaging.deadlettered` span event, and the span status is Error.
+- The `LawnDart.Outbox` meter counts `outbox.publish.failures` and `outbox.deadlettered` on the outbox processor's warning paths.
+- `MessageHeaders` names the envelope headers: message id, type, correlation, causation, user, tenant, enqueued time, a prefix for custom headers, the outbox headers, and the W3C trace headers.
+- `MessageTransportOptions` sets the subscription name, concurrency, prefetch, max delivery attempts, and dead-letter handling.
+- `IMessageTopologySetup` creates topics, queues, or exchanges when `SetupTopology` is true. Startup skips that step when the flag is false.
+- Host startup checks transport settings, declared message names, and topology setup.
+- `IMessagePreHandler` runs before the message handler on each delivery attempt. Register it with `AddMessagePreHandler`.
+- `LawnDart.Messaging.Testing` ships `MessageTransportConformanceTests`. The InMemory transport passes that suite.
+- [Custom message transport](docs/CUSTOM_MESSAGE_TRANSPORT.md) explains how to write a transport against these pieces.
+
 ### Changed
 
 - The build kit (`skills/BUILD_KIT.md`) now targets LawnDart 0.5, matching the 0.5.0-alpha.1 packages.
+- Reactor and event processor logs use the declared event type name.
 
 ## [0.5.0-alpha.1] — 2026-10-06
 

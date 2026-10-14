@@ -23,7 +23,7 @@ public sealed class EventProcessorHostedService<TProcessor, TEvent> : Background
     private readonly ILogger<EventProcessorHostedService<TProcessor, TEvent>> _logger;
 
     private static readonly string ProcessorTypeName = typeof(TProcessor).Name;
-    private static readonly string EventTypeName = typeof(TEvent).Name;
+    private string _eventTypeName = "";
 
     public EventProcessorHostedService(
         TProcessor processor,
@@ -37,6 +37,29 @@ public sealed class EventProcessorHostedService<TProcessor, TEvent> : Background
         _logger = logger;
     }
 
+    /// <summary>
+    /// Subscribes to <typeparamref name="TEvent"/>.
+    /// A missing <c>[EventTypeName]</c> is logged and thrown to the caller.
+    /// </summary>
+    public override Task StartAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            _eventTypeName = MessageTypeNames.Require(typeof(TEvent));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Event processor {Processor} failed to start. Event type {EventType} must declare [EventTypeName].",
+                ProcessorTypeName,
+                typeof(TEvent).FullName);
+            throw;
+        }
+
+        return base.StartAsync(cancellationToken);
+    }
+
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
         => _transport.SubscribeAsync<TEvent>(HandleAsync, stoppingToken);
 
@@ -47,14 +70,14 @@ public sealed class EventProcessorHostedService<TProcessor, TEvent> : Background
 
         if (inboxKey is not null && await _inboxStore.IsProcessedAsync(inboxKey, ct).ConfigureAwait(false))
         {
-            MessagingTelemetry.RecordInboxDuplicate(EventTypeName);
+            MessagingTelemetry.RecordInboxDuplicate(_eventTypeName);
             _logger.LogDebug(
                 "EventProcessor {Processor} skipping duplicate message {MessageId} for event {EventType}",
-                ProcessorTypeName, messageId, EventTypeName);
+                ProcessorTypeName, messageId, _eventTypeName);
             return;
         }
 
-        using var activity = EventProcessorTelemetry.StartProcess(ProcessorTypeName, EventTypeName, context);
+        using var activity = EventProcessorTelemetry.StartProcess(ProcessorTypeName, _eventTypeName, context);
         var start = TimeProvider.System.GetTimestamp();
 
         try
@@ -74,19 +97,19 @@ public sealed class EventProcessorHostedService<TProcessor, TEvent> : Background
             }
 
             var elapsed = TimeProvider.System.GetElapsedTime(start);
-            EventProcessorTelemetry.RecordProcess(ProcessorTypeName, EventTypeName, elapsed, derivedEvents.Count);
+            EventProcessorTelemetry.RecordProcess(ProcessorTypeName, _eventTypeName, elapsed, derivedEvents.Count);
 
             _logger.LogDebug(
                 "EventProcessor {Processor} handled {EventType} in {ElapsedMs:F1}ms, emitted {EventCount} derived event(s)",
-                ProcessorTypeName, EventTypeName, elapsed.TotalMilliseconds, derivedEvents.Count);
+                ProcessorTypeName, _eventTypeName, elapsed.TotalMilliseconds, derivedEvents.Count);
         }
         catch (Exception ex)
         {
-            EventProcessorTelemetry.RecordError(ProcessorTypeName, EventTypeName);
+            EventProcessorTelemetry.RecordError(ProcessorTypeName, _eventTypeName);
             activity?.SetStatus(System.Diagnostics.ActivityStatusCode.Error, ex.Message);
             _logger.LogError(ex,
                 "EventProcessor {Processor} failed while handling {EventType} (MessageId={MessageId})",
-                ProcessorTypeName, EventTypeName, messageId);
+                ProcessorTypeName, _eventTypeName, messageId);
             throw;
         }
     }

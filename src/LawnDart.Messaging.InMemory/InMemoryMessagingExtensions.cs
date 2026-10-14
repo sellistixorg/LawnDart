@@ -22,6 +22,11 @@ public static class InMemoryMessagingExtensions
     {
         services.AddMessaging(configure);
 
+        services.TryAddSingleton<MemoryDeadLetterQueue>();
+        services.TryAddSingleton<IDeadLetterQueue>(sp => sp.GetRequiredService<MemoryDeadLetterQueue>());
+        services.TryAddSingleton<InMemoryTopologySetup>();
+        services.TryAddSingleton<IMessageTopologySetup>(sp => sp.GetRequiredService<InMemoryTopologySetup>());
+
         services.TryAddSingleton<InMemoryMessageTransport>();
         services.TryAddSingleton<IMessageTransport>(sp => sp.GetRequiredService<InMemoryMessageTransport>());
 

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using LawnDart.Messaging.Hosting;
 using LawnDart.Patterns.EventProcessing;
@@ -14,7 +15,7 @@ namespace LawnDart.Messaging;
 public static class MessagingExtensions
 {
     /// <summary>
-    /// Registers core messaging options and the <see cref="IInboxStore"/> placeholder.
+    /// Registers messaging options, <see cref="MessageTransportStartupCheck"/>, and the transport settings.
     /// Call this once per application, then call a transport-specific extension
     /// (e.g. <c>AddInMemoryMessaging()</c>).
     /// </summary>
@@ -29,6 +30,21 @@ public static class MessagingExtensions
         else
             services.Configure<MessagingOptions>(_ => { });
 
+        services.AddOptions<MessageTransportOptions>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, MessageTransportStartupCheck>());
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers a hook that runs before each message handler attempt.
+    /// </summary>
+    /// <typeparam name="THandler">The hook implementation.</typeparam>
+    /// <param name="services">The service collection.</param>
+    public static IServiceCollection AddMessagePreHandler<THandler>(this IServiceCollection services)
+        where THandler : class, IMessagePreHandler
+    {
+        services.AddSingleton<IMessagePreHandler, THandler>();
         return services;
     }
 
@@ -44,6 +60,7 @@ public static class MessagingExtensions
         where TEvent : class, IEvent
     {
         services.TryAddTransient<TReactor>();
+        services.AddSingleton(new MessageSubscription(typeof(TEvent)));
         services.AddHostedService<ReactorHostedService<TReactor, TEvent>>();
         return services;
     }
@@ -60,6 +77,7 @@ public static class MessagingExtensions
         where TEvent : class, IEvent
     {
         services.TryAddTransient<TProcessor>();
+        services.AddSingleton(new MessageSubscription(typeof(TEvent)));
         services.AddHostedService<EventProcessorHostedService<TProcessor, TEvent>>();
         return services;
     }
