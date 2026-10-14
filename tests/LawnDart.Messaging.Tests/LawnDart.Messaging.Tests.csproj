@@ -10,6 +10,7 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Options" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
@@ -28,6 +29,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\LawnDart.Messaging\LawnDart.Messaging.csproj" />
     <ProjectReference Include="..\..\src\LawnDart.Messaging.InMemory\LawnDart.Messaging.InMemory.csproj" />
+    <ProjectReference Include="..\..\src\LawnDart.Messaging.Testing\LawnDart.Messaging.Testing.csproj" />
     <ProjectReference Include="..\..\src\LawnDart.EventSourcing\LawnDart.EventSourcing.csproj" />
   </ItemGroup>
 

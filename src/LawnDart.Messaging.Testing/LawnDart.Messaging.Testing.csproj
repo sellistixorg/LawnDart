@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <PackageId>LawnDart.Messaging.Testing</PackageId>
+    <Description>Abstract xUnit conformance tests for a LawnDart message transport.</Description>
+    <IsPackable>true</IsPackable>
+    <!-- A library of abstract tests. The transport's test project runs them. -->
+    <IsTestProject>false</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LawnDart.Messaging\LawnDart.Messaging.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- build assets would mark this library as a test project and `dotnet test` would try to run it. -->
+    <PackageReference Include="xunit">
+      <ExcludeAssets>build;buildTransitive</ExcludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

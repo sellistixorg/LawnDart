@@ -12,6 +12,8 @@
   href: messaging-inmemory.md
 - name: Messaging.SqlServer
   href: messaging-sqlserver.md
+- name: Messaging.Testing
+  href: messaging-testing.md
 - name: Projections.Lightweight
   href: projections-lightweight.md
 - name: AspNetCore

@@ -138,6 +138,7 @@ Backend choice: [docs/BACKEND_SELECTION.md](docs/BACKEND_SELECTION.md).
 | `LawnDart.Projections.Lightweight` | Read-model host |
 | `LawnDart.Messaging` / `LawnDart.Messaging.InMemory` | Reactors and in-process transport |
 | `LawnDart.Messaging.SqlServer` | Durable inbox deduplication |
+| `LawnDart.Messaging.Testing` | Conformance tests for a message transport |
 | `LawnDart.AspNetCore` | HTTP command mapping |
 | `LawnDart.Authorization.AspNetCore` | HTTP claims → authorization context |
 | `LawnDart.Testing` | Given / when / then harnesses |

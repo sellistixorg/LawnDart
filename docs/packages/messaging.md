@@ -25,10 +25,31 @@ services.AddTaskProcessor<OverdueRegistrationProcessor>();
 | `AddEventProcessor<TProcessor, TEvent>` | Event → Event / side work |
 | `AddTaskProcessor<TProcessor>` | State → Command |
 
+## Transport pieces
+
+Reactors and processors require `[EventTypeName]` on the event. Host startup
+fails when the attribute is missing. The message type is that token.
+
+`MessagingJson.Options` is the JSON setting for message bodies and the outbox
+publisher. Property names are PascalCase. Reads ignore case. Null values are
+omitted.
+
+`MessageHeaders` names the envelope headers. `MessageTransportOptions` sets
+the subscription name, concurrency, prefetch, max delivery attempts, and
+dead-letter handling. `AddMessagePreHandler<THandler>()` runs a hook before
+each handler attempt.
+
+Set `MessageTransportOptions.SetupTopology` to true to create topics, queues,
+or exchanges at startup. The host skips that step when the flag is false.
+
+Write a transport with [Custom message transport](../CUSTOM_MESSAGE_TRANSPORT.md).
+Prove it with [`LawnDart.Messaging.Testing`](messaging-testing.md).
+
 ## Related
 
 - [Package map](README.md)
 - [EDA patterns](../EDA-Patterns.md)
 - [Reactions](../learning-path/06-reactions.md)
+- [Custom message transport](../CUSTOM_MESSAGE_TRANSPORT.md)
 - [InMemory messaging](messaging-inmemory.md)
 - [SQL Server inbox](messaging-sqlserver.md)

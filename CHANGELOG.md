@@ -10,9 +10,23 @@ changes to the public API.
 
 ## [Unreleased]
 
+### Added
+
+- A reactor or event processor event must declare `[EventTypeName]`. Host startup fails when the attribute is missing. The message type is that token.
+- `MessagingJson.Options` is the JSON setting for message bodies and the outbox publisher. Property names are PascalCase. Reads ignore case. Null values are omitted.
+- `MessageHeaders` names the envelope headers: message id, type, correlation, causation, user, tenant, enqueued time, a prefix for custom headers, the outbox headers, and the W3C trace headers.
+- `MessageTransportOptions` sets the subscription name, concurrency, prefetch, max delivery attempts, and dead-letter handling.
+- `IMessageTopologySetup` creates topics, queues, or exchanges when `SetupTopology` is true. Startup skips that step when the flag is false.
+- Host startup checks transport settings, declared message names, and topology setup.
+- `IMessagePreHandler` runs before the message handler on each delivery attempt. Register it with `AddMessagePreHandler`.
+- `LawnDart.Messaging.Testing` ships `MessageTransportConformanceTests`. The InMemory transport passes that suite.
+- [Custom message transport](docs/CUSTOM_MESSAGE_TRANSPORT.md) explains how to write a transport against these pieces.
+
 ### Changed
 
 - The build kit (`skills/BUILD_KIT.md`) now targets LawnDart 0.5, matching the 0.5.0-alpha.1 packages.
+- InMemory calls a failed handler again until `MaxDeliveryAttempts` (default 5). It then parks the message when dead-letter handling is on (the default).
+- Reactor and event processor logs use the declared event type name.
 
 ## [0.5.0-alpha.1] — 2026-10-06
 

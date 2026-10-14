@@ -10,7 +10,8 @@ description: Author LawnDart reactions. IReactor plus AddInMemoryMessaging and A
 path with `AddInMemoryMessaging()` and `AddReactor<TReactor, TEvent>()`.
 `AddSqlInboxStore(connectionString)` replaces the in-memory inbox when
 dedup must survive a restart. Call `InitializeSqlInboxStoreAsync` at startup.
-The transport stays in-process.
+The transport stays in-process. The event passed to `AddReactor` must declare
+`[EventTypeName]`. The host fails at startup when the attribute is missing.
 
 `IEventProcessor` (event to event) and `ITaskProcessor` (state to command)
 are also hosted. See `docs/learning-path/06-reactions.md`.

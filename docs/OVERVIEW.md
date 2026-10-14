@@ -34,6 +34,7 @@ app.MapLawnDartCommands();
 | `LawnDart.Messaging` | Reactors, processors, transports |
 | `LawnDart.Messaging.InMemory` | In-process messaging |
 | `LawnDart.Messaging.SqlServer` | Durable inbox deduplication |
+| `LawnDart.Messaging.Testing` | Transport conformance tests |
 | `LawnDart.Projections.Lightweight` | Read-model host (InMemory / SQL) |
 | `LawnDart.AspNetCore` | HTTP command mapping |
 | `LawnDart.Authorization.AspNetCore` | HTTP claims to `AuthorizationContext` |

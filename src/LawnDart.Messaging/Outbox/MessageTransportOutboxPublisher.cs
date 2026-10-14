@@ -1,6 +1,5 @@
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using LawnDart.EventStore;
 using LawnDart.Metadata;
 using LawnDart.Outbox;
@@ -27,14 +26,6 @@ namespace LawnDart.Messaging.Outbox;
 /// </remarks>
 public sealed class MessageTransportOutboxPublisher : IOutboxPublisher
 {
-    private static readonly JsonSerializerOptions DefaultJsonOptions = new()
-    {
-        // Match SqlServerEventStore outbox serialization (PascalCase / case-insensitive).
-        PropertyNameCaseInsensitive = true,
-        WriteIndented = false,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-    };
-
     private readonly IMessageTransport _transport;
     private readonly EventSession _session;
     private readonly JsonSerializerOptions _jsonOptions;
@@ -48,8 +39,7 @@ public sealed class MessageTransportOutboxPublisher : IOutboxPublisher
     /// <see cref="OutboxMessage.SchemaVersion"/>.
     /// </param>
     /// <param name="jsonOptions">
-    /// Optional JSON options. Defaults match SQL Server outbox payload serialization
-    /// (<c>PropertyNameCaseInsensitive</c>, no camelCase rename).
+    /// Optional JSON options. The default is <see cref="MessagingJson.Options"/>.
     /// </param>
     public MessageTransportOutboxPublisher(
         IMessageTransport transport,
@@ -72,7 +62,7 @@ public sealed class MessageTransportOutboxPublisher : IOutboxPublisher
         ArgumentNullException.ThrowIfNull(transport);
         ArgumentNullException.ThrowIfNull(catalog);
 
-        _jsonOptions = jsonOptions ?? DefaultJsonOptions;
+        _jsonOptions = jsonOptions ?? MessagingJson.Options;
         _transport = transport;
         _session = new EventSession(new OptionsEventSerializer(_jsonOptions), catalog, upcastPipeline);
     }
@@ -112,9 +102,9 @@ public sealed class MessageTransportOutboxPublisher : IOutboxPublisher
         var metadata = TryReadMetadata(message.Metadata);
         var headers = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ["outbox.streamId"] = message.StreamId,
-            ["outbox.sequencePosition"] = message.SequencePosition.ToString(),
-            ["outbox.eventType"] = message.EventType,
+            [MessageHeaders.OutboxStreamId] = message.StreamId,
+            [MessageHeaders.OutboxSequencePosition] = message.SequencePosition.ToString(),
+            [MessageHeaders.OutboxEventType] = message.EventType,
         };
         var context = new MessageContext
         {
