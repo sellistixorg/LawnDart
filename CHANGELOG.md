@@ -10,6 +10,10 @@ changes to the public API.
 
 ## [Unreleased]
 
+### Changed
+
+- The build kit (`skills/BUILD_KIT.md`) now targets LawnDart 0.5, matching the 0.5.0-alpha.1 packages.
+
 ## [0.5.0-alpha.1] — 2026-10-06
 
 ### Fixed
