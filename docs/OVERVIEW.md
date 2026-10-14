@@ -33,6 +33,7 @@ app.MapLawnDartCommands();
 | `LawnDart.EventSourcing.SqlServer` | First durable store |
 | `LawnDart.Messaging` | Reactors, processors, transports |
 | `LawnDart.Messaging.InMemory` | In-process messaging |
+| `LawnDart.Messaging.RabbitMQ` | RabbitMQ transport |
 | `LawnDart.Messaging.SqlServer` | Durable inbox deduplication |
 | `LawnDart.Messaging.Testing` | Transport conformance tests |
 | `LawnDart.Projections.Lightweight` | Read-model host (InMemory / SQL) |

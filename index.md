@@ -10,7 +10,7 @@ You model slices in Eventhesis, in prooph board, in eventmodelers.ai, or on a
 whiteboard, and LawnDart is what they become. Written by a human or generated
 by an agent.
 
-Supported today: InMemory and SQL Server, in-process messaging, `net10.0`.
+Supported today: InMemory and SQL Server, in-process and RabbitMQ messaging, `net10.0`.
 [Why LawnDart](docs/WHY.md).
 
 ## Quick install (zero infrastructure)

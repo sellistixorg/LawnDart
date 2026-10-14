@@ -4,7 +4,8 @@ SQL Server `IInboxStore`. Reactor and event-processor deduplication survives
 a process restart and is shared by every instance that uses the same table.
 
 The transport stays in-process (`LawnDart.Messaging.InMemory`) unless you
-register your own `IMessageTransport`.
+register your own `IMessageTransport`. `AddRabbitMqTransport` is the
+RabbitMQ registration.
 
 ## Registration
 
