@@ -40,11 +40,31 @@ public sealed class ReactorHostedService<TReactor, TEvent> : BackgroundService
         _commandDispatcher = commandDispatcher;
     }
 
-    protected override Task ExecuteAsync(CancellationToken stoppingToken)
+    /// <summary>
+    /// Subscribes to <typeparamref name="TEvent"/>.
+    /// A missing <c>[EventTypeName]</c> is logged and thrown to the caller.
+    /// </summary>
+    public override Task StartAsync(CancellationToken cancellationToken)
     {
-        _eventTypeName = MessageTypeNames.Require(typeof(TEvent));
-        return _transport.SubscribeAsync<TEvent>(HandleAsync, stoppingToken);
+        try
+        {
+            _eventTypeName = MessageTypeNames.Require(typeof(TEvent));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Reactor {Reactor} failed to start. Event type {EventType} must declare [EventTypeName].",
+                ReactorTypeName,
+                typeof(TEvent).FullName);
+            throw;
+        }
+
+        return base.StartAsync(cancellationToken);
     }
+
+    protected override Task ExecuteAsync(CancellationToken stoppingToken)
+        => _transport.SubscribeAsync<TEvent>(HandleAsync, stoppingToken);
 
     private async Task HandleAsync(TEvent @event, MessageContext context, CancellationToken ct)
     {

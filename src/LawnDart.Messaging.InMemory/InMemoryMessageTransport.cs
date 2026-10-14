@@ -8,8 +8,8 @@ namespace LawnDart.Messaging.InMemory;
 /// In-process message transport. It delivers each publish to the subscribers registered for that CLR type.
 /// Suitable for unit tests and local development. No broker.
 /// Thread-safe. Subscribers for one message type run in registration order.
-/// A failed handler is retried up to <see cref="MessageTransportOptions.MaxDeliveryAttempts"/>,
-/// then dead-lettered when <see cref="MessageTransportOptions.DeadLetterFailedMessages"/> is true.
+/// A failed handler is retried up to <see cref="MessageTransportOptions.MaxDeliveryAttempts"/>.
+/// The last failure is thrown unless <see cref="MessageTransportOptions.DeadLetterFailedMessages"/> is true.
 /// Concurrency and prefetch are validated at startup and do not parallelize this transport.
 /// </summary>
 public sealed class InMemoryMessageTransport : IMessageTransport

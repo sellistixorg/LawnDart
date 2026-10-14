@@ -19,7 +19,7 @@ services.Configure<MessageTransportOptions>(options =>
     options.Concurrency = 4;
     options.Prefetch = 20;
     options.MaxDeliveryAttempts = 5;
-    options.DeadLetterFailedMessages = true;
+    options.DeadLetterFailedMessages = false;
 });
 ```
 
@@ -82,10 +82,11 @@ Register a hook with `AddMessagePreHandler<THandler>()`. The hook's
 registration order. A failure in the hook counts as a failed attempt.
 
 An in-process transport calls `MessageDelivery.DeliverAsync`. That method
-retries until `MaxDeliveryAttempts`, including the first try. When
-`DeadLetterFailedMessages` is true, it parks the message on `IDeadLetterQueue`
-and returns. When the flag is false, it throws the last failure. A cancelled
-token stops delivery and does not dead-letter the message.
+retries until `MaxDeliveryAttempts`, including the first try. The default
+leaves `DeadLetterFailedMessages` false, so the last failure is thrown and the
+caller still has the message. Set the flag true to park the message on
+`IDeadLetterQueue` and return. A cancelled token stops delivery and does not
+dead-letter the message.
 
 A broker that redelivers on its own calls `MessageDelivery.TryOnceAsync` once
 per delivery, then dead-letters when the broker's count reaches

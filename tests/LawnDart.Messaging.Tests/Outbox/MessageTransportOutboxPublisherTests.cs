@@ -166,6 +166,49 @@ public class MessageTransportOutboxPublisherTests
     }
 
     [Fact]
+    public async Task OutboxProcessor_KeepsTheRow_WhenTheHandlerKeepsFailing()
+    {
+        var transport = new InMemoryMessageTransport(NullLogger<InMemoryMessageTransport>.Instance);
+        var attempts = 0;
+        await transport.SubscribeAsync<OrderPlacedEvent>((_, _, _) =>
+        {
+            attempts++;
+            throw new InvalidOperationException("handler failed");
+        });
+
+        var publisher = new MessageTransportOutboxPublisher(transport, [typeof(OrderPlacedEvent)]);
+        var writer = new InMemoryOutboxWriter();
+        var id = Guid.NewGuid();
+        var evt = new OrderPlacedEvent(Guid.NewGuid(), DateTime.UtcNow, "order-fail");
+
+        await writer.WriteAsync(new OutboxMessage
+        {
+            Id = id,
+            EventType = EventTypeCatalog.TryGetDeclaredName(typeof(OrderPlacedEvent))!,
+            SchemaVersion = 1,
+            CodecId = EventCodec.Json,
+            Payload = JsonSerializer.SerializeToUtf8Bytes(evt, evt.GetType(), JsonOptions),
+            Metadata = "{}",
+            CreatedAt = DateTime.UtcNow,
+            StreamId = "Order:fail",
+            SequencePosition = 1,
+        });
+
+        var processor = new TestableOutboxProcessor(writer, publisher);
+        await processor.ProcessBatchPublicAsync(CancellationToken.None);
+
+        var pending = await writer.GetUnprocessedAsync(10);
+        var row = Assert.Single(pending);
+        Assert.Equal(id, row.Id);
+        Assert.Null(row.ProcessedAt);
+        Assert.Null(row.DeadLetteredAt);
+        Assert.True(row.Attempts >= 1);
+        Assert.Contains("handler failed", row.LastError, StringComparison.Ordinal);
+        Assert.Equal(new MessageTransportOptions().MaxDeliveryAttempts, attempts);
+        Assert.False(new MessageTransportOptions().DeadLetterFailedMessages);
+    }
+
+    [Fact]
     public async Task PublishAsync_UsesCatalogSchemaVersion_NotTokenOnlyMap()
     {
         var transport = new InMemoryMessageTransport(NullLogger<InMemoryMessageTransport>.Instance);

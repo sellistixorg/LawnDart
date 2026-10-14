@@ -33,9 +33,9 @@ public class MessageTransportOptions
     /// <summary>
     /// When <c>true</c>, a message that still fails after <see cref="MaxDeliveryAttempts"/>
     /// is dead-lettered. When <c>false</c>, the last failure is thrown and the message is not parked.
-    /// Defaults to <c>true</c>.
+    /// Defaults to <c>false</c>, so a caller such as the outbox still sees the failure.
     /// </summary>
-    public bool DeadLetterFailedMessages { get; set; } = true;
+    public bool DeadLetterFailedMessages { get; set; }
 
     /// <summary>
     /// When <c>true</c>, host startup runs <see cref="IMessageTopologySetup"/>.
