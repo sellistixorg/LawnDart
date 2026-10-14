@@ -10,6 +10,8 @@
   href: messaging.md
 - name: Messaging.InMemory
   href: messaging-inmemory.md
+- name: Messaging.RabbitMQ
+  href: messaging-rabbitmq.md
 - name: Messaging.SqlServer
   href: messaging-sqlserver.md
 - name: Messaging.Testing

@@ -17,6 +17,7 @@ changes to the public API.
 
 ### Added
 
+- `LawnDart.Messaging.RabbitMQ` publishes and consumes through RabbitMQ (`AddRabbitMqTransport`). The exchange and routing key are the declared message type name. A failed handler is retried until the max attempts. With dead-letter handling on, the message is nacked to a dead-letter exchange. With dead-letter handling off, the message is nacked and stays on the queue.
 - `MessagingJson.Options` is the JSON setting for message bodies and the outbox publisher. Property names are PascalCase. Reads ignore case. Null values are omitted.
 - The `LawnDart.Messaging` meter counts `messaging.delivery.retries` and `messaging.deadlettered`. A retry is a debug log and a `messaging.retry` span event. A dead-letter is a warning and a `messaging.deadlettered` span event, and the span status is Error.
 - The `LawnDart.Outbox` meter counts `outbox.publish.failures` and `outbox.deadlettered` on the outbox processor's warning paths.

@@ -2,8 +2,9 @@ namespace LawnDart.Messaging;
 
 /// <summary>
 /// Pluggable transport abstraction for publishing and consuming typed messages.
-/// The implementation shipped in these packages is <c>InMemoryMessageTransport</c>
-/// (<c>LawnDart.Messaging.InMemory</c>).
+/// The transports shipped in these packages are <c>InMemoryMessageTransport</c>
+/// (<c>LawnDart.Messaging.InMemory</c>) and <c>RabbitMqMessageTransport</c>
+/// (<c>LawnDart.Messaging.RabbitMQ</c>).
 /// Use <see cref="MessageTypeNames"/>, <see cref="MessagingJson"/>, <see cref="MessageHeaders"/>,
 /// <see cref="MessageTransportOptions"/>, and <see cref="MessageDelivery"/> when you implement this interface.
 /// </summary>

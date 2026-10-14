@@ -7,7 +7,8 @@ Reference the package from the transport's test project and inherit
 The suite checks delivery, user / tenant / custom header pass-through, the
 pre-handler hook, retries up to the max attempts, dead-letter, cancellation,
 and a missing `[EventTypeName]`. `InMemoryTransportConformanceTests` is the
-in-process run of that suite.
+in-process run of that suite. `RabbitMqTransportConformanceTests` runs it
+against RabbitMQ.
 
 ## Registration
 
