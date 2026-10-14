@@ -51,11 +51,33 @@ public class RabbitMqTransportOptionsTests
     public void Retry_delay_defaults_to_five_seconds_and_must_be_positive()
     {
         Assert.Equal(TimeSpan.FromSeconds(5), new RabbitMqTransportOptions().RetryDelay);
+        Assert.Equal(TimeSpan.FromSeconds(30), new RabbitMqTransportOptions().OperationTimeout);
         Assert.Equal(RabbitMqUnroutablePublish.Warn, new RabbitMqTransportOptions().UnroutablePublish);
 
         var options = new RabbitMqTransportOptions { RetryDelay = TimeSpan.Zero };
         var ex = Assert.Throws<InvalidOperationException>(options.EnsureValid);
         Assert.Contains("RetryDelay", ex.Message, StringComparison.Ordinal);
+
+        var timeout = new RabbitMqTransportOptions { OperationTimeout = TimeSpan.Zero };
+        var timeoutError = Assert.Throws<InvalidOperationException>(timeout.EnsureValid);
+        Assert.Contains("OperationTimeout", timeoutError.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Exchange_queue_and_routing_key_names_have_a_255_byte_limit()
+    {
+        Assert.Equal(255, RabbitMqNames.NameMaxLength);
+        RabbitMqNames.RequireExchange(new string('a', 255));
+
+        var longName = new string('a', 256);
+        var length = Assert.Throws<InvalidOperationException>(() => RabbitMqNames.RequireQueue(longName));
+        Assert.Contains("255", length.Message, StringComparison.Ordinal);
+
+        var reserved = Assert.Throws<InvalidOperationException>(() => RabbitMqNames.RequireExchange("amq.direct"));
+        Assert.Contains("reserved", reserved.Message, StringComparison.Ordinal);
+
+        var blank = Assert.Throws<InvalidOperationException>(() => RabbitMqNames.RequireRoutingKey(" "));
+        Assert.Contains("required", blank.Message, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -3,7 +3,7 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <PackageId>LawnDart.Messaging.AzureServiceBus</PackageId>
-    <Description>Azure Service Bus transport for LawnDart.Messaging. Declared message types are topics. Each subscriber has one subscription. Failed deliveries are scheduled again, then dead-lettered when that handling is on.</Description>
+    <Description>Azure Service Bus transport for LawnDart.Messaging. Declared message types are topics unless a topic mapper groups them. Each subscriber has one subscription. Failed deliveries are scheduled again, then dead-lettered when that handling is on.</Description>
     <IsPackable>true</IsPackable>
   </PropertyGroup>
 

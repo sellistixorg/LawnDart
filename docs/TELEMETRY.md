@@ -78,10 +78,17 @@ Package: `LawnDart.Messaging`.
 |---|---|---|---|
 | `messaging.publish.duration` | Histogram of double | `ms` | `messaging.message_type` |
 | `messaging.consume.duration` | Histogram of double | `ms` | `messaging.message_type` |
-| `messaging.publish.errors` | Counter of long | `count` | `messaging.message_type` |
+| `messaging.publish.errors` | Counter of long | `count` | `messaging.message_type`, and `messaging.publish.outcome` when the value is `unroutable` |
 | `messaging.inbox.duplicates` | Counter of long | `count` | `messaging.message_type` |
 | `messaging.delivery.retries` | Counter of long | `count` | `messaging.message_type`, `messaging.subscription_name` |
 | `messaging.deadlettered` | Counter of long | `count` | `messaging.message_type`, `messaging.subscription_name` |
+
+`messaging.publish.duration` is recorded when a publish finishes and the
+broker accepted it. A RabbitMQ publish in `UnroutablePublish` `Warn` mode
+that reached no queue is not recorded there. That publish increments
+`messaging.publish.errors` with `messaging.publish.outcome` set to
+`unroutable`. A publish that throws increments the same counter with
+`messaging.message_type` only.
 
 ### LawnDart.EventProcessor
 
@@ -248,7 +255,7 @@ while the consume span is current.
 
 | Span | Tags |
 |---|---|
-| `Messaging.Publish` | `messaging.message_type`. RabbitMQ also sets `messaging.rabbitmq.exchange` and `messaging.rabbitmq.routing_key`. Azure Service Bus also sets `messaging.servicebus.topic`. A thrown publish sets status Error. |
+| `Messaging.Publish` | `messaging.message_type`. RabbitMQ also sets `messaging.rabbitmq.exchange` and `messaging.rabbitmq.routing_key`. Azure Service Bus also sets `messaging.servicebus.topic`. A thrown publish sets status Error. An unroutable RabbitMQ publish in Warn mode sets `messaging.publish.outcome` to `unroutable` and status Error. It is not recorded on `messaging.publish.duration`. |
 | `Messaging.Consume` | `messaging.message_type`, `messaging.message_id`. RabbitMQ also sets `messaging.rabbitmq.queue` and `messaging.rabbitmq.redelivered`. Azure Service Bus also sets `messaging.servicebus.topic`, `messaging.servicebus.subscription`, `messaging.servicebus.delivery_count`, and `messaging.servicebus.redelivered`. |
 
 ### LawnDart.EventProcessor

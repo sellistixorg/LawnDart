@@ -78,6 +78,44 @@ public class MessagingTelemetryTests
         Assert.Contains("again", logger.Warning, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void An_unroutable_publish_is_counted_on_the_error_counter_with_its_own_outcome()
+    {
+        var errors = 0L;
+        string? outcome = null;
+        string? messageType = null;
+        using var meters = new MeterListener();
+        meters.InstrumentPublished = (instrument, listener) =>
+        {
+            if (instrument.Meter.Name == MessagingTelemetry.MeterName &&
+                instrument.Name == "messaging.publish.errors")
+            {
+                listener.EnableMeasurementEvents(instrument);
+            }
+        };
+        meters.SetMeasurementEventCallback<long>((_, value, tags, _) =>
+        {
+            if (!HasTag(tags, "messaging.message_type", "messaging.named-ping"))
+                return;
+
+            Interlocked.Add(ref errors, value);
+            foreach (var tag in tags)
+            {
+                if (tag.Key == "messaging.publish.outcome")
+                    outcome = tag.Value as string;
+                if (tag.Key == "messaging.message_type")
+                    messageType = tag.Value as string;
+            }
+        });
+        meters.Start();
+
+        MessagingTelemetry.RecordPublishUnroutable("messaging.named-ping");
+
+        Assert.Equal(1, Volatile.Read(ref errors));
+        Assert.Equal("unroutable", outcome);
+        Assert.Equal("messaging.named-ping", messageType);
+    }
+
     private static bool HasTag(ReadOnlySpan<KeyValuePair<string, object?>> tags, string key, string expected)
     {
         foreach (var tag in tags)

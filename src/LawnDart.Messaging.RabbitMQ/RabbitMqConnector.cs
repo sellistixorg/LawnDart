@@ -22,18 +22,23 @@ internal sealed class RabbitMqConnector : IDisposable, IAsyncDisposable
         _options = options;
     }
 
-    public Task DeclareExchangeAsync(string messageType, CancellationToken cancellationToken)
+    public Task DeclareExchangeAsync(string exchange, CancellationToken cancellationToken)
         => DeclareOnceAsync(
-            "exchange\n" + messageType,
-            (channel, ct) => RabbitMqDeclarations.DeclareExchangeAsync(channel, messageType, ct),
+            "exchange\n" + exchange,
+            (channel, ct) => RabbitMqDeclarations.DeclareExchangeAsync(channel, exchange, ct),
             cancellationToken);
 
-    public Task DeclareSubscriptionAsync(string messageType, string subscriptionName, CancellationToken cancellationToken)
+    public Task DeclareSubscriptionAsync(
+        string messageType,
+        string exchange,
+        string subscriptionName,
+        CancellationToken cancellationToken)
         => DeclareOnceAsync(
-            "subscription\n" + messageType + "\n" + subscriptionName,
+            "subscription\n" + exchange + "\n" + messageType + "\n" + subscriptionName,
             (channel, ct) => RabbitMqDeclarations.DeclareSubscriptionAsync(
                 channel,
                 messageType,
+                exchange,
                 subscriptionName,
                 _options.RetryDelay,
                 ct),
@@ -134,7 +139,8 @@ internal sealed class RabbitMqConnector : IDisposable, IAsyncDisposable
 
             if (_connection is not null && _automaticRecovery && IsRecovering(_connection))
             {
-                await WaitForRecoveryAsync(_connection, cancellationToken).ConfigureAwait(false);
+                await WaitForRecoveryAsync(_connection, _options.OperationTimeout, cancellationToken)
+                    .ConfigureAwait(false);
                 if (_connection.IsOpen)
                     return _connection;
             }
@@ -160,10 +166,24 @@ internal sealed class RabbitMqConnector : IDisposable, IAsyncDisposable
     private static bool IsRecovering(IConnection connection)
         => connection.CloseReason is null || connection.CloseReason.Initiator != ShutdownInitiator.Application;
 
-    private static async Task WaitForRecoveryAsync(IConnection connection, CancellationToken cancellationToken)
+    internal static async Task WaitForRecoveryAsync(
+        IConnection connection,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(connection);
+        if (timeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(timeout),
+                "RabbitMQ recovery timeout must be greater than zero.");
+        }
+
         if (connection.IsOpen)
             return;
+
+        using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutSource.CancelAfter(timeout);
 
         var opened = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         Task OnRecovered(object sender, AsyncEventArgs args)
@@ -178,8 +198,17 @@ internal sealed class RabbitMqConnector : IDisposable, IAsyncDisposable
             using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(200));
             while (!connection.IsOpen && !opened.Task.IsCompleted)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                await timer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    if (!await timer.WaitForNextTickAsync(timeoutSource.Token).ConfigureAwait(false))
+                        break;
+                }
+                catch (OperationCanceledException)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    throw new TimeoutException(
+                        $"RabbitMQ connection recovery did not finish within {timeout}.");
+                }
             }
         }
         finally

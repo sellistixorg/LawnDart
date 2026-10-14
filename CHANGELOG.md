@@ -17,6 +17,7 @@ changes to the public API.
 
 ### Added
 
+- `ITopicMapper` maps a declared event type to a topic or exchange. The default is one topic per `[EventTypeName]`. `GroupTopicMapper`, `PrefixTopicMapper`, `SharedTopicMapper`, and `DelegateTopicMapper` group types, including one shared topic. RabbitMQ binds each queue with the event type name as the routing key. Azure Service Bus filters with `lawndart_type` and keeps the `lawndart_target` rule, including a missing property. [Message transports](docs/MESSAGE_TRANSPORTS.md) covers the default, grouping, a single shared topic, filtering, and naming limits.
 - The README shows what the in-process, RabbitMQ, and Azure Service Bus transports are, how to install them, and a minimal registration for each.
 - The outbox guide registers the publisher with the in-process transport, RabbitMQ, and Azure Service Bus. `DeadLetterFailedMessages` stays off unless you set it. A publish that throws leaves the outbox row in place.
 - [Telemetry](docs/TELEMETRY.md) lists every LawnDart meter and activity source, each instrument, the `messaging.retry` and `messaging.deadlettered` span events, and an OpenTelemetry registration.
@@ -36,10 +37,18 @@ changes to the public API.
 
 ### Changed
 
+- Azure Service Bus `Dispose()` blocks the caller for up to `OperationTimeout` and then returns. Prefer `DisposeAsync`.
 - The README states that `LawnDart.Messaging.RabbitMQ` and `LawnDart.Messaging.AzureServiceBus` are available starting with 0.6.0-alpha.1. The transport registrations are alternatives: pick one. A later RabbitMQ or Service Bus registration replaces `IMessageTransport`.
 - Inbox docs name the in-process, RabbitMQ, and Azure Service Bus transports. The SQL inbox replaces the inbox store. The transport you registered stays.
 - The build kit (`skills/BUILD_KIT.md`) now targets LawnDart 0.5, matching the 0.5.0-alpha.1 packages.
 - Reactor and event processor logs use the declared event type name.
+
+### Fixed
+
+- A cancelled RabbitMQ delivery waits on the retry queue and does not increment the attempt count.
+- An unroutable RabbitMQ publish in Warn mode is not recorded as a successful publish. It increments `messaging.publish.errors` with `messaging.publish.outcome` set to `unroutable`.
+- RabbitMQ waits at most `OperationTimeout` (default 30 seconds) for automatic connection recovery, then opens a new connection.
+- The RabbitMQ subscription concurrency limiter is disposed with the transport.
 
 ## [0.5.0-alpha.1] — 2026-10-06
 

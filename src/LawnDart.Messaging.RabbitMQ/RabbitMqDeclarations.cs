@@ -8,31 +8,42 @@ namespace LawnDart.Messaging.RabbitMQ;
 /// </summary>
 internal static class RabbitMqDeclarations
 {
-    public static Task DeclareExchangeAsync(IChannel channel, string messageType, CancellationToken cancellationToken)
-        => channel.ExchangeDeclareAsync(
-            RabbitMqNames.Exchange(messageType),
+    public static Task DeclareExchangeAsync(IChannel channel, string exchange, CancellationToken cancellationToken)
+    {
+        RabbitMqNames.RequireExchange(exchange);
+        return channel.ExchangeDeclareAsync(
+            exchange,
             ExchangeType.Direct,
             durable: true,
             autoDelete: false,
             cancellationToken: cancellationToken);
+    }
 
     public static async Task DeclareSubscriptionAsync(
         IChannel channel,
         string messageType,
+        string exchange,
         string subscriptionName,
         TimeSpan retryDelay,
         CancellationToken cancellationToken)
     {
-        var exchange = RabbitMqNames.Exchange(messageType);
+        RabbitMqNames.RequireExchange(exchange);
         var routingKey = RabbitMqNames.RoutingKey(messageType);
+        RabbitMqNames.RequireRoutingKey(routingKey);
         var queue = RabbitMqNames.Queue(messageType, subscriptionName);
         var deadLetterExchange = RabbitMqNames.DeadLetterExchange(messageType);
         var deadLetterRoutingKey = RabbitMqNames.DeadLetterRoutingKey(messageType, subscriptionName);
         var deadLetterQueue = RabbitMqNames.DeadLetterQueue(messageType, subscriptionName);
         var delayExchange = RabbitMqNames.DelayExchange(messageType, subscriptionName);
         var retryQueue = RabbitMqNames.RetryQueue(messageType, subscriptionName);
+        RabbitMqNames.RequireQueue(queue);
+        RabbitMqNames.RequireQueue(deadLetterQueue);
+        RabbitMqNames.RequireQueue(retryQueue);
+        RabbitMqNames.RequireExchange(deadLetterExchange);
+        RabbitMqNames.RequireExchange(delayExchange);
+        RabbitMqNames.RequireRoutingKey(deadLetterRoutingKey);
 
-        await DeclareExchangeAsync(channel, messageType, cancellationToken).ConfigureAwait(false);
+        await DeclareExchangeAsync(channel, exchange, cancellationToken).ConfigureAwait(false);
 
         await channel.ExchangeDeclareAsync(
             deadLetterExchange,

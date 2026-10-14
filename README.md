@@ -188,9 +188,10 @@ services.AddAzureServiceBusTransport(options =>
 });
 ```
 
-Retry delay, attempt counting, the dead-letter option, the Service Bus
-`lawndart_target` property, `BrokerMaxDeliveryCount`, `OperationTimeout`,
-and RabbitMQ `UnroutablePublish`: [Message transports](docs/MESSAGE_TRANSPORTS.md).
+Retry delay, attempt counting, the dead-letter option, topic mapping, the
+Service Bus `lawndart_target` and `lawndart_type` properties,
+`BrokerMaxDeliveryCount`, `OperationTimeout`, and RabbitMQ
+`UnroutablePublish`: [Message transports](docs/MESSAGE_TRANSPORTS.md).
 Meters and activity sources: [Telemetry](docs/TELEMETRY.md).
 
 ## Documentation

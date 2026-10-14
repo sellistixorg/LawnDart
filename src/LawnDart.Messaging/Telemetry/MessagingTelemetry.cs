@@ -62,6 +62,18 @@ public static class MessagingTelemetry
     public static void RecordPublishError(string messageType)
         => PublishErrors.Add(1, new KeyValuePair<string, object?>("messaging.message_type", messageType));
 
+    /// <summary>
+    /// Records a publish that reached no queue.
+    /// Increments <c>messaging.publish.errors</c> with tag <c>messaging.publish.outcome</c> set to <c>unroutable</c>.
+    /// This is not a successful publish, so <c>messaging.publish.duration</c> is not recorded.
+    /// </summary>
+    /// <param name="messageType">Declared message type name.</param>
+    public static void RecordPublishUnroutable(string messageType)
+        => PublishErrors.Add(
+            1,
+            new KeyValuePair<string, object?>("messaging.message_type", messageType),
+            new KeyValuePair<string, object?>("messaging.publish.outcome", "unroutable"));
+
     /// <summary>Records a completed consume operation.</summary>
     public static void RecordConsume(string messageType, TimeSpan duration)
         => ConsumeDuration.Record(duration.TotalMilliseconds,

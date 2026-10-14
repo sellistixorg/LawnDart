@@ -67,9 +67,21 @@ internal sealed class AzureServiceBusConnector : IDisposable, IAsyncDisposable
     public Task EnsureTopicAsync(string topic, CancellationToken cancellationToken)
         => DeclareOnceAsync("topic\n" + topic, ct => CreateTopicAsync(topic, ct), cancellationToken);
 
-    public Task EnsureSubscriptionAsync(string topic, string subscriptionName, CancellationToken cancellationToken)
-        => DeclareOnceAsync(
-            "subscription\n" + topic + "\n" + subscriptionName,
+    public Task EnsureSubscriptionAsync(
+        string topic,
+        string subscriptionName,
+        IReadOnlyCollection<string> messageTypes,
+        CancellationToken cancellationToken)
+    {
+        var expression = AzureServiceBusHeaders.RouteFilter(subscriptionName, messageTypes);
+        var typeKey = string.Join(
+            "\n",
+            messageTypes
+                .Where(static name => !string.IsNullOrWhiteSpace(name))
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(static name => name, StringComparer.Ordinal));
+        return DeclareOnceAsync(
+            "subscription\n" + topic + "\n" + subscriptionName + "\n" + typeKey,
             async ct =>
             {
                 // CreateTopicAsync does not take the declare lock. Calling EnsureTopicAsync here would deadlock.
@@ -86,7 +98,7 @@ internal sealed class AzureServiceBusConnector : IDisposable, IAsyncDisposable
                     };
                     var rule = new CreateRuleOptions(
                         AzureServiceBusHeaders.RouteRuleName,
-                        new SqlRuleFilter(AzureServiceBusHeaders.RetryFilter(subscriptionName)));
+                        new SqlRuleFilter(expression));
 
                     try
                     {
@@ -97,17 +109,18 @@ internal sealed class AzureServiceBusConnector : IDisposable, IAsyncDisposable
                     }
                 }
 
-                await EnsureRouteRuleAsync(admin, topic, subscriptionName, ct).ConfigureAwait(false);
+                await EnsureRouteRuleAsync(admin, topic, subscriptionName, expression, ct).ConfigureAwait(false);
             },
             cancellationToken);
+    }
 
     private static async Task EnsureRouteRuleAsync(
         ServiceBusAdministrationClient admin,
         string topic,
         string subscriptionName,
+        string expression,
         CancellationToken cancellationToken)
     {
-        var expression = AzureServiceBusHeaders.RetryFilter(subscriptionName);
         var current = await TryGetRuleAsync(admin, topic, subscriptionName, AzureServiceBusHeaders.RouteRuleName, cancellationToken)
             .ConfigureAwait(false);
         if (current?.Filter is not SqlRuleFilter sql || sql.SqlExpression != expression)
@@ -202,14 +215,15 @@ internal sealed class AzureServiceBusConnector : IDisposable, IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Closes senders and the clients this connector opened.
+    /// Blocks the caller for up to <see cref="AzureServiceBusTransportOptions.OperationTimeout"/>.
+    /// Prefer <see cref="DisposeAsync"/>. When the wait ends first, cleanup can still be running.
+    /// </summary>
     public void Dispose()
     {
-        var dispose = DisposeAsync().AsTask();
-        if (!dispose.Wait(_options.OperationTimeout))
-        {
-            throw new TimeoutException(
-                $"Disposing the Azure Service Bus connector did not finish within {_options.OperationTimeout}.");
-        }
+        var dispose = Task.Run(async () => await DisposeAsync().ConfigureAwait(false));
+        dispose.Wait(_options.OperationTimeout);
     }
 
     public async ValueTask DisposeAsync()

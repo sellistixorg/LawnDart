@@ -34,6 +34,12 @@ public sealed class RabbitMqTransportOptions : MessageTransportOptions
     public TimeSpan RetryDelay { get; set; } = TimeSpan.FromSeconds(5);
 
     /// <summary>
+    /// How long to wait for automatic connection recovery before opening a new connection.
+    /// Defaults to 30 seconds. The value must be greater than zero.
+    /// </summary>
+    public TimeSpan OperationTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
     /// What to do when a publish is mandatory and no queue is bound.
     /// Defaults to <see cref="RabbitMqUnroutablePublish.Warn"/>.
     /// </summary>
@@ -62,6 +68,12 @@ public sealed class RabbitMqTransportOptions : MessageTransportOptions
         {
             throw new InvalidOperationException(
                 "RabbitMqTransportOptions.RetryDelay must be greater than zero and at most 24.8 days.");
+        }
+
+        if (OperationTimeout <= TimeSpan.Zero)
+        {
+            throw new InvalidOperationException(
+                "RabbitMqTransportOptions.OperationTimeout must be greater than zero.");
         }
 
         if (!string.IsNullOrWhiteSpace(Uri))

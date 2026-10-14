@@ -31,14 +31,22 @@ Set `Uri`, or set `HostName`, `Port`, `UserName`, `Password`, and
 
 ## Names
 
-Publish declares the exchange. The exchange and the routing key are the
-`[EventTypeName]` token. A publish does not declare a queue.
+Publish declares the exchange. The exchange is the topic from `ITopicMapper`.
+The default mapper uses the `[EventTypeName]` token, so each type has its
+own exchange. The routing key is always that token. A publish does not
+declare a queue.
 
 The subscriber declares the queue `{token}.{subscription}`, the retry queue
 `{token}.{subscription}.retry`, and the dead-letter queue
 `{token}.{subscription}.dlq`. The dead-letter exchange is `{token}.dlx`.
+The queue binds to the mapped exchange with the routing key. When several
+types share an exchange, each queue receives only the types bound to it.
 `SetupTopology` true runs the same declarations at startup for every event
 type recorded by `AddReactor` and `AddEventProcessor`.
+
+An exchange, routing key, or queue name is at most 255 bytes. Names that
+start with `amq.` are reserved. Topic mapping, grouping, and the Service Bus
+filter are in [Message transports](../MESSAGE_TRANSPORTS.md).
 
 Queues are quorum queues. Messages are persistent.
 
@@ -65,11 +73,18 @@ Several handlers on one subscription share that queue. If one throws, the
 message is delayed and every handler runs again.
 
 The cancellation token passed to `SubscribeAsync` is the token the handler
-receives. Cancelling it stops that subscription. The message is nacked back
-onto the queue.
+receives. Cancelling it stops that subscription. The in-flight message waits
+on the retry queue for `RetryDelay`. The attempt count does not increase.
 
-A mandatory publish with no queue bound logs a warning and returns.
-Set `UnroutablePublish` to `Throw` when the caller should see that failure.
+A mandatory publish with no queue bound logs a warning and returns. That
+publish is not a successful `messaging.publish.duration` measurement. It
+increments `messaging.publish.errors` with `messaging.publish.outcome` set
+to `unroutable`. Set `UnroutablePublish` to `Throw` when the caller should
+see that failure.
+
+`OperationTimeout` is how long to wait for automatic connection recovery
+before opening a new connection. The default is 30 seconds. The value must
+be greater than zero.
 
 User, tenant, and custom headers the publisher set are the values the
 handler sees. Publish and consume durations are recorded on the

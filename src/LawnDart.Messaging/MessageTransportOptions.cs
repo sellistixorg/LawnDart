@@ -44,6 +44,15 @@ public class MessageTransportOptions
     public bool SetupTopology { get; set; }
 
     /// <summary>
+    /// Maps a declared message type name to the topic or exchange that carries it.
+    /// Defaults to <see cref="DeclaredTypeTopicMapper"/>, so each type has its own topic.
+    /// RabbitMQ and Azure Service Bus read this when they publish, subscribe, and set up topology.
+    /// The in-process transport does not.
+    /// A mapper registered as <see cref="ITopicMapper"/> is used when this property is left at the default instance.
+    /// </summary>
+    public ITopicMapper TopicMapper { get; set; } = DeclaredTypeTopicMapper.Instance;
+
+    /// <summary>
     /// Throws when a setting is outside the range a transport can use.
     /// A subclass that adds settings should call this method and then check its own.
     /// </summary>

@@ -3,7 +3,7 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <PackageId>LawnDart.Messaging.RabbitMQ</PackageId>
-    <Description>RabbitMQ transport for LawnDart.Messaging. Declared message types are exchanges. Failed deliveries are retried, then nacked or dead-lettered.</Description>
+    <Description>RabbitMQ transport for LawnDart.Messaging. Declared message types are exchanges unless a topic mapper groups them. Failed deliveries are retried, then nacked or dead-lettered.</Description>
     <IsPackable>true</IsPackable>
   </PropertyGroup>
 

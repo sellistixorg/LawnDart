@@ -139,6 +139,30 @@ public class AzureServiceBusTransportOptionsTests
     }
 
     [Fact]
+    public void Route_filter_keeps_a_missing_target_and_matches_the_event_type()
+    {
+        Assert.Equal(AzureServiceBusNames.EventTypeProperty, AzureServiceBusHeaders.EventType);
+        Assert.Equal(
+            "(user.lawndart_target IS NULL OR user.lawndart_target = '*' OR user.lawndart_target = 'billing') AND (user.lawndart_type IS NULL OR user.lawndart_type = 'order-placed')",
+            AzureServiceBusHeaders.RouteFilter("billing", ["order-placed"]));
+
+        var grouped = AzureServiceBusHeaders.RouteFilter("bill'ing", ["zeta", "o'hare"]);
+        Assert.Contains("bill''ing", grouped, StringComparison.Ordinal);
+        Assert.Contains(
+            "user.lawndart_type IS NULL OR user.lawndart_type = 'o''hare' OR user.lawndart_type = 'zeta'",
+            grouped,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_route_filter_over_1024_characters_is_rejected()
+    {
+        var types = Enumerable.Range(0, 30).Select(i => new string('n', 40) + i.ToString("00")).ToArray();
+        var ex = Assert.Throws<InvalidOperationException>(() => AzureServiceBusHeaders.RouteFilter("billing", types));
+        Assert.Contains("1024", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Attempt_property_stays_off_the_envelope_headers()
     {
         var properties = new Dictionary<string, object>(StringComparer.Ordinal)
@@ -148,6 +172,7 @@ public class AzureServiceBusTransportOptionsTests
             [MessageHeaders.CustomPrefix + "region"] = "east",
             [AzureServiceBusHeaders.Attempt] = 2,
             [AzureServiceBusHeaders.TargetSubscription] = "billing",
+            [AzureServiceBusHeaders.EventType] = "order-placed",
         };
 
         var envelope = MessageEnvelopeHeaders.Read(
@@ -159,6 +184,7 @@ public class AzureServiceBusTransportOptionsTests
         Assert.Equal("east", envelope.Context.Headers["region"]);
         Assert.False(envelope.Context.Headers.ContainsKey(AzureServiceBusHeaders.Attempt));
         Assert.False(envelope.Context.Headers.ContainsKey(AzureServiceBusHeaders.TargetSubscription));
+        Assert.False(envelope.Context.Headers.ContainsKey(AzureServiceBusHeaders.EventType));
         Assert.Equal(2, AzureServiceBusHeaders.CompletedAttempts(properties));
     }
 
