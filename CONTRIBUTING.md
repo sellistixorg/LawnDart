@@ -10,8 +10,8 @@ effort, please open an issue before starting on any of the following:
 
 - **A new event store backend.** InMemory and SQL Server are the two supported
   stores. Others are not currently planned.
-- **A new message transport.** InMemory and RabbitMQ are the supported
-  transports. Another transport needs an issue first.
+- **A new message transport.** InMemory, RabbitMQ, and Azure Service Bus are
+  the supported transports. Another transport needs an issue first.
 - **Changes that reshape public API surface** — new abstractions, renamed
   members, or altered interfaces.
 
@@ -24,7 +24,7 @@ are always welcome without prior discussion.
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) or later
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) — required
-  for SQL Server and RabbitMQ integration tests (Testcontainers)
+  for SQL Server, RabbitMQ, and Azure Service Bus integration tests (Testcontainers)
 - PowerShell 7+ or bash
 
 ### First build

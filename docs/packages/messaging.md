@@ -8,6 +8,7 @@ Take it when an event in one slice should become a command (or further work)
 in another. This package is the host and the contracts; it does not include
 a transport. Pair it with `LawnDart.Messaging.InMemory` for zero-broker
 delivery. Pair it with `LawnDart.Messaging.RabbitMQ` for a RabbitMQ broker.
+Pair it with `LawnDart.Messaging.AzureServiceBus` for Azure Service Bus.
 
 ## Registration
 
@@ -70,4 +71,5 @@ source name.
 - [Custom message transport](../CUSTOM_MESSAGE_TRANSPORT.md)
 - [InMemory messaging](messaging-inmemory.md)
 - [RabbitMQ](messaging-rabbitmq.md)
+- [Azure Service Bus](messaging-azureservicebus.md)
 - [SQL Server inbox](messaging-sqlserver.md)

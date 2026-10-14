@@ -1,6 +1,6 @@
 # Package map
 
-Thirteen packages. Take `LawnDart` + `LawnDart.EventSourcing` first; add the
+Fourteen packages. Take `LawnDart` + `LawnDart.EventSourcing` first; add the
 others when you need a durable store, read models, HTTP, tests, or
 compile-time schema checks.
 
@@ -25,6 +25,7 @@ Host grammar: [DI Grammar](../DI_GRAMMAR.md). Envelope fields:
 | [`LawnDart.Messaging`](messaging.md) | You need reactors or task processors. | `AddMessaging` / `AddReactor` |
 | [`LawnDart.Messaging.InMemory`](messaging-inmemory.md) | You want choreography without a broker. | `AddInMemoryMessaging()` |
 | [`LawnDart.Messaging.RabbitMQ`](messaging-rabbitmq.md) | You want a RabbitMQ broker. | `AddRabbitMqTransport` |
+| [`LawnDart.Messaging.AzureServiceBus`](messaging-azureservicebus.md) | You want an Azure Service Bus namespace. | `AddAzureServiceBusTransport` |
 | [`LawnDart.Messaging.SqlServer`](messaging-sqlserver.md) | Inbox dedup must survive a restart. | `AddSqlInboxStore` |
 | [`LawnDart.Messaging.Testing`](messaging-testing.md) | You are writing a message transport and want the conformance suite. | Inherit `MessageTransportConformanceTests` |
 | [`LawnDart.AspNetCore`](aspnetcore.md) | You want HTTP POST to a command. | `AddLawnDartHttpCommands` / `MapLawnDartCommands` |
@@ -55,7 +56,8 @@ dev. The bounded-context name stays the same. That swap is verified for
 command dispatch, persist, reload, project, and read-back. Outbox and
 subscriptions have their own tests. Inbox dedup swaps with `AddSqlInboxStore`
 and `InitializeSqlInboxStoreAsync`. That swap leaves the transport in-process.
-`AddRabbitMqTransport` is the RabbitMQ transport. See
+`AddRabbitMqTransport` is the RabbitMQ transport.
+`AddAzureServiceBusTransport` is the Azure Service Bus transport. See
 [BACKEND_SELECTION.md](../BACKEND_SELECTION.md).
 
 Log frames store a `CodecId` (`byte`), not a MIME string. SQL Server uses

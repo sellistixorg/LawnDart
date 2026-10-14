@@ -5,7 +5,8 @@ a process restart and is shared by every instance that uses the same table.
 
 The transport stays in-process (`LawnDart.Messaging.InMemory`) unless you
 register your own `IMessageTransport`. `AddRabbitMqTransport` is the
-RabbitMQ registration.
+RabbitMQ registration. `AddAzureServiceBusTransport` is the Azure Service Bus
+registration.
 
 ## Registration
 

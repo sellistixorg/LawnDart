@@ -11,7 +11,8 @@ path with `AddInMemoryMessaging()` and `AddReactor<TReactor, TEvent>()`.
 `AddSqlInboxStore(connectionString)` replaces the in-memory inbox when
 dedup must survive a restart. Call `InitializeSqlInboxStoreAsync` at startup.
 This page registers the in-process transport. A RabbitMQ host calls
-`AddRabbitMqTransport` from `LawnDart.Messaging.RabbitMQ`.
+`AddRabbitMqTransport` from `LawnDart.Messaging.RabbitMQ`. An Azure Service Bus
+host calls `AddAzureServiceBusTransport` from `LawnDart.Messaging.AzureServiceBus`.
 The event passed to `AddReactor` must declare `[EventTypeName]`.
 The host fails at startup when the attribute is missing.
 
