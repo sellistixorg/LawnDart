@@ -10,9 +10,11 @@ whichever transport you registered.
 | `LawnDart.Messaging.RabbitMQ` | RabbitMQ transport. Another process receives through the broker. | `AddRabbitMqTransport` |
 | `LawnDart.Messaging.AzureServiceBus` | Azure Service Bus transport. Another process receives through the namespace. | `AddAzureServiceBusTransport` |
 
-Packages are on nuget.org as a prerelease. Use `--prerelease` until a stable
-version exists. Add the package for the transport you register. Each
-transport package brings `LawnDart.Messaging`.
+`LawnDart.Messaging.InMemory` is on nuget.org as a prerelease.
+`LawnDart.Messaging.RabbitMQ` and `LawnDart.Messaging.AzureServiceBus`
+are available starting with 0.6.0-alpha.1. Use `--prerelease` until a
+stable version exists. Add the package for the transport you register.
+Each transport package brings `LawnDart.Messaging`.
 
 ```bash
 dotnet add package LawnDart.Messaging.InMemory --prerelease
@@ -20,14 +22,22 @@ dotnet add package LawnDart.Messaging.RabbitMQ --prerelease
 dotnet add package LawnDart.Messaging.AzureServiceBus --prerelease
 ```
 
+Pick one registration. These are alternatives. `AddRabbitMqTransport` and
+`AddAzureServiceBusTransport` replace an `IMessageTransport` already
+registered.
+
 ```csharp
 services.AddInMemoryMessaging();
+```
 
+```csharp
 services.AddRabbitMqTransport(options =>
 {
     options.Uri = "amqp://rabbitmq:rabbitmq@localhost:5672/";
 });
+```
 
+```csharp
 services.AddAzureServiceBusTransport(options =>
 {
     options.ConnectionString = connectionString;
@@ -112,6 +122,12 @@ user.lawndart_target IS NULL OR user.lawndart_target = '*' OR user.lawndart_targ
 `<name>` is that subscription. A message with no `lawndart_target` reaches
 every subscription. A retry reaches only the subscription named in the
 property.
+
+## Operation timeout
+
+Azure Service Bus `OperationTimeout` is how long a Service Bus call and an
+internal wait may run before they time out. The default is 30 seconds. The
+value must be greater than zero.
 
 ## BrokerMaxDeliveryCount
 

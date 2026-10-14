@@ -3,9 +3,10 @@
 LawnDart records metrics on a `Meter` and traces on an `ActivitySource`.
 Pass the name below to OpenTelemetry `AddMeter` and `AddSource`.
 
-`LawnDart.Snapshots` and `LawnDart.Projections` (meter and activity source)
-are constructed with version `1.0.0`. The other meters and sources are
-constructed with the name only.
+`LawnDart.Snapshots` is a meter constructed with version `1.0.0`.
+`LawnDart.Projections` is a meter and an activity source, both constructed
+with version `1.0.0`. The other meters and sources are constructed with the
+name only.
 
 Names are taken from `new Meter` and `new ActivitySource` under `src/`.
 
