@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using System.Text.Json;
 using Azure.Messaging.ServiceBus;
 using Azure.Messaging.ServiceBus.Administration;
 using Microsoft.Extensions.DependencyInjection;
@@ -346,6 +347,52 @@ public sealed class AzureServiceBusTransportBehaviorTests
     }
 
     [Fact]
+    public async Task A_raw_message_without_the_routing_property_reaches_every_subscription()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        await using var first = AzureServiceBusTransportFixture.Create(
+            _container.AmqpConnectionString,
+            _container.AdminConnectionString,
+            options => options.SubscriptionName = "raw-a-" + suffix,
+            preHandler: null);
+        await using var second = AzureServiceBusTransportFixture.Create(
+            _container.AmqpConnectionString,
+            _container.AdminConnectionString,
+            options => options.SubscriptionName = "raw-b-" + suffix,
+            preHandler: null);
+
+        var firstDone = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondDone = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        RawFanoutPing? firstMessage = null;
+        RawFanoutPing? secondMessage = null;
+        await first.Transport.SubscribeAsync<RawFanoutPing>((message, _, _) =>
+        {
+            firstMessage = message;
+            firstDone.TrySetResult();
+            return Task.CompletedTask;
+        });
+        await second.Transport.SubscribeAsync<RawFanoutPing>((message, _, _) =>
+        {
+            secondMessage = message;
+            secondDone.TrySetResult();
+            return Task.CompletedTask;
+        });
+
+        var sent = new RawFanoutPing(Guid.NewGuid(), DateTime.UtcNow, "from-outside");
+        var body = JsonSerializer.SerializeToUtf8Bytes(sent, MessagingJson.Options);
+        await using var client = new ServiceBusClient(_container.AmqpConnectionString);
+        await using var sender = client.CreateSender(AzureServiceBusNames.Topic("messaging.servicebus.raw-fanout"));
+        await sender.SendMessageAsync(new ServiceBusMessage(body));
+
+        await firstDone.Task.WaitAsync(TimeSpan.FromSeconds(15));
+        await secondDone.Task.WaitAsync(TimeSpan.FromSeconds(15));
+        Assert.Equal(sent.Text, firstMessage?.Text);
+        Assert.Equal(sent.Id, firstMessage?.Id);
+        Assert.Equal(sent.Text, secondMessage?.Text);
+        Assert.Equal(sent.Id, secondMessage?.Id);
+    }
+
+    [Fact]
     public async Task Topology_setup_creates_the_topic_and_subscription()
     {
         var subscriptionName = "topology-" + Guid.NewGuid().ToString("N")[..8];
@@ -413,6 +460,9 @@ public sealed class AzureServiceBusTransportBehaviorTests
 
     [EventTypeName("messaging.servicebus.two-subs")]
     private sealed record TwoSubPing(Guid Id, DateTime Timestamp, string Text) : IEvent;
+
+    [EventTypeName("messaging.servicebus.raw-fanout")]
+    private sealed record RawFanoutPing(Guid Id, DateTime Timestamp, string Text) : IEvent;
 
     [EventTypeName("messaging.servicebus.topology-ping")]
     private sealed record TopologyPing(Guid Id, DateTime Timestamp, string Text) : IEvent;

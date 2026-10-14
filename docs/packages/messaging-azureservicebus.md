@@ -56,9 +56,10 @@ A setting on the Service Bus configure delegate wins when both set the same fiel
 A handler that throws is tried again until `MaxDeliveryAttempts` (default 5).
 Between tries the message is scheduled for `RetryDelay` (default 5 seconds),
 then delivered to the same subscription. The retry sets `lawndart_target` to
-that subscription name. Each subscription's rule accepts a publish
-(`lawndart_target` is `*`) or a retry addressed to itself. Another subscriber
-on the same topic does not receive the retry. With `DeadLetterFailedMessages`
+that subscription name. A publish sets it to `*`. Each subscription's rule is
+`user.lawndart_target IS NULL OR user.lawndart_target = '*' OR user.lawndart_target = '<name>'`.
+A message with no `lawndart_target` reaches every subscription. A retry reaches
+only the subscription named in the property. With `DeadLetterFailedMessages`
 left false, the attempt past that limit waits the same way and stays available.
 Set the flag true to dead-letter it on the subscription. A warning is written,
 and `messaging.deadlettered` increments.

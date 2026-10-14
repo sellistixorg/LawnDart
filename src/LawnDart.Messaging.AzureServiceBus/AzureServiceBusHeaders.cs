@@ -26,13 +26,14 @@ internal static class AzureServiceBusHeaders
 
     /// <summary>
     /// SQL filter for one subscription.
-    /// A publish matches the first comparison. A retry matches the second only on the subscription that scheduled it.
+    /// A missing property or <see cref="TargetAll"/> matches every subscription.
+    /// A retry matches only the subscription named in the property.
     /// </summary>
     /// <param name="subscriptionName">Consumer name.</param>
     public static string RetryFilter(string subscriptionName)
     {
         var escaped = subscriptionName.Replace("'", "''", StringComparison.Ordinal);
-        return $"user.{TargetSubscription} = '{TargetAll}' OR user.{TargetSubscription} = '{escaped}'";
+        return $"user.{TargetSubscription} IS NULL OR user.{TargetSubscription} = '{TargetAll}' OR user.{TargetSubscription} = '{escaped}'";
     }
 
     public static Dictionary<string, string> ToEnvelope(IReadOnlyDictionary<string, object> properties)

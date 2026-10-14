@@ -133,9 +133,9 @@ public class AzureServiceBusTransportOptionsTests
     [Fact]
     public void Retry_filter_accepts_a_publish_and_one_subscription()
     {
-        var filter = AzureServiceBusHeaders.RetryFilter("billing");
-        Assert.Contains("user.lawndart_target = '*'", filter, StringComparison.Ordinal);
-        Assert.Contains("user.lawndart_target = 'billing'", filter, StringComparison.Ordinal);
+        Assert.Equal(
+            "user.lawndart_target IS NULL OR user.lawndart_target = '*' OR user.lawndart_target = 'billing'",
+            AzureServiceBusHeaders.RetryFilter("billing"));
     }
 
     [Fact]

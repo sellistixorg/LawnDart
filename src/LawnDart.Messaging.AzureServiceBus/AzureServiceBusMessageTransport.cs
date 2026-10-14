@@ -17,8 +17,8 @@ namespace LawnDart.Messaging.AzureServiceBus;
 /// When dead-letter handling is on, the last failure is dead-lettered on the subscription.
 /// When it is off, the message is scheduled again and stays available.
 /// A cancelled delivery uses the same wait. It is not abandoned immediately.
-/// A retry sets <c>lawndart_target</c> to that subscription, and the subscription rule accepts it.
-/// A publish sets <c>lawndart_target</c> to <c>*</c>, which every subscription accepts.
+/// A retry sets <c>lawndart_target</c> to that subscription.
+/// A publish sets it to <c>*</c>. A message with no <c>lawndart_target</c> reaches every subscription.
 /// Scheduling the retry and then completing the original can leave both copies
 /// when the complete fails after the schedule succeeds.
 /// </summary>
@@ -97,7 +97,7 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
     public IReadOnlyList<DeadLetteredMessage> DeadLetters => _deadLetters.ReadAll();
 
     /// <inheritdoc />
-        public async Task PublishAsync<TMessage>(
+    public async Task PublishAsync<TMessage>(
         TMessage message,
         MessageContext context,
         CancellationToken cancellationToken = default)

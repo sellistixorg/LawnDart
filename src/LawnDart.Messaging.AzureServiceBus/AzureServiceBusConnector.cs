@@ -114,23 +114,56 @@ internal sealed class AzureServiceBusConnector : IDisposable, IAsyncDisposable
         {
             if (current is not null)
             {
-                await admin.DeleteRuleAsync(topic, subscriptionName, AzureServiceBusHeaders.RouteRuleName, cancellationToken)
+                await DeleteRuleAsync(admin, topic, subscriptionName, AzureServiceBusHeaders.RouteRuleName, cancellationToken)
                     .ConfigureAwait(false);
             }
 
-            await admin.CreateRuleAsync(
-                topic,
-                subscriptionName,
-                new CreateRuleOptions(AzureServiceBusHeaders.RouteRuleName, new SqlRuleFilter(expression)),
-                cancellationToken).ConfigureAwait(false);
+            await CreateRouteRuleAsync(admin, topic, subscriptionName, expression, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         var fallback = await TryGetRuleAsync(admin, topic, subscriptionName, "$Default", cancellationToken)
             .ConfigureAwait(false);
         if (fallback?.Filter is TrueRuleFilter)
         {
-            await admin.DeleteRuleAsync(topic, subscriptionName, "$Default", cancellationToken)
+            await DeleteRuleAsync(admin, topic, subscriptionName, "$Default", cancellationToken)
                 .ConfigureAwait(false);
+        }
+    }
+
+    private static async Task CreateRouteRuleAsync(
+        ServiceBusAdministrationClient admin,
+        string topic,
+        string subscriptionName,
+        string expression,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await admin.CreateRuleAsync(
+                topic,
+                subscriptionName,
+                new CreateRuleOptions(AzureServiceBusHeaders.RouteRuleName, new SqlRuleFilter(expression)),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsAlreadyExists(ex) || IsNotFound(ex))
+        {
+        }
+    }
+
+    private static async Task DeleteRuleAsync(
+        ServiceBusAdministrationClient admin,
+        string topic,
+        string subscriptionName,
+        string ruleName,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await admin.DeleteRuleAsync(topic, subscriptionName, ruleName, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsAlreadyExists(ex) || IsNotFound(ex))
+        {
         }
     }
 
@@ -300,25 +333,23 @@ internal sealed class AzureServiceBusConnector : IDisposable, IAsyncDisposable
             disposable.Dispose();
     }
 
-    private static bool IsNotFound(Exception exception)
+    private static bool IsNotFound(Exception exception) =>
+        Matches(exception, ServiceBusFailureReason.MessagingEntityNotFound, 404);
+
+    private static bool IsAlreadyExists(Exception exception) =>
+        Matches(exception, ServiceBusFailureReason.MessagingEntityAlreadyExists, 409);
+
+    private static bool Matches(Exception exception, ServiceBusFailureReason reason, int status)
     {
-        if (exception is ServiceBusException serviceBus &&
-            serviceBus.Reason == ServiceBusFailureReason.MessagingEntityNotFound)
+        for (Exception? current = exception; current is not null; current = current.InnerException)
         {
-            return true;
+            if (current is ServiceBusException serviceBus && serviceBus.Reason == reason)
+                return true;
+
+            if (current is RequestFailedException request && request.Status == status)
+                return true;
         }
 
-        return exception is RequestFailedException request && request.Status == 404;
-    }
-
-    private static bool IsAlreadyExists(Exception exception)
-    {
-        if (exception is ServiceBusException serviceBus &&
-            serviceBus.Reason == ServiceBusFailureReason.MessagingEntityAlreadyExists)
-        {
-            return true;
-        }
-
-        return exception is RequestFailedException request && request.Status == 409;
+        return false;
     }
 }
