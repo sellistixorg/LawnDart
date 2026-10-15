@@ -15,7 +15,7 @@ The body says why. Leave a blank line before `Signed-off-by`.
 
 ## Scope
 
-InMemory and SQL Server are the stores. Transports are `LawnDart.Messaging.InMemory`, `LawnDart.Messaging.RabbitMQ`, and `LawnDart.Messaging.AzureServiceBus`.
+InMemory and SQL Server are the stores. Transports are `LawnDart.Messaging.InMemory`, `LawnDart.Messaging.RabbitMQ`, `LawnDart.Messaging.AzureServiceBus`, and `LawnDart.Messaging.AwsSqs`.
 Reshaping public API needs an issue first.
 Bug fixes, tests, docs, and work behind existing abstractions do not.
 

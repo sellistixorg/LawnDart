@@ -27,8 +27,8 @@ Leaving InMemory also means:
 - `AddSqlInboxStore` plus `InitializeSqlInboxStoreAsync` when reactor or
   processor deduplication must survive a restart. The in-memory inbox is
   per process.
-- A transport for the other process: `AddRabbitMqTransport` or
-  `AddAzureServiceBusTransport`. A single process keeps
+- A transport for the other process: `AddRabbitMqTransport`,
+  `AddAzureServiceBusTransport`, or `AddAwsSqsTransport`. A single process keeps
   `AddInMemoryMessaging`. See [MESSAGE_TRANSPORTS.md](MESSAGE_TRANSPORTS.md).
 - SQL snapshots are opt-in (`WithSnapshots` plus a strategy). `UseInMemory`
   registers the store automatically but still needs an

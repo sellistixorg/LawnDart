@@ -9,6 +9,7 @@ in another. This package is the host and the contracts; it does not include
 a transport. Pair it with `LawnDart.Messaging.InMemory` for zero-broker
 delivery. Pair it with `LawnDart.Messaging.RabbitMQ` for a RabbitMQ broker.
 Pair it with `LawnDart.Messaging.AzureServiceBus` for Azure Service Bus.
+Pair it with `LawnDart.Messaging.AwsSqs` for Amazon SQS.
 
 ## Registration
 
@@ -18,8 +19,9 @@ services.AddReactor<PaymentReactor, SeatReservationConfirmed>();
 services.AddTaskProcessor<OverdueRegistrationProcessor>();
 ```
 
-`AddInMemoryMessaging()`, `AddRabbitMqTransport`, and
-`AddAzureServiceBusTransport` each call `AddMessaging()` for you.
+`AddInMemoryMessaging()`, `AddRabbitMqTransport`,
+`AddAzureServiceBusTransport`, and `AddAwsSqsTransport` each call
+`AddMessaging()` for you.
 
 | Method | Pattern |
 |---|---|
@@ -77,4 +79,5 @@ source name. Every LawnDart meter and activity source is on
 - [InMemory messaging](messaging-inmemory.md)
 - [RabbitMQ](messaging-rabbitmq.md)
 - [Azure Service Bus](messaging-azureservicebus.md)
+- [Amazon SQS](messaging-awssqs.md)
 - [SQL Server inbox](messaging-sqlserver.md)

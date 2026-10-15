@@ -14,6 +14,8 @@
   href: messaging-rabbitmq.md
 - name: Messaging.AzureServiceBus
   href: messaging-azureservicebus.md
+- name: Messaging.AwsSqs
+  href: messaging-awssqs.md
 - name: Messaging.SqlServer
   href: messaging-sqlserver.md
 - name: Messaging.Testing
