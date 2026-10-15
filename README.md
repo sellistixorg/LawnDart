@@ -158,7 +158,7 @@ the transport you register. Each transport package brings `LawnDart.Messaging`.
 
 `LawnDart.Messaging.InMemory` is on nuget.org as a prerelease.
 `LawnDart.Messaging.RabbitMQ`, `LawnDart.Messaging.AzureServiceBus`, and
-`LawnDart.Messaging.AwsSqs` first ship in the upcoming 0.6.0-alpha.1.
+`LawnDart.Messaging.AwsSqs` first ship in 0.6.0-alpha.1.
 Add the package for the transport you register.
 
 ```bash

@@ -10,6 +10,8 @@ changes to the public API.
 
 ## [Unreleased]
 
+## [0.6.0-alpha.1] — 2026-10-15
+
 ### Breaking
 
 - Add `[EventTypeName("token")]` to every event a reactor, an event processor, or the in-memory transport publishes or subscribes. In 0.5.0-alpha.1 the class name was used in logs and the CLR type was the subscription key, and the attribute was not required. A missing name fails when that consumer starts. The class name is not the message type.
@@ -34,14 +36,14 @@ changes to the public API.
 
 #### LawnDart.Messaging.RabbitMQ
 
-- `LawnDart.Messaging.RabbitMQ` publishes and consumes through RabbitMQ (`AddRabbitMqTransport`). It first ships in the upcoming 0.6.0-alpha.1. The exchange comes from `ITopicMapper`. The routing key is the declared event type name. Publish declares the exchange. Consumers declare their queue.
+- `LawnDart.Messaging.RabbitMQ` publishes and consumes through RabbitMQ (`AddRabbitMqTransport`). It first ships in 0.6.0-alpha.1. The exchange comes from `ITopicMapper`. The routing key is the declared event type name. Publish declares the exchange. Consumers declare their queue.
 - `UnroutablePublish` defaults to `Warn`. A publish that reaches no queue logs a warning and returns. It is not recorded on `messaging.publish.duration`. It increments `messaging.publish.errors` with `messaging.publish.outcome` set to `unroutable`. Set `UnroutablePublish` to `Throw` when the caller should see that failure.
 - A failed delivery waits on a retry queue (`RetryDelay`, default 5 seconds) and then returns to the same queue. A cancelled delivery uses that wait and does not increment the attempt count. With dead-letter handling on, a message that used its attempts is nacked to a dead-letter exchange. With it off, the message stays on the queue and the wait still applies.
 - `OperationTimeout` (default 30 seconds) is how long to wait for automatic connection recovery before opening a new connection. The subscription concurrency limiter is disposed with the transport.
 
 #### LawnDart.Messaging.AzureServiceBus
 
-- `LawnDart.Messaging.AzureServiceBus` publishes and consumes through Azure Service Bus (`AddAzureServiceBusTransport`). It first ships in the upcoming 0.6.0-alpha.1. The topic comes from `ITopicMapper`. Each subscriber has one subscription on that topic. Connect with a connection string, a fully qualified namespace and a token credential, or a `ServiceBusClient` already registered.
+- `LawnDart.Messaging.AzureServiceBus` publishes and consumes through Azure Service Bus (`AddAzureServiceBusTransport`). It first ships in 0.6.0-alpha.1. The topic comes from `ITopicMapper`. Each subscriber has one subscription on that topic. Connect with a connection string, a fully qualified namespace and a token credential, or a `ServiceBusClient` already registered.
 - Publish sets `lawndart_target` to `*` and `lawndart_type` to the declared event type. A message with no `lawndart_target` reaches every subscription that accepts the event type. A message with no `lawndart_type` still matches the type clause. A retry sets `lawndart_target` to the subscription that failed and keeps `lawndart_type`.
 - The subscription rule lists every recorded type for that topic before those handlers subscribe. A later subscribe does not drop a type. A filter change, including the move from a rule that only tests `lawndart_target`, creates the new rule before it deletes the old one. Two hosts that update the same rule both complete: a rule name that already exists is read again, and a rule with the same filter counts as success. `ReplaceRouteRule` rebuilds the rule from the types this process recorded. The default leaves types from an earlier deploy on the rule.
 - A recorded type with no handler waits `RetryDelay` up to `MaxHandlerDeferrals` (default 12). Each wait increments `messaging.deferred`. From the third wait a warning is written. After the cap, the wait counts as a failed attempt.
@@ -50,7 +52,7 @@ changes to the public API.
 
 #### LawnDart.Messaging.AwsSqs
 
-- `LawnDart.Messaging.AwsSqs` publishes and consumes through Amazon SQS (`AddAwsSqsTransport`). It first ships in the upcoming 0.6.0-alpha.1. SNS fans each topic out to one queue per subscription, with raw message delivery. The topic comes from `ITopicMapper`. Connect with `Region` or `ServiceUrl` (LocalStack). Credentials come from the AWS SDK default chain. An `IAmazonSQS` and `IAmazonSimpleNotificationService` already registered are kept. FIFO queues and topics are not supported.
+- `LawnDart.Messaging.AwsSqs` publishes and consumes through Amazon SQS (`AddAwsSqsTransport`). It first ships in 0.6.0-alpha.1. SNS fans each topic out to one queue per subscription, with raw message delivery. The topic comes from `ITopicMapper`. Connect with `Region` or `ServiceUrl` (LocalStack). Credentials come from the AWS SDK default chain. An `IAmazonSQS` and `IAmazonSimpleNotificationService` already registered are kept. FIFO queues and topics are not supported.
 - Publish sets `lawndart_type`. User, tenant, and custom headers travel in `lawndart-headers`, because SNS and SQS allow 10 message attributes. When several types share a topic, the filter is `lawndart_type` equal to a handled type, or the attribute missing. The filter only grows unless `ReplaceRouteRule` is set. After a write, the transport waits a short jittered delay and reads the policy again, three times, and merges a stale write. A write that lands after that last read waits for the next subscribe. An SNS subscribe that returns `InvalidParameter` and "already exists" is read again and merged. The filter allows 150 values. The missing-attribute match counts as one.
 - A failed delivery is sent again to that queue after `RetryDelay` (default 5 seconds, at most 15 minutes). It is not published to the topic. A cancelled delivery uses that wait and does not count an attempt. While a handler runs, visibility is extended at about half of `VisibilityTimeout` (default 30 seconds), up to 240 times. A failed extension is logged.
 - With dead-letter handling on, a message that used its attempts is sent to `{topic}--{subscription}--dlq`, and the source queue has an SQS redrive policy. `MaxReceiveCount` defaults to 10. With dead-letter handling off, LawnDart does not set a redrive policy. A crash returns the message after the visibility timeout and the attempt count is unchanged.
@@ -71,7 +73,7 @@ changes to the public API.
 
 ### Documentation
 
-- The README shows the in-process, RabbitMQ, Azure Service Bus, and Amazon SQS transports, how to install them, and a minimal registration for each. Pick one registration. RabbitMQ, Azure Service Bus, and Amazon SQS first ship in the upcoming 0.6.0-alpha.1.
+- The README shows the in-process, RabbitMQ, Azure Service Bus, and Amazon SQS transports, how to install them, and a minimal registration for each. Pick one registration. RabbitMQ, Azure Service Bus, and Amazon SQS first ship in 0.6.0-alpha.1.
 - [Message transports](docs/MESSAGE_TRANSPORTS.md) covers retry delay, attempt counting, dead-letter handling, topic mapping, and the broker limits.
 - [Telemetry](docs/TELEMETRY.md) lists every LawnDart meter and activity source.
 - [Custom message transport](docs/CUSTOM_MESSAGE_TRANSPORT.md) explains how to write a transport against the shared pieces.
