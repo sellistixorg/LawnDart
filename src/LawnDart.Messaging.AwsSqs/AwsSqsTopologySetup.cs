@@ -57,6 +57,9 @@ public sealed class AwsSqsTopologySetup : IMessageTopologySetup
                 types.Add(messageType);
         }
 
+        if (mapper is SanitizingTopicMapper sanitizing)
+            sanitizing.EnsureNoCollisions(groups.SelectMany(static pair => pair.Value));
+
         foreach (var (topic, types) in groups)
         {
             cancellationToken.ThrowIfCancellationRequested();

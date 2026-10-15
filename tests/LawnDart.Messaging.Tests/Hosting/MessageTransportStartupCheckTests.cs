@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using LawnDart.EventStore;
+using LawnDart.Messaging.Hosting;
 using LawnDart.Messaging.InMemory;
 using LawnDart.Patterns.Reaction;
 
@@ -91,6 +93,21 @@ public class MessageTransportStartupCheckTests
         Assert.Contains("IMessageTopologySetup", Flatten(ex), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Start_rejects_declared_names_that_sanitize_to_one_topic()
+    {
+        var check = new MessageTransportStartupCheck(
+            Options.Create(new MessageTransportOptions
+            {
+                TopicMapper = new SanitizingTopicMapper(),
+            }),
+            [new MessageSubscription(typeof(SanitizeDotted)), new MessageSubscription(typeof(SanitizeHyphen))],
+            []);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => check.StartAsync(CancellationToken.None));
+        Assert.Contains("sanitize-order", ex.Message, StringComparison.Ordinal);
+    }
+
     private static string Flatten(Exception exception)
     {
         var text = exception.Message;
@@ -98,6 +115,12 @@ public class MessageTransportStartupCheckTests
             text += " " + inner.Message;
         return text;
     }
+
+    [EventTypeName("sanitize.order")]
+    private sealed record SanitizeDotted(Guid Id, DateTime Timestamp) : IEvent;
+
+    [EventTypeName("sanitize-order")]
+    private sealed record SanitizeHyphen(Guid Id, DateTime Timestamp) : IEvent;
 
     private sealed record BareEvent(Guid Id, DateTime Timestamp) : IEvent;
 

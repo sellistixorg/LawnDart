@@ -27,5 +27,11 @@ A queue that handles one type accepts that message as its type.
 
 FIFO topics and queues are not supported.
 
+`SanitizingTopicMapper` replaces a period in a topic name with a hyphen.
+The default mapper is unchanged. `VisibilityTimeout` defaults to 30 seconds
+and is extended while a handler runs. With dead-letter handling on, the
+queue has an SQS redrive policy (`MaxReceiveCount`, default 10). With it
+off, LawnDart does not set that policy.
+
 Pair with `LawnDart.Messaging` for reactors and processors.
 Pair with `LawnDart.Messaging.SqlServer` when inbox dedup must survive a restart.

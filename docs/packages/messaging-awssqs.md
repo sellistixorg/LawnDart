@@ -3,7 +3,7 @@
 Amazon SQS `IMessageTransport`. SNS fans each topic out to one queue per subscription.
 Use it when a reactor or processor runs in another process.
 
-Available starting with 0.6.0-alpha.1.
+First ships in the upcoming 0.6.0-alpha.1.
 
 ## Registration
 
@@ -54,15 +54,21 @@ at startup for every event type recorded by `AddReactor` and
 
 An SNS topic is 1 to 256 characters. An SQS queue is 1 to 80. Both use
 letters, digits, hyphens, and underscores. A period is not allowed, so a
-token such as `order.placed` needs a topic mapper. The dead-letter suffix
-`--dlq` has to fit in the 80 characters as well. FIFO names (`.fifo`) are
-rejected. FIFO is not supported. Topic mapping is in
+token such as `order.placed` needs a topic mapper.
+`SanitizingTopicMapper` replaces each period with a hyphen. The default
+mapper is unchanged. Startup rejects two declared names that sanitize to
+one topic unless the inner mapper already grouped them. The dead-letter
+suffix `--dlq` has to fit in the 80 characters as well. FIFO names
+(`.fifo`) are rejected. FIFO is not supported. Topic mapping is in
 [Message transports](../MESSAGE_TRANSPORTS.md).
 
 `Concurrency` is how many receive loops run. `Prefetch` is how many messages
 one receive asks for, capped at 10, and capped by the free loops.
 `LongPollWait` is the receive wait, from 0 to 20 seconds. The default is
 20. The receive uses the shorter of that and `OperationTimeout`.
+`VisibilityTimeout` is how long a received message stays hidden. The
+default is 30 seconds. While the handler runs, visibility is extended at
+about half that interval, up to 240 times. A failed extension is logged.
 
 `Configure<MessageTransportOptions>` is applied to `AwsSqsTransportOptions`.
 A setting on the SQS configure delegate wins when both set the same field.
@@ -95,19 +101,25 @@ is set. `exists: false` matches only when some other attribute is present.
 The filter only grows. A later subscribe adds a type. It does not remove one.
 Set `ReplaceRouteRule` to true to list only the types this process recorded.
 The `exists: false` match stays, so that change does not start dropping
-messages that omit `lawndart_type`. Two hosts that subscribe the same queue
-at once both finish. Each reads the current filter, unions its types, writes,
-and reads back. A filter that already contains those types counts as success.
+messages that omit `lawndart_type`. After a write, the transport waits a
+short jittered delay and reads the policy again, three times. A stale write
+from another host is merged back in. A write that lands after that last
+read is not repaired until the next subscribe. An SNS filter allows 150
+values. The missing-attribute match counts as one, so 149 event types fit.
 
 On AWS, a filter change can take time to apply. Creating the subscription
 with the filter already set avoids that wait for the first policy.
 
 With `DeadLetterFailedMessages` left false, the attempt past the limit waits
-the same way and stays on the queue. Set the flag true to send it to
-`{topic}--{subscription}--dlq`. A warning is written, and
-`messaging.deadlettered` increments. The transport sends that copy itself.
-It does not set an SQS redrive policy, so a cancelled delivery is not counted
-as a receive that would move the message.
+the same way and stays on the queue. LawnDart does not set an SQS redrive
+policy, so a crash returns the message after `VisibilityTimeout` and the
+attempt count is unchanged. Set the flag true to send the last failure to
+`{topic}--{subscription}--dlq`. The queue then has a redrive policy.
+`MaxReceiveCount` defaults to 10. SQS moves a message that was received that
+many times without being deleted. A warning is written, and
+`messaging.deadlettered` increments. A cancel does not increment
+`lawndart-attempt`. A delayed retry is a new SQS message, so the redrive
+count starts over.
 
 The copy is sent, then the original is deleted. If the delete fails after
 the send succeeds, both copies can be delivered.
@@ -127,6 +139,11 @@ authorization context.
 
 `Dispose()` blocks the caller for up to `OperationTimeout` and then returns.
 Cleanup can still be running. Prefer `DisposeAsync` (`await using`).
+
+Publish and retry check the 256 KiB limit, including attributes, before the
+send. Over that limit the call throws `AwsSqsMessageTooLargeException`.
+A retry that cannot be sent is dead-lettered when that handling is on.
+When it is off, the message is deleted and logged. It is not sent again.
 
 A publish the service rejects is counted as a publish error. The duration
 histogram records a publish after SNS accepts it. When no queue is subscribed,

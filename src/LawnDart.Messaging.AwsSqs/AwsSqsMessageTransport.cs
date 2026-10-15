@@ -99,6 +99,7 @@ public sealed class AwsSqsMessageTransport : IMessageTransport, IDisposable, IAs
         var declaredName = MessageTypeNames.Require(typeof(TMessage));
         var topic = _topicMapper.TopicFor(declaredName);
         AwsSqsNames.RequireTopic(topic);
+        EnsureTopicsDistinct([declaredName]);
         cancellationToken.ThrowIfCancellationRequested();
 
         using var publish = MessagingTelemetry.StartPublish(declaredName);
@@ -131,6 +132,7 @@ public sealed class AwsSqsMessageTransport : IMessageTransport, IDisposable, IAs
                 _connector.MarkRoutable(topic);
                 var body = JsonSerializer.Serialize(message, MessagingJson.Options);
                 var attributes = AwsSqsHeaders.ForPublish(context, declaredName);
+                AwsSqsMessageSize.Require(body, attributes, "publish");
                 var topicArn = await _connector.EnsureTopicAsync(topic, cancellationToken).ConfigureAwait(false);
                 await _connector.PublishAsync(topicArn, body, attributes, cancellationToken).ConfigureAwait(false);
             }
@@ -169,6 +171,7 @@ public sealed class AwsSqsMessageTransport : IMessageTransport, IDisposable, IAs
         var topic = _topicMapper.TopicFor(declaredName);
         AwsSqsNames.RequireTopic(topic);
         AwsSqsNames.Queue(topic, _options.SubscriptionName);
+        EnsureTopicsDistinct(_plannedTypes.Append(declaredName));
         var broker = _brokers.GetOrAdd(topic, static (name, subscription) => new BrokerSubscription(name, subscription), _options.SubscriptionName);
 
         var registration = new HandlerRegistration(
@@ -651,45 +654,48 @@ public sealed class AwsSqsMessageTransport : IMessageTransport, IDisposable, IAs
                 return;
             }
 
-            foreach (var registration in handlers)
+            await using (StartVisibility(broker, message))
             {
-                if (registration.CancellationToken.IsCancellationRequested)
+                foreach (var registration in handlers)
                 {
-                    await DelayRedeliveryAsync(broker, declaredName, message, attributes, body, completed)
-                        .ConfigureAwait(false);
+                    if (registration.CancellationToken.IsCancellationRequested)
+                    {
+                        await DelayRedeliveryAsync(broker, declaredName, message, attributes, body, completed)
+                            .ConfigureAwait(false);
+                        settled = true;
+                        return;
+                    }
+
+                    MessageAttemptResult result;
+                    try
+                    {
+                        result = await registration.Handle(payload, envelope.Context, registration.CancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (registration.CancellationToken.IsCancellationRequested)
+                    {
+                        await DelayRedeliveryAsync(broker, declaredName, message, attributes, body, completed)
+                            .ConfigureAwait(false);
+                        settled = true;
+                        return;
+                    }
+
+                    if (result.Succeeded)
+                        continue;
+
+                    await FailAsync(
+                        broker,
+                        declaredName,
+                        message,
+                        attributes,
+                        payload,
+                        envelope.Context,
+                        attempt,
+                        result.Error!,
+                        consume).ConfigureAwait(false);
                     settled = true;
                     return;
                 }
-
-                MessageAttemptResult result;
-                try
-                {
-                    result = await registration.Handle(payload, envelope.Context, registration.CancellationToken)
-                        .ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (registration.CancellationToken.IsCancellationRequested)
-                {
-                    await DelayRedeliveryAsync(broker, declaredName, message, attributes, body, completed)
-                        .ConfigureAwait(false);
-                    settled = true;
-                    return;
-                }
-
-                if (result.Succeeded)
-                    continue;
-
-                await FailAsync(
-                    broker,
-                    declaredName,
-                    message,
-                    attributes,
-                    payload,
-                    envelope.Context,
-                    attempt,
-                    result.Error!,
-                    consume).ConfigureAwait(false);
-                settled = true;
-                return;
             }
 
             await _connector.DeleteAsync(broker.QueueUrl!, message.ReceiptHandle, CancellationToken.None)
@@ -763,6 +769,8 @@ public sealed class AwsSqsMessageTransport : IMessageTransport, IDisposable, IAs
 
         var errorType = error.GetType().Name;
         var errorText = $"{errorType}: {error.Message}";
+        await DeadLetterAsync(broker, declaredName, message, attributes, message.Body ?? string.Empty, attempt)
+            .ConfigureAwait(false);
         MessagingTelemetry.RecordDeadLettered(
             declaredName,
             _options.SubscriptionName,
@@ -772,8 +780,6 @@ public sealed class AwsSqsMessageTransport : IMessageTransport, IDisposable, IAs
             errorText,
             _logger);
         _deadLetters.Enqueue(new DeadLetteredMessage(declaredName, payload, context, attempt, errorText));
-        await DeadLetterAsync(broker, declaredName, message, attributes, message.Body ?? string.Empty, attempt)
-            .ConfigureAwait(false);
     }
 
     private async Task DeferForHandlerAsync(
@@ -850,14 +856,96 @@ public sealed class AwsSqsMessageTransport : IMessageTransport, IDisposable, IAs
         int completedAttempts,
         int? deferrals = null)
     {
-        var resent = AwsSqsHeaders.ForRetry(attributes, declaredName, completedAttempts, deferrals);
-        await _connector.SendAsync(
-                broker.QueueUrl!,
+        Dictionary<string, MessageAttributeValue> resent;
+        try
+        {
+            resent = AwsSqsHeaders.ForRetry(attributes, declaredName, completedAttempts, deferrals);
+            AwsSqsMessageSize.Require(body, resent, "retry");
+        }
+        catch (Exception ex) when (AwsSqsMessageSize.IsTooLarge(ex))
+        {
+            await SettleOversizedAsync(broker, declaredName, message, attributes, body, completedAttempts, ex)
+                .ConfigureAwait(false);
+            return;
+        }
+
+        try
+        {
+            await _connector.SendAsync(
+                    broker.QueueUrl!,
+                    body,
+                    resent,
+                    AwsSqsNames.DelaySeconds(_options.RetryDelay),
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (AwsSqsMessageSize.IsTooLarge(ex))
+        {
+            await SettleOversizedAsync(broker, declaredName, message, attributes, body, completedAttempts, ex)
+                .ConfigureAwait(false);
+            return;
+        }
+
+        await DeleteQuietlyAsync(broker, message).ConfigureAwait(false);
+    }
+
+    private async Task SettleOversizedAsync(
+        BrokerSubscription broker,
+        string declaredName,
+        Message message,
+        IReadOnlyDictionary<string, MessageAttributeValue> attributes,
+        string body,
+        int completedAttempts,
+        Exception error)
+    {
+        _logger.LogError(
+            error,
+            "AWS SQS could not resend {MessageType} on {Topic}/{Subscription} because the message is over {Limit} bytes.",
+            declaredName,
+            broker.Topic,
+            broker.Name,
+            AwsSqsTransportOptions.MaxMessageBytes);
+
+        if (_options.DeadLetterFailedMessages)
+        {
+            var attempts = Math.Max(1, completedAttempts);
+            var moved = false;
+            try
+            {
+                await DeadLetterAsync(broker, declaredName, message, attributes, body, attempts)
+                    .ConfigureAwait(false);
+                moved = true;
+            }
+            catch (Exception ex) when (AwsSqsMessageSize.IsTooLarge(ex))
+            {
+                _logger.LogError(
+                    ex,
+                    "AWS SQS could not dead-letter {MessageType} on {Topic}/{Subscription} because that copy is also over the size limit.",
+                    declaredName,
+                    broker.Topic,
+                    broker.Name);
+            }
+
+            var errorType = error.GetType().Name;
+            MessagingTelemetry.RecordDeadLettered(
+                declaredName,
+                _options.SubscriptionName,
+                attempts,
+                errorType,
+                messageId: null,
+                error.Message,
+                _logger);
+            _deadLetters.Enqueue(new DeadLetteredMessage(
+                declaredName,
                 body,
-                resent,
-                AwsSqsNames.DelaySeconds(_options.RetryDelay),
-                CancellationToken.None)
-            .ConfigureAwait(false);
+                new MessageContext { TransportType = TransportTypeName },
+                attempts,
+                error.Message));
+            if (!moved)
+                await DeleteQuietlyAsync(broker, message).ConfigureAwait(false);
+            return;
+        }
+
         await DeleteQuietlyAsync(broker, message).ConfigureAwait(false);
     }
 
@@ -872,6 +960,7 @@ public sealed class AwsSqsMessageTransport : IMessageTransport, IDisposable, IAs
         var url = await _connector.EnsureDeadLetterUrlAsync(broker.Topic, broker.Name, CancellationToken.None)
             .ConfigureAwait(false);
         var forwarded = AwsSqsHeaders.ForRetry(attributes, declaredName, completedAttempts, deferrals: null);
+        AwsSqsMessageSize.Require(body, forwarded, "dead-letter");
         await _connector.SendAsync(url, body, forwarded, delaySeconds: 0, CancellationToken.None)
             .ConfigureAwait(false);
         await DeleteQuietlyAsync(broker, message).ConfigureAwait(false);
@@ -1065,6 +1154,26 @@ public sealed class AwsSqsMessageTransport : IMessageTransport, IDisposable, IAs
         return seconds;
     }
 
+    private VisibilityHeartbeat StartVisibility(BrokerSubscription broker, Message message)
+    {
+        if (string.IsNullOrEmpty(broker.QueueUrl) || string.IsNullOrEmpty(message.ReceiptHandle))
+            return VisibilityHeartbeat.Idle;
+
+        return new VisibilityHeartbeat(
+            _connector,
+            _logger,
+            broker.QueueUrl,
+            message.ReceiptHandle,
+            _options.VisibilityTimeout,
+            VisibilitySeconds());
+    }
+
+    private void EnsureTopicsDistinct(IEnumerable<string> messageTypes)
+    {
+        if (_topicMapper is SanitizingTopicMapper sanitizing)
+            sanitizing.EnsureNoCollisions(messageTypes);
+    }
+
     private async Task StopThenCompleteAsync(BrokerSubscription broker, HandlerRegistration registration)
     {
         try
@@ -1167,6 +1276,96 @@ public sealed class AwsSqsMessageTransport : IMessageTransport, IDisposable, IAs
         }
         catch (SemaphoreFullException)
         {
+        }
+    }
+
+    private sealed class VisibilityHeartbeat : IAsyncDisposable
+    {
+        public static VisibilityHeartbeat Idle { get; } = new();
+
+        private readonly CancellationTokenSource? _stop;
+        private readonly Task? _loop;
+
+        private VisibilityHeartbeat()
+        {
+        }
+
+        public VisibilityHeartbeat(
+            AwsSqsConnector connector,
+            ILogger logger,
+            string queueUrl,
+            string receiptHandle,
+            TimeSpan visibility,
+            int visibilitySeconds)
+        {
+            _stop = new CancellationTokenSource();
+            _loop = RunAsync(connector, logger, queueUrl, receiptHandle, visibility, visibilitySeconds, _stop.Token);
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (_stop is null || _loop is null)
+                return;
+
+            await _stop.CancelAsync().ConfigureAwait(false);
+            try
+            {
+                await _loop.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+
+            _stop.Dispose();
+        }
+
+        private static async Task RunAsync(
+            AwsSqsConnector connector,
+            ILogger logger,
+            string queueUrl,
+            string receiptHandle,
+            TimeSpan visibility,
+            int visibilitySeconds,
+            CancellationToken stopping)
+        {
+            var period = TimeSpan.FromTicks(Math.Max(visibility.Ticks / 2, TimeSpan.FromMilliseconds(200).Ticks));
+            var renewals = 0;
+            try
+            {
+                using var timer = new PeriodicTimer(period);
+                while (renewals < AwsSqsTransportOptions.MaxVisibilityRenewals &&
+                       await timer.WaitForNextTickAsync(stopping).ConfigureAwait(false))
+                {
+                    renewals++;
+                    try
+                    {
+                        await connector.ChangeVisibilityAsync(queueUrl, receiptHandle, visibilitySeconds, stopping)
+                            .ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (stopping.IsCancellationRequested)
+                    {
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(
+                            ex,
+                            "AWS SQS could not extend visibility on {Queue}. A handler that is still running can be delivered again.",
+                            queueUrl);
+                    }
+                }
+            }
+            catch (OperationCanceledException) when (stopping.IsCancellationRequested)
+            {
+            }
+
+            if (renewals >= AwsSqsTransportOptions.MaxVisibilityRenewals && !stopping.IsCancellationRequested)
+            {
+                logger.LogWarning(
+                    "AWS SQS stopped extending visibility on {Queue} after {Renewals} extensions.",
+                    queueUrl,
+                    renewals);
+            }
         }
     }
 

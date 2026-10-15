@@ -13,7 +13,7 @@ whichever transport you registered.
 
 `LawnDart.Messaging.InMemory` is on nuget.org as a prerelease.
 `LawnDart.Messaging.RabbitMQ`, `LawnDart.Messaging.AzureServiceBus`, and
-`LawnDart.Messaging.AwsSqs` are available starting with 0.6.0-alpha.1.
+`LawnDart.Messaging.AwsSqs` first ship in the upcoming 0.6.0-alpha.1.
 Use `--prerelease` until a stable version exists. Add the package for the
 transport you register. Each transport package brings `LawnDart.Messaging`.
 
@@ -108,7 +108,12 @@ Amazon SQS reads completed attempts from the message attribute
 `lawndart-attempt`. A missing attribute counts as 0. The current try is that
 count plus 1. A retry writes `lawndart-attempt` with the number of tries
 that have finished. When the message already has 10 attributes, the count
-is stored inside `lawndart-headers` instead.
+is stored inside `lawndart-headers` instead. A process crash does not write
+that attribute. The message returns after `VisibilityTimeout`, and SQS
+counts another receive. While a handler runs, the transport extends
+visibility at about half of `VisibilityTimeout` (default 30 seconds), up to
+240 extensions. A failed extension is logged. The handler can then be
+delivered again if it is still running.
 
 `messaging.delivery.retries` on the `LawnDart.Messaging` meter counts a
 failed attempt that will run again. The current span gets a
@@ -133,10 +138,14 @@ is scheduled again and stays available. Set the flag true to dead-letter it
 on the subscription.
 
 On Amazon SQS, with the flag left false, the attempt past the limit is sent
-again to the same queue and stays available. Set the flag true to send it
-to `{topic}--{subscription}--dlq`. The transport sends that copy. It does
-not install an SQS redrive policy, so a cancelled delivery is not moved
-because the broker counted another receive.
+again to the same queue and stays available. LawnDart does not set an SQS
+redrive policy, so SQS does not move the message. A crash returns it after
+`VisibilityTimeout` with the same attempt count. Set the flag true to send
+the last failure to `{topic}--{subscription}--dlq`. The queue then also has
+a redrive policy. `MaxReceiveCount` defaults to 10 (1 to 1000). SQS moves
+the message after that many receives of the same copy. A delayed retry is a
+new message, so this count is the backstop for a receive that was never
+deleted. A cancelled delivery still does not increment `lawndart-attempt`.
 
 A parked message increments `messaging.deadlettered`. The current span gets
 a `messaging.deadlettered` event tagged `messaging.attempt` and `error.type`,
@@ -226,6 +235,20 @@ options.TopicMapper = new SharedTopicMapper("lawndart");
 non-empty name. The same declared type should keep the same topic for the
 life of the process.
 
+`SanitizingTopicMapper` replaces each period with a hyphen. The default
+mapper stays the declared name. Use the sanitizing mapper for SNS, which
+rejects periods:
+
+```csharp
+options.TopicMapper = new SanitizingTopicMapper();
+```
+
+`order.placed` becomes `order-placed`. Pass an inner mapper when grouping
+should happen first. Host startup calls `EnsureNoCollisions` for the
+recorded types. `order.placed` and `order-placed` throw, because both
+sanitize to `order-placed`. Two names that the inner mapper already sends
+to one topic do not.
+
 ### Filtering
 
 RabbitMQ publishes to the mapped exchange. The routing key is the declared
@@ -294,11 +317,14 @@ SQS installs the filter when the queue is subscribed. The policy only grows.
 A later subscribe adds a type and leaves types from an earlier deploy in
 place. `exists: false` stays, so a change does not start dropping messages
 that omit `lawndart_type`. Set `ReplaceRouteRule` to true to list only the
-types this process recorded. Two hosts that subscribe the same queue at
-once both finish: each reads the current policy, unions its types, writes,
-and reads back. A policy that already contains those types counts as
-success. On AWS, a change to an existing filter can take time to apply.
-The first policy is set on the subscribe call.
+types this process recorded. After a write, the transport waits a short
+jittered delay and reads the policy again, three times. A stale write from
+another host is merged back in. A write that lands after that last read is
+not repaired until the next subscribe. Two hosts that add different types
+can still drop one type in that window. On AWS, a change to an existing
+filter can take time to apply. The first policy is set on the subscribe
+call. A subscribe that loses to "already exists with different attributes"
+reads the subscription again and merges.
 
 ### Moving a RabbitMQ type
 
@@ -332,13 +358,20 @@ such as `order.placed` needs a topic mapper. The queue name is
 also fit in 80 characters. A name that ends with `.fifo` is rejected.
 FIFO topics and queues are not supported.
 
-An SNS filter policy is at most 256 KB. A subscription that lists many long
-event type names can exceed that. Shorten the names or split the topic.
+An SNS filter policy is at most 256 KB and at most 150 values. The missing
+`lawndart_type` match counts as one value, so one queue can list 149 event
+types. A longer list fails and names that limit. Shorten the names or split
+the topic.
 
 SNS and SQS allow 10 message attributes. LawnDart uses `lawndart_type` and
 `lawndart-headers` on a publish, and adds `lawndart-attempt` and
 `lawndart-deferrals` when a delivery is delayed. User, tenant, and custom
 headers are inside `lawndart-headers`.
+
+An SQS or SNS message is at most 256 KiB, including attributes. Publish and
+retry check that size first and throw `AwsSqsMessageTooLargeException`.
+A retry that cannot be sent is dead-lettered when that handling is on.
+When it is off, the message is deleted and logged. It is not sent again.
 
 ## Operation timeout
 

@@ -167,6 +167,73 @@ public sealed class PrefixTopicMapper : ITopicMapper
 }
 
 /// <summary>
+/// Replaces each period in the inner mapper's topic with a hyphen.
+/// The default mapper is unchanged. Use this when a broker rejects periods,
+/// such as Amazon SNS. <c>order.placed</c> becomes <c>order-placed</c>.
+/// </summary>
+public sealed class SanitizingTopicMapper : ITopicMapper
+{
+    private readonly ITopicMapper _inner;
+
+    /// <summary>
+    /// Creates a mapper that sanitizes topics from <paramref name="inner"/>.
+    /// When <paramref name="inner"/> is omitted, the declared type name is sanitized.
+    /// </summary>
+    /// <param name="inner">Mapper that runs first. Null uses <see cref="DeclaredTypeTopicMapper.Instance"/>.</param>
+    public SanitizingTopicMapper(ITopicMapper? inner = null)
+    {
+        _inner = inner ?? DeclaredTypeTopicMapper.Instance;
+    }
+
+    /// <summary>The mapper that runs before periods are replaced.</summary>
+    public ITopicMapper Inner => _inner;
+
+    /// <inheritdoc />
+    public string TopicFor(string messageType)
+    {
+        var topic = _inner.TopicFor(messageType);
+        return topic.Replace('.', '-');
+    }
+
+    /// <summary>
+    /// Throws when two declared names sanitize to the same topic and the inner mapper
+    /// did not already group them. <c>order.placed</c> and <c>order-placed</c> collide.
+    /// Two names that the inner mapper sends to one topic do not.
+    /// Host startup calls this for the recorded message types.
+    /// </summary>
+    /// <param name="messageTypes">Declared message type names.</param>
+    public void EnsureNoCollisions(IEnumerable<string> messageTypes)
+    {
+        ArgumentNullException.ThrowIfNull(messageTypes);
+        var seen = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var name in messageTypes)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                continue;
+
+            var topic = TopicFor(name);
+            if (!seen.TryGetValue(topic, out var other))
+            {
+                seen[topic] = name;
+                continue;
+            }
+
+            if (string.Equals(other, name, StringComparison.Ordinal))
+                continue;
+
+            var innerOther = _inner.TopicFor(other);
+            var innerName = _inner.TopicFor(name);
+            if (string.Equals(innerOther, innerName, StringComparison.Ordinal))
+                continue;
+
+            throw new InvalidOperationException(
+                $"'{name}' and '{other}' sanitize to the same topic '{topic}'. " +
+                "Use distinct names, or map them to different topics before sanitizing.");
+        }
+    }
+}
+
+/// <summary>
 /// Maps a message type with a delegate.
 /// </summary>
 public sealed class DelegateTopicMapper : ITopicMapper

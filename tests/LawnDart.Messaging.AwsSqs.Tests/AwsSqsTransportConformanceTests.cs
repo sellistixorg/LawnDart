@@ -54,7 +54,7 @@ internal sealed class AwsSqsTransportFixture : TransportConformanceFixture
             options.SubscriptionName = subscription + "-" + Guid.NewGuid().ToString("N")[..8];
 
         var inner = options.TopicMapper ?? DeclaredTypeTopicMapper.Instance;
-        options.TopicMapper = new DelegateTopicMapper(name => inner.TopicFor(name).Replace('.', '-'));
+        options.TopicMapper = inner is SanitizingTopicMapper ? inner : new SanitizingTopicMapper(inner);
 
         var hooks = preHandler is null ? null : new IMessagePreHandler[] { preHandler };
         var transport = new AwsSqsMessageTransport(

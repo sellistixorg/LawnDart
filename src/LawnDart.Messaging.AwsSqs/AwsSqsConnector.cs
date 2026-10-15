@@ -118,18 +118,21 @@ internal sealed class AwsSqsConnector : IDisposable, IAsyncDisposable
         var requested = Normalize(messageTypes);
         var key = "subscription\n" + topic + "\n" + queueName + "\n" +
                   string.Join("\n", requested) + (replaceRouteRule ? "\nreplace" : "") +
-                  (createDeadLetter ? "\ndlq" : "");
+                  (createDeadLetter ? "\ndlq\n" + _options.MaxReceiveCount.ToString(System.Globalization.CultureInfo.InvariantCulture) : "");
 
         await DeclareOnceAsync(
             key,
             async ct =>
             {
                 var topicArn = await CreateTopicAsync(topic, ct).ConfigureAwait(false);
+                QueueHandle? deadLetter = null;
                 if (createDeadLetter)
-                    await EnsureQueueAsync(AwsSqsNames.DeadLetterQueue(topic, subscriptionName), ct).ConfigureAwait(false);
+                    deadLetter = await EnsureQueueAsync(AwsSqsNames.DeadLetterQueue(topic, subscriptionName), ct).ConfigureAwait(false);
 
                 var queue = await EnsureQueueAsync(queueName, ct).ConfigureAwait(false);
                 await SetQueuePolicyAsync(queue, topicArn, ct).ConfigureAwait(false);
+                if (deadLetter is not null)
+                    await SetRedriveAsync(queue, deadLetter.Arn, ct).ConfigureAwait(false);
                 var initialFilter = requested.Count == 0 ? null : AwsSqsFilterPolicy.Build(requested);
                 var subscriptionArn = await EnsureOneSubscriptionAsync(topicArn, queue.Arn, initialFilter, ct).ConfigureAwait(false);
                 await EnsureRawDeliveryAsync(subscriptionArn, ct).ConfigureAwait(false);
@@ -193,6 +196,22 @@ internal sealed class AwsSqsConnector : IDisposable, IAsyncDisposable
                     MessageBody = body,
                     DelaySeconds = delaySeconds,
                     MessageAttributes = attributes,
+                },
+                ct),
+            cancellationToken);
+
+    public Task ChangeVisibilityAsync(
+        string queueUrl,
+        string receiptHandle,
+        int visibilitySeconds,
+        CancellationToken cancellationToken)
+        => CallAsync(
+            ct => Sqs.ChangeMessageVisibilityAsync(
+                new ChangeMessageVisibilityRequest
+                {
+                    QueueUrl = queueUrl,
+                    ReceiptHandle = receiptHandle,
+                    VisibilityTimeout = visibilitySeconds,
                 },
                 ct),
             cancellationToken);
@@ -394,7 +413,7 @@ internal sealed class AwsSqsConnector : IDisposable, IAsyncDisposable
                             ct),
                         cancellationToken).ConfigureAwait(false);
                 }
-                catch (Exception ex) when (IsAlreadyExists(ex))
+                catch (Exception ex) when (IsAlreadyExists(ex) || IsSubscriptionAttributeRace(ex))
                 {
                 }
             }
@@ -482,6 +501,7 @@ internal sealed class AwsSqsConnector : IDisposable, IAsyncDisposable
         bool replaceRouteRule,
         CancellationToken cancellationToken)
     {
+        const int confirmRounds = 3;
         for (var attempt = 1; attempt <= DeclareAttempts; attempt++)
         {
             var current = await ReadFilterAsync(subscriptionArn, cancellationToken).ConfigureAwait(false);
@@ -510,16 +530,30 @@ internal sealed class AwsSqsConnector : IDisposable, IAsyncDisposable
                     ct),
                 cancellationToken).ConfigureAwait(false);
 
-            var readback = await ReadFilterAsync(subscriptionArn, cancellationToken).ConfigureAwait(false);
-            if (AwsSqsFilterPolicy.Covers(readback, requested, replaceRouteRule))
-                return;
+            var stable = true;
+            for (var round = 1; round <= confirmRounds; round++)
+            {
+                await Task.Delay(FilterJitter(attempt, round), cancellationToken).ConfigureAwait(false);
+                var readback = await ReadFilterAsync(subscriptionArn, cancellationToken).ConfigureAwait(false);
+                if (AwsSqsFilterPolicy.Covers(readback, requested, replaceRouteRule))
+                    continue;
 
-            if (attempt < DeclareAttempts)
-                await Task.Delay(TimeSpan.FromMilliseconds(50), cancellationToken).ConfigureAwait(false);
+                stable = false;
+                break;
+            }
+
+            if (stable)
+                return;
         }
 
         throw new InvalidOperationException(
             $"SNS could not update the filter policy for '{subscriptionArn}' after {DeclareAttempts} tries.");
+    }
+
+    private static TimeSpan FilterJitter(int attempt, int round)
+    {
+        var milliseconds = 20 * attempt + 15 * round + Random.Shared.Next(0, 40);
+        return TimeSpan.FromMilliseconds(milliseconds);
     }
 
     private async Task<string?> ReadFilterAsync(string subscriptionArn, CancellationToken cancellationToken)
@@ -744,6 +778,27 @@ internal sealed class AwsSqsConnector : IDisposable, IAsyncDisposable
         return JsonSerializer.Serialize(policy);
     }
 
+    private async Task SetRedriveAsync(QueueHandle queue, string deadLetterArn, CancellationToken cancellationToken)
+    {
+        var policy = JsonSerializer.Serialize(new Dictionary<string, object>
+        {
+            ["deadLetterTargetArn"] = deadLetterArn,
+            ["maxReceiveCount"] = _options.MaxReceiveCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        });
+        await CallAsync(
+            ct => Sqs.SetQueueAttributesAsync(
+                new SetQueueAttributesRequest
+                {
+                    QueueUrl = queue.Url,
+                    Attributes = new Dictionary<string, string>(StringComparer.Ordinal)
+                    {
+                        ["RedrivePolicy"] = policy,
+                    },
+                },
+                ct),
+            cancellationToken).ConfigureAwait(false);
+    }
+
     private static async ValueTask DisposeClientAsync(object? client)
     {
         if (client is IAsyncDisposable asyncDisposable)
@@ -757,6 +812,25 @@ internal sealed class AwsSqsConnector : IDisposable, IAsyncDisposable
 
     private static bool IsAlreadyExists(Exception exception)
         => Matches(exception, HttpStatusCode.Conflict, "QueueAlreadyExists", "TopicAlreadyExists", "SubscriptionAlreadyExists");
+
+    private static bool IsSubscriptionAttributeRace(Exception exception)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is not AmazonServiceException service)
+                continue;
+
+            var code = service.ErrorCode ?? string.Empty;
+            if (!code.Contains("InvalidParameter", StringComparison.Ordinal))
+                continue;
+
+            var text = service.Message ?? string.Empty;
+            if (text.Contains("already exists", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
 
     private static bool Matches(Exception exception, HttpStatusCode status, params string[] codes)
     {

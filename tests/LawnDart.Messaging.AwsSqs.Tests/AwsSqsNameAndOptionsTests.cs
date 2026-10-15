@@ -212,4 +212,38 @@ public class AwsSqsNameAndOptionsTests
         Assert.Equal(1, AwsSqsHeaders.DeferralCount(retried));
         Assert.Equal("order-placed", AwsSqsHeaders.EventTypeName(retried));
     }
+
+    [Fact]
+    public void Receive_count_defaults_to_ten_and_stays_within_1_to_1000()
+    {
+        Assert.Equal(10, new AwsSqsTransportOptions().MaxReceiveCount);
+        new AwsSqsTransportOptions { MaxReceiveCount = 1000 }.EnsureValid();
+
+        var low = new AwsSqsTransportOptions { MaxReceiveCount = 0 };
+        var error = Assert.Throws<InvalidOperationException>(low.EnsureValid);
+        Assert.Contains("MaxReceiveCount", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_filter_with_more_than_150_values_is_rejected()
+    {
+        var names = new string[AwsSqsFilterPolicy.MaxValues];
+        for (var i = 0; i < names.Length; i++)
+            names[i] = "type-" + i.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        var error = Assert.Throws<InvalidOperationException>(() => AwsSqsFilterPolicy.Build(names));
+        Assert.Contains("150", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_message_over_256_kib_is_rejected_before_it_is_sent()
+    {
+        var body = new string('x', AwsSqsTransportOptions.MaxMessageBytes + 1);
+        var error = Assert.Throws<AwsSqsMessageTooLargeException>(() =>
+            AwsSqsMessageSize.Require(body, new Dictionary<string, MessageAttributeValue>(), "publish"));
+        Assert.Contains("publish", error.Message, StringComparison.Ordinal);
+        Assert.True(AwsSqsMessageSize.IsTooLarge(error));
+
+        AwsSqsMessageSize.Require("ok", new Dictionary<string, MessageAttributeValue>(), "publish");
+    }
 }

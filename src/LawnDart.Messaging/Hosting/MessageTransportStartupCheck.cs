@@ -41,8 +41,12 @@ public sealed class MessageTransportStartupCheck : IHostedService
     {
         _options.EnsureValid();
 
-        foreach (var subscription in _subscriptions)
-            MessageTypeNames.Require(subscription.MessageType);
+        var declared = new string[_subscriptions.Count];
+        for (var i = 0; i < _subscriptions.Count; i++)
+            declared[i] = MessageTypeNames.Require(_subscriptions[i].MessageType);
+
+        if (_options.TopicMapper is SanitizingTopicMapper sanitizing)
+            sanitizing.EnsureNoCollisions(declared);
 
         if (!_options.SetupTopology)
             return;

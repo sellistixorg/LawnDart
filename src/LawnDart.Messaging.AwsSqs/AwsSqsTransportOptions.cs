@@ -35,6 +35,12 @@ public sealed class AwsSqsTransportOptions : MessageTransportOptions
     /// <summary>SQS returns at most 10 messages per receive.</summary>
     public const int MaxMessagesPerReceive = 10;
 
+    /// <summary>SQS <c>maxReceiveCount</c> on a redrive policy is at most 1000.</summary>
+    public const int MaxReceiveCountLimit = 1000;
+
+    /// <summary>An SQS or SNS message, including attributes, is at most 256 KiB.</summary>
+    public const int MaxMessageBytes = 256 * 1024;
+
     /// <summary>
     /// AWS region, such as <c>us-east-1</c>.
     /// Used when <see cref="ServiceUrl"/> is not set. The AWS SDK default chain supplies the region when this is empty.
@@ -72,8 +78,24 @@ public sealed class AwsSqsTransportOptions : MessageTransportOptions
     /// <summary>
     /// How long a received message stays hidden while a handler runs.
     /// Defaults to 30 seconds. The value must be greater than zero and at most 12 hours.
+    /// While the handler runs, the transport extends this timeout at about half the interval.
+    /// Extensions stop when the handler returns, when one fails and is logged, or after
+    /// <see cref="MaxVisibilityRenewals"/> extensions.
     /// </summary>
     public TimeSpan VisibilityTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>How many times visibility may be extended for one delivery.</summary>
+    public const int MaxVisibilityRenewals = 240;
+
+    /// <summary>
+    /// How many times SQS may deliver one message before it moves that message to the
+    /// subscription dead-letter queue. Used only when <see cref="MessageTransportOptions.DeadLetterFailedMessages"/>
+    /// is true. Defaults to 10. Valid values are 1 to <see cref="MaxReceiveCountLimit"/>.
+    /// A delayed retry is a new message, so this count is a backstop for a receive that
+    /// was never deleted, such as a process crash. It is separate from
+    /// <see cref="MessageTransportOptions.MaxDeliveryAttempts"/>.
+    /// </summary>
+    public int MaxReceiveCount { get; set; } = 10;
 
     /// <summary>
     /// How many times a message for a recorded type waits for its handler before that wait counts as a failed attempt.
@@ -138,6 +160,12 @@ public sealed class AwsSqsTransportOptions : MessageTransportOptions
         {
             throw new InvalidOperationException(
                 "AwsSqsTransportOptions.MaxHandlerDeferrals must be zero or greater.");
+        }
+
+        if (MaxReceiveCount < 1 || MaxReceiveCount > MaxReceiveCountLimit)
+        {
+            throw new InvalidOperationException(
+                "AwsSqsTransportOptions.MaxReceiveCount must be from 1 to 1000.");
         }
 
         if (!string.IsNullOrWhiteSpace(Region) && !IsRegion(Region))

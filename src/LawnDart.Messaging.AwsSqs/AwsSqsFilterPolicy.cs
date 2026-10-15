@@ -15,6 +15,12 @@ public static class AwsSqsFilterPolicy
     public const int MaxLength = 256 * 1024;
 
     /// <summary>
+    /// Maximum number of values in one SNS filter policy.
+    /// The missing-attribute match counts as one value.
+    /// </summary>
+    public const int MaxValues = 150;
+
+    /// <summary>
     /// Builds the filter for <paramref name="messageTypes"/>.
     /// The policy is <c>{"lawndart_type":[{"exists":false},"type-a",...]}</c>.
     /// String values are sorted. <c>exists: false</c> is always included.
@@ -29,6 +35,14 @@ public static class AwsSqsFilterPolicy
             throw new ArgumentException(
                 "At least one message type is required.",
                 nameof(messageTypes));
+        }
+
+        var values = names.Count + 1;
+        if (values > MaxValues)
+        {
+            throw new InvalidOperationException(
+                $"SNS filter policy has {values} values. The limit is {MaxValues}, including the match for a missing lawndart_type. " +
+                "Use fewer event types on one topic.");
         }
 
         var json = Write(names);

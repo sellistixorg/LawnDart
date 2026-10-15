@@ -455,6 +455,110 @@ public sealed class AwsSqsTransportBehaviorTests
     }
 
     [Fact]
+    public async Task A_handler_slower_than_the_visibility_timeout_is_delivered_once()
+    {
+        await using var fixture = AwsSqsTransportFixture.Create(
+            _container.ServiceUrl,
+            options =>
+            {
+                var sqs = Assert.IsType<AwsSqsTransportOptions>(options);
+                sqs.VisibilityTimeout = TimeSpan.FromSeconds(2);
+                options.Concurrency = 2;
+            },
+            preHandler: null);
+
+        var calls = 0;
+        var inFlight = 0;
+        var maxInFlight = 0;
+        var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await fixture.Transport.SubscribeAsync<SlowPing>(async (_, _, _) =>
+        {
+            var now = Interlocked.Increment(ref inFlight);
+            int observed;
+            do
+            {
+                observed = Volatile.Read(ref maxInFlight);
+                if (now <= observed)
+                    break;
+            }
+            while (Interlocked.CompareExchange(ref maxInFlight, now, observed) != observed);
+
+            Interlocked.Increment(ref calls);
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5));
+            }
+            finally
+            {
+                Interlocked.Decrement(ref inFlight);
+            }
+
+            done.TrySetResult();
+        });
+
+        await fixture.Transport.PublishAsync(
+            new SlowPing(Guid.NewGuid(), DateTime.UtcNow, "slow"),
+            MessageContext.New());
+        await done.Task.WaitAsync(TimeSpan.FromSeconds(20));
+        await Task.Delay(TimeSpan.FromSeconds(3));
+
+        Assert.Equal(1, Volatile.Read(ref calls));
+        Assert.Equal(1, Volatile.Read(ref maxInFlight));
+    }
+
+    [Fact]
+    public async Task Two_hosts_with_different_types_keep_both_types_on_the_filter()
+    {
+        var topic = "mix-" + Guid.NewGuid().ToString("N")[..8];
+        var subscription = "mix-" + Guid.NewGuid().ToString("N")[..8];
+        var mapper = new GroupTopicMapper(new Dictionary<string, string>
+        {
+            [PlacedName] = topic,
+            [ShippedName] = topic,
+        });
+
+        await using var placed = AwsSqsTransportFixture.Create(
+            _container.ServiceUrl,
+            options =>
+            {
+                options.SubscriptionName = subscription;
+                options.TopicMapper = mapper;
+            },
+            preHandler: null,
+            subscriptions: [new MessageSubscription(typeof(PlacedPing))]);
+        await using var shipped = AwsSqsTransportFixture.Create(
+            _container.ServiceUrl,
+            options =>
+            {
+                options.SubscriptionName = subscription;
+                options.TopicMapper = mapper;
+            },
+            preHandler: null,
+            subscriptions: [new MessageSubscription(typeof(ShippedPing))]);
+
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var left = Task.Run(async () =>
+        {
+            await gate.Task;
+            await placed.Transport.SubscribeAsync<PlacedPing>((_, _, _) => Task.CompletedTask);
+        });
+        var right = Task.Run(async () =>
+        {
+            await gate.Task;
+            await shipped.Transport.SubscribeAsync<ShippedPing>((_, _, _) => Task.CompletedTask);
+        });
+        gate.TrySetResult();
+        await Task.WhenAll(left, right);
+
+        using var sns = Sns();
+        var topicArn = (await sns.CreateTopicAsync(topic)).TopicArn;
+        var policy = await FilterAsync(sns, topicArn, QueueArn(topic, subscription));
+        var types = AwsSqsFilterPolicy.ParseTypes(policy);
+        Assert.Contains(PlacedName, types);
+        Assert.Contains(ShippedName, types);
+    }
+
+    [Fact]
     public async Task An_unroutable_publish_is_not_a_successful_duration()
     {
         await using var fixture = AwsSqsTransportFixture.Create(
@@ -626,6 +730,9 @@ public sealed class AwsSqsTransportBehaviorTests
 
     [EventTypeName("awssqs-unroutable")]
     private sealed record UnroutablePing(Guid Id, DateTime Timestamp, string Text) : IEvent;
+
+    [EventTypeName("awssqs-slow-handler")]
+    private sealed record SlowPing(Guid Id, DateTime Timestamp, string Text) : IEvent;
 
     private sealed class WarningLogger : ILogger<AwsSqsMessageTransport>
     {
