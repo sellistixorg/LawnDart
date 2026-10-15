@@ -69,7 +69,7 @@ changes to the public API.
 ### Changed
 
 - Reactor and event processor logs, inbox duplicate counts, and handler spans use the declared event type name. In 0.5.0-alpha.1 they used the class name.
-- The build kit (`skills/BUILD_KIT.md`) targets LawnDart 0.5, matching the 0.5.0-alpha.1 packages.
+- The build kit (`skills/BUILD_KIT.md`) targets LawnDart 0.6, matching the 0.6.0-alpha.1 packages.
 
 ### Documentation
 
