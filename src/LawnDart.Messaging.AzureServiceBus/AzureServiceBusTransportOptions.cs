@@ -60,6 +60,25 @@ public sealed class AzureServiceBusTransportOptions : MessageTransportOptions
     public const int BrokerMaxDeliveryCountLimit = 2000;
 
     /// <summary>
+    /// How many times a message for a recorded type waits for its handler before that wait counts as a failed attempt.
+    /// Defaults to 12. With the default <see cref="RetryDelay"/> that is about one minute.
+    /// Zero means the first delivery with no handler is a failed attempt.
+    /// </summary>
+    public int MaxHandlerDeferrals { get; set; } = 12;
+
+    /// <summary>
+    /// A wait for a missing handler is logged as a warning once the deferral count reaches this value.
+    /// </summary>
+    public const int HandlerDeferralWarningThreshold = 3;
+
+    /// <summary>
+    /// When <c>true</c>, the subscription rule lists only the event types this process recorded.
+    /// Types left by an earlier deploy are removed. The new rule is created before the old one is deleted.
+    /// Defaults to <c>false</c>, so the rule only grows.
+    /// </summary>
+    public bool ReplaceRouteRule { get; set; }
+
+    /// <summary>
     /// Checks the shared settings and the Service Bus connection settings.
     /// An empty connection is valid when a <c>ServiceBusClient</c> is registered separately.
     /// </summary>
@@ -84,6 +103,12 @@ public sealed class AzureServiceBusTransportOptions : MessageTransportOptions
         {
             throw new InvalidOperationException(
                 "AzureServiceBusTransportOptions.BrokerMaxDeliveryCount must be from 1 to 2000.");
+        }
+
+        if (MaxHandlerDeferrals < 0)
+        {
+            throw new InvalidOperationException(
+                "AzureServiceBusTransportOptions.MaxHandlerDeferrals must be zero or greater.");
         }
 
         var hasConnectionString = !string.IsNullOrWhiteSpace(ConnectionString);

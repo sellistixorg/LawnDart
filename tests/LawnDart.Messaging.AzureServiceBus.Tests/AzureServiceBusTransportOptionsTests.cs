@@ -109,6 +109,8 @@ public class AzureServiceBusTransportOptionsTests
         Assert.Equal(TimeSpan.FromSeconds(5), new AzureServiceBusTransportOptions().RetryDelay);
         Assert.Equal(TimeSpan.FromSeconds(30), new AzureServiceBusTransportOptions().OperationTimeout);
         Assert.Equal(2000, new AzureServiceBusTransportOptions().BrokerMaxDeliveryCount);
+        Assert.Equal(12, new AzureServiceBusTransportOptions().MaxHandlerDeferrals);
+        Assert.False(new AzureServiceBusTransportOptions().ReplaceRouteRule);
 
         var options = new AzureServiceBusTransportOptions { RetryDelay = TimeSpan.Zero };
         var ex = Assert.Throws<InvalidOperationException>(options.EnsureValid);
@@ -128,6 +130,10 @@ public class AzureServiceBusTransportOptionsTests
 
         var emulator = new AzureServiceBusTransportOptions { BrokerMaxDeliveryCount = 10 };
         emulator.EnsureValid();
+
+        var deferrals = new AzureServiceBusTransportOptions { MaxHandlerDeferrals = -1 };
+        var deferralError = Assert.Throws<InvalidOperationException>(deferrals.EnsureValid);
+        Assert.Contains("MaxHandlerDeferrals", deferralError.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -180,6 +186,7 @@ public class AzureServiceBusTransportOptionsTests
             [MessageHeaders.TenantId] = "tenant-7",
             [MessageHeaders.CustomPrefix + "region"] = "east",
             [AzureServiceBusHeaders.Attempt] = 2,
+            [AzureServiceBusHeaders.Deferrals] = 4,
             [AzureServiceBusHeaders.TargetSubscription] = "billing",
             [AzureServiceBusHeaders.EventType] = "order-placed",
         };
@@ -192,6 +199,8 @@ public class AzureServiceBusTransportOptionsTests
         Assert.Equal("tenant-7", envelope.Context.TenantId);
         Assert.Equal("east", envelope.Context.Headers["region"]);
         Assert.False(envelope.Context.Headers.ContainsKey(AzureServiceBusHeaders.Attempt));
+        Assert.False(envelope.Context.Headers.ContainsKey(AzureServiceBusHeaders.Deferrals));
+        Assert.Equal(4, AzureServiceBusHeaders.DeferralCount(properties));
         Assert.False(envelope.Context.Headers.ContainsKey(AzureServiceBusHeaders.TargetSubscription));
         Assert.False(envelope.Context.Headers.ContainsKey(AzureServiceBusHeaders.EventType));
         Assert.Equal(2, AzureServiceBusHeaders.CompletedAttempts(properties));

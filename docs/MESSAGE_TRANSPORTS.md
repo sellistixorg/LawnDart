@@ -201,14 +201,34 @@ Publish through the transport sets it.
 `AddReactor` and `AddEventProcessor` record the event types for the host.
 The first subscribe on a topic writes one rule that lists every recorded
 type for that topic, including a type whose handler has not subscribed yet.
-A later subscribe can add a type that was not recorded. It does not remove
-a type from the rule.
+A later subscribe can add a type that was not recorded. The default does
+not remove a type from the rule, including a type left by an earlier deploy.
+
+A message for a recorded type with no handler waits `RetryDelay` and is
+delivered again. The application property `lawndart-deferrals` counts those
+waits. Each wait increments `messaging.deferred`. From the third wait, a
+warning is written. After `MaxHandlerDeferrals` (default 12) the wait counts
+as a failed attempt, so `MaxDeliveryAttempts` and `DeadLetterFailedMessages`
+apply. See [Telemetry](TELEMETRY.md).
+
+To drop a type an earlier deploy left on the rule, set `ReplaceRouteRule`
+to true and start again. The rule then lists only the types this process
+recorded. Deleting the subscription does the same on the next start: the
+process creates it from the recorded types. The new rule is created before
+the old one is deleted. After that swap, a publish of a removed type does
+not enter the subscription.
+
+A rule that only grows can pass 1024 characters. Publish and subscribe then
+fail and name that limit. Shorten the event type names, split the topic, or
+set `ReplaceRouteRule` so the filter lists only the current types.
 
 A filter change creates the new rule, then deletes the previous one. The
 new rule is named `lawndart-route`, or `lawndart-route-2` and upward when
-that name is already in use. The same swap upgrades a subscription whose
-rule only tests `lawndart_target`. A publish during that overlap still
-matches a rule, so the message is not dropped.
+that name is already in use. Two hosts that pick the same name both finish:
+the second reads the rules again, and a rule that already has the same
+filter counts as success. The same swap upgrades a subscription whose rule
+only tests `lawndart_target`. A publish during that overlap still matches a
+rule, so the message is not dropped.
 
 ### Moving a RabbitMQ type
 

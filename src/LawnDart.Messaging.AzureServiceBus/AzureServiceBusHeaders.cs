@@ -12,6 +12,12 @@ internal static class AzureServiceBusHeaders
     public const string Attempt = "lawndart-attempt";
 
     /// <summary>
+    /// How many times a delivery has waited because its handler was not subscribed yet.
+    /// The value is <c>lawndart-deferrals</c>.
+    /// </summary>
+    public const string Deferrals = "lawndart-deferrals";
+
+    /// <summary>
     /// Application property that selects which subscription receives a message.
     /// A publish sets <see cref="TargetAll"/>. A retry sets the subscription name.
     /// The value is <c>lawndart_target</c>.
@@ -135,7 +141,7 @@ internal static class AzureServiceBusHeaders
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var pair in properties)
         {
-            if (pair.Key is Attempt or TargetSubscription or EventType || pair.Value is null)
+            if (pair.Key is Attempt or Deferrals or TargetSubscription or EventType || pair.Value is null)
                 continue;
 
             var text = ToText(pair.Value);
@@ -146,11 +152,18 @@ internal static class AzureServiceBusHeaders
         return result;
     }
 
+    /// <summary>How many times this delivery has waited for a handler that was not subscribed yet.</summary>
+    public static int DeferralCount(IReadOnlyDictionary<string, object> properties)
+        => ReadCount(properties, Deferrals);
+
     /// <summary>How many handler attempts have already finished.</summary>
     public static int CompletedAttempts(IReadOnlyDictionary<string, object> properties)
+        => ReadCount(properties, Attempt);
+
+    private static int ReadCount(IReadOnlyDictionary<string, object> properties, string name)
     {
         ArgumentNullException.ThrowIfNull(properties);
-        if (!properties.TryGetValue(Attempt, out var value) || value is null)
+        if (!properties.TryGetValue(name, out var value) || value is null)
             return 0;
 
         try
@@ -160,7 +173,7 @@ internal static class AzureServiceBusHeaders
         catch (Exception ex) when (ex is InvalidCastException or FormatException or OverflowException)
         {
             throw new InvalidOperationException(
-                $"Application property '{Attempt}' could not be read. The runtime type was '{value.GetType().FullName}'.",
+                $"Application property '{name}' could not be read. The runtime type was '{value.GetType().FullName}'.",
                 ex);
         }
     }

@@ -81,6 +81,7 @@ Package: `LawnDart.Messaging`.
 | `messaging.publish.errors` | Counter of long | `count` | `messaging.message_type`, and `messaging.publish.outcome` when the value is `unroutable` |
 | `messaging.inbox.duplicates` | Counter of long | `count` | `messaging.message_type` |
 | `messaging.delivery.retries` | Counter of long | `count` | `messaging.message_type`, `messaging.subscription_name` |
+| `messaging.deferred` | Counter of long | `count` | `messaging.message_type`, `messaging.subscription_name` |
 | `messaging.deadlettered` | Counter of long | `count` | `messaging.message_type`, `messaging.subscription_name` |
 
 `messaging.publish.duration` is recorded when a publish finishes and the
@@ -89,6 +90,11 @@ that reached no queue is not recorded there. That publish increments
 `messaging.publish.errors` with `messaging.publish.outcome` set to
 `unroutable`. A publish that throws increments the same counter with
 `messaging.message_type` only.
+
+`messaging.deferred` counts a delivery that waited because its handler was
+not subscribed yet. Azure Service Bus does this for a recorded event type.
+After `MaxHandlerDeferrals` the wait is a failed attempt instead, counted
+on `messaging.delivery.retries` or `messaging.deadlettered`.
 
 ### LawnDart.EventProcessor
 
@@ -241,14 +247,15 @@ Package: `LawnDart`.
 Span kind is Internal unless the table says otherwise. A tag is set when
 the code calls `SetTag` for that span.
 
-The code adds two span events, both from `LawnDart.Messaging`:
+The code adds three span events, all from `LawnDart.Messaging`:
 
 | Event | Tags | Also |
 |---|---|---|
 | `messaging.retry` | `messaging.attempt` | Counted on `messaging.delivery.retries` |
+| `messaging.deferred` | `messaging.deferrals` | Counted on `messaging.deferred` |
 | `messaging.deadlettered` | `messaging.attempt`, `error.type` | Span status Error. Counted on `messaging.deadlettered` |
 
-Both events are added to the current activity. The transports add them
+The events are added to the current activity. The transports add them
 while the consume span is current.
 
 ### LawnDart.Messaging

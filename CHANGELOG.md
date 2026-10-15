@@ -17,6 +17,7 @@ changes to the public API.
 
 ### Added
 
+- `ReplaceRouteRule` rebuilds the Service Bus subscription rule from the event types this process recorded. The default leaves types from an earlier deploy on the rule. `MaxHandlerDeferrals` (default 12) is how many times a recorded type with no handler waits before that wait counts as a failed attempt.
 - `ITopicMapper` maps a declared event type to a topic or exchange. The default is one topic per `[EventTypeName]`. `GroupTopicMapper`, `PrefixTopicMapper`, `SharedTopicMapper`, and `DelegateTopicMapper` group types, including one shared topic. RabbitMQ binds each queue with the event type name as the routing key. Azure Service Bus filters with `lawndart_type` and keeps the `lawndart_target` rule, including a missing property. [Message transports](docs/MESSAGE_TRANSPORTS.md) covers the default, grouping, a single shared topic, filtering, and naming limits.
 - The README shows what the in-process, RabbitMQ, and Azure Service Bus transports are, how to install them, and a minimal registration for each.
 - The outbox guide registers the publisher with the in-process transport, RabbitMQ, and Azure Service Bus. `DeadLetterFailedMessages` stays off unless you set it. A publish that throws leaves the outbox row in place.
@@ -45,6 +46,8 @@ changes to the public API.
 
 ### Fixed
 
+- Two Service Bus hosts that update the same route rule at the same time both finish. A rule name that already exists is read again, and a rule with the same filter counts as success.
+- A message for a recorded Service Bus type with no handler waits up to `MaxHandlerDeferrals`. Each wait increments `messaging.deferred`. From the third wait a warning is written. After the cap, the message is a normal failed attempt.
 - A Service Bus rule lists every recorded type for the topic before those handlers subscribe, and a later subscribe does not drop a type from the rule. A filter change, including the upgrade from a rule that only tests `lawndart_target`, creates the new rule before it deletes the old one.
 - A cancelled RabbitMQ delivery waits on the retry queue and does not increment the attempt count.
 - An unroutable RabbitMQ publish in Warn mode is not recorded as a successful publish. It increments `messaging.publish.errors` with `messaging.publish.outcome` set to `unroutable`.

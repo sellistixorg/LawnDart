@@ -59,6 +59,7 @@ The `LawnDart.Messaging` meter carries:
 | `messaging.publish.errors` | A publish throws, or a RabbitMQ publish in Warn mode reached no queue (`messaging.publish.outcome` = `unroutable`) |
 | `messaging.inbox.duplicates` | The inbox drops a duplicate |
 | `messaging.delivery.retries` | A failed attempt will be tried again |
+| `messaging.deferred` | A delivery waited because its handler was not subscribed yet |
 | `messaging.deadlettered` | A message is parked |
 
 Retry and dead-letter measurements carry `messaging.message_type` and

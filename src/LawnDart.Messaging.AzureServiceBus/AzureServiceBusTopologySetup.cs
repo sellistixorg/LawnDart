@@ -60,7 +60,8 @@ public sealed class AzureServiceBusTopologySetup : IMessageTopologySetup
         foreach (var (topic, types) in groups)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await _connector.EnsureSubscriptionAsync(topic, _options.SubscriptionName, types, cancellationToken)
+            await _connector.EnsureSubscriptionAsync(
+                    topic, _options.SubscriptionName, types, _options.ReplaceRouteRule, cancellationToken)
                 .ConfigureAwait(false);
 
             if (!_topics.Contains(topic, StringComparer.Ordinal))

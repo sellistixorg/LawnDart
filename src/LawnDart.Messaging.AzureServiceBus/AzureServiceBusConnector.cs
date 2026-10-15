@@ -78,10 +78,11 @@ internal sealed class AzureServiceBusConnector : IDisposable, IAsyncDisposable
         string topic,
         string subscriptionName,
         IReadOnlyCollection<string> messageTypes,
+        bool replaceRouteRule,
         CancellationToken cancellationToken)
     {
         var requested = Normalize(messageTypes);
-        var typeKey = string.Join("\n", requested);
+        var typeKey = string.Join("\n", requested) + (replaceRouteRule ? "\nreplace" : "");
         return DeclareOnceAsync(
             "subscription\n" + topic + "\n" + subscriptionName + "\n" + typeKey,
             async ct =>
@@ -93,7 +94,7 @@ internal sealed class AzureServiceBusConnector : IDisposable, IAsyncDisposable
                 var admin = GetAdmin();
                 if (!await admin.SubscriptionExistsAsync(topic, subscriptionName, ct).ConfigureAwait(false))
                 {
-                    var initial = AcceptTypes(topic, subscriptionName, requested, []);
+                    var initial = SelectTypes(topic, subscriptionName, requested, [], replaceRouteRule);
                     var create = new CreateSubscriptionOptions(topic, subscriptionName)
                     {
                         MaxDeliveryCount = _options.BrokerMaxDeliveryCount,
@@ -112,7 +113,8 @@ internal sealed class AzureServiceBusConnector : IDisposable, IAsyncDisposable
                     }
                 }
 
-                await EnsureRouteRuleAsync(admin, topic, subscriptionName, requested, ct).ConfigureAwait(false);
+                await EnsureRouteRuleAsync(admin, topic, subscriptionName, requested, replaceRouteRule, ct)
+                    .ConfigureAwait(false);
             },
             cancellationToken);
     }
@@ -122,65 +124,110 @@ internal sealed class AzureServiceBusConnector : IDisposable, IAsyncDisposable
         string topic,
         string subscriptionName,
         IReadOnlyList<string> requested,
+        bool replaceRouteRule,
+        CancellationToken cancellationToken)
+    {
+        const int attempts = 5;
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                var updated = await TryUpdateRouteRuleAsync(
+                    admin, topic, subscriptionName, requested, replaceRouteRule, cancellationToken).ConfigureAwait(false);
+                if (updated)
+                    return;
+            }
+            catch (Exception ex) when (IsAlreadyExists(ex) && attempt < attempts)
+            {
+            }
+
+            if (attempt >= attempts)
+            {
+                throw new InvalidOperationException(
+                    $"Azure Service Bus could not update the route rule for '{topic}/{subscriptionName}' after {attempts} tries.");
+            }
+        }
+    }
+
+    private async Task<bool> TryUpdateRouteRuleAsync(
+        ServiceBusAdministrationClient admin,
+        string topic,
+        string subscriptionName,
+        IReadOnlyList<string> requested,
+        bool replaceRouteRule,
         CancellationToken cancellationToken)
     {
         var rules = await ListRulesAsync(admin, topic, subscriptionName, cancellationToken).ConfigureAwait(false);
         var installed = new List<string>();
-        foreach (var rule in rules)
+        if (!replaceRouteRule)
         {
-            if (!IsRouteRule(rule.Name) || rule.Filter is not SqlRuleFilter sql)
-                continue;
+            foreach (var rule in rules)
+            {
+                if (!IsRouteRule(rule.Name) || rule.Filter is not SqlRuleFilter sql)
+                    continue;
 
-            installed.AddRange(AzureServiceBusHeaders.EventTypesInSql(sql.SqlExpression));
+                installed.AddRange(AzureServiceBusHeaders.EventTypesInSql(sql.SqlExpression));
+            }
         }
 
-        var accepted = AcceptTypes(topic, subscriptionName, requested, installed);
+        var accepted = SelectTypes(topic, subscriptionName, requested, installed, replaceRouteRule);
         var expression = AzureServiceBusHeaders.RouteFilter(subscriptionName, accepted);
         var routes = rules.Where(rule => IsRouteRule(rule.Name)).ToArray();
         var match = routes.FirstOrDefault(rule => rule.Filter is SqlRuleFilter sql && sql.SqlExpression == expression);
         if (match is null)
         {
             var name = NextRouteRuleName(routes.Select(rule => rule.Name));
-            await admin.CreateRuleAsync(
-                topic,
-                subscriptionName,
-                new CreateRuleOptions(name, new SqlRuleFilter(expression)),
-                cancellationToken).ConfigureAwait(false);
-            foreach (var rule in routes)
+            try
             {
-                await DeleteRuleAsync(admin, topic, subscriptionName, rule.Name, cancellationToken)
-                    .ConfigureAwait(false);
+                await admin.CreateRuleAsync(
+                    topic,
+                    subscriptionName,
+                    new CreateRuleOptions(name, new SqlRuleFilter(expression)),
+                    cancellationToken).ConfigureAwait(false);
             }
-        }
-        else
-        {
-            foreach (var rule in routes)
+            catch (Exception ex) when (IsAlreadyExists(ex))
             {
-                if (rule.Name == match.Name)
-                    continue;
-
-                await DeleteRuleAsync(admin, topic, subscriptionName, rule.Name, cancellationToken)
-                    .ConfigureAwait(false);
+                return false;
             }
         }
 
-        var fallback = rules.FirstOrDefault(rule => rule.Name == "$Default");
-        if (fallback?.Filter is TrueRuleFilter)
+        rules = await ListRulesAsync(admin, topic, subscriptionName, cancellationToken).ConfigureAwait(false);
+        match = rules.FirstOrDefault(rule =>
+            IsRouteRule(rule.Name) && rule.Filter is SqlRuleFilter sql && sql.SqlExpression == expression);
+        if (match is null)
+            return false;
+
+        foreach (var rule in rules)
         {
-            await DeleteRuleAsync(admin, topic, subscriptionName, "$Default", cancellationToken)
+            if (rule.Name == match.Name)
+                continue;
+            if (!IsRouteRule(rule.Name) && rule.Filter is not TrueRuleFilter)
+                continue;
+
+            await DeleteRuleAsync(admin, topic, subscriptionName, rule.Name, cancellationToken)
                 .ConfigureAwait(false);
         }
+
+        return true;
     }
 
-    private string[] AcceptTypes(
+    private string[] SelectTypes(
         string topic,
         string subscriptionName,
         IReadOnlyList<string> requested,
-        IReadOnlyList<string> installed)
+        IReadOnlyList<string> installed,
+        bool replaceRouteRule)
     {
         var key = topic + "\n" + subscriptionName;
         lock (_acceptedTypes)
         {
+            if (replaceRouteRule)
+            {
+                var replaced = new HashSet<string>(requested, StringComparer.Ordinal);
+                _acceptedTypes[key] = replaced;
+                return replaced.OrderBy(static name => name, StringComparer.Ordinal).ToArray();
+            }
+
             if (!_acceptedTypes.TryGetValue(key, out var set))
             {
                 set = new HashSet<string>(StringComparer.Ordinal);

@@ -364,11 +364,12 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
 
     private async Task StartConsumerAsync(BrokerSubscription broker, CancellationToken cancellationToken)
     {
-        var types = Acceptance(broker);
+        var types = RuleTypes(broker);
         if (types.Length == 0)
             return;
 
-        await _connector.EnsureSubscriptionAsync(broker.Topic, broker.Name, types, cancellationToken)
+        await _connector.EnsureSubscriptionAsync(
+                broker.Topic, broker.Name, types, _options.ReplaceRouteRule, cancellationToken)
             .ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -422,11 +423,12 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
 
     private async Task UpdateRouteAsync(BrokerSubscription broker, CancellationToken cancellationToken)
     {
-        var types = Acceptance(broker);
+        var types = RuleTypes(broker);
         if (types.Length == 0)
             return;
 
-        await _connector.EnsureSubscriptionAsync(broker.Topic, broker.Name, types, cancellationToken)
+        await _connector.EnsureSubscriptionAsync(
+                broker.Topic, broker.Name, types, _options.ReplaceRouteRule, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -495,13 +497,8 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
         {
             if (IsAccepted(broker, declaredName))
             {
-                _logger.LogDebug(
-                    "No handler is registered yet for {MessageType} on {Topic}/{Subscription}. The message returns after {Delay}.",
-                    declaredName,
-                    broker.Topic,
-                    broker.Name,
-                    _options.RetryDelay);
-                await DelayRedeliveryAsync(broker, declaredName, args, completed).ConfigureAwait(false);
+                await DeferForHandlerAsync(
+                    broker, declaredName, args, properties, completed, attempt, consume).ConfigureAwait(false);
                 return;
             }
 
@@ -546,13 +543,8 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
 
             if (handlers.Count == 0)
             {
-                _logger.LogDebug(
-                    "No handler is registered for {MessageType} on {Topic}/{Subscription}. The message returns after {Delay}.",
-                    declaredName,
-                    broker.Topic,
-                    broker.Name,
-                    _options.RetryDelay);
-                await DelayRedeliveryAsync(broker, declaredName, args, completed).ConfigureAwait(false);
+                await DeferForHandlerAsync(
+                    broker, declaredName, args, properties, completed, attempt, consume).ConfigureAwait(false);
                 settled = true;
                 return;
             }
@@ -716,11 +708,74 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
             timeout.Token).ConfigureAwait(false);
     }
 
+    private async Task DeferForHandlerAsync(
+        BrokerSubscription broker,
+        string declaredName,
+        ProcessMessageEventArgs args,
+        IReadOnlyDictionary<string, object> properties,
+        int completed,
+        int attempt,
+        Activity? consume)
+    {
+        int deferrals;
+        try
+        {
+            deferrals = AzureServiceBusHeaders.DeferralCount(properties);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Azure Service Bus could not read the deferral count on {Topic}.", broker.Topic);
+            deferrals = 0;
+        }
+
+        var next = deferrals + 1;
+        if (next <= _options.MaxHandlerDeferrals)
+        {
+            MessagingTelemetry.RecordDeferred(declaredName, _options.SubscriptionName, next);
+            if (next >= AzureServiceBusTransportOptions.HandlerDeferralWarningThreshold)
+            {
+                _logger.LogWarning(
+                    "No handler is registered for {MessageType} on {Topic}/{Subscription}. Deferral {Deferral} of {Cap}. The message returns after {Delay}.",
+                    declaredName,
+                    broker.Topic,
+                    broker.Name,
+                    next,
+                    _options.MaxHandlerDeferrals,
+                    _options.RetryDelay);
+            }
+            else
+            {
+                _logger.LogDebug(
+                    "No handler is registered for {MessageType} on {Topic}/{Subscription}. Deferral {Deferral} of {Cap}. The message returns after {Delay}.",
+                    declaredName,
+                    broker.Topic,
+                    broker.Name,
+                    next,
+                    _options.MaxHandlerDeferrals,
+                    _options.RetryDelay);
+            }
+
+            await DelayRedeliveryAsync(broker, declaredName, args, completed, next).ConfigureAwait(false);
+            return;
+        }
+
+        await FailAsync(
+            broker,
+            declaredName,
+            args,
+            args.Message.Body.ToArray(),
+            new MessageContext { TransportType = TransportTypeName },
+            attempt,
+            new InvalidOperationException($"No handler is registered for '{declaredName}'."),
+            consume).ConfigureAwait(false);
+    }
+
     private async Task DelayRedeliveryAsync(
         BrokerSubscription broker,
         string declaredName,
         ProcessMessageEventArgs args,
-        int completedAttempts)
+        int completedAttempts,
+        int? deferrals = null)
     {
         var scheduled = new ServiceBusMessage(args.Message.Body)
         {
@@ -740,6 +795,8 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
         scheduled.ApplicationProperties[AzureServiceBusHeaders.Attempt] = completedAttempts;
         scheduled.ApplicationProperties[AzureServiceBusHeaders.TargetSubscription] = broker.Name;
         scheduled.ApplicationProperties[AzureServiceBusHeaders.EventType] = declaredName;
+        if (deferrals is int count)
+            scheduled.ApplicationProperties[AzureServiceBusHeaders.Deferrals] = count;
         var enqueueAt = DateTimeOffset.UtcNow.Add(_options.RetryDelay);
         var sender = await _connector.SenderAsync(broker.Topic, CancellationToken.None).ConfigureAwait(false);
         using var timeout = LinkTimeout(CancellationToken.None);
@@ -850,6 +907,23 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
         }
 
         return false;
+    }
+
+    private string[] RuleTypes(BrokerSubscription broker)
+    {
+        var accepted = Acceptance(broker);
+        if (!_options.ReplaceRouteRule)
+            return accepted;
+
+        var recorded = new List<string>();
+        foreach (var declared in _plannedTypes)
+        {
+            if (string.Equals(_topicMapper.TopicFor(declared), broker.Topic, StringComparison.Ordinal))
+                recorded.Add(declared);
+        }
+
+        recorded.Sort(StringComparer.Ordinal);
+        return recorded.Count > 0 ? recorded.ToArray() : accepted;
     }
 
     private string[] Acceptance(BrokerSubscription broker)
