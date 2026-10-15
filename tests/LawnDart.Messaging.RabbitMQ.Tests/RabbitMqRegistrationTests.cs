@@ -81,4 +81,35 @@ public class RabbitMqRegistrationTests
         Assert.Equal("rabbit", common.SubscriptionName);
         Assert.Equal(8, common.Prefetch);
     }
+
+    [Fact]
+    public void A_registered_topic_mapper_is_used_when_options_keep_the_default()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<ITopicMapper>(new SharedTopicMapper("from-di"));
+        services.AddRabbitMqTransport(options =>
+            options.Uri = "amqp://rabbitmq:rabbitmq@localhost:5672/");
+
+        using var provider = services.BuildServiceProvider();
+        var rabbit = provider.GetRequiredService<IOptions<RabbitMqTransportOptions>>().Value;
+        Assert.Equal("from-di", rabbit.TopicMapper.TopicFor("order-placed"));
+    }
+
+    [Fact]
+    public void A_mapper_set_on_options_wins_over_a_registered_mapper()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<ITopicMapper>(new SharedTopicMapper("from-di"));
+        services.AddRabbitMqTransport(options =>
+        {
+            options.Uri = "amqp://rabbitmq:rabbitmq@localhost:5672/";
+            options.TopicMapper = new SharedTopicMapper("from-options");
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var rabbit = provider.GetRequiredService<IOptions<RabbitMqTransportOptions>>().Value;
+        Assert.Equal("from-options", rabbit.TopicMapper.TopicFor("order-placed"));
+    }
 }

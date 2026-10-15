@@ -4,6 +4,7 @@ namespace LawnDart.Messaging.AzureServiceBus;
 
 /// <summary>
 /// Creates a topic and one subscription for each message type the host recorded.
+/// Types that map to the same topic share that topic. The subscription rule lists those types.
 /// </summary>
 public sealed class AzureServiceBusTopologySetup : IMessageTopologySetup
 {
@@ -38,12 +39,29 @@ public sealed class AzureServiceBusTopologySetup : IMessageTopologySetup
     public async Task SetupAsync(CancellationToken cancellationToken)
     {
         _options.EnsureValid();
+        var mapper = TopicMapperSelection.FromOptions(_options);
+        var groups = new Dictionary<string, List<string>>(StringComparer.Ordinal);
         foreach (var subscription in _subscriptions)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var messageType = MessageTypeNames.Require(subscription.MessageType);
-            var topic = AzureServiceBusNames.Topic(messageType);
-            await _connector.EnsureSubscriptionAsync(topic, _options.SubscriptionName, cancellationToken)
+            var topic = mapper.TopicFor(messageType);
+            AzureServiceBusNames.RequireTopic(topic);
+            if (!groups.TryGetValue(topic, out var types))
+            {
+                types = [];
+                groups[topic] = types;
+            }
+
+            if (!types.Contains(messageType, StringComparer.Ordinal))
+                types.Add(messageType);
+        }
+
+        foreach (var (topic, types) in groups)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await _connector.EnsureSubscriptionAsync(
+                    topic, _options.SubscriptionName, types, _options.ReplaceRouteRule, cancellationToken)
                 .ConfigureAwait(false);
 
             if (!_topics.Contains(topic, StringComparer.Ordinal))

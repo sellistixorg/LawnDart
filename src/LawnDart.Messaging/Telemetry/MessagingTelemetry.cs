@@ -36,6 +36,9 @@ public static class MessagingTelemetry
     private static readonly Counter<long> DeadLettered = Meter.CreateCounter<long>(
         "messaging.deadlettered", "count", "Messages parked after they used their delivery attempts");
 
+    private static readonly Counter<long> Deferred = Meter.CreateCounter<long>(
+        "messaging.deferred", "count", "Messages delayed because their handler was not subscribed yet");
+
     /// <summary>Starts a publish activity span.</summary>
     public static Activity? StartPublish(string messageType)
     {
@@ -62,6 +65,18 @@ public static class MessagingTelemetry
     public static void RecordPublishError(string messageType)
         => PublishErrors.Add(1, new KeyValuePair<string, object?>("messaging.message_type", messageType));
 
+    /// <summary>
+    /// Records a publish that reached no queue.
+    /// Increments <c>messaging.publish.errors</c> with tag <c>messaging.publish.outcome</c> set to <c>unroutable</c>.
+    /// This is not a successful publish, so <c>messaging.publish.duration</c> is not recorded.
+    /// </summary>
+    /// <param name="messageType">Declared message type name.</param>
+    public static void RecordPublishUnroutable(string messageType)
+        => PublishErrors.Add(
+            1,
+            new KeyValuePair<string, object?>("messaging.message_type", messageType),
+            new KeyValuePair<string, object?>("messaging.publish.outcome", "unroutable"));
+
     /// <summary>Records a completed consume operation.</summary>
     public static void RecordConsume(string messageType, TimeSpan duration)
         => ConsumeDuration.Record(duration.TotalMilliseconds,
@@ -70,6 +85,21 @@ public static class MessagingTelemetry
     /// <summary>Records a duplicate message discarded by the inbox.</summary>
     public static void RecordInboxDuplicate(string messageType)
         => InboxDuplicates.Add(1, new KeyValuePair<string, object?>("messaging.message_type", messageType));
+
+    /// <summary>
+    /// Counts one wait because the handler for <paramref name="messageType"/> was not subscribed yet.
+    /// Adds a <c>messaging.deferred</c> event on <see cref="Activity.Current"/> with tag <c>messaging.deferrals</c>.
+    /// </summary>
+    /// <param name="messageType">Declared message type name.</param>
+    /// <param name="subscriptionName">Consumer name from <see cref="MessageTransportOptions.SubscriptionName"/>.</param>
+    /// <param name="deferrals">How many times this delivery has waited, including this wait. The first wait is 1.</param>
+    public static void RecordDeferred(string messageType, string subscriptionName, int deferrals)
+    {
+        Deferred.Add(1, Tags(messageType, subscriptionName));
+        Activity.Current?.AddEvent(new ActivityEvent(
+            "messaging.deferred",
+            tags: new ActivityTagsCollection { { "messaging.deferrals", deferrals } }));
+    }
 
     /// <summary>
     /// Counts one failed attempt that will be tried again.

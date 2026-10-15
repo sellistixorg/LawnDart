@@ -40,6 +40,9 @@ public static class RabbitMqMessagingExtensions
         if (configure is not null)
             services.Configure(configure);
 
+        services.AddSingleton<IPostConfigureOptions<RabbitMqTransportOptions>>(sp =>
+            new ApplyRegisteredTopicMapper(sp.GetService<ITopicMapper>()));
+
         foreach (var descriptor in services.Where(d => d.ServiceType == typeof(IOptions<MessageTransportOptions>)).ToList())
             services.Remove(descriptor);
 

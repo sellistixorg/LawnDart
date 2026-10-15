@@ -12,10 +12,18 @@ public static class AzureServiceBusNames
     public const int SubscriptionNameMaxLength = 50;
 
     /// <summary>
-    /// Topic for <paramref name="messageType"/>.
-    /// The value is the declared type name from <see cref="MessageTypeNames.Require"/>.
+    /// Application property that carries the declared event type.
+    /// Publish sets it. A subscription rule matches it when several types share a topic.
+    /// The value is <c>lawndart_type</c>.
     /// </summary>
-    /// <param name="messageType">Declared message type name.</param>
+    public const string EventTypeProperty = "lawndart_type";
+
+    /// <summary>
+    /// Validates <paramref name="messageType"/> as a Service Bus topic name and returns it.
+    /// Pass the name from <see cref="ITopicMapper.TopicFor"/>.
+    /// The default mapper returns the declared type name.
+    /// </summary>
+    /// <param name="messageType">Topic name.</param>
     public static string Topic(string messageType)
     {
         RequireTopic(messageType);

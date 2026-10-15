@@ -10,7 +10,10 @@ namespace LawnDart.Messaging.AzureServiceBus;
 
 /// <summary>
 /// Azure Service Bus <see cref="IMessageTransport"/>.
-/// The topic is the declared message type name. Each subscriber has one subscription on that topic.
+/// The topic is the name from <see cref="ITopicMapper"/>. The default mapper uses the declared message type name.
+/// Each subscriber has one subscription on that topic.
+/// When several types share a topic, the subscription rule matches <c>lawndart_type</c>
+/// and <c>lawndart_target</c>. One processor on that subscription dispatches each type to its handlers.
 /// Publish creates the topic. A subscription creates its own subscription entity.
 /// A failed handler is scheduled again after <see cref="AzureServiceBusTransportOptions.RetryDelay"/>
 /// until <see cref="MessageTransportOptions.MaxDeliveryAttempts"/>.
@@ -18,9 +21,12 @@ namespace LawnDart.Messaging.AzureServiceBus;
 /// When it is off, the message is scheduled again and stays available.
 /// A cancelled delivery uses the same wait. It is not abandoned immediately.
 /// A retry sets <c>lawndart_target</c> to that subscription.
-/// A publish sets it to <c>*</c>. A message with no <c>lawndart_target</c> reaches every subscription.
+/// A publish sets it to <c>*</c>. A message with no <c>lawndart_target</c> reaches every subscription
+/// that accepts the event type. A message with no <c>lawndart_type</c> matches the type clause.
 /// Scheduling the retry and then completing the original can leave both copies
 /// when the complete fails after the schedule succeeds.
+/// <see cref="Dispose"/> blocks for up to <see cref="AzureServiceBusTransportOptions.OperationTimeout"/>.
+/// Prefer <see cref="DisposeAsync"/>.
 /// </summary>
 public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDisposable, IAsyncDisposable
 {
@@ -33,7 +39,9 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
     private readonly IDeadLetterQueue _deadLetters;
     private readonly AzureServiceBusConnector _connector;
     private readonly bool _ownsConnector;
-    private readonly ConcurrentDictionary<Type, Subscription> _subscriptions = new();
+    private readonly ITopicMapper _topicMapper;
+    private readonly string[] _plannedTypes;
+    private readonly ConcurrentDictionary<string, BrokerSubscription> _brokers = new(StringComparer.Ordinal);
     private int _disposed;
 
     /// <summary>
@@ -43,12 +51,17 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
     /// <param name="options">Connection, prefetch, retry, and dead-letter settings.</param>
     /// <param name="preHandlers">Hooks invoked before each handler attempt. May be empty.</param>
     /// <param name="deadLetters">In-process copy of messages dead-lettered on the subscription. A memory queue is used when omitted.</param>
+    /// <param name="subscriptions">
+    /// Message types the host recorded. The first subscribe writes a rule that lists every recorded type on that topic.
+    /// A later subscribe does not remove a type from the rule.
+    /// </param>
     public AzureServiceBusMessageTransport(
         ILogger<AzureServiceBusMessageTransport> logger,
         IOptions<AzureServiceBusTransportOptions> options,
         IEnumerable<IMessagePreHandler>? preHandlers = null,
-        IDeadLetterQueue? deadLetters = null)
-        : this(logger, options, preHandlers, deadLetters, CreateOwnedConnector(options), ownsConnector: true)
+        IDeadLetterQueue? deadLetters = null,
+        IEnumerable<MessageSubscription>? subscriptions = null)
+        : this(logger, options, preHandlers, deadLetters, CreateOwnedConnector(options, logger), ownsConnector: true, subscriptions)
     {
     }
 
@@ -58,7 +71,8 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
         IEnumerable<IMessagePreHandler>? preHandlers,
         IDeadLetterQueue? deadLetters,
         AzureServiceBusConnector connector,
-        bool ownsConnector)
+        bool ownsConnector,
+        IEnumerable<MessageSubscription>? subscriptions = null)
     {
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(options);
@@ -70,9 +84,28 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
         _deadLetters = deadLetters ?? new MemoryDeadLetterQueue();
         _connector = connector;
         _ownsConnector = ownsConnector;
+        _topicMapper = TopicMapperSelection.FromOptions(_options);
+        _plannedTypes = Plan(subscriptions);
     }
 
-    private static AzureServiceBusConnector CreateOwnedConnector(IOptions<AzureServiceBusTransportOptions> options)
+    private static string[] Plan(IEnumerable<MessageSubscription>? subscriptions)
+    {
+        if (subscriptions is null)
+            return [];
+
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var subscription in subscriptions)
+        {
+            ArgumentNullException.ThrowIfNull(subscription);
+            names.Add(MessageTypeNames.Require(subscription.MessageType));
+        }
+
+        return names.ToArray();
+    }
+
+    private static AzureServiceBusConnector CreateOwnedConnector(
+        IOptions<AzureServiceBusTransportOptions> options,
+        ILogger logger)
     {
         ArgumentNullException.ThrowIfNull(options);
         var value = options.Value;
@@ -90,7 +123,8 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
             () => client,
             () => admin,
             ownsClient: true,
-            ownsAdmin: true);
+            ownsAdmin: true,
+            logger);
     }
 
     /// <summary>Messages parked after they used their delivery attempts.</summary>
@@ -107,7 +141,8 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
         ArgumentNullException.ThrowIfNull(context);
 
         var declaredName = MessageTypeNames.Require(typeof(TMessage));
-        var topic = AzureServiceBusNames.Topic(declaredName);
+        var topic = _topicMapper.TopicFor(declaredName);
+        AzureServiceBusNames.RequireTopic(topic);
         cancellationToken.ThrowIfCancellationRequested();
 
         using var publish = MessagingTelemetry.StartPublish(declaredName);
@@ -116,7 +151,7 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
 
         try
         {
-            await WaitForInFlightStartupAsync<TMessage>(cancellationToken).ConfigureAwait(false);
+            await WaitForInFlightStartupAsync(topic, cancellationToken).ConfigureAwait(false);
             await _connector.EnsureTopicAsync(topic, cancellationToken).ConfigureAwait(false);
             var body = JsonSerializer.SerializeToUtf8Bytes(message, MessagingJson.Options);
             var brokerMessage = CreateOutbound(body, context, declaredName);
@@ -145,33 +180,42 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
     {
         ArgumentNullException.ThrowIfNull(handler);
         var declaredName = MessageTypeNames.Require(typeof(TMessage));
-        var topic = AzureServiceBusNames.Topic(declaredName);
-        var subscription = _subscriptions.GetOrAdd(
-            typeof(TMessage),
-            _ => new Subscription(declaredName, topic, _options.SubscriptionName));
+        var topic = _topicMapper.TopicFor(declaredName);
+        AzureServiceBusNames.RequireTopic(topic);
+        var broker = _brokers.GetOrAdd(
+            topic,
+            static (name, subscriptionName) => new BrokerSubscription(name, subscriptionName),
+            _options.SubscriptionName);
 
-        var registration = new HandlerRegistration(handler, cancellationToken);
-        lock (subscription.Handlers)
-            subscription.Handlers.Add(registration);
+        var registration = new HandlerRegistration(
+            (payload, context, token) => MessageDelivery.TryOnceAsync(
+                (TMessage)payload,
+                context,
+                handler,
+                _preHandlers,
+                token),
+            cancellationToken);
+        AddHandler(broker, typeof(TMessage), declaredName, registration);
 
         using var startupTimeout = new CancellationTokenSource(_options.OperationTimeout);
         try
         {
-            await EnsureConsumerAsync<TMessage>(subscription, startupTimeout.Token).ConfigureAwait(false);
+            await EnsureConsumerAsync(broker, startupTimeout.Token).ConfigureAwait(false);
         }
         catch (Exception ex) when (startupTimeout.IsCancellationRequested && ex is OperationCanceledException or TimeoutException)
         {
-            await AbortStartupAsync(subscription).ConfigureAwait(false);
-            lock (subscription.Handlers)
-                subscription.Handlers.Remove(registration);
+            RemoveHandler(broker, declaredName, registration);
+            if (!HasHandlers(broker))
+                await AbortStartupAsync(broker).ConfigureAwait(false);
             throw new TimeoutException(
                 $"Azure Service Bus subscription for '{declaredName}' did not start within {_options.OperationTimeout}.",
                 ex);
         }
         catch
         {
-            lock (subscription.Handlers)
-                subscription.Handlers.Remove(registration);
+            RemoveHandler(broker, declaredName, registration);
+            if (!HasHandlers(broker))
+                await AbortStartupAsync(broker).ConfigureAwait(false);
             throw;
         }
 
@@ -180,9 +224,8 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
 
         var unregister = cancellationToken.Register(() =>
         {
-            lock (subscription.Handlers)
-                subscription.Handlers.Remove(registration);
-            _ = StopThenCompleteAsync(subscription, registration);
+            RemoveHandler(broker, declaredName, registration);
+            _ = StopThenCompleteAsync(broker, registration);
         });
 
         try
@@ -203,21 +246,33 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
     internal void RemoveHandlers<TMessage>()
         where TMessage : class
     {
-        if (!_subscriptions.TryGetValue(typeof(TMessage), out var subscription))
+        var declaredName = MessageTypeNames.Require(typeof(TMessage));
+        var topic = _topicMapper.TopicFor(declaredName);
+        if (!_brokers.TryGetValue(topic, out var broker))
             return;
 
-        lock (subscription.Handlers)
-            subscription.Handlers.Clear();
+        lock (broker.Gate)
+        {
+            if (!broker.Types.TryGetValue(declaredName, out var handlers))
+                return;
+
+            lock (handlers.Handlers)
+                handlers.Handlers.Clear();
+        }
     }
 
-    /// <summary>Closes processors and the clients this transport opened.</summary>
+    /// <summary>
+    /// Closes processors and the clients this transport opened.
+    /// Blocks the caller for up to <see cref="AzureServiceBusTransportOptions.OperationTimeout"/>.
+    /// Prefer <see cref="DisposeAsync"/>. When the wait ends first, cleanup can still be running.
+    /// </summary>
     public void Dispose()
     {
-        var dispose = DisposeAsync().AsTask();
+        var dispose = Task.Run(async () => await DisposeAsync().ConfigureAwait(false));
         if (!dispose.Wait(_options.OperationTimeout))
         {
             _logger.LogWarning(
-                "Disposing the Azure Service Bus transport did not finish within {Timeout}.",
+                "Disposing the Azure Service Bus transport did not finish within {Timeout}. Prefer DisposeAsync.",
                 _options.OperationTimeout);
         }
     }
@@ -228,16 +283,23 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
 
-        foreach (var subscription in _subscriptions.Values)
+        foreach (var broker in _brokers.Values)
         {
             List<HandlerRegistration> handlers;
-            lock (subscription.Handlers)
+            lock (broker.Gate)
             {
-                handlers = [.. subscription.Handlers];
-                subscription.Handlers.Clear();
+                handlers = [];
+                foreach (var typeHandlers in broker.Types.Values)
+                {
+                    lock (typeHandlers.Handlers)
+                    {
+                        handlers.AddRange(typeHandlers.Handlers);
+                        typeHandlers.Handlers.Clear();
+                    }
+                }
             }
 
-            await StopProcessorAsync(subscription).ConfigureAwait(false);
+            await StopProcessorAsync(broker).ConfigureAwait(false);
             foreach (var handler in handlers)
                 handler.Completed.TrySetResult();
         }
@@ -246,14 +308,15 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
             await _connector.DisposeAsync().ConfigureAwait(false);
     }
 
-    private async Task EnsureConsumerAsync<TMessage>(Subscription subscription, CancellationToken cancellationToken)
-        where TMessage : class
+    private async Task EnsureConsumerAsync(BrokerSubscription broker, CancellationToken cancellationToken)
     {
         Task startup;
-        lock (subscription)
+        lock (broker.Gate)
         {
-            subscription.Startup ??= StartConsumerAsync<TMessage>(subscription, cancellationToken);
-            startup = subscription.Startup;
+            if (broker.Processor is null && (broker.Startup is null || broker.Startup.IsCompleted))
+                broker.Startup = StartConsumerAsync(broker, cancellationToken);
+
+            startup = broker.Startup ?? Task.CompletedTask;
         }
 
         try
@@ -263,14 +326,18 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             await ObserveStartupAsync(startup).ConfigureAwait(false);
-            await AbortStartupAsync(subscription).ConfigureAwait(false);
+            if (broker.Processor is null)
+                await AbortStartupAsync(broker).ConfigureAwait(false);
             throw;
         }
         catch
         {
-            await AbortStartupAsync(subscription).ConfigureAwait(false);
+            if (broker.Processor is null)
+                await AbortStartupAsync(broker).ConfigureAwait(false);
             throw;
         }
+
+        await UpdateRouteAsync(broker, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task ObserveStartupAsync(Task startup)
@@ -288,40 +355,44 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
         }
     }
 
-    private async Task AbortStartupAsync(Subscription subscription)
+    private async Task AbortStartupAsync(BrokerSubscription broker)
     {
-        await StopProcessorAsync(subscription).ConfigureAwait(false);
-        lock (subscription)
-            subscription.Startup = null;
+        await StopProcessorAsync(broker).ConfigureAwait(false);
+        lock (broker.Gate)
+            broker.Startup = null;
     }
 
-    private async Task StartConsumerAsync<TMessage>(Subscription subscription, CancellationToken cancellationToken)
-        where TMessage : class
+    private async Task StartConsumerAsync(BrokerSubscription broker, CancellationToken cancellationToken)
     {
-        await _connector.EnsureSubscriptionAsync(subscription.Topic, subscription.Name, cancellationToken)
+        var types = RuleTypes(broker);
+        if (types.Length == 0)
+            return;
+
+        await _connector.EnsureSubscriptionAsync(
+                broker.Topic, broker.Name, types, _options.ReplaceRouteRule, cancellationToken)
             .ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
 
         var processor = _connector.Client.CreateProcessor(
-            subscription.Topic,
-            subscription.Name,
+            broker.Topic,
+            broker.Name,
             new ServiceBusProcessorOptions
             {
                 AutoCompleteMessages = false,
                 MaxConcurrentCalls = _options.Concurrency,
                 PrefetchCount = _options.Prefetch,
                 ReceiveMode = ServiceBusReceiveMode.PeekLock,
-                Identifier = subscription.Name,
+                Identifier = broker.Name,
             });
 
-        processor.ProcessMessageAsync += args => HandleDeliveryAsync<TMessage>(subscription, args);
+        processor.ProcessMessageAsync += args => HandleDeliveryAsync(broker, args);
         processor.ProcessErrorAsync += args =>
         {
             _logger.LogError(
                 args.Exception,
                 "Azure Service Bus processor failed for {Topic}/{Subscription}. Source {ErrorSource}.",
-                subscription.Topic,
-                subscription.Name,
+                broker.Topic,
+                broker.Name,
                 args.ErrorSource);
             return Task.CompletedTask;
         };
@@ -330,7 +401,7 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
         {
             await processor.StartProcessingAsync(cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
-            subscription.Processor = processor;
+            broker.Processor = processor;
         }
         catch
         {
@@ -340,29 +411,35 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
             }
             catch (Exception disposeEx)
             {
-                _logger.LogDebug(disposeEx, "Azure Service Bus processor dispose failed for {Topic}/{Subscription}.", subscription.Topic, subscription.Name);
+                _logger.LogDebug(disposeEx, "Azure Service Bus processor dispose failed for {Topic}/{Subscription}.", broker.Topic, broker.Name);
             }
 
             throw;
         }
 
-        var idle = false;
-        lock (subscription.Handlers)
-            idle = subscription.Handlers.Count == 0;
-
-        if (idle)
-            await StopIfIdleAsync(subscription).ConfigureAwait(false);
+        if (!HasHandlers(broker))
+            await StopIfIdleAsync(broker).ConfigureAwait(false);
     }
 
-    private async Task WaitForInFlightStartupAsync<TMessage>(CancellationToken cancellationToken)
-        where TMessage : class
+    private async Task UpdateRouteAsync(BrokerSubscription broker, CancellationToken cancellationToken)
     {
-        if (!_subscriptions.TryGetValue(typeof(TMessage), out var subscription))
+        var types = RuleTypes(broker);
+        if (types.Length == 0)
+            return;
+
+        await _connector.EnsureSubscriptionAsync(
+                broker.Topic, broker.Name, types, _options.ReplaceRouteRule, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task WaitForInFlightStartupAsync(string topic, CancellationToken cancellationToken)
+    {
+        if (!_brokers.TryGetValue(topic, out var broker))
             return;
 
         Task? startup;
-        lock (subscription)
-            startup = subscription.Startup;
+        lock (broker.Gate)
+            startup = broker.Startup;
 
         if (startup is null || startup.IsCompleted)
             return;
@@ -370,8 +447,7 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
         await startup.WaitAsync(_options.OperationTimeout, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task HandleDeliveryAsync<TMessage>(Subscription subscription, ProcessMessageEventArgs args)
-        where TMessage : class
+    private async Task HandleDeliveryAsync(BrokerSubscription broker, ProcessMessageEventArgs args)
     {
         var body = args.Message.Body.ToMemory();
         var properties = args.Message.ApplicationProperties;
@@ -382,19 +458,61 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Azure Service Bus could not read the attempt count on {Topic}.", subscription.Topic);
+            _logger.LogError(ex, "Azure Service Bus could not read the attempt count on {Topic}.", broker.Topic);
             completed = 0;
         }
 
         var attempt = completed + 1;
+        var declaredName = ResolveDeclaredName(broker, properties);
         properties.TryGetValue(MessageHeaders.MessageId, out var rawMessageId);
-        using var consume = MessagingTelemetry.StartConsume(subscription.DeclaredName, rawMessageId as string);
-        consume?.SetTag("messaging.servicebus.topic", subscription.Topic);
-        consume?.SetTag("messaging.servicebus.subscription", subscription.Name);
+        var messageType = declaredName ?? broker.Topic;
+        using var consume = MessagingTelemetry.StartConsume(messageType, rawMessageId as string);
+        consume?.SetTag("messaging.servicebus.topic", broker.Topic);
+        consume?.SetTag("messaging.servicebus.subscription", broker.Name);
         consume?.SetTag("messaging.servicebus.delivery_count", args.Message.DeliveryCount);
         consume?.SetTag("messaging.servicebus.redelivered", completed > 0 || args.Message.DeliveryCount > 1);
         var started = TimeProvider.System.GetTimestamp();
         var settled = false;
+
+        if (declaredName is null)
+        {
+            await FailAsync(
+                broker,
+                messageType,
+                args,
+                body.ToArray(),
+                new MessageContext { TransportType = TransportTypeName },
+                attempt,
+                new InvalidOperationException(
+                    "The message did not include lawndart_type, and the subscription handles more than one event type."),
+                consume).ConfigureAwait(false);
+            return;
+        }
+
+        TypeHandlers? typeHandlers;
+        lock (broker.Gate)
+            broker.Types.TryGetValue(declaredName, out typeHandlers);
+
+        if (typeHandlers is null)
+        {
+            if (IsAccepted(broker, declaredName))
+            {
+                await DeferForHandlerAsync(
+                    broker, declaredName, args, properties, completed, attempt, consume).ConfigureAwait(false);
+                return;
+            }
+
+            await FailAsync(
+                broker,
+                declaredName,
+                args,
+                body.ToArray(),
+                new MessageContext { TransportType = TransportTypeName },
+                attempt,
+                new InvalidOperationException($"No handler is registered for '{declaredName}'."),
+                consume).ConfigureAwait(false);
+            return;
+        }
 
         MessageEnvelope envelope;
         try
@@ -406,11 +524,11 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
         catch (Exception ex)
         {
             await FailAsync(
-                subscription,
+                broker,
+                declaredName,
                 args,
-                body,
-                new MessageContext { TransportType = TransportTypeName },
                 body.ToArray(),
+                new MessageContext { TransportType = TransportTypeName },
                 attempt,
                 ex,
                 consume).ConfigureAwait(false);
@@ -420,35 +538,30 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
         try
         {
             List<HandlerRegistration> handlers;
-            lock (subscription.Handlers)
-                handlers = [.. subscription.Handlers];
+            lock (typeHandlers.Handlers)
+                handlers = [.. typeHandlers.Handlers];
 
             if (handlers.Count == 0)
             {
-                _logger.LogDebug(
-                    "No handler is registered for {MessageType} on {Topic}/{Subscription}. The message returns after {Delay}.",
-                    subscription.DeclaredName,
-                    subscription.Topic,
-                    subscription.Name,
-                    _options.RetryDelay);
-                await DelayRedeliveryAsync(subscription, args, completed).ConfigureAwait(false);
+                await DeferForHandlerAsync(
+                    broker, declaredName, args, properties, completed, attempt, consume).ConfigureAwait(false);
                 settled = true;
                 return;
             }
 
-            TMessage? message;
+            object? message;
             try
             {
-                message = JsonSerializer.Deserialize<TMessage>(body.Span, MessagingJson.Options);
+                message = JsonSerializer.Deserialize(body.Span, typeHandlers.MessageType, MessagingJson.Options);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 await FailAsync(
-                    subscription,
+                    broker,
+                    declaredName,
                     args,
-                    body,
-                    envelope.Context,
                     body.ToArray(),
+                    envelope.Context,
                     attempt,
                     ex,
                     consume).ConfigureAwait(false);
@@ -459,11 +572,11 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
             if (message is null)
             {
                 await FailAsync(
-                    subscription,
+                    broker,
+                    declaredName,
                     args,
-                    body,
-                    envelope.Context,
                     body.ToArray(),
+                    envelope.Context,
                     attempt,
                     new InvalidOperationException("The message body was empty."),
                     consume).ConfigureAwait(false);
@@ -475,25 +588,20 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
             {
                 if (registration.CancellationToken.IsCancellationRequested)
                 {
-                    await DelayRedeliveryAsync(subscription, args, completed).ConfigureAwait(false);
+                    await DelayRedeliveryAsync(broker, declaredName, args, completed).ConfigureAwait(false);
                     settled = true;
                     return;
                 }
 
-                var typed = (Func<TMessage, MessageContext, CancellationToken, Task>)registration.Handler;
                 MessageAttemptResult result;
                 try
                 {
-                    result = await MessageDelivery.TryOnceAsync(
-                        message,
-                        envelope.Context,
-                        typed,
-                        _preHandlers,
-                        registration.CancellationToken).ConfigureAwait(false);
+                    result = await registration.Handle(message, envelope.Context, registration.CancellationToken)
+                        .ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (registration.CancellationToken.IsCancellationRequested)
                 {
-                    await DelayRedeliveryAsync(subscription, args, completed).ConfigureAwait(false);
+                    await DelayRedeliveryAsync(broker, declaredName, args, completed).ConfigureAwait(false);
                     settled = true;
                     return;
                 }
@@ -502,11 +610,11 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
                     continue;
 
                 await FailAsync(
-                    subscription,
+                    broker,
+                    declaredName,
                     args,
                     message,
                     envelope.Context,
-                    body,
                     attempt,
                     result.Error!,
                     consume).ConfigureAwait(false);
@@ -517,7 +625,7 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
             using var timeout = LinkTimeout(CancellationToken.None);
             await args.CompleteMessageAsync(args.Message, timeout.Token).ConfigureAwait(false);
             settled = true;
-            MessagingTelemetry.RecordConsume(subscription.DeclaredName, TimeProvider.System.GetElapsedTime(started));
+            MessagingTelemetry.RecordConsume(declaredName, TimeProvider.System.GetElapsedTime(started));
         }
         catch (Exception ex)
         {
@@ -525,34 +633,34 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
             _logger.LogError(
                 ex,
                 "Azure Service Bus consumer failed while handling {MessageType} on {Topic}/{Subscription}",
-                subscription.DeclaredName,
-                subscription.Topic,
-                subscription.Name);
+                declaredName,
+                broker.Topic,
+                broker.Name);
             if (!settled)
             {
                 try
                 {
-                    await DelayRedeliveryAsync(subscription, args, attempt).ConfigureAwait(false);
+                    await DelayRedeliveryAsync(broker, declaredName, args, attempt).ConfigureAwait(false);
                 }
                 catch (Exception settleEx)
                 {
                     _logger.LogError(
                         settleEx,
                         "Azure Service Bus could not reschedule {MessageType} on {Topic}/{Subscription}.",
-                        subscription.DeclaredName,
-                        subscription.Topic,
-                        subscription.Name);
+                        declaredName,
+                        broker.Topic,
+                        broker.Name);
                 }
             }
         }
     }
 
     private async Task FailAsync(
-        Subscription subscription,
+        BrokerSubscription broker,
+        string declaredName,
         ProcessMessageEventArgs args,
         object message,
         MessageContext context,
-        ReadOnlyMemory<byte> body,
         int attempt,
         Exception error,
         Activity? consume)
@@ -564,21 +672,21 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
             if (willRetry)
             {
                 MessagingTelemetry.RecordDeliveryRetry(
-                    subscription.DeclaredName,
+                    declaredName,
                     _options.SubscriptionName,
                     attempt,
                     context.MessageId,
                     _logger);
             }
 
-            await DelayRedeliveryAsync(subscription, args, completedAttempts: attempt).ConfigureAwait(false);
+            await DelayRedeliveryAsync(broker, declaredName, args, completedAttempts: attempt).ConfigureAwait(false);
             return;
         }
 
         var errorType = error.GetType().Name;
         var errorText = $"{errorType}: {error.Message}";
         MessagingTelemetry.RecordDeadLettered(
-            subscription.DeclaredName,
+            declaredName,
             _options.SubscriptionName,
             attempt,
             errorType,
@@ -586,7 +694,7 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
             errorText,
             _logger);
         _deadLetters.Enqueue(new DeadLetteredMessage(
-            subscription.DeclaredName,
+            declaredName,
             message,
             context,
             attempt,
@@ -600,30 +708,97 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
             timeout.Token).ConfigureAwait(false);
     }
 
-    private async Task DelayRedeliveryAsync(
-        Subscription subscription,
+    private async Task DeferForHandlerAsync(
+        BrokerSubscription broker,
+        string declaredName,
         ProcessMessageEventArgs args,
-        int completedAttempts)
+        IReadOnlyDictionary<string, object> properties,
+        int completed,
+        int attempt,
+        Activity? consume)
+    {
+        int deferrals;
+        try
+        {
+            deferrals = AzureServiceBusHeaders.DeferralCount(properties);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Azure Service Bus could not read the deferral count on {Topic}.", broker.Topic);
+            deferrals = 0;
+        }
+
+        var next = deferrals + 1;
+        if (next <= _options.MaxHandlerDeferrals)
+        {
+            MessagingTelemetry.RecordDeferred(declaredName, _options.SubscriptionName, next);
+            if (next >= AzureServiceBusTransportOptions.HandlerDeferralWarningThreshold)
+            {
+                _logger.LogWarning(
+                    "No handler is registered for {MessageType} on {Topic}/{Subscription}. Deferral {Deferral} of {Cap}. The message returns after {Delay}.",
+                    declaredName,
+                    broker.Topic,
+                    broker.Name,
+                    next,
+                    _options.MaxHandlerDeferrals,
+                    _options.RetryDelay);
+            }
+            else
+            {
+                _logger.LogDebug(
+                    "No handler is registered for {MessageType} on {Topic}/{Subscription}. Deferral {Deferral} of {Cap}. The message returns after {Delay}.",
+                    declaredName,
+                    broker.Topic,
+                    broker.Name,
+                    next,
+                    _options.MaxHandlerDeferrals,
+                    _options.RetryDelay);
+            }
+
+            await DelayRedeliveryAsync(broker, declaredName, args, completed, next).ConfigureAwait(false);
+            return;
+        }
+
+        await FailAsync(
+            broker,
+            declaredName,
+            args,
+            args.Message.Body.ToArray(),
+            new MessageContext { TransportType = TransportTypeName },
+            attempt,
+            new InvalidOperationException($"No handler is registered for '{declaredName}'."),
+            consume).ConfigureAwait(false);
+    }
+
+    private async Task DelayRedeliveryAsync(
+        BrokerSubscription broker,
+        string declaredName,
+        ProcessMessageEventArgs args,
+        int completedAttempts,
+        int? deferrals = null)
     {
         var scheduled = new ServiceBusMessage(args.Message.Body)
         {
             ContentType = string.IsNullOrEmpty(args.Message.ContentType) ? "application/json" : args.Message.ContentType,
             CorrelationId = args.Message.CorrelationId,
-            Subject = string.IsNullOrEmpty(args.Message.Subject) ? subscription.DeclaredName : args.Message.Subject,
+            Subject = string.IsNullOrEmpty(args.Message.Subject) ? declaredName : args.Message.Subject,
             MessageId = args.Message.MessageId,
         };
 
         foreach (var pair in args.Message.ApplicationProperties)
         {
-            if (pair.Key is AzureServiceBusHeaders.Attempt or AzureServiceBusHeaders.TargetSubscription || pair.Value is null)
+            if (pair.Key is AzureServiceBusHeaders.Attempt or AzureServiceBusHeaders.TargetSubscription or AzureServiceBusHeaders.EventType || pair.Value is null)
                 continue;
             scheduled.ApplicationProperties[pair.Key] = pair.Value;
         }
 
         scheduled.ApplicationProperties[AzureServiceBusHeaders.Attempt] = completedAttempts;
-        scheduled.ApplicationProperties[AzureServiceBusHeaders.TargetSubscription] = subscription.Name;
+        scheduled.ApplicationProperties[AzureServiceBusHeaders.TargetSubscription] = broker.Name;
+        scheduled.ApplicationProperties[AzureServiceBusHeaders.EventType] = declaredName;
+        if (deferrals is int count)
+            scheduled.ApplicationProperties[AzureServiceBusHeaders.Deferrals] = count;
         var enqueueAt = DateTimeOffset.UtcNow.Add(_options.RetryDelay);
-        var sender = await _connector.SenderAsync(subscription.Topic, CancellationToken.None).ConfigureAwait(false);
+        var sender = await _connector.SenderAsync(broker.Topic, CancellationToken.None).ConfigureAwait(false);
         using var timeout = LinkTimeout(CancellationToken.None);
         await sender.ScheduleMessageAsync(scheduled, enqueueAt, timeout.Token).ConfigureAwait(false);
         await args.CompleteMessageAsync(args.Message, timeout.Token).ConfigureAwait(false);
@@ -649,14 +824,136 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
             brokerMessage.ApplicationProperties[pair.Key] = pair.Value;
 
         brokerMessage.ApplicationProperties[AzureServiceBusHeaders.TargetSubscription] = AzureServiceBusHeaders.TargetAll;
+        brokerMessage.ApplicationProperties[AzureServiceBusHeaders.EventType] = declaredName;
         return brokerMessage;
     }
 
-    private async Task StopThenCompleteAsync(Subscription subscription, HandlerRegistration registration)
+    private static string? ResolveDeclaredName(
+        BrokerSubscription broker,
+        IReadOnlyDictionary<string, object> properties)
+    {
+        var named = ReadString(properties, AzureServiceBusHeaders.EventType)
+            ?? ReadString(properties, MessageHeaders.MessageType);
+
+        lock (broker.Gate)
+        {
+            if (named is not null && broker.Types.ContainsKey(named))
+                return named;
+
+            if (named is null && broker.Types.Count == 1)
+            {
+                foreach (var key in broker.Types.Keys)
+                    return key;
+            }
+        }
+
+        return named;
+    }
+
+    private static string? ReadString(IReadOnlyDictionary<string, object> properties, string key)
+    {
+        if (!properties.TryGetValue(key, out var value) || value is not string text || text.Length == 0)
+            return null;
+
+        return text;
+    }
+
+    private void AddHandler(
+        BrokerSubscription broker,
+        Type messageType,
+        string declaredName,
+        HandlerRegistration registration)
+    {
+        lock (broker.Gate)
+        {
+            if (!broker.Types.TryGetValue(declaredName, out var handlers))
+            {
+                handlers = new TypeHandlers(messageType, declaredName);
+                broker.Types[declaredName] = handlers;
+            }
+
+            lock (handlers.Handlers)
+                handlers.Handlers.Add(registration);
+        }
+    }
+
+    private static void RemoveHandler(
+        BrokerSubscription broker,
+        string declaredName,
+        HandlerRegistration registration)
+    {
+        lock (broker.Gate)
+        {
+            if (!broker.Types.TryGetValue(declaredName, out var handlers))
+                return;
+
+            lock (handlers.Handlers)
+                handlers.Handlers.Remove(registration);
+        }
+    }
+
+    private static bool HasHandlers(BrokerSubscription broker)
+    {
+        lock (broker.Gate)
+        {
+            foreach (var handlers in broker.Types.Values)
+            {
+                lock (handlers.Handlers)
+                {
+                    if (handlers.Handlers.Count > 0)
+                        return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private string[] RuleTypes(BrokerSubscription broker)
+    {
+        var accepted = Acceptance(broker);
+        if (!_options.ReplaceRouteRule)
+            return accepted;
+
+        var recorded = new List<string>();
+        foreach (var declared in _plannedTypes)
+        {
+            if (string.Equals(_topicMapper.TopicFor(declared), broker.Topic, StringComparison.Ordinal))
+                recorded.Add(declared);
+        }
+
+        recorded.Sort(StringComparer.Ordinal);
+        return recorded.Count > 0 ? recorded.ToArray() : accepted;
+    }
+
+    private string[] Acceptance(BrokerSubscription broker)
+    {
+        lock (broker.Gate)
+        {
+            foreach (var declared in _plannedTypes)
+            {
+                if (string.Equals(_topicMapper.TopicFor(declared), broker.Topic, StringComparison.Ordinal))
+                    broker.AcceptedTypes.Add(declared);
+            }
+
+            foreach (var name in broker.Types.Keys)
+                broker.AcceptedTypes.Add(name);
+
+            return broker.AcceptedTypes.OrderBy(static name => name, StringComparer.Ordinal).ToArray();
+        }
+    }
+
+    private static bool IsAccepted(BrokerSubscription broker, string declaredName)
+    {
+        lock (broker.Gate)
+            return broker.AcceptedTypes.Contains(declaredName);
+    }
+
+    private async Task StopThenCompleteAsync(BrokerSubscription broker, HandlerRegistration registration)
     {
         try
         {
-            await StopIfIdleAsync(subscription).ConfigureAwait(false);
+            await StopIfIdleAsync(broker).ConfigureAwait(false);
         }
         finally
         {
@@ -664,26 +961,23 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
         }
     }
 
-    private async Task StopIfIdleAsync(Subscription subscription)
+    private async Task StopIfIdleAsync(BrokerSubscription broker)
     {
-        lock (subscription.Handlers)
-        {
-            if (subscription.Handlers.Count > 0)
-                return;
-        }
+        if (HasHandlers(broker))
+            return;
 
-        await StopProcessorAsync(subscription).ConfigureAwait(false);
-        lock (subscription)
-            subscription.Startup = null;
+        await StopProcessorAsync(broker).ConfigureAwait(false);
+        lock (broker.Gate)
+            broker.Startup = null;
     }
 
-    private async Task StopProcessorAsync(Subscription subscription)
+    private async Task StopProcessorAsync(BrokerSubscription broker)
     {
-        var processor = subscription.Processor;
+        var processor = broker.Processor;
         if (processor is null)
             return;
 
-        subscription.Processor = null;
+        broker.Processor = null;
         using var timeout = new CancellationTokenSource(_options.OperationTimeout);
         try
         {
@@ -692,7 +986,7 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "Azure Service Bus processor stop failed for {Topic}/{Subscription}.", subscription.Topic, subscription.Name);
+            _logger.LogDebug(ex, "Azure Service Bus processor stop failed for {Topic}/{Subscription}.", broker.Topic, broker.Name);
         }
 
         try
@@ -701,7 +995,7 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "Azure Service Bus processor dispose failed for {Topic}/{Subscription}.", subscription.Topic, subscription.Name);
+            _logger.LogDebug(ex, "Azure Service Bus processor dispose failed for {Topic}/{Subscription}.", broker.Topic, broker.Name);
         }
     }
 
@@ -712,54 +1006,58 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
         return source;
     }
 
-    private static async Task WaitUntilCancelledAsync(
-        HandlerRegistration registration,
-        CancellationTokenRegistration unregister)
-    {
-        try
-        {
-            await registration.Completed.Task.ConfigureAwait(false);
-        }
-        finally
-        {
-            await unregister.DisposeAsync().ConfigureAwait(false);
-        }
-    }
-
     private static string Trim(string value, int max)
         => value.Length <= max ? value : value[..max];
 
-    private sealed class Subscription
+    private sealed class BrokerSubscription
     {
-        public Subscription(string declaredName, string topic, string name)
+        public BrokerSubscription(string topic, string name)
         {
-            DeclaredName = declaredName;
             Topic = topic;
             Name = name;
         }
-
-        public string DeclaredName { get; }
 
         public string Topic { get; }
 
         public string Name { get; }
 
-        public List<HandlerRegistration> Handlers { get; } = [];
+        public Dictionary<string, TypeHandlers> Types { get; } = new(StringComparer.Ordinal);
+
+        public HashSet<string> AcceptedTypes { get; } = new(StringComparer.Ordinal);
+
+        public object Gate { get; } = new();
 
         public Task? Startup { get; set; }
 
         public ServiceBusProcessor? Processor { get; set; }
     }
 
+    private sealed class TypeHandlers
+    {
+        public TypeHandlers(Type messageType, string declaredName)
+        {
+            MessageType = messageType;
+            DeclaredName = declaredName;
+        }
+
+        public Type MessageType { get; }
+
+        public string DeclaredName { get; }
+
+        public List<HandlerRegistration> Handlers { get; } = [];
+    }
+
     private sealed class HandlerRegistration
     {
-        public HandlerRegistration(Delegate handler, CancellationToken cancellationToken)
+        public HandlerRegistration(
+            Func<object, MessageContext, CancellationToken, Task<MessageAttemptResult>> handle,
+            CancellationToken cancellationToken)
         {
-            Handler = handler;
+            Handle = handle;
             CancellationToken = cancellationToken;
         }
 
-        public Delegate Handler { get; }
+        public Func<object, MessageContext, CancellationToken, Task<MessageAttemptResult>> Handle { get; }
 
         public CancellationToken CancellationToken { get; }
 

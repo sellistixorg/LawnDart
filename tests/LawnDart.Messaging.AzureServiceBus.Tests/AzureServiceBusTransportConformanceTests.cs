@@ -43,7 +43,8 @@ internal sealed class AzureServiceBusTransportFixture : TransportConformanceFixt
         string adminConnectionString,
         Action<MessageTransportOptions>? configure,
         IMessagePreHandler? preHandler,
-        ILogger<AzureServiceBusMessageTransport>? logger = null)
+        ILogger<AzureServiceBusMessageTransport>? logger = null,
+        IEnumerable<MessageSubscription>? subscriptions = null)
     {
         var options = new AzureServiceBusTransportOptions
         {
@@ -62,7 +63,8 @@ internal sealed class AzureServiceBusTransportFixture : TransportConformanceFixt
             logger ?? NullLogger<AzureServiceBusMessageTransport>.Instance,
             Microsoft.Extensions.Options.Options.Create(options),
             hooks,
-            new MemoryDeadLetterQueue());
+            new MemoryDeadLetterQueue(),
+            subscriptions);
         return new AzureServiceBusTransportFixture(transport, options);
     }
 

@@ -33,3 +33,19 @@ internal sealed class ApplyCommonMessageTransportOptions :
             item.PostConfigure(name, options);
     }
 }
+
+/// <summary>
+/// Copies a registered <see cref="ITopicMapper"/> onto <see cref="RabbitMqTransportOptions"/>
+/// when the options still use the default mapper.
+/// </summary>
+internal sealed class ApplyRegisteredTopicMapper : IPostConfigureOptions<RabbitMqTransportOptions>
+{
+    private readonly ITopicMapper? _registered;
+
+    public ApplyRegisteredTopicMapper(ITopicMapper? registered) => _registered = registered;
+
+    public void PostConfigure(string? name, RabbitMqTransportOptions options)
+    {
+        options.TopicMapper = TopicMapperSelection.Select(options.TopicMapper, _registered);
+    }
+}

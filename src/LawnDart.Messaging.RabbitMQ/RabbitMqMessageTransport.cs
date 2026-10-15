@@ -12,9 +12,11 @@ namespace LawnDart.Messaging.RabbitMQ;
 
 /// <summary>
 /// RabbitMQ <see cref="IMessageTransport"/>.
-/// The exchange and the routing key are the declared message type name.
-/// Publish declares that exchange. A subscription declares its own queue.
+/// The exchange is the topic from <see cref="ITopicMapper"/>. The default mapper uses the declared message type name.
+/// The routing key is the declared message type name, so a queue bound for one type does not receive another.
+/// Publish declares that exchange. A subscription declares its own queue and binds it with the routing key.
 /// A failed handler waits on a retry queue, then returns, until <see cref="MessageTransportOptions.MaxDeliveryAttempts"/>.
+/// A cancelled delivery uses that same wait and does not increment the attempt count.
 /// When dead-letter handling is on, the last failure is nacked to the dead-letter exchange.
 /// When it is off, the message waits and returns to the same queue.
 /// </summary>
@@ -29,6 +31,7 @@ public sealed class RabbitMqMessageTransport : IMessageTransport, IDisposable, I
     private readonly IDeadLetterQueue _deadLetters;
     private readonly RabbitMqConnector _connector;
     private readonly bool _ownsConnector;
+    private readonly ITopicMapper _topicMapper;
     private readonly SemaphoreSlim _publishLock = new(1, 1);
     private readonly ConcurrentDictionary<Type, Subscription> _subscriptions = new();
     private IChannel? _publishChannel;
@@ -64,6 +67,7 @@ public sealed class RabbitMqMessageTransport : IMessageTransport, IDisposable, I
         _options.EnsureValid();
         _preHandlers = preHandlers?.ToArray() ?? [];
         _deadLetters = deadLetters ?? new MemoryDeadLetterQueue();
+        _topicMapper = TopicMapperSelection.FromOptions(_options);
         _ownsConnector = connector is null;
         _connector = connector ?? new RabbitMqConnector(_options);
     }
@@ -82,16 +86,20 @@ public sealed class RabbitMqMessageTransport : IMessageTransport, IDisposable, I
         ArgumentNullException.ThrowIfNull(context);
 
         var declaredName = MessageTypeNames.Require(typeof(TMessage));
+        var exchange = _topicMapper.TopicFor(declaredName);
+        var routingKey = RabbitMqNames.RoutingKey(declaredName);
+        RabbitMqNames.RequireExchange(exchange);
+        RabbitMqNames.RequireRoutingKey(routingKey);
         cancellationToken.ThrowIfCancellationRequested();
 
         using var publish = MessagingTelemetry.StartPublish(declaredName);
-        publish?.SetTag("messaging.rabbitmq.exchange", RabbitMqNames.Exchange(declaredName));
-        publish?.SetTag("messaging.rabbitmq.routing_key", RabbitMqNames.RoutingKey(declaredName));
+        publish?.SetTag("messaging.rabbitmq.exchange", exchange);
+        publish?.SetTag("messaging.rabbitmq.routing_key", routingKey);
         var started = TimeProvider.System.GetTimestamp();
 
         try
         {
-            await _connector.DeclareExchangeAsync(declaredName, cancellationToken).ConfigureAwait(false);
+            await _connector.DeclareExchangeAsync(exchange, cancellationToken).ConfigureAwait(false);
 
             var headers = new Dictionary<string, string>(StringComparer.Ordinal);
             MessageEnvelopeHeaders.Write(context, declaredName, headers);
@@ -111,6 +119,7 @@ public sealed class RabbitMqMessageTransport : IMessageTransport, IDisposable, I
 
             var body = JsonSerializer.SerializeToUtf8Bytes(message, MessagingJson.Options);
             var channel = await PublishChannelAsync(cancellationToken).ConfigureAwait(false);
+            var routed = true;
 
             await _publishLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
@@ -118,8 +127,8 @@ public sealed class RabbitMqMessageTransport : IMessageTransport, IDisposable, I
                 try
                 {
                     await channel.BasicPublishAsync(
-                        RabbitMqNames.Exchange(declaredName),
-                        RabbitMqNames.RoutingKey(declaredName),
+                        exchange,
+                        routingKey,
                         mandatory: true,
                         properties,
                         body,
@@ -128,12 +137,13 @@ public sealed class RabbitMqMessageTransport : IMessageTransport, IDisposable, I
                 catch (PublishException ex) when (IsUnroutable(ex) &&
                     _options.UnroutablePublish == RabbitMqUnroutablePublish.Warn)
                 {
+                    routed = false;
                     _logger.LogWarning(
                         ex,
                         "No queue is bound for {MessageType}. The message was not queued. Exchange {Exchange}, routing key {RoutingKey}, message {MessageId}.",
                         declaredName,
-                        RabbitMqNames.Exchange(declaredName),
-                        RabbitMqNames.RoutingKey(declaredName),
+                        exchange,
+                        routingKey,
                         context.MessageId);
                 }
             }
@@ -142,7 +152,16 @@ public sealed class RabbitMqMessageTransport : IMessageTransport, IDisposable, I
                 _publishLock.Release();
             }
 
-            MessagingTelemetry.RecordPublish(declaredName, TimeProvider.System.GetElapsedTime(started));
+            if (routed)
+            {
+                MessagingTelemetry.RecordPublish(declaredName, TimeProvider.System.GetElapsedTime(started));
+            }
+            else
+            {
+                publish?.SetTag("messaging.publish.outcome", "unroutable");
+                publish?.SetStatus(ActivityStatusCode.Error, "unroutable");
+                MessagingTelemetry.RecordPublishUnroutable(declaredName);
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -160,12 +179,15 @@ public sealed class RabbitMqMessageTransport : IMessageTransport, IDisposable, I
     {
         ArgumentNullException.ThrowIfNull(handler);
         var declaredName = MessageTypeNames.Require(typeof(TMessage));
+        var exchange = _topicMapper.TopicFor(declaredName);
+        var queue = RabbitMqNames.Queue(declaredName, _options.SubscriptionName);
+        RabbitMqNames.RequireExchange(exchange);
+        RabbitMqNames.RequireRoutingKey(RabbitMqNames.RoutingKey(declaredName));
+        RabbitMqNames.RequireQueue(queue);
+        RabbitMqNames.RequireQueue(RabbitMqNames.RetryQueue(declaredName, _options.SubscriptionName));
         var subscription = _subscriptions.GetOrAdd(
             typeof(TMessage),
-            _ => new Subscription(
-                declaredName,
-                RabbitMqNames.Queue(declaredName, _options.SubscriptionName),
-                _options.Concurrency));
+            _ => new Subscription(declaredName, exchange, queue, _options.Concurrency));
 
         var registration = new HandlerRegistration(handler, cancellationToken);
         lock (subscription.Handlers)
@@ -226,6 +248,7 @@ public sealed class RabbitMqMessageTransport : IMessageTransport, IDisposable, I
 
             await CloseChannelAsync(subscription.Channel).ConfigureAwait(false);
             subscription.Channel = null;
+            subscription.Concurrency.Dispose();
         }
 
         await _publishLock.WaitAsync().ConfigureAwait(false);
@@ -272,7 +295,11 @@ public sealed class RabbitMqMessageTransport : IMessageTransport, IDisposable, I
     private async Task StartConsumerAsync<TMessage>(Subscription subscription)
         where TMessage : class
     {
-        await _connector.DeclareSubscriptionAsync(subscription.DeclaredName, _options.SubscriptionName, CancellationToken.None)
+        await _connector.DeclareSubscriptionAsync(
+                subscription.DeclaredName,
+                subscription.Exchange,
+                _options.SubscriptionName,
+                CancellationToken.None)
             .ConfigureAwait(false);
 
         var concurrency = checked((ushort)_options.Concurrency);
@@ -399,7 +426,13 @@ public sealed class RabbitMqMessageTransport : IMessageTransport, IDisposable, I
             {
                 if (registration.CancellationToken.IsCancellationRequested)
                 {
-                    await NackAsync(channel, delivery.DeliveryTag, requeue: true).ConfigureAwait(false);
+                    await DelayRedeliveryAsync(
+                        channel,
+                        delivery.DeliveryTag,
+                        subscription,
+                        body,
+                        rawHeaders,
+                        completedAttempts: completed).ConfigureAwait(false);
                     settled = true;
                     return;
                 }
@@ -417,7 +450,13 @@ public sealed class RabbitMqMessageTransport : IMessageTransport, IDisposable, I
                 }
                 catch (OperationCanceledException) when (registration.CancellationToken.IsCancellationRequested)
                 {
-                    await NackAsync(channel, delivery.DeliveryTag, requeue: true).ConfigureAwait(false);
+                    await DelayRedeliveryAsync(
+                        channel,
+                        delivery.DeliveryTag,
+                        subscription,
+                        body,
+                        rawHeaders,
+                        completedAttempts: completed).ConfigureAwait(false);
                     settled = true;
                     return;
                 }
@@ -467,7 +506,16 @@ public sealed class RabbitMqMessageTransport : IMessageTransport, IDisposable, I
         finally
         {
             if (acquired)
-                subscription.Concurrency.Release();
+            {
+                try
+                {
+                    subscription.Concurrency.Release();
+                }
+                catch (ObjectDisposedException)
+                {
+                    // The transport is already disposed.
+                }
+            }
         }
     }
 
@@ -670,14 +718,17 @@ public sealed class RabbitMqMessageTransport : IMessageTransport, IDisposable, I
 
     private sealed class Subscription
     {
-        public Subscription(string declaredName, string queue, int concurrency)
+        public Subscription(string declaredName, string exchange, string queue, int concurrency)
         {
             DeclaredName = declaredName;
+            Exchange = exchange;
             Queue = queue;
             Concurrency = new SemaphoreSlim(concurrency, concurrency);
         }
 
         public string DeclaredName { get; }
+
+        public string Exchange { get; }
 
         public string Queue { get; }
 

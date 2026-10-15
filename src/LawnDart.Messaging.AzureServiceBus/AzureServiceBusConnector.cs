@@ -1,7 +1,10 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using Azure;
 using Azure.Messaging.ServiceBus;
 using Azure.Messaging.ServiceBus.Administration;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace LawnDart.Messaging.AzureServiceBus;
 
@@ -19,7 +22,9 @@ internal sealed class AzureServiceBusConnector : IDisposable, IAsyncDisposable
     private readonly SemaphoreSlim _declareLock = new(1, 1);
     private readonly SemaphoreSlim _senderLock = new(1, 1);
     private readonly Dictionary<string, byte> _ready = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, HashSet<string>> _acceptedTypes = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, ServiceBusSender> _senders = new(StringComparer.Ordinal);
+    private readonly ILogger _logger;
     private ServiceBusClient? _client;
     private ServiceBusAdministrationClient? _admin;
     private int _disposed;
@@ -29,7 +34,8 @@ internal sealed class AzureServiceBusConnector : IDisposable, IAsyncDisposable
         Func<ServiceBusClient> clientFactory,
         Func<ServiceBusAdministrationClient> adminFactory,
         bool ownsClient,
-        bool ownsAdmin)
+        bool ownsAdmin,
+        ILogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(clientFactory);
@@ -39,6 +45,7 @@ internal sealed class AzureServiceBusConnector : IDisposable, IAsyncDisposable
         _adminFactory = adminFactory;
         _ownsClient = ownsClient;
         _ownsAdmin = ownsAdmin;
+        _logger = logger ?? NullLogger.Instance;
     }
 
     public ServiceBusClient Client => GetClient();
@@ -67,9 +74,17 @@ internal sealed class AzureServiceBusConnector : IDisposable, IAsyncDisposable
     public Task EnsureTopicAsync(string topic, CancellationToken cancellationToken)
         => DeclareOnceAsync("topic\n" + topic, ct => CreateTopicAsync(topic, ct), cancellationToken);
 
-    public Task EnsureSubscriptionAsync(string topic, string subscriptionName, CancellationToken cancellationToken)
-        => DeclareOnceAsync(
-            "subscription\n" + topic + "\n" + subscriptionName,
+    public Task EnsureSubscriptionAsync(
+        string topic,
+        string subscriptionName,
+        IReadOnlyCollection<string> messageTypes,
+        bool replaceRouteRule,
+        CancellationToken cancellationToken)
+    {
+        var requested = Normalize(messageTypes);
+        var typeKey = string.Join("\n", requested) + (replaceRouteRule ? "\nreplace" : "");
+        return DeclareOnceAsync(
+            "subscription\n" + topic + "\n" + subscriptionName + "\n" + typeKey,
             async ct =>
             {
                 // CreateTopicAsync does not take the declare lock. Calling EnsureTopicAsync here would deadlock.
@@ -79,6 +94,7 @@ internal sealed class AzureServiceBusConnector : IDisposable, IAsyncDisposable
                 var admin = GetAdmin();
                 if (!await admin.SubscriptionExistsAsync(topic, subscriptionName, ct).ConfigureAwait(false))
                 {
+                    var initial = SelectTypes(topic, subscriptionName, requested, [], replaceRouteRule);
                     var create = new CreateSubscriptionOptions(topic, subscriptionName)
                     {
                         MaxDeliveryCount = _options.BrokerMaxDeliveryCount,
@@ -86,7 +102,7 @@ internal sealed class AzureServiceBusConnector : IDisposable, IAsyncDisposable
                     };
                     var rule = new CreateRuleOptions(
                         AzureServiceBusHeaders.RouteRuleName,
-                        new SqlRuleFilter(AzureServiceBusHeaders.RetryFilter(subscriptionName)));
+                        new SqlRuleFilter(AzureServiceBusHeaders.RouteFilter(subscriptionName, initial)));
 
                     try
                     {
@@ -97,58 +113,175 @@ internal sealed class AzureServiceBusConnector : IDisposable, IAsyncDisposable
                     }
                 }
 
-                await EnsureRouteRuleAsync(admin, topic, subscriptionName, ct).ConfigureAwait(false);
+                await EnsureRouteRuleAsync(admin, topic, subscriptionName, requested, replaceRouteRule, ct)
+                    .ConfigureAwait(false);
             },
             cancellationToken);
+    }
 
-    private static async Task EnsureRouteRuleAsync(
+    private async Task EnsureRouteRuleAsync(
         ServiceBusAdministrationClient admin,
         string topic,
         string subscriptionName,
+        IReadOnlyList<string> requested,
+        bool replaceRouteRule,
         CancellationToken cancellationToken)
     {
-        var expression = AzureServiceBusHeaders.RetryFilter(subscriptionName);
-        var current = await TryGetRuleAsync(admin, topic, subscriptionName, AzureServiceBusHeaders.RouteRuleName, cancellationToken)
-            .ConfigureAwait(false);
-        if (current?.Filter is not SqlRuleFilter sql || sql.SqlExpression != expression)
+        const int attempts = 5;
+        for (var attempt = 1; ; attempt++)
         {
-            if (current is not null)
+            try
             {
-                await DeleteRuleAsync(admin, topic, subscriptionName, AzureServiceBusHeaders.RouteRuleName, cancellationToken)
-                    .ConfigureAwait(false);
+                var updated = await TryUpdateRouteRuleAsync(
+                    admin, topic, subscriptionName, requested, replaceRouteRule, cancellationToken).ConfigureAwait(false);
+                if (updated)
+                    return;
+            }
+            catch (Exception ex) when (IsAlreadyExists(ex) && attempt < attempts)
+            {
             }
 
-            await CreateRouteRuleAsync(admin, topic, subscriptionName, expression, cancellationToken)
-                .ConfigureAwait(false);
-        }
-
-        var fallback = await TryGetRuleAsync(admin, topic, subscriptionName, "$Default", cancellationToken)
-            .ConfigureAwait(false);
-        if (fallback?.Filter is TrueRuleFilter)
-        {
-            await DeleteRuleAsync(admin, topic, subscriptionName, "$Default", cancellationToken)
-                .ConfigureAwait(false);
+            if (attempt >= attempts)
+            {
+                throw new InvalidOperationException(
+                    $"Azure Service Bus could not update the route rule for '{topic}/{subscriptionName}' after {attempts} tries.");
+            }
         }
     }
 
-    private static async Task CreateRouteRuleAsync(
+    private async Task<bool> TryUpdateRouteRuleAsync(
         ServiceBusAdministrationClient admin,
         string topic,
         string subscriptionName,
-        string expression,
+        IReadOnlyList<string> requested,
+        bool replaceRouteRule,
         CancellationToken cancellationToken)
     {
-        try
+        var rules = await ListRulesAsync(admin, topic, subscriptionName, cancellationToken).ConfigureAwait(false);
+        var installed = new List<string>();
+        if (!replaceRouteRule)
         {
-            await admin.CreateRuleAsync(
-                topic,
-                subscriptionName,
-                new CreateRuleOptions(AzureServiceBusHeaders.RouteRuleName, new SqlRuleFilter(expression)),
-                cancellationToken).ConfigureAwait(false);
+            foreach (var rule in rules)
+            {
+                if (!IsRouteRule(rule.Name) || rule.Filter is not SqlRuleFilter sql)
+                    continue;
+
+                installed.AddRange(AzureServiceBusHeaders.EventTypesInSql(sql.SqlExpression));
+            }
         }
-        catch (Exception ex) when (IsAlreadyExists(ex) || IsNotFound(ex))
+
+        var accepted = SelectTypes(topic, subscriptionName, requested, installed, replaceRouteRule);
+        var expression = AzureServiceBusHeaders.RouteFilter(subscriptionName, accepted);
+        var routes = rules.Where(rule => IsRouteRule(rule.Name)).ToArray();
+        var match = routes.FirstOrDefault(rule => rule.Filter is SqlRuleFilter sql && sql.SqlExpression == expression);
+        if (match is null)
         {
+            var name = NextRouteRuleName(routes.Select(rule => rule.Name));
+            try
+            {
+                await admin.CreateRuleAsync(
+                    topic,
+                    subscriptionName,
+                    new CreateRuleOptions(name, new SqlRuleFilter(expression)),
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (IsAlreadyExists(ex))
+            {
+                return false;
+            }
         }
+
+        rules = await ListRulesAsync(admin, topic, subscriptionName, cancellationToken).ConfigureAwait(false);
+        match = rules.FirstOrDefault(rule =>
+            IsRouteRule(rule.Name) && rule.Filter is SqlRuleFilter sql && sql.SqlExpression == expression);
+        if (match is null)
+            return false;
+
+        foreach (var rule in rules)
+        {
+            if (rule.Name == match.Name)
+                continue;
+            if (!IsRouteRule(rule.Name) && rule.Filter is not TrueRuleFilter)
+                continue;
+
+            await DeleteRuleAsync(admin, topic, subscriptionName, rule.Name, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        return true;
+    }
+
+    private string[] SelectTypes(
+        string topic,
+        string subscriptionName,
+        IReadOnlyList<string> requested,
+        IReadOnlyList<string> installed,
+        bool replaceRouteRule)
+    {
+        var key = topic + "\n" + subscriptionName;
+        lock (_acceptedTypes)
+        {
+            if (replaceRouteRule)
+            {
+                var replaced = new HashSet<string>(requested, StringComparer.Ordinal);
+                _acceptedTypes[key] = replaced;
+                return replaced.OrderBy(static name => name, StringComparer.Ordinal).ToArray();
+            }
+
+            if (!_acceptedTypes.TryGetValue(key, out var set))
+            {
+                set = new HashSet<string>(StringComparer.Ordinal);
+                _acceptedTypes[key] = set;
+            }
+
+            foreach (var name in requested)
+                set.Add(name);
+            foreach (var name in installed)
+            {
+                if (!string.IsNullOrWhiteSpace(name))
+                    set.Add(name);
+            }
+
+            return set.OrderBy(static name => name, StringComparer.Ordinal).ToArray();
+        }
+    }
+
+    private static bool IsRouteRule(string name)
+        => name.StartsWith(AzureServiceBusHeaders.RouteRuleName, StringComparison.Ordinal);
+
+    private static string NextRouteRuleName(IEnumerable<string> existing)
+    {
+        var taken = new HashSet<string>(existing, StringComparer.Ordinal);
+        if (!taken.Contains(AzureServiceBusHeaders.RouteRuleName))
+            return AzureServiceBusHeaders.RouteRuleName;
+
+        for (var n = 2; n < 1000; n++)
+        {
+            var name = AzureServiceBusHeaders.RouteRuleName + "-" + n.ToString(CultureInfo.InvariantCulture);
+            if (!taken.Contains(name))
+                return name;
+        }
+
+        throw new InvalidOperationException("Azure Service Bus could not allocate a route rule name.");
+    }
+
+    private static string[] Normalize(IReadOnlyCollection<string> messageTypes)
+        => messageTypes
+            .Where(static name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(static name => name, StringComparer.Ordinal)
+            .ToArray();
+
+    private static async Task<List<RuleProperties>> ListRulesAsync(
+        ServiceBusAdministrationClient admin,
+        string topic,
+        string subscriptionName,
+        CancellationToken cancellationToken)
+    {
+        var rules = new List<RuleProperties>();
+        await foreach (var rule in admin.GetRulesAsync(topic, subscriptionName, cancellationToken).ConfigureAwait(false))
+            rules.Add(rule);
+        return rules;
     }
 
     private static async Task DeleteRuleAsync(
@@ -202,13 +335,19 @@ internal sealed class AzureServiceBusConnector : IDisposable, IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Closes senders and the clients this connector opened.
+    /// Blocks the caller for up to <see cref="AzureServiceBusTransportOptions.OperationTimeout"/>.
+    /// Prefer <see cref="DisposeAsync"/>. When the wait ends first, cleanup can still be running.
+    /// </summary>
     public void Dispose()
     {
-        var dispose = DisposeAsync().AsTask();
+        var dispose = Task.Run(async () => await DisposeAsync().ConfigureAwait(false));
         if (!dispose.Wait(_options.OperationTimeout))
         {
-            throw new TimeoutException(
-                $"Disposing the Azure Service Bus connector did not finish within {_options.OperationTimeout}.");
+            _logger.LogWarning(
+                "Disposing the Azure Service Bus connector did not finish within {Timeout}. Prefer DisposeAsync.",
+                _options.OperationTimeout);
         }
     }
 

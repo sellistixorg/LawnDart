@@ -38,8 +38,9 @@ omitted.
 
 `MessageHeaders` names the envelope headers. `MessageTransportOptions` sets
 the subscription name, concurrency, prefetch, max delivery attempts, and
-dead-letter handling. `AddMessagePreHandler<THandler>()` runs a hook before
-each handler attempt.
+dead-letter handling. `TopicMapper` maps a declared event type to a topic
+or exchange. The default is one topic per type.
+`AddMessagePreHandler<THandler>()` runs a hook before each handler attempt.
 
 Set `MessageTransportOptions.SetupTopology` to true to create topics, queues,
 or exchanges at startup. The host skips that step when the flag is false.
@@ -55,9 +56,10 @@ The `LawnDart.Messaging` meter carries:
 |---|---|
 | `messaging.publish.duration` | A publish finishes |
 | `messaging.consume.duration` | One subscriber finishes a delivery |
-| `messaging.publish.errors` | A publish throws |
+| `messaging.publish.errors` | A publish throws, or a RabbitMQ publish in Warn mode reached no queue (`messaging.publish.outcome` = `unroutable`) |
 | `messaging.inbox.duplicates` | The inbox drops a duplicate |
 | `messaging.delivery.retries` | A failed attempt will be tried again |
+| `messaging.deferred` | A delivery waited because its handler was not subscribed yet |
 | `messaging.deadlettered` | A message is parked |
 
 Retry and dead-letter measurements carry `messaging.message_type` and

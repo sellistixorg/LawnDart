@@ -105,4 +105,34 @@ public class AzureServiceBusRegistrationTests
         Assert.Same(client, provider.GetRequiredService<ServiceBusClient>());
         Assert.Same(admin, provider.GetRequiredService<ServiceBusAdministrationClient>());
     }
+
+    [Fact]
+    public void A_registered_topic_mapper_is_used_when_options_keep_the_default()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<ITopicMapper>(new SharedTopicMapper("from-di"));
+        services.AddAzureServiceBusTransport(options => options.ConnectionString = ConnectionString);
+
+        using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<AzureServiceBusTransportOptions>>().Value;
+        Assert.Equal("from-di", options.TopicMapper.TopicFor("order-placed"));
+    }
+
+    [Fact]
+    public void A_mapper_set_on_options_wins_over_a_registered_mapper()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<ITopicMapper>(new SharedTopicMapper("from-di"));
+        services.AddAzureServiceBusTransport(options =>
+        {
+            options.ConnectionString = ConnectionString;
+            options.TopicMapper = new SharedTopicMapper("from-options");
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<AzureServiceBusTransportOptions>>().Value;
+        Assert.Equal("from-options", options.TopicMapper.TopicFor("order-placed"));
+    }
 }

@@ -36,6 +36,16 @@ It returns the `[EventTypeName]` token. A type without that attribute throws
 calls `Require` for each recorded type. The host fails to start when a name
 is missing. A publish of some other undeclared type fails at that publish.
 
+## Topic name
+
+`ITopicMapper.TopicFor` maps that declared name to the topic or exchange
+that carries it. `MessageTransportOptions.TopicMapper` holds the mapper.
+The default returns the declared name. Call `TopicMapperSelection.Select`
+with that property and the `ITopicMapper` registered in DI. A mapper set
+on the options wins. RabbitMQ and Azure Service Bus do this. Grouping, a
+single shared topic, and the filter each broker applies are in
+[Message transports](MESSAGE_TRANSPORTS.md).
+
 ## JSON
 
 Serialize and deserialize message bodies with `MessagingJson.Options`.

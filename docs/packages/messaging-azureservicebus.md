@@ -38,12 +38,21 @@ is unset, the data connection string or the namespace credential is used.
 
 ## Names
 
-Publish creates the topic. The topic name is the `[EventTypeName]` token.
-A publish does not create a subscription.
+Publish creates the topic. The topic name comes from `ITopicMapper`. The
+default mapper uses the `[EventTypeName]` token, so each type has its own
+topic. A publish does not create a subscription.
 
 The subscriber creates one subscription on that topic. The subscription name
-is `SubscriptionName`. `SetupTopology` true runs the same creation at startup
-for every event type recorded by `AddReactor` and `AddEventProcessor`.
+is `SubscriptionName`. Types that map to the same topic share it. The
+subscription rule lists `lawndart_type` for each type that subscription
+handles, and the processor gives each message to the handler for that type.
+`SetupTopology` true runs the same creation at startup for every event
+type recorded by `AddReactor` and `AddEventProcessor`.
+
+A topic is 1 to 260 characters. A subscription name is 1 to 50. Both use
+letters, digits, periods, hyphens, and underscores, and start and end with
+a letter or digit. A SQL filter is at most 1024 characters. Topic mapping
+is in [Message transports](../MESSAGE_TRANSPORTS.md).
 
 `Prefetch` is the processor prefetch count. `Concurrency` is
 `MaxConcurrentCalls`. It is how many handlers may run at once.
@@ -56,10 +65,13 @@ A setting on the Service Bus configure delegate wins when both set the same fiel
 A handler that throws is tried again until `MaxDeliveryAttempts` (default 5).
 Between tries the message is scheduled for `RetryDelay` (default 5 seconds),
 then delivered to the same subscription. The retry sets `lawndart_target` to
-that subscription name. A publish sets it to `*`. Each subscription's rule is
-`user.lawndart_target IS NULL OR user.lawndart_target = '*' OR user.lawndart_target = '<name>'`.
-A message with no `lawndart_target` reaches every subscription. A retry reaches
-only the subscription named in the property. With `DeadLetterFailedMessages`
+that subscription name and keeps `lawndart_type`. A publish sets
+`lawndart_target` to `*` and `lawndart_type` to the declared event type.
+Each subscription's rule is
+`(user.lawndart_target IS NULL OR user.lawndart_target = '*' OR user.lawndart_target = '<name>') AND (user.lawndart_type IS NULL OR user.lawndart_type = '<event-type>')`.
+A message with no `lawndart_target` reaches every subscription that accepts
+the event type. A message with no `lawndart_type` still matches. A retry
+reaches only the subscription named in the property. With `DeadLetterFailedMessages`
 left false, the attempt past that limit waits the same way and stays available.
 Set the flag true to dead-letter it on the subscription. A warning is written,
 and `messaging.deadlettered` increments.
@@ -82,6 +94,9 @@ the message is delayed and every handler runs again.
 The cancellation token passed to `SubscribeAsync` is the token the handler
 receives. Cancelling it stops that subscription. The in-flight message is
 scheduled again after `RetryDelay`. It is not abandoned with no delay.
+
+`Dispose()` blocks the caller for up to `OperationTimeout` and then returns.
+Cleanup can still be running. Prefer `DisposeAsync` (`await using`).
 
 A publish the broker rejects is counted as a publish error. The duration
 histogram records a publish after the broker accepts it. The caller sees the
