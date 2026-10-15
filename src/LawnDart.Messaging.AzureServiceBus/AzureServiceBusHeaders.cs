@@ -84,6 +84,51 @@ internal static class AzureServiceBusHeaders
     private static string Escape(string value)
         => value.Replace("'", "''", StringComparison.Ordinal);
 
+    /// <summary>
+    /// Declared event type names named by <c>user.lawndart_type = '...'</c> in <paramref name="sql"/>.
+    /// A target-only rule has none.
+    /// </summary>
+    /// <param name="sql">SQL filter text. May be null.</param>
+    internal static IReadOnlyList<string> EventTypesInSql(string? sql)
+    {
+        if (string.IsNullOrEmpty(sql))
+            return [];
+
+        const string marker = "user.lawndart_type = '";
+        var names = new List<string>();
+        var index = 0;
+        while ((index = sql.IndexOf(marker, index, StringComparison.Ordinal)) >= 0)
+        {
+            var start = index + marker.Length;
+            var end = start;
+            while (end < sql.Length)
+            {
+                if (sql[end] == '\'')
+                {
+                    if (end + 1 < sql.Length && sql[end + 1] == '\'')
+                    {
+                        end += 2;
+                        continue;
+                    }
+
+                    break;
+                }
+
+                end++;
+            }
+
+            if (end >= sql.Length)
+                break;
+
+            var raw = sql[start..end].Replace("''", "'", StringComparison.Ordinal);
+            if (raw.Length > 0)
+                names.Add(raw);
+            index = end + 1;
+        }
+
+        return names;
+    }
+
     public static Dictionary<string, string> ToEnvelope(IReadOnlyDictionary<string, object> properties)
     {
         ArgumentNullException.ThrowIfNull(properties);

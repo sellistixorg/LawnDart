@@ -217,4 +217,16 @@ public static class TopicMapperSelection
 
         return registered ?? DeclaredTypeTopicMapper.Instance;
     }
+
+    /// <summary>
+    /// Returns the mapper on <paramref name="options"/>.
+    /// A null value uses the declared type name.
+    /// Startup copies a registered <see cref="ITopicMapper"/> onto the options when they still have the default instance.
+    /// </summary>
+    /// <param name="options">Transport options.</param>
+    public static ITopicMapper FromOptions(MessageTransportOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return options.TopicMapper ?? DeclaredTypeTopicMapper.Instance;
+    }
 }

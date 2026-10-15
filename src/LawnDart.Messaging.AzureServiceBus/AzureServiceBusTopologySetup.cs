@@ -39,7 +39,7 @@ public sealed class AzureServiceBusTopologySetup : IMessageTopologySetup
     public async Task SetupAsync(CancellationToken cancellationToken)
     {
         _options.EnsureValid();
-        var mapper = TopicMapperSelection.Select(_options.TopicMapper, registered: null);
+        var mapper = TopicMapperSelection.FromOptions(_options);
         var groups = new Dictionary<string, List<string>>(StringComparer.Ordinal);
         foreach (var subscription in _subscriptions)
         {

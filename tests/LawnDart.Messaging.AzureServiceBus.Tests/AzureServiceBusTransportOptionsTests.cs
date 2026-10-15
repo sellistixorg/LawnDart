@@ -155,6 +155,15 @@ public class AzureServiceBusTransportOptionsTests
     }
 
     [Fact]
+    public void A_target_only_rule_names_no_event_types_and_a_grouped_rule_names_each_type()
+    {
+        Assert.Empty(AzureServiceBusHeaders.EventTypesInSql(AzureServiceBusHeaders.RetryFilter("billing")));
+
+        var sql = AzureServiceBusHeaders.RouteFilter("billing", ["zeta", "o'hare"]);
+        Assert.Equal(["o'hare", "zeta"], AzureServiceBusHeaders.EventTypesInSql(sql));
+    }
+
+    [Fact]
     public void A_route_filter_over_1024_characters_is_rejected()
     {
         var types = Enumerable.Range(0, 30).Select(i => new string('n', 40) + i.ToString("00")).ToArray();

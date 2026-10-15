@@ -67,7 +67,7 @@ public sealed class RabbitMqMessageTransport : IMessageTransport, IDisposable, I
         _options.EnsureValid();
         _preHandlers = preHandlers?.ToArray() ?? [];
         _deadLetters = deadLetters ?? new MemoryDeadLetterQueue();
-        _topicMapper = TopicMapperSelection.Select(_options.TopicMapper, registered: null);
+        _topicMapper = TopicMapperSelection.FromOptions(_options);
         _ownsConnector = connector is null;
         _connector = connector ?? new RabbitMqConnector(_options);
     }

@@ -37,7 +37,7 @@ changes to the public API.
 
 ### Changed
 
-- Azure Service Bus `Dispose()` blocks the caller for up to `OperationTimeout` and then returns. Prefer `DisposeAsync`.
+- Azure Service Bus `Dispose()` blocks the caller for up to `OperationTimeout` and then returns. The connector logs a warning when that wait ends first. Prefer `DisposeAsync`.
 - The README states that `LawnDart.Messaging.RabbitMQ` and `LawnDart.Messaging.AzureServiceBus` are available starting with 0.6.0-alpha.1. The transport registrations are alternatives: pick one. A later RabbitMQ or Service Bus registration replaces `IMessageTransport`.
 - Inbox docs name the in-process, RabbitMQ, and Azure Service Bus transports. The SQL inbox replaces the inbox store. The transport you registered stays.
 - The build kit (`skills/BUILD_KIT.md`) now targets LawnDart 0.5, matching the 0.5.0-alpha.1 packages.
@@ -45,6 +45,7 @@ changes to the public API.
 
 ### Fixed
 
+- A Service Bus rule lists every recorded type for the topic before those handlers subscribe, and a later subscribe does not drop a type from the rule. A filter change, including the upgrade from a rule that only tests `lawndart_target`, creates the new rule before it deletes the old one.
 - A cancelled RabbitMQ delivery waits on the retry queue and does not increment the attempt count.
 - An unroutable RabbitMQ publish in Warn mode is not recorded as a successful publish. It increments `messaging.publish.errors` with `messaging.publish.outcome` set to `unroutable`.
 - RabbitMQ waits at most `OperationTimeout` (default 30 seconds) for automatic connection recovery, then opens a new connection.

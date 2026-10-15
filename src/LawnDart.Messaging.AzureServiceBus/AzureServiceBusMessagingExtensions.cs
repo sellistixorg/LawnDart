@@ -85,7 +85,8 @@ public static class AzureServiceBusMessagingExtensions
             () => sp.GetRequiredService<ServiceBusClient>(),
             () => sp.GetRequiredService<ServiceBusAdministrationClient>(),
             ownsClient: false,
-            ownsAdmin: false));
+            ownsAdmin: false,
+            sp.GetRequiredService<ILogger<AzureServiceBusConnector>>()));
 
         services.Replace(ServiceDescriptor.Singleton(sp => new AzureServiceBusMessageTransport(
             sp.GetRequiredService<ILogger<AzureServiceBusMessageTransport>>(),
@@ -93,7 +94,8 @@ public static class AzureServiceBusMessagingExtensions
             sp.GetServices<IMessagePreHandler>(),
             sp.GetRequiredService<IDeadLetterQueue>(),
             sp.GetRequiredService<AzureServiceBusConnector>(),
-            ownsConnector: false)));
+            ownsConnector: false,
+            sp.GetServices<MessageSubscription>())));
         services.Replace(ServiceDescriptor.Singleton<IMessageTransport>(sp =>
             sp.GetRequiredService<AzureServiceBusMessageTransport>()));
 

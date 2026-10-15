@@ -1,3 +1,5 @@
+using System.Text.Json;
+using Azure.Messaging.ServiceBus;
 using Azure.Messaging.ServiceBus.Administration;
 using LawnDart.EventStore;
 using LawnDart.Messaging.Testing;
@@ -149,12 +151,202 @@ public sealed class AzureServiceBusTopicMappingTests
         Assert.Equal(["placed", "placed"], Snapshot(placedTexts));
         Assert.Equal(["shipped"], Snapshot(shippedTexts));
 
-        var admin = new ServiceBusAdministrationClient(_container.AdminConnectionString);
-        var rule = await admin.GetRuleAsync(topic, fixture.Options.SubscriptionName, AzureServiceBusHeaders.RouteRuleName);
-        var sql = Assert.IsType<SqlRuleFilter>(rule.Value.Filter).SqlExpression;
+        var sql = await RouteSqlAsync(topic, fixture.Options.SubscriptionName);
         Assert.Contains("lawndart_target IS NULL", sql, StringComparison.Ordinal);
         Assert.Contains(PlacedName, sql, StringComparison.Ordinal);
         Assert.Contains(ShippedName, sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_restart_keeps_messages_published_between_subscribes_on_a_grouped_topic()
+    {
+        var topic = "topic-restart-" + Guid.NewGuid().ToString("N")[..8];
+        var subscription = "sub-" + Guid.NewGuid().ToString("N")[..8];
+        var mapper = Group(topic);
+        var planned = new MessageSubscription[]
+        {
+            new(typeof(PlacedPing)),
+            new(typeof(ShippedPing)),
+        };
+
+        await using (var first = AzureServiceBusTransportFixture.Create(
+            _container.AmqpConnectionString,
+            _container.AdminConnectionString,
+            options =>
+            {
+                options.SubscriptionName = subscription;
+                options.TopicMapper = mapper;
+            },
+            preHandler: null,
+            subscriptions: planned))
+        {
+            await first.Transport.SubscribeAsync<PlacedPing>((_, _, _) => Task.CompletedTask);
+            await first.Transport.SubscribeAsync<ShippedPing>((_, _, _) => Task.CompletedTask);
+        }
+
+        await using var restarted = AzureServiceBusTransportFixture.Create(
+            _container.AmqpConnectionString,
+            _container.AdminConnectionString,
+            options =>
+            {
+                options.SubscriptionName = subscription;
+                options.TopicMapper = mapper;
+            },
+            preHandler: null,
+            subscriptions: planned);
+
+        var placed = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var shipped = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        await restarted.Transport.SubscribeAsync<PlacedPing>((message, _, _) =>
+        {
+            placed.TrySetResult(message.Text);
+            return Task.CompletedTask;
+        });
+
+        var duringRestart = await RouteSqlAsync(topic, subscription);
+        Assert.Contains(PlacedName, duringRestart, StringComparison.Ordinal);
+        Assert.Contains(ShippedName, duringRestart, StringComparison.Ordinal);
+
+        var placedId = "placed-" + Guid.NewGuid().ToString("N")[..8];
+        var shippedId = "shipped-" + Guid.NewGuid().ToString("N")[..8];
+        await restarted.Transport.PublishAsync(
+            new PlacedPing(Guid.NewGuid(), DateTime.UtcNow, placedId),
+            MessageContext.New());
+        await restarted.Transport.PublishAsync(
+            new ShippedPing(Guid.NewGuid(), DateTime.UtcNow, shippedId),
+            MessageContext.New());
+
+        await restarted.Transport.SubscribeAsync<ShippedPing>((message, _, _) =>
+        {
+            shipped.TrySetResult(message.Text);
+            return Task.CompletedTask;
+        });
+
+        Assert.Equal(placedId, await placed.Task.WaitAsync(TimeSpan.FromSeconds(20)));
+        Assert.Equal(shippedId, await shipped.Task.WaitAsync(TimeSpan.FromSeconds(20)));
+    }
+
+    [Fact]
+    public async Task Upgrading_a_target_only_rule_does_not_drop_messages()
+    {
+        var topic = "topic-upgrade-" + Guid.NewGuid().ToString("N")[..8];
+        var subscription = "up-" + Guid.NewGuid().ToString("N")[..8];
+        var mapper = new GroupTopicMapper(new Dictionary<string, string>
+        {
+            [PlacedName] = topic,
+        });
+        var admin = new ServiceBusAdministrationClient(_container.AdminConnectionString);
+        await admin.CreateTopicAsync(topic);
+        await admin.CreateSubscriptionAsync(
+            new CreateSubscriptionOptions(topic, subscription) { MaxDeliveryCount = 10 },
+            new CreateRuleOptions(
+                AzureServiceBusHeaders.RouteRuleName,
+                new SqlRuleFilter(AzureServiceBusHeaders.RetryFilter(subscription))));
+
+        await using var client = new ServiceBusClient(_container.AmqpConnectionString);
+        await using var sender = client.CreateSender(topic);
+        var sent = new List<string>();
+        var received = new HashSet<string>(StringComparer.Ordinal);
+        var gate = new object();
+
+        async Task SendAsync(string id)
+        {
+            var body = JsonSerializer.SerializeToUtf8Bytes(
+                new PlacedPing(Guid.NewGuid(), DateTime.UtcNow, id),
+                MessagingJson.Options);
+            var message = new ServiceBusMessage(body)
+            {
+                ContentType = "application/json",
+                Subject = PlacedName,
+                MessageId = id,
+            };
+            message.ApplicationProperties[AzureServiceBusHeaders.TargetSubscription] = AzureServiceBusHeaders.TargetAll;
+            message.ApplicationProperties[AzureServiceBusHeaders.EventType] = PlacedName;
+            message.ApplicationProperties[MessageHeaders.MessageType] = PlacedName;
+            await sender.SendMessageAsync(message);
+            lock (gate)
+                sent.Add(id);
+        }
+
+        for (var i = 0; i < 5; i++)
+            await SendAsync("before-" + i);
+
+        var publish = 0;
+        var pumping = true;
+        var pump = Task.Run(async () =>
+        {
+            while (Volatile.Read(ref pumping) && publish < 30)
+            {
+                var id = "during-" + Interlocked.Increment(ref publish);
+                await SendAsync(id);
+                await Task.Delay(15);
+            }
+        });
+
+        await using var transport = AzureServiceBusTransportFixture.Create(
+            _container.AmqpConnectionString,
+            _container.AdminConnectionString,
+            options =>
+            {
+                options.SubscriptionName = subscription;
+                options.TopicMapper = mapper;
+            },
+            preHandler: null,
+            subscriptions: [new MessageSubscription(typeof(PlacedPing))]);
+
+        await transport.Transport.SubscribeAsync<PlacedPing>((message, _, _) =>
+        {
+            lock (gate)
+                received.Add(message.Text);
+            return Task.CompletedTask;
+        });
+
+        Volatile.Write(ref pumping, false);
+        await pump;
+        await SendAsync("after");
+
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(20);
+        while (DateTime.UtcNow < deadline)
+        {
+            lock (gate)
+            {
+                if (sent.All(received.Contains))
+                    break;
+            }
+
+            await Task.Delay(50);
+        }
+
+        List<string> missing;
+        lock (gate)
+            missing = sent.Where(id => !received.Contains(id)).ToList();
+        Assert.Empty(missing);
+
+        var rules = new List<RuleProperties>();
+        await foreach (var rule in admin.GetRulesAsync(topic, subscription))
+            rules.Add(rule);
+
+        var routes = rules.Where(rule => rule.Name.StartsWith(AzureServiceBusHeaders.RouteRuleName, StringComparison.Ordinal)).ToArray();
+        var route = Assert.Single(routes);
+        var sql = Assert.IsType<SqlRuleFilter>(route.Filter).SqlExpression;
+        Assert.Equal(AzureServiceBusHeaders.RouteFilter(subscription, [PlacedName]), sql);
+        Assert.DoesNotContain(rules, rule => rule.Name == "$Default" && rule.Filter is TrueRuleFilter);
+    }
+
+    private async Task<string> RouteSqlAsync(string topic, string subscription)
+    {
+        var admin = new ServiceBusAdministrationClient(_container.AdminConnectionString);
+        var text = new System.Text.StringBuilder();
+        await foreach (var rule in admin.GetRulesAsync(topic, subscription))
+        {
+            if (rule.Name.StartsWith(AzureServiceBusHeaders.RouteRuleName, StringComparison.Ordinal) &&
+                rule.Filter is SqlRuleFilter sql)
+            {
+                text.AppendLine(sql.SqlExpression);
+            }
+        }
+
+        return text.ToString();
     }
 
     private static GroupTopicMapper Group(string topic) => new(new Dictionary<string, string>

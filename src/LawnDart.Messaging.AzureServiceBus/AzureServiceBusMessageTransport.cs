@@ -40,6 +40,7 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
     private readonly AzureServiceBusConnector _connector;
     private readonly bool _ownsConnector;
     private readonly ITopicMapper _topicMapper;
+    private readonly string[] _plannedTypes;
     private readonly ConcurrentDictionary<string, BrokerSubscription> _brokers = new(StringComparer.Ordinal);
     private int _disposed;
 
@@ -50,12 +51,17 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
     /// <param name="options">Connection, prefetch, retry, and dead-letter settings.</param>
     /// <param name="preHandlers">Hooks invoked before each handler attempt. May be empty.</param>
     /// <param name="deadLetters">In-process copy of messages dead-lettered on the subscription. A memory queue is used when omitted.</param>
+    /// <param name="subscriptions">
+    /// Message types the host recorded. The first subscribe writes a rule that lists every recorded type on that topic.
+    /// A later subscribe does not remove a type from the rule.
+    /// </param>
     public AzureServiceBusMessageTransport(
         ILogger<AzureServiceBusMessageTransport> logger,
         IOptions<AzureServiceBusTransportOptions> options,
         IEnumerable<IMessagePreHandler>? preHandlers = null,
-        IDeadLetterQueue? deadLetters = null)
-        : this(logger, options, preHandlers, deadLetters, CreateOwnedConnector(options), ownsConnector: true)
+        IDeadLetterQueue? deadLetters = null,
+        IEnumerable<MessageSubscription>? subscriptions = null)
+        : this(logger, options, preHandlers, deadLetters, CreateOwnedConnector(options, logger), ownsConnector: true, subscriptions)
     {
     }
 
@@ -65,7 +71,8 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
         IEnumerable<IMessagePreHandler>? preHandlers,
         IDeadLetterQueue? deadLetters,
         AzureServiceBusConnector connector,
-        bool ownsConnector)
+        bool ownsConnector,
+        IEnumerable<MessageSubscription>? subscriptions = null)
     {
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(options);
@@ -77,10 +84,28 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
         _deadLetters = deadLetters ?? new MemoryDeadLetterQueue();
         _connector = connector;
         _ownsConnector = ownsConnector;
-        _topicMapper = TopicMapperSelection.Select(_options.TopicMapper, registered: null);
+        _topicMapper = TopicMapperSelection.FromOptions(_options);
+        _plannedTypes = Plan(subscriptions);
     }
 
-    private static AzureServiceBusConnector CreateOwnedConnector(IOptions<AzureServiceBusTransportOptions> options)
+    private static string[] Plan(IEnumerable<MessageSubscription>? subscriptions)
+    {
+        if (subscriptions is null)
+            return [];
+
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var subscription in subscriptions)
+        {
+            ArgumentNullException.ThrowIfNull(subscription);
+            names.Add(MessageTypeNames.Require(subscription.MessageType));
+        }
+
+        return names.ToArray();
+    }
+
+    private static AzureServiceBusConnector CreateOwnedConnector(
+        IOptions<AzureServiceBusTransportOptions> options,
+        ILogger logger)
     {
         ArgumentNullException.ThrowIfNull(options);
         var value = options.Value;
@@ -98,7 +123,8 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
             () => client,
             () => admin,
             ownsClient: true,
-            ownsAdmin: true);
+            ownsAdmin: true,
+            logger);
     }
 
     /// <summary>Messages parked after they used their delivery attempts.</summary>
@@ -338,7 +364,7 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
 
     private async Task StartConsumerAsync(BrokerSubscription broker, CancellationToken cancellationToken)
     {
-        var types = HandledTypeNames(broker);
+        var types = Acceptance(broker);
         if (types.Length == 0)
             return;
 
@@ -396,7 +422,7 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
 
     private async Task UpdateRouteAsync(BrokerSubscription broker, CancellationToken cancellationToken)
     {
-        var types = HandledTypeNames(broker);
+        var types = Acceptance(broker);
         if (types.Length == 0)
             return;
 
@@ -467,6 +493,18 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
 
         if (typeHandlers is null)
         {
+            if (IsAccepted(broker, declaredName))
+            {
+                _logger.LogDebug(
+                    "No handler is registered yet for {MessageType} on {Topic}/{Subscription}. The message returns after {Delay}.",
+                    declaredName,
+                    broker.Topic,
+                    broker.Name,
+                    _options.RetryDelay);
+                await DelayRedeliveryAsync(broker, declaredName, args, completed).ConfigureAwait(false);
+                return;
+            }
+
             await FailAsync(
                 broker,
                 declaredName,
@@ -814,29 +852,33 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
         return false;
     }
 
-    private static string[] HandledTypeNames(BrokerSubscription broker)
+    private string[] Acceptance(BrokerSubscription broker)
     {
         lock (broker.Gate)
         {
-            var names = new List<string>(broker.Types.Count);
-            foreach (var pair in broker.Types)
+            foreach (var declared in _plannedTypes)
             {
-                lock (pair.Value.Handlers)
-                {
-                    if (pair.Value.Handlers.Count > 0)
-                        names.Add(pair.Key);
-                }
+                if (string.Equals(_topicMapper.TopicFor(declared), broker.Topic, StringComparison.Ordinal))
+                    broker.AcceptedTypes.Add(declared);
             }
 
-            return names.ToArray();
+            foreach (var name in broker.Types.Keys)
+                broker.AcceptedTypes.Add(name);
+
+            return broker.AcceptedTypes.OrderBy(static name => name, StringComparer.Ordinal).ToArray();
         }
+    }
+
+    private static bool IsAccepted(BrokerSubscription broker, string declaredName)
+    {
+        lock (broker.Gate)
+            return broker.AcceptedTypes.Contains(declaredName);
     }
 
     private async Task StopThenCompleteAsync(BrokerSubscription broker, HandlerRegistration registration)
     {
         try
         {
-            await UpdateRouteAsync(broker, CancellationToken.None).ConfigureAwait(false);
             await StopIfIdleAsync(broker).ConfigureAwait(false);
         }
         finally
@@ -906,6 +948,8 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport, IDispos
         public string Name { get; }
 
         public Dictionary<string, TypeHandlers> Types { get; } = new(StringComparer.Ordinal);
+
+        public HashSet<string> AcceptedTypes { get; } = new(StringComparer.Ordinal);
 
         public object Gate { get; } = new();
 

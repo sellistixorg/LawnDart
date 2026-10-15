@@ -9,6 +9,11 @@ public class TopicMapperTests
         Assert.Equal("order-placed", mapper.TopicFor("order-placed"));
         Assert.Same(mapper, TopicMapperSelection.Select(configured: null, registered: null));
         Assert.Same(mapper, TopicMapperSelection.Select(mapper, registered: null));
+        Assert.Same(mapper, TopicMapperSelection.FromOptions(new MessageTransportOptions()));
+        Assert.Equal("orders", TopicMapperSelection.FromOptions(new MessageTransportOptions
+        {
+            TopicMapper = new SharedTopicMapper("orders"),
+        }).TopicFor("order-placed"));
     }
 
     [Fact]

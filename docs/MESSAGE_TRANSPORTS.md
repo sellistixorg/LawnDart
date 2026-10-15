@@ -196,6 +196,26 @@ A message that omits `lawndart_type` still matches the type clause. On a
 shared topic, set the property so each subscription receives only its types.
 Publish through the transport sets it.
 
+### Startup and rule changes
+
+`AddReactor` and `AddEventProcessor` record the event types for the host.
+The first subscribe on a topic writes one rule that lists every recorded
+type for that topic, including a type whose handler has not subscribed yet.
+A later subscribe can add a type that was not recorded. It does not remove
+a type from the rule.
+
+A filter change creates the new rule, then deletes the previous one. The
+new rule is named `lawndart-route`, or `lawndart-route-2` and upward when
+that name is already in use. The same swap upgrades a subscription whose
+rule only tests `lawndart_target`. A publish during that overlap still
+matches a rule, so the message is not dropped.
+
+### Moving a RabbitMQ type
+
+Binding a type to a grouped exchange adds that binding. The binding on the
+previous exchange stays. Delete the old binding when that exchange should
+stop delivering the type.
+
 ### Naming limits
 
 A Service Bus topic is 1 to 260 characters. Letters, digits, periods,
