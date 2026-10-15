@@ -3,7 +3,7 @@
 Amazon SQS `IMessageTransport`. SNS fans each topic out to one queue per subscription.
 Use it when a reactor or processor runs in another process.
 
-First ships in the upcoming 0.6.0-alpha.1.
+First ships in 0.6.0-alpha.1.
 
 ## Registration
 
