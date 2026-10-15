@@ -4,6 +4,7 @@ Event-driven choreography uses `LawnDart.Messaging` plus a transport.
 `LawnDart.Messaging.InMemory` delivers in-process.
 `LawnDart.Messaging.RabbitMQ` delivers through RabbitMQ.
 `LawnDart.Messaging.AzureServiceBus` delivers through Azure Service Bus.
+`LawnDart.Messaging.AwsSqs` delivers through Amazon SQS. SNS fans each topic out to one queue per subscription.
 See [Message transports](MESSAGE_TRANSPORTS.md).
 
 ## Reaction (Event → Command)
@@ -51,7 +52,7 @@ demonstrates this without a broker.
 
 Use SQL Server plus `EnableOutbox` when the consumer is another process.
 `AddMessageTransportOutboxPublisher` hands each row to the registered
-transport: in-process, RabbitMQ, or Azure Service Bus.
+transport: in-process, RabbitMQ, Azure Service Bus, or Amazon SQS.
 See [OUTBOX_PATTERN.md](OUTBOX_PATTERN.md).
 
 ## Inbox

@@ -3,6 +3,23 @@ namespace LawnDart.Messaging.Tests;
 public class TopicMapperTests
 {
     [Fact]
+    public void Sanitizing_replaces_periods_and_rejects_a_collision()
+    {
+        var mapper = new SanitizingTopicMapper();
+        Assert.Equal("order-placed", mapper.TopicFor("order.placed"));
+        Assert.Equal("order.placed", DeclaredTypeTopicMapper.Instance.TopicFor("order.placed"));
+
+        mapper.EnsureNoCollisions(["order.placed", "invoice.issued"]);
+        var collision = Assert.Throws<InvalidOperationException>(() =>
+            mapper.EnsureNoCollisions(["order.placed", "order-placed"]));
+        Assert.Contains("order-placed", collision.Message, StringComparison.Ordinal);
+
+        var grouped = new SanitizingTopicMapper(new SharedTopicMapper("orders.main"));
+        Assert.Equal("orders-main", grouped.TopicFor("order.placed"));
+        grouped.EnsureNoCollisions(["order.placed", "order.shipped"]);
+    }
+
+    [Fact]
     public void The_default_mapper_uses_the_declared_name()
     {
         var mapper = DeclaredTypeTopicMapper.Instance;

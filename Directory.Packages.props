@@ -22,6 +22,8 @@
     <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.7" />
     <PackageVersion Include="OpenTelemetry" Version="1.15.3" />
     <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.15.3" />
+    <PackageVersion Include="AWSSDK.SQS" Version="4.0.100.18" />
+    <PackageVersion Include="AWSSDK.SimpleNotificationService" Version="4.0.100.18" />
     <PackageVersion Include="Azure.Messaging.ServiceBus" Version="7.20.1" />
     <PackageVersion Include="RabbitMQ.Client" Version="7.2.2" />
     <!-- ASP.NET -->
@@ -44,6 +46,7 @@
     <PackageVersion Include="NSubstitute" Version="5.3.0" />
     <PackageVersion Include="Testcontainers" Version="4.11.0" />
     <PackageVersion Include="Testcontainers.MsSql" Version="4.14.0" />
+    <PackageVersion Include="Testcontainers.LocalStack" Version="4.14.0" />
     <PackageVersion Include="Testcontainers.RabbitMq" Version="4.14.0" />
     <PackageVersion Include="Testcontainers.ServiceBus" Version="4.14.0" />
     <PackageVersion Include="xunit" Version="2.9.3" />

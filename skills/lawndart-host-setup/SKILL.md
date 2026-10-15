@@ -27,6 +27,7 @@ Use this skill first when wiring a new application on LawnDart packages.
 | `LawnDart.Messaging.InMemory` | Choreography without a broker. |
 | `LawnDart.Messaging.RabbitMQ` | A RabbitMQ broker (`AddRabbitMqTransport`). |
 | `LawnDart.Messaging.AzureServiceBus` | An Azure Service Bus namespace (`AddAzureServiceBusTransport`). |
+| `LawnDart.Messaging.AwsSqs` | Amazon SQS with SNS fan-out (`AddAwsSqsTransport`). |
 | `LawnDart.Messaging.SqlServer` | Inbox dedup that survives a restart (`AddSqlInboxStore`). |
 | `LawnDart.AspNetCore` | HTTP POST to a command. |
 | `LawnDart.Authorization.AspNetCore` | HTTP claims on those commands. |

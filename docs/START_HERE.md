@@ -29,7 +29,7 @@ Typical first path:
 - **Storage**: `UseInMemory()` (zero infra) or `UseSqlServer(...)` (durable)
 - **Projections**: `LawnDart.Projections.Lightweight` via `.WithProjections(...)`
 - **HTTP**: `LawnDart.AspNetCore` plus optional `LawnDart.Authorization.AspNetCore`
-- **Messaging**: `LawnDart.Messaging` plus `LawnDart.Messaging.InMemory`, `LawnDart.Messaging.RabbitMQ`, or `LawnDart.Messaging.AzureServiceBus`
+- **Messaging**: `LawnDart.Messaging` plus `LawnDart.Messaging.InMemory`, `LawnDart.Messaging.RabbitMQ`, `LawnDart.Messaging.AzureServiceBus`, or `LawnDart.Messaging.AwsSqs`
 
 ## Recommended path
 

@@ -12,47 +12,71 @@ changes to the public API.
 
 ### Breaking
 
-- Reactors, event processors, and anything published or subscribed on the in-memory transport must declare `[EventTypeName]`. A missing name fails when that consumer starts. The message type is that token.
-- The in-memory transport calls a failed handler again until `MaxDeliveryAttempts` (default 5). Dead-letter handling is off unless `DeadLetterFailedMessages` is set. After the last attempt the exception is thrown, so the outbox keeps the row for another try.
+- Add `[EventTypeName("token")]` to every event a reactor, an event processor, or the in-memory transport publishes or subscribes. In 0.5.0-alpha.1 the class name was used in logs and the CLR type was the subscription key, and the attribute was not required. A missing name fails when that consumer starts. The class name is not the message type.
+- A failed in-memory handler runs again until `MaxDeliveryAttempts` (default 5). In 0.5.0-alpha.1 the handler ran once and the exception was thrown on that call. Dead-letter handling is off unless `DeadLetterFailedMessages` is set. After the last attempt the exception is thrown, so the outbox keeps the row. Set `MaxDeliveryAttempts` to 1 for a single try.
 
 ### Added
 
-- `ReplaceRouteRule` rebuilds the Service Bus subscription rule from the event types this process recorded. The default leaves types from an earlier deploy on the rule. `MaxHandlerDeferrals` (default 12) is how many times a recorded type with no handler waits before that wait counts as a failed attempt.
-- `ITopicMapper` maps a declared event type to a topic or exchange. The default is one topic per `[EventTypeName]`. `GroupTopicMapper`, `PrefixTopicMapper`, `SharedTopicMapper`, and `DelegateTopicMapper` group types, including one shared topic. RabbitMQ binds each queue with the event type name as the routing key. Azure Service Bus filters with `lawndart_type` and keeps the `lawndart_target` rule, including a missing property. [Message transports](docs/MESSAGE_TRANSPORTS.md) covers the default, grouping, a single shared topic, filtering, and naming limits.
-- The README shows what the in-process, RabbitMQ, and Azure Service Bus transports are, how to install them, and a minimal registration for each.
-- The outbox guide registers the publisher with the in-process transport, RabbitMQ, and Azure Service Bus. `DeadLetterFailedMessages` stays off unless you set it. A publish that throws leaves the outbox row in place.
-- [Telemetry](docs/TELEMETRY.md) lists every LawnDart meter and activity source, each instrument, the `messaging.retry` and `messaging.deadlettered` span events, and an OpenTelemetry registration.
-- [Message transports](docs/MESSAGE_TRANSPORTS.md) covers retry delay, attempt counting, the dead-letter option, the Service Bus property `lawndart_target`, `BrokerMaxDeliveryCount` (1 to 10 on the emulator), Azure Service Bus `OperationTimeout` (default 30 seconds), and RabbitMQ `UnroutablePublish`.
-- `LawnDart.Messaging.AzureServiceBus` publishes and consumes through Azure Service Bus (`AddAzureServiceBusTransport`). The topic is the declared message type. Each subscriber has one subscription on that topic. Connect with a connection string, a fully qualified namespace and a token credential, or a `ServiceBusClient` already registered. A failed delivery is scheduled again after `RetryDelay` (default 5 seconds) for that subscription only. A message with no `lawndart_target` reaches every subscription. `BrokerMaxDeliveryCount` defaults to 2000 (1 to 10 on the emulator). With dead-letter handling on, a message that used its attempts is dead-lettered on the subscription. With it off, the message is scheduled again and the wait still applies. A cancelled delivery uses that same wait.
-- `LawnDart.Messaging.RabbitMQ` publishes and consumes through RabbitMQ (`AddRabbitMqTransport`). Publish declares the exchange named by the message type. Consumers declare their queue. An unroutable publish logs a warning unless `UnroutablePublish` is `Throw`. A failed delivery waits on a retry queue (default 5 seconds) before it returns. With dead-letter handling on, a message that used its attempts is nacked to a dead-letter exchange. With it off, the message stays on the queue and the wait still applies.
-- `MessagingJson.Options` is the JSON setting for message bodies and the outbox publisher. Property names are PascalCase. Reads ignore case. Null values are omitted.
-- The `LawnDart.Messaging` meter counts `messaging.delivery.retries` and `messaging.deadlettered`. A retry is a debug log and a `messaging.retry` span event. A dead-letter is a warning and a `messaging.deadlettered` span event, and the span status is Error.
-- The `LawnDart.Outbox` meter counts `outbox.publish.failures` and `outbox.deadlettered` on the outbox processor's warning paths.
-- `MessageHeaders` names the envelope headers: message id, type, correlation, causation, user, tenant, enqueued time, a prefix for custom headers, the outbox headers, and the W3C trace headers.
-- `MessageTransportOptions` sets the subscription name, concurrency, prefetch, max delivery attempts, and dead-letter handling.
+#### LawnDart.Messaging
+
+- `MessageTypeNames.Require` reads `[EventTypeName]`. Host startup checks that token, transport settings, and topology setup.
+- `ITopicMapper` maps a declared event type to a topic or exchange. The default is one topic per `[EventTypeName]`. `GroupTopicMapper`, `PrefixTopicMapper`, `SharedTopicMapper`, and `DelegateTopicMapper` group types. `SanitizingTopicMapper` replaces each period with a hyphen and leaves the default mapper unchanged. Startup rejects two declared names that sanitize to the same topic unless the inner mapper already sends them to one topic.
+- `MessagingJson.Options` is the JSON setting for broker message bodies and the outbox publisher. Property names are PascalCase. Reads ignore case. Null values are omitted. That matches the outbox publisher settings in 0.5.0-alpha.1.
+- `MessageHeaders` names the envelope headers: message id, type, correlation, causation, user, tenant, enqueued time, a `header.` prefix for custom headers, the outbox headers (`outbox.streamId`, `outbox.sequencePosition`, `outbox.eventType`), and the W3C trace headers. The three outbox header strings are the ones the 0.5.0-alpha.1 publisher wrote.
+- `MessageTransportOptions` sets the subscription name, concurrency, prefetch, max delivery attempts, and dead-letter handling. `DeadLetterFailedMessages` defaults to false.
 - `IMessageTopologySetup` creates topics, queues, or exchanges when `SetupTopology` is true. Startup skips that step when the flag is false.
-- Host startup checks transport settings, declared message names, and topology setup.
 - `IMessagePreHandler` runs before the message handler on each delivery attempt. Register it with `AddMessagePreHandler`.
-- `LawnDart.Messaging.Testing` ships `MessageTransportConformanceTests`. The InMemory transport passes that suite.
-- [Custom message transport](docs/CUSTOM_MESSAGE_TRANSPORT.md) explains how to write a transport against these pieces.
+- `LawnDart.Messaging.Testing` ships `MessageTransportConformanceTests`. The in-memory transport passes that suite.
+
+#### LawnDart.Messaging.InMemory
+
+- Publish and subscribe require `[EventTypeName]`. A failed handler runs until `MaxDeliveryAttempts` (default 5). With dead-letter handling left off, the last failure is thrown. Set `DeadLetterFailedMessages` to park the message on `IDeadLetterQueue` and return.
+
+#### LawnDart.Messaging.RabbitMQ
+
+- `LawnDart.Messaging.RabbitMQ` publishes and consumes through RabbitMQ (`AddRabbitMqTransport`). It first ships in the upcoming 0.6.0-alpha.1. The exchange comes from `ITopicMapper`. The routing key is the declared event type name. Publish declares the exchange. Consumers declare their queue.
+- `UnroutablePublish` defaults to `Warn`. A publish that reaches no queue logs a warning and returns. It is not recorded on `messaging.publish.duration`. It increments `messaging.publish.errors` with `messaging.publish.outcome` set to `unroutable`. Set `UnroutablePublish` to `Throw` when the caller should see that failure.
+- A failed delivery waits on a retry queue (`RetryDelay`, default 5 seconds) and then returns to the same queue. A cancelled delivery uses that wait and does not increment the attempt count. With dead-letter handling on, a message that used its attempts is nacked to a dead-letter exchange. With it off, the message stays on the queue and the wait still applies.
+- `OperationTimeout` (default 30 seconds) is how long to wait for automatic connection recovery before opening a new connection. The subscription concurrency limiter is disposed with the transport.
+
+#### LawnDart.Messaging.AzureServiceBus
+
+- `LawnDart.Messaging.AzureServiceBus` publishes and consumes through Azure Service Bus (`AddAzureServiceBusTransport`). It first ships in the upcoming 0.6.0-alpha.1. The topic comes from `ITopicMapper`. Each subscriber has one subscription on that topic. Connect with a connection string, a fully qualified namespace and a token credential, or a `ServiceBusClient` already registered.
+- Publish sets `lawndart_target` to `*` and `lawndart_type` to the declared event type. A message with no `lawndart_target` reaches every subscription that accepts the event type. A message with no `lawndart_type` still matches the type clause. A retry sets `lawndart_target` to the subscription that failed and keeps `lawndart_type`.
+- The subscription rule lists every recorded type for that topic before those handlers subscribe. A later subscribe does not drop a type. A filter change, including the move from a rule that only tests `lawndart_target`, creates the new rule before it deletes the old one. Two hosts that update the same rule both complete: a rule name that already exists is read again, and a rule with the same filter counts as success. `ReplaceRouteRule` rebuilds the rule from the types this process recorded. The default leaves types from an earlier deploy on the rule.
+- A recorded type with no handler waits `RetryDelay` up to `MaxHandlerDeferrals` (default 12). Each wait increments `messaging.deferred`. From the third wait a warning is written. After the cap, the wait counts as a failed attempt.
+- A failed delivery is scheduled again after `RetryDelay` (default 5 seconds) for that subscription only. A cancelled delivery uses that same wait. `BrokerMaxDeliveryCount` defaults to 2000. The emulator accepts 1 to 10. With dead-letter handling on, a message that used its attempts is dead-lettered on the subscription. With it off, the message is scheduled again and the wait still applies.
+- `Dispose()` blocks the caller for up to `OperationTimeout` (default 30 seconds) and then returns. The connector logs a warning when that wait ends first. Prefer `DisposeAsync`.
+
+#### LawnDart.Messaging.AwsSqs
+
+- `LawnDart.Messaging.AwsSqs` publishes and consumes through Amazon SQS (`AddAwsSqsTransport`). It first ships in the upcoming 0.6.0-alpha.1. SNS fans each topic out to one queue per subscription, with raw message delivery. The topic comes from `ITopicMapper`. Connect with `Region` or `ServiceUrl` (LocalStack). Credentials come from the AWS SDK default chain. An `IAmazonSQS` and `IAmazonSimpleNotificationService` already registered are kept. FIFO queues and topics are not supported.
+- Publish sets `lawndart_type`. User, tenant, and custom headers travel in `lawndart-headers`, because SNS and SQS allow 10 message attributes. When several types share a topic, the filter is `lawndart_type` equal to a handled type, or the attribute missing. The filter only grows unless `ReplaceRouteRule` is set. After a write, the transport waits a short jittered delay and reads the policy again, three times, and merges a stale write. A write that lands after that last read waits for the next subscribe. An SNS subscribe that returns `InvalidParameter` and "already exists" is read again and merged. The filter allows 150 values. The missing-attribute match counts as one.
+- A failed delivery is sent again to that queue after `RetryDelay` (default 5 seconds, at most 15 minutes). It is not published to the topic. A cancelled delivery uses that wait and does not count an attempt. While a handler runs, visibility is extended at about half of `VisibilityTimeout` (default 30 seconds), up to 240 times. A failed extension is logged.
+- With dead-letter handling on, a message that used its attempts is sent to `{topic}--{subscription}--dlq`, and the source queue has an SQS redrive policy. `MaxReceiveCount` defaults to 10. With dead-letter handling off, LawnDart does not set a redrive policy. A crash returns the message after the visibility timeout and the attempt count is unchanged.
+- An SQS or SNS message over 256 KiB, including attributes, is rejected before publish and before a retry send. A retry that cannot be sent is dead-lettered when that handling is on, and deleted when it is off.
+
+#### Outbox
+
+- The `LawnDart.Outbox` meter counts `outbox.publish.failures` and `outbox.deadlettered` on the outbox processor's warning paths.
+
+#### Telemetry
+
+- The `LawnDart.Messaging` meter counts `messaging.publish.duration`, `messaging.consume.duration`, `messaging.publish.errors`, `messaging.inbox.duplicates`, `messaging.delivery.retries`, `messaging.deferred`, and `messaging.deadlettered`. A retry is a debug log and a `messaging.retry` span event. A deferral is a `messaging.deferred` span event. A dead-letter is a warning and a `messaging.deadlettered` span event, and the span status is Error. An unroutable publish increments `messaging.publish.errors` with `messaging.publish.outcome` set to `unroutable` and is not recorded on `messaging.publish.duration`.
 
 ### Changed
 
-- Azure Service Bus `Dispose()` blocks the caller for up to `OperationTimeout` and then returns. The connector logs a warning when that wait ends first. Prefer `DisposeAsync`.
-- The README states that `LawnDart.Messaging.RabbitMQ` and `LawnDart.Messaging.AzureServiceBus` are available starting with 0.6.0-alpha.1. The transport registrations are alternatives: pick one. A later RabbitMQ or Service Bus registration replaces `IMessageTransport`.
-- Inbox docs name the in-process, RabbitMQ, and Azure Service Bus transports. The SQL inbox replaces the inbox store. The transport you registered stays.
-- The build kit (`skills/BUILD_KIT.md`) now targets LawnDart 0.5, matching the 0.5.0-alpha.1 packages.
-- Reactor and event processor logs use the declared event type name.
+- Reactor and event processor logs, inbox duplicate counts, and handler spans use the declared event type name. In 0.5.0-alpha.1 they used the class name.
+- The build kit (`skills/BUILD_KIT.md`) targets LawnDart 0.5, matching the 0.5.0-alpha.1 packages.
 
-### Fixed
+### Documentation
 
-- Two Service Bus hosts that update the same route rule at the same time both finish. A rule name that already exists is read again, and a rule with the same filter counts as success.
-- A message for a recorded Service Bus type with no handler waits up to `MaxHandlerDeferrals`. Each wait increments `messaging.deferred`. From the third wait a warning is written. After the cap, the message is a normal failed attempt.
-- A Service Bus rule lists every recorded type for the topic before those handlers subscribe, and a later subscribe does not drop a type from the rule. A filter change, including the upgrade from a rule that only tests `lawndart_target`, creates the new rule before it deletes the old one.
-- A cancelled RabbitMQ delivery waits on the retry queue and does not increment the attempt count.
-- An unroutable RabbitMQ publish in Warn mode is not recorded as a successful publish. It increments `messaging.publish.errors` with `messaging.publish.outcome` set to `unroutable`.
-- RabbitMQ waits at most `OperationTimeout` (default 30 seconds) for automatic connection recovery, then opens a new connection.
-- The RabbitMQ subscription concurrency limiter is disposed with the transport.
+- The README shows the in-process, RabbitMQ, Azure Service Bus, and Amazon SQS transports, how to install them, and a minimal registration for each. Pick one registration. RabbitMQ, Azure Service Bus, and Amazon SQS first ship in the upcoming 0.6.0-alpha.1.
+- [Message transports](docs/MESSAGE_TRANSPORTS.md) covers retry delay, attempt counting, dead-letter handling, topic mapping, and the broker limits.
+- [Telemetry](docs/TELEMETRY.md) lists every LawnDart meter and activity source.
+- [Custom message transport](docs/CUSTOM_MESSAGE_TRANSPORT.md) explains how to write a transport against the shared pieces.
+- The outbox guide registers the publisher with the in-process transport, RabbitMQ, Azure Service Bus, and Amazon SQS. `DeadLetterFailedMessages` stays off unless you set it. A publish that throws leaves the outbox row in place.
+- The SQL inbox readme names those transports. The inbox package replaces the inbox store. The transport you registered stays.
 
 ## [0.5.0-alpha.1] — 2026-10-06
 

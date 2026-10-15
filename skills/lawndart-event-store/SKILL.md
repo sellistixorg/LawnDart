@@ -64,6 +64,7 @@ event-store, outbox, projection, and inbox tables.
 The SQL excerpt publishes on the in-process transport.
 A RabbitMQ host calls `AddRabbitMqTransport`.
 An Azure Service Bus host calls `AddAzureServiceBusTransport`.
+An Amazon SQS host calls `AddAwsSqsTransport`.
 `AddMessageTransportOutboxPublisher` uses the registered `IMessageTransport`.
 See `docs/MESSAGE_TRANSPORTS.md` and `docs/OUTBOX_PATTERN.md`.
 

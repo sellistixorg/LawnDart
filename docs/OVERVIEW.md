@@ -35,6 +35,7 @@ app.MapLawnDartCommands();
 | `LawnDart.Messaging.InMemory` | In-process messaging |
 | `LawnDart.Messaging.RabbitMQ` | RabbitMQ transport |
 | `LawnDart.Messaging.AzureServiceBus` | Azure Service Bus transport |
+| `LawnDart.Messaging.AwsSqs` | Amazon SQS transport. SNS fans each topic out to one queue per subscription. |
 | `LawnDart.Messaging.SqlServer` | Durable inbox deduplication |
 | `LawnDart.Messaging.Testing` | Transport conformance tests |
 | `LawnDart.Projections.Lightweight` | Read-model host (InMemory / SQL) |

@@ -42,7 +42,7 @@ is missing. A publish of some other undeclared type fails at that publish.
 that carries it. `MessageTransportOptions.TopicMapper` holds the mapper.
 The default returns the declared name. Call `TopicMapperSelection.Select`
 with that property and the `ITopicMapper` registered in DI. A mapper set
-on the options wins. RabbitMQ and Azure Service Bus do this. Grouping, a
+on the options wins. RabbitMQ, Azure Service Bus, and Amazon SQS do this. Grouping, a
 single shared topic, and the filter each broker applies are in
 [Message transports](MESSAGE_TRANSPORTS.md).
 
@@ -110,6 +110,10 @@ The package page is [RabbitMQ](packages/messaging-rabbitmq.md).
 `LawnDart.Messaging.AzureServiceBus` follows that rule. Each delivery calls
 `TryOnceAsync`. A failed delivery is scheduled again after `RetryDelay`.
 The package page is [Azure Service Bus](packages/messaging-azureservicebus.md).
+
+`LawnDart.Messaging.AwsSqs` follows that rule. Each delivery calls
+`TryOnceAsync`. A failed delivery is sent to that subscription's queue
+after `RetryDelay`. The package page is [Amazon SQS](packages/messaging-awssqs.md).
 
 `MemoryDeadLetterQueue` is an in-process queue. A broker transport can park
 on its own dead-letter destination and still expose those messages through
