@@ -67,6 +67,30 @@ Package pages: [InMemory](packages/messaging-inmemory.md),
 [Azure Service Bus](packages/messaging-azureservicebus.md),
 [Amazon SQS](packages/messaging-awssqs.md).
 
+## Names
+
+Each name starts with the subscription, except the in-process queue, which
+starts with the event type because delivery never leaves the process.
+
+| Transport | Queue or subscription | Retry | Dead letter |
+|---|---|---|---|
+| In-process | `{event-type}/{subscription}` | Same call. No wait and no retry queue. | Parked on `IDeadLetterQueue` when that handling is on. |
+| RabbitMQ, default | `{subscription}` quorum queue, bound to each handled event type | `{subscription}.retry` exchange and queue, then `{subscription}.delay` | `{subscription}.dlx` and `{subscription}.dlq` |
+| RabbitMQ, `QueueLayout` `EventType` | `{subscription}.{event-type}` | Same retry set as the default layout | Same dead-letter set as the default layout |
+| Azure Service Bus | One subscription per service on the topic. The name is the subscription name. | Scheduled message on that subscription. No retry queue. | The subscription's built-in dead-letter sub-queue. |
+| Amazon SQS | `{subscription}--{topic}` | Delayed send to that same queue. No retry queue. | `{subscription}--{topic}--dlq` |
+
+RabbitMQ suffixes are lowercase: `retry`, `delay`, `dlx`, and `dlq`.
+`{subscription}.retry` is both the exchange and the queue. SQS uses `--`
+because a period is not allowed. An SQS name is at most 80 characters,
+including `--dlq`. A longer name is rejected. There is no shortened or
+hashed form. Service Bus subscription names are 1 to 50 characters.
+
+These names differ from 0.6.0-alpha.1. On RabbitMQ, drain the old queues,
+delete the old exchanges and queues, or use a fresh vhost. A broker will
+not change an existing exchange type. On Amazon SQS, delete the old
+`{topic}--{subscription}` queues. SQS will not rename a queue.
+
 ## Retry delay
 
 The in-process transport retries on the publish call. There is no wait
@@ -144,7 +168,7 @@ On Amazon SQS, with the flag left false, the attempt past the limit is sent
 again to the same queue and stays available. LawnDart does not set an SQS
 redrive policy, so SQS does not move the message. A crash returns it after
 `VisibilityTimeout` with the same attempt count. Set the flag true to send
-the last failure to `{topic}--{subscription}--dlq`. The queue then also has
+the last failure to `{subscription}--{topic}--dlq`. The queue then also has
 a redrive policy. `MaxReceiveCount` defaults to 10 (1 to 1000). SQS moves
 the message after that many receives of the same copy. A delayed retry is a
 new message, so this count is the backstop for a receive that was never
@@ -295,11 +319,10 @@ Azure Service Bus uses one subscription per service on a topic. The name is
 the subscription name. A retry is a scheduled message, so there is no retry
 queue. A dead letter stays on that subscription's built-in dead-letter
 sub-queue. Amazon SQS uses one queue per topic and subscription, named
-`{topic}--{subscription}`. A period is not a legal SQS character, and a
-queue attaches to one topic. The dead-letter queue appends `--dlq`. A retry
-is a delayed send to the same queue. The `dlq` word matches RabbitMQ. The
-name starts with the topic so two topics for one service stay distinct, and
-so the name fits in 80 characters.
+`{subscription}--{topic}`. A period is not a legal SQS character, and a
+queue attaches to one topic. The dead-letter queue is
+`{subscription}--{topic}--dlq`. A retry is a delayed send to the same queue.
+The `dlq` word matches RabbitMQ. The full table is in [Names](#names).
 
 Azure Service Bus publishes to the mapped topic. Subscriptions on that topic
 share it. The SQL rule is the `lawndart_target` clause and the
@@ -395,8 +418,10 @@ SQL filter.
 An SNS topic is 1 to 256 characters. An SQS queue is 1 to 80. Letters,
 digits, hyphens, and underscores. A period is not allowed. A declared name
 such as `order.placed` needs a topic mapper. The queue name is
-`{topic}--{subscription}`. The dead-letter queue appends `--dlq` and must
-also fit in 80 characters. A name that ends with `.fifo` is rejected.
+`{subscription}--{topic}`. The dead-letter queue is
+`{subscription}--{topic}--dlq` and must also fit in 80 characters. A longer
+name is rejected. There is no shortened or hashed form. A name that ends
+with `.fifo` is rejected.
 FIFO topics and queues are not supported.
 
 An SNS filter policy is at most 256 KB and at most 150 values. The missing

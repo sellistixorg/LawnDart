@@ -77,11 +77,12 @@ Azure Service Bus uses one subscription per service on a topic. The name is
 the subscription name. A retry is a scheduled message on that subscription,
 so there is no retry queue. A dead letter stays on the subscription's
 built-in dead-letter sub-queue. Amazon SQS uses one queue per topic and
-subscription, named `{topic}--{subscription}`, because a queue attaches to
-one topic and a period is not a legal character. The dead-letter queue
-appends `--dlq`. A retry is a delayed send to the same queue. The `dlq`
-word matches RabbitMQ. The name starts with the topic so two topics for one
-service stay distinct, and so the name fits in 80 characters.
+subscription, named `{subscription}--{topic}`, because a queue attaches to
+one topic and a period is not a legal character. The dead-letter queue is
+`{subscription}--{topic}--dlq`. A retry is a delayed send to the same queue.
+The `dlq` word matches RabbitMQ. The name starts with the subscription.
+The topic keeps two topics for one service distinct, and the name has to
+fit in 80 characters.
 
 `SetupTopology` true runs the same declarations at startup for every event
 type recorded by `AddReactor` and `AddEventProcessor`. When several types
