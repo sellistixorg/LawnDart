@@ -10,12 +10,17 @@ changes to the public API.
 
 ## [Unreleased]
 
+## [0.6.0-alpha.2] — 2026-10-16
+
+### Breaking
+
+- Queue names changed. On RabbitMQ, drain the old queues, delete the old exchanges and queues, or use a fresh vhost. A broker will not change an existing exchange type. On Amazon SQS, delete the old `{topic}--{subscription}` queues. SQS will not rename a queue.
+
 ### Changed
 
 - RabbitMQ uses one quorum queue per subscription. The queue name is the subscription name. It is bound to each event type that subscription handles. Set `QueueLayout` to `EventType` for one queue per event type, named `{subscription}.{event-type}`.
 - RabbitMQ retry and dead-letter resources are one set per subscription in both layouts. The names are `{subscription}.retry` (a direct exchange and a quorum queue), `{subscription}.delay`, `{subscription}.dlx`, and `{subscription}.dlq`. The delay and dead-letter exchanges route by event type name.
 - Amazon SQS queue names start with the subscription. The queue is `{subscription}--{topic}`. The dead-letter queue is `{subscription}--{topic}--dlq`. Both must fit in 80 characters. A longer name is rejected. There is no shortened or hashed form.
-- Queue names changed. On RabbitMQ, drain the old queues, delete the old exchanges and queues, or use a fresh vhost. A broker will not change an existing exchange type. On Amazon SQS, delete the old `{topic}--{subscription}` queues. SQS will not rename a queue.
 
 ## [0.6.0-alpha.1] — 2026-10-15
 
