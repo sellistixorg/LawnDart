@@ -5,11 +5,11 @@ namespace LawnDart.Messaging.AwsSqs.Tests;
 public class AwsSqsNameAndOptionsTests
 {
     [Fact]
-    public void Names_use_the_topic_and_subscription()
+    public void Names_start_with_the_subscription()
     {
         Assert.Equal("orders", AwsSqsNames.Topic("orders"));
-        Assert.Equal("orders--billing", AwsSqsNames.Queue("orders", "billing"));
-        Assert.Equal("orders--billing--dlq", AwsSqsNames.DeadLetterQueue("orders", "billing"));
+        Assert.Equal("billing--orders", AwsSqsNames.Queue("orders", "billing"));
+        Assert.Equal("billing--orders--dlq", AwsSqsNames.DeadLetterQueue("orders", "billing"));
     }
 
     [Fact]

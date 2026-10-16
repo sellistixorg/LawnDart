@@ -44,8 +44,8 @@ The default mapper uses the `[EventTypeName]` token, so each type has its
 own topic. A publish does not create a queue.
 
 The subscriber creates one SQS queue and subscribes it to that topic with
-raw message delivery. The queue name is `{topic}--{subscription}`.
-The dead-letter queue is `{topic}--{subscription}--dlq`.
+raw message delivery. The queue name is `{subscription}--{topic}`.
+The dead-letter queue is `{subscription}--{topic}--dlq`.
 Types that map to the same topic share it. The filter lists `lawndart_type`
 for each type that subscription handles, and the consumer gives each message
 to the handler for that type. `SetupTopology` true runs the same creation
@@ -58,7 +58,11 @@ token such as `order.placed` needs a topic mapper.
 `SanitizingTopicMapper` replaces each period with a hyphen. The default
 mapper is unchanged. Startup rejects two declared names that sanitize to
 one topic unless the inner mapper already grouped them. The dead-letter
-suffix `--dlq` has to fit in the 80 characters as well. FIFO names
+suffix `--dlq` has to fit in the 80 characters as well. A longer name is
+rejected. There is no shortened or hashed form. These names differ from
+0.6.0-alpha.1, which used `{topic}--{subscription}` and
+`{topic}--{subscription}--dlq`. SQS will not rename a queue. Delete the old
+queues. FIFO names
 (`.fifo`) are rejected. FIFO is not supported. Topic mapping is in
 [Message transports](../MESSAGE_TRANSPORTS.md).
 
@@ -114,7 +118,7 @@ With `DeadLetterFailedMessages` left false, the attempt past the limit waits
 the same way and stays on the queue. LawnDart does not set an SQS redrive
 policy, so a crash returns the message after `VisibilityTimeout` and the
 attempt count is unchanged. Set the flag true to send the last failure to
-`{topic}--{subscription}--dlq`. The queue then has a redrive policy.
+`{subscription}--{topic}--dlq`. The queue then has a redrive policy.
 `MaxReceiveCount` defaults to 10. SQS moves a message that was received that
 many times without being deleted. A warning is written, and
 `messaging.deadlettered` increments. A cancel does not increment

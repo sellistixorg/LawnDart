@@ -96,7 +96,7 @@ public sealed class RabbitMqPublishAndRetryTests
         await using var channel = await connection.CreateChannelAsync();
 
         var missingQueue = await Record.ExceptionAsync(() => channel.QueueDeclareAsync(
-            RabbitMqNames.Queue(declared, subscription),
+            RabbitMqNames.Queue(subscription, RabbitMqQueueLayout.Subscription, declared),
             durable: true,
             exclusive: false,
             autoDelete: false,
@@ -113,7 +113,7 @@ public sealed class RabbitMqPublishAndRetryTests
             passive: true);
 
         var missingRetry = await Record.ExceptionAsync(() => exchangeChannel.QueueDeclareAsync(
-            RabbitMqNames.RetryQueue(declared, subscription),
+            RabbitMqNames.RetryQueue(subscription),
             durable: true,
             exclusive: false,
             autoDelete: false,
@@ -152,8 +152,11 @@ public sealed class RabbitMqPublishAndRetryTests
         await cts.CancelAsync();
         await subscription.WaitAsync(TimeSpan.FromSeconds(10));
 
-        var retryQueue = RabbitMqNames.RetryQueue("messaging.conformance-ping", fixture.Options.SubscriptionName);
-        var mainQueue = RabbitMqNames.Queue("messaging.conformance-ping", fixture.Options.SubscriptionName);
+        var retryQueue = RabbitMqNames.RetryQueue(fixture.Options.SubscriptionName);
+        var mainQueue = RabbitMqNames.Queue(
+            fixture.Options.SubscriptionName,
+            RabbitMqQueueLayout.Subscription,
+            "messaging.conformance-ping");
         await WaitUntilAsync(async () => await CountAsync(retryQueue) >= 1);
         Assert.Equal(0u, await CountAsync(mainQueue));
 
@@ -245,7 +248,7 @@ public sealed class RabbitMqPublishAndRetryTests
             new ConformancePing(Guid.NewGuid(), DateTime.UtcNow, "idle"),
             MessageContext.New());
 
-        var retryQueue = RabbitMqNames.RetryQueue("messaging.conformance-ping", fixture.Options.SubscriptionName);
+        var retryQueue = RabbitMqNames.RetryQueue(fixture.Options.SubscriptionName);
         await WaitUntilAsync(async () => await CountAsync(retryQueue) >= 1);
         await Task.Delay(300);
 

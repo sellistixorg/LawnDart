@@ -18,6 +18,20 @@ public sealed class RabbitMqContainerFixture : IAsyncLifetime
     }
 
     public async Task DisposeAsync() => await _container.DisposeAsync();
+
+    public async Task<string> RabbitMqCtlAsync(params string[] arguments)
+    {
+        var command = new List<string> { "rabbitmqctl" };
+        command.AddRange(arguments);
+        var result = await _container.ExecAsync(command);
+        if (result.ExitCode != 0)
+        {
+            throw new InvalidOperationException(
+                $"rabbitmqctl exited {result.ExitCode}.{Environment.NewLine}{result.Stdout}{Environment.NewLine}{result.Stderr}");
+        }
+
+        return result.Stdout;
+    }
 }
 
 [CollectionDefinition(Name)]

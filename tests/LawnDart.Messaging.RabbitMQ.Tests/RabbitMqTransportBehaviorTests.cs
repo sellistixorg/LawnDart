@@ -84,7 +84,10 @@ public sealed class RabbitMqTransportBehaviorTests
 
         Assert.True(redelivered);
         Assert.Equal(
-            RabbitMqNames.Queue("messaging.conformance-ping", fixture.Options.SubscriptionName),
+            RabbitMqNames.Queue(
+                fixture.Options.SubscriptionName,
+                RabbitMqQueueLayout.Subscription,
+                "messaging.conformance-ping"),
             queue);
     }
 
@@ -125,7 +128,7 @@ public sealed class RabbitMqTransportBehaviorTests
         Assert.Contains("dlx-1", warning, StringComparison.Ordinal);
         Assert.Contains("Dead-lettered", warning, StringComparison.Ordinal);
 
-        var queue = RabbitMqNames.DeadLetterQueue("messaging.conformance-ping", fixture.Options.SubscriptionName);
+        var queue = RabbitMqNames.DeadLetterQueue(fixture.Options.SubscriptionName);
         var body = await ReadQueueAsync(queue);
         Assert.Contains("dead-letter-body", body, StringComparison.Ordinal);
     }
@@ -154,9 +157,7 @@ public sealed class RabbitMqTransportBehaviorTests
         await WaitUntilAsync(() => Volatile.Read(ref calls) >= 3);
         Assert.Empty(fixture.DeadLetters);
 
-        var deadLetterQueue = RabbitMqNames.DeadLetterQueue(
-            "messaging.conformance-ping",
-            fixture.Options.SubscriptionName);
+        var deadLetterQueue = RabbitMqNames.DeadLetterQueue(fixture.Options.SubscriptionName);
         Assert.Equal(0u, await CountAsync(deadLetterQueue));
 
         await cts.CancelAsync();
@@ -209,7 +210,7 @@ public sealed class RabbitMqTransportBehaviorTests
 
         var setup = provider.GetRequiredService<RabbitMqTopologySetup>();
         var declared = MessageTypeNames.Require(typeof(TopologyPing));
-        var queue = RabbitMqNames.Queue(declared, subscriptionName);
+        var queue = RabbitMqNames.Queue(subscriptionName, RabbitMqQueueLayout.Subscription, declared);
         Assert.Contains(queue, setup.Queues);
 
         await using var connection = await OpenAsync();
@@ -224,13 +225,31 @@ public sealed class RabbitMqTransportBehaviorTests
             passive: true);
         await channel.QueueDeclareAsync(queue, durable: true, exclusive: false, autoDelete: false, passive: true);
         await channel.ExchangeDeclareAsync(
-            RabbitMqNames.DeadLetterExchange(declared),
+            RabbitMqNames.DeadLetterExchange(subscriptionName),
             ExchangeType.Direct,
             durable: true,
             autoDelete: false,
             passive: true);
         await channel.QueueDeclareAsync(
-            RabbitMqNames.DeadLetterQueue(declared, subscriptionName),
+            RabbitMqNames.DeadLetterQueue(subscriptionName),
+            durable: true,
+            exclusive: false,
+            autoDelete: false,
+            passive: true);
+        await channel.ExchangeDeclareAsync(
+            RabbitMqNames.DelayExchange(subscriptionName),
+            ExchangeType.Direct,
+            durable: true,
+            autoDelete: false,
+            passive: true);
+        await channel.ExchangeDeclareAsync(
+            RabbitMqNames.RetryExchange(subscriptionName),
+            ExchangeType.Direct,
+            durable: true,
+            autoDelete: false,
+            passive: true);
+        await channel.QueueDeclareAsync(
+            RabbitMqNames.RetryQueue(subscriptionName),
             durable: true,
             exclusive: false,
             autoDelete: false,

@@ -34,12 +34,13 @@ internal sealed class RabbitMqConnector : IDisposable, IAsyncDisposable
         string subscriptionName,
         CancellationToken cancellationToken)
         => DeclareOnceAsync(
-            "subscription\n" + exchange + "\n" + messageType + "\n" + subscriptionName,
+            "subscription\n" + exchange + "\n" + messageType + "\n" + subscriptionName + "\n" + _options.QueueLayout,
             (channel, ct) => RabbitMqDeclarations.DeclareSubscriptionAsync(
                 channel,
                 messageType,
                 exchange,
                 subscriptionName,
+                _options.QueueLayout,
                 _options.RetryDelay,
                 ct),
             cancellationToken);

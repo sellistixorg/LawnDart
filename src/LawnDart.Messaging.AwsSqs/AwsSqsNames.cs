@@ -12,7 +12,7 @@ public static class AwsSqsNames
     /// <summary>Maximum length of an SQS queue name.</summary>
     public const int QueueNameMaxLength = 80;
 
-    /// <summary>Separator between the topic and the subscription in a queue name. The value is <c>--</c>.</summary>
+    /// <summary>Separator between the subscription and the topic in a queue name. The value is <c>--</c>.</summary>
     public const string NameSeparator = "--";
 
     /// <summary>Suffix on the dead-letter queue name. The value is <c>--dlq</c>.</summary>
@@ -38,8 +38,9 @@ public static class AwsSqsNames
 
     /// <summary>
     /// Queue that receives <paramref name="subscriptionName"/> on <paramref name="topic"/>.
-    /// The name is <c>{topic}--{subscription}</c>.
+    /// The name is <c>{subscription}--{topic}</c>.
     /// The dead-letter queue appends <c>--dlq</c> and must also fit in <see cref="QueueNameMaxLength"/>.
+    /// A name that does not fit is rejected. There is no shortened or hashed form.
     /// </summary>
     /// <param name="topic">Topic name from <see cref="ITopicMapper.TopicFor"/>.</param>
     /// <param name="subscriptionName">Consumer name from <see cref="MessageTransportOptions.SubscriptionName"/>.</param>
@@ -47,7 +48,7 @@ public static class AwsSqsNames
     {
         RequireTopic(topic);
         RequireSubscription(subscriptionName);
-        var queue = topic + NameSeparator + subscriptionName;
+        var queue = subscriptionName + NameSeparator + topic;
         RequireQueue(queue);
         var deadLetter = queue + DeadLetterSuffix;
         if (!IsQueueToken(deadLetter))
@@ -62,8 +63,8 @@ public static class AwsSqsNames
     }
 
     /// <summary>
-    /// Dead-letter queue for <paramref name="topic"/> and <paramref name="subscriptionName"/>.
-    /// The name is <c>{topic}--{subscription}--dlq</c>.
+    /// Dead-letter queue for <paramref name="subscriptionName"/> on <paramref name="topic"/>.
+    /// The name is <c>{subscription}--{topic}--dlq</c>.
     /// </summary>
     /// <param name="topic">Topic name.</param>
     /// <param name="subscriptionName">Consumer name.</param>

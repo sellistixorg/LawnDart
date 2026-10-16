@@ -28,6 +28,17 @@ public sealed class RabbitMqTransportOptions : MessageTransportOptions
     public string VirtualHost { get; set; } = "/";
 
     /// <summary>
+    /// How queues are divided for one subscription.
+    /// <see cref="RabbitMqQueueLayout.Subscription"/> (the default) is one quorum queue
+    /// bound to each event type this subscription handles.
+    /// <see cref="RabbitMqQueueLayout.EventType"/> is one quorum queue per event type.
+    /// The topic still comes from <see cref="MessageTransportOptions.TopicMapper"/>.
+    /// The routing key is the event type name in both layouts.
+    /// Retry and dead-letter names stay one set per subscription.
+    /// </summary>
+    public RabbitMqQueueLayout QueueLayout { get; set; } = RabbitMqQueueLayout.Subscription;
+
+    /// <summary>
     /// How long a failed delivery waits before it returns to the subscription queue.
     /// The wait is the TTL on that subscription's retry queue. Defaults to 5 seconds.
     /// </summary>
@@ -74,6 +85,12 @@ public sealed class RabbitMqTransportOptions : MessageTransportOptions
         {
             throw new InvalidOperationException(
                 "RabbitMqTransportOptions.OperationTimeout must be greater than zero.");
+        }
+
+        if (!Enum.IsDefined(QueueLayout))
+        {
+            throw new InvalidOperationException(
+                $"RabbitMqTransportOptions.QueueLayout value '{QueueLayout}' is not supported.");
         }
 
         if (!string.IsNullOrWhiteSpace(Uri))
