@@ -3,7 +3,7 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <PackageId>LawnDart.Messaging.RabbitMQ</PackageId>
-    <Description>RabbitMQ transport for LawnDart.Messaging. Declared message types are exchanges unless a topic mapper groups them. Failed deliveries are retried, then nacked or dead-lettered.</Description>
+    <Description>RabbitMQ transport for LawnDart.Messaging. One quorum queue per subscription, bound to each handled event type. Set QueueLayout to EventType for one queue per event type. Failed deliveries wait on a retry queue, then dead-letter when that handling is on.</Description>
     <IsPackable>true</IsPackable>
   </PropertyGroup>
 

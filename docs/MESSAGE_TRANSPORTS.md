@@ -73,8 +73,9 @@ The in-process transport retries on the publish call. There is no wait
 between tries.
 
 RabbitMQ `RetryDelay` defaults to 5 seconds. A failed delivery waits on the
-retry queue `{token}.{subscription}.retry`, then returns to the same
-subscription queue. The wait is the time to live on that retry queue.
+retry queue `{subscription}.retry`, then returns through the delay exchange
+`{subscription}.delay` to the same subscription queue. The wait is the time
+to live on that retry queue. The delay exchange routes by event type name.
 A cancelled delivery uses that same wait. The attempt count does not increase.
 
 Azure Service Bus `RetryDelay` defaults to 5 seconds. A failed delivery is
@@ -131,7 +132,9 @@ false, so the outbox keeps the row. See [Outbox](OUTBOX_PATTERN.md).
 
 On RabbitMQ, with the flag left false, the attempt past the limit waits
 `RetryDelay` and stays on the queue. Set the flag true to nack it onto the
-dead-letter exchange `{token}.dlx` and the queue `{token}.{subscription}.dlq`.
+dead-letter exchange `{subscription}.dlx` and the queue `{subscription}.dlq`.
+One dead-letter queue serves the subscription. The exchange routes by event
+type name.
 
 On Azure Service Bus, with the flag left false, the attempt past the limit
 is scheduled again and stays available. Set the flag true to dead-letter it
@@ -252,14 +255,51 @@ to one topic do not.
 ### Filtering
 
 RabbitMQ publishes to the mapped exchange. The routing key is the declared
-event type name. Each subscription queue binds to that exchange with the
-routing key of the type it handles. A publish of one type reaches only the
-queues bound for that type. The queue name stays
-`{event-type}.{subscription}`. A retry is published to that subscription's
-retry queue and returns to the same queue. It does not cross to another
-subscription or another event type. Dead-letter queues stay per event type
-and subscription (`{event-type}.{subscription}.dlq`), even when the publish
-exchange is shared.
+event type name. The default is one quorum queue per subscription, named
+`{subscription}`, bound with the routing key of each type it handles. Set
+`QueueLayout` to `EventType` for one queue per event type, named
+`{subscription}.{event-type}`. A publish of one type reaches only the queues
+bound for that type. A retry is published to that subscription's retry
+exchange and returns to the same queue. It does not cross to another
+subscription. Dead-letter is one queue per subscription
+(`{subscription}.dlq`) in both layouts, including when the publish exchange
+is shared.
+
+One queue per subscription is the usual layout. The service reads every
+type it handles from that queue. A slow type holds the others behind it.
+Per-event queues give each type its own queue, so you can drain or replay
+one type on its own.
+
+| Name | What it is |
+|---|---|
+| `{subscription}` | Quorum queue. Default layout. Bound once per handled event type. |
+| `{subscription}.{event-type}` | Quorum queue when `QueueLayout` is `EventType`. |
+| `{subscription}.retry` | Direct exchange and quorum queue. A failed delivery is published to the exchange with the event type as the routing key. The queue waits `RetryDelay`, then dead-letters to the delay exchange with that routing key. |
+| `{subscription}.delay` | Direct exchange. Routes the delayed message back by event type. |
+| `{subscription}.dlx` | Direct exchange. A dead letter is routed here by event type. |
+| `{subscription}.dlq` | Quorum queue. Bound to the dead-letter exchange once per handled event type. |
+
+Every name starts with the subscription name. Use a lowercase kebab-case
+subscription name, such as `billing`. A dot separates the event type, when
+the layout includes it, and the suffix. The suffixes are lowercase:
+`retry`, `delay`, `dlx`, and `dlq`. `{subscription}.retry` is both the
+exchange and the queue so the event type can stay the routing key while
+the message waits.
+
+These names differ from 0.6.0-alpha.1. RabbitMQ will not change an existing
+exchange's type. Drain the old queues, delete the old exchanges and queues,
+or use a fresh vhost. The [RabbitMQ package page](packages/messaging-rabbitmq.md)
+has the same table.
+
+Azure Service Bus uses one subscription per service on a topic. The name is
+the subscription name. A retry is a scheduled message, so there is no retry
+queue. A dead letter stays on that subscription's built-in dead-letter
+sub-queue. Amazon SQS uses one queue per topic and subscription, named
+`{topic}--{subscription}`. A period is not a legal SQS character, and a
+queue attaches to one topic. The dead-letter queue appends `--dlq`. A retry
+is a delayed send to the same queue. The `dlq` word matches RabbitMQ. The
+name starts with the topic so two topics for one service stay distinct, and
+so the name fits in 80 characters.
 
 Azure Service Bus publishes to the mapped topic. Subscriptions on that topic
 share it. The SQL rule is the `lawndart_target` clause and the
@@ -344,9 +384,10 @@ lists many long event type names can exceed that. Shorten the names or
 split the topic.
 
 A RabbitMQ exchange, routing key, or queue name is at most 255 bytes.
-Names that start with `amq.` are reserved. The queue name is
-`{event-type}.{subscription}`. The retry queue adds `.retry`. The
-dead-letter queue adds `.dlq`. Leave room for the longest suffix.
+Names that start with `amq.` are reserved. Every name starts with the
+subscription name. The default queue is `{subscription}`. The per-event
+queue is `{subscription}.{event-type}`. The suffixes are `.retry`,
+`.delay`, `.dlx`, and `.dlq`. Leave room for `.retry`, the longest suffix.
 
 A single quote in a subscription name or event type name is doubled in the
 SQL filter.

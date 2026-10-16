@@ -3,8 +3,8 @@ using Microsoft.Extensions.Options;
 namespace LawnDart.Messaging.RabbitMQ;
 
 /// <summary>
-/// Declares a direct exchange, a quorum queue, and a dead-letter exchange and queue
-/// for each message type the host recorded.
+/// Declares a direct exchange and the subscription queue for each message type the host recorded.
+/// Retry and dead-letter resources are one set for the subscription.
 /// </summary>
 public sealed class RabbitMqTopologySetup : IMessageTopologySetup
 {
@@ -51,7 +51,7 @@ public sealed class RabbitMqTopologySetup : IMessageTopologySetup
                     cancellationToken)
                 .ConfigureAwait(false);
 
-            var queue = RabbitMqNames.Queue(messageType, _options.SubscriptionName);
+            var queue = RabbitMqNames.Queue(_options.SubscriptionName, _options.QueueLayout, messageType);
             if (!_queues.Contains(queue, StringComparer.Ordinal))
                 _queues.Add(queue);
         }

@@ -15,8 +15,11 @@ public sealed class RabbitMqTopicMappingTests
 
     public RabbitMqTopicMappingTests(RabbitMqContainerFixture container) => _container = container;
 
-    [Fact]
-    public async Task A_grouped_topic_delivers_each_type_only_to_its_subscriber_and_retries_only_the_failure()
+    [Theory]
+    [InlineData(RabbitMqQueueLayout.Subscription)]
+    [InlineData(RabbitMqQueueLayout.EventType)]
+    public async Task A_grouped_topic_delivers_each_type_only_to_its_subscriber_and_retries_only_the_failure(
+        RabbitMqQueueLayout layout)
     {
         var topic = "topic-map-" + Guid.NewGuid().ToString("N")[..8];
         var suffix = Guid.NewGuid().ToString("N")[..8];
@@ -24,12 +27,16 @@ public sealed class RabbitMqTopicMappingTests
 
         await using var placed = RabbitMqTransportFixture.Create(_container.AmqpUri, options =>
         {
+            var rabbit = Assert.IsType<RabbitMqTransportOptions>(options);
+            rabbit.QueueLayout = layout;
             options.SubscriptionName = "placed-" + suffix;
             options.MaxDeliveryAttempts = 3;
             options.TopicMapper = mapper;
         }, preHandler: null);
         await using var shipped = RabbitMqTransportFixture.Create(_container.AmqpUri, options =>
         {
+            var rabbit = Assert.IsType<RabbitMqTransportOptions>(options);
+            rabbit.QueueLayout = layout;
             options.SubscriptionName = "shipped-" + suffix;
             options.TopicMapper = mapper;
         }, preHandler: null);
@@ -78,12 +85,17 @@ public sealed class RabbitMqTopicMappingTests
         await channel.ExchangeDeclareAsync(topic, "direct", durable: true, autoDelete: false, passive: true);
     }
 
-    [Fact]
-    public async Task One_subscription_on_a_grouped_topic_dispatches_each_type_to_its_handler()
+    [Theory]
+    [InlineData(RabbitMqQueueLayout.Subscription)]
+    [InlineData(RabbitMqQueueLayout.EventType)]
+    public async Task One_subscription_on_a_grouped_topic_dispatches_each_type_to_its_handler(
+        RabbitMqQueueLayout layout)
     {
         var topic = "topic-map-one-" + Guid.NewGuid().ToString("N")[..8];
         await using var fixture = RabbitMqTransportFixture.Create(_container.AmqpUri, options =>
         {
+            var rabbit = Assert.IsType<RabbitMqTransportOptions>(options);
+            rabbit.QueueLayout = layout;
             options.MaxDeliveryAttempts = 3;
             options.TopicMapper = Group(topic);
         }, preHandler: null);

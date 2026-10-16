@@ -18,6 +18,25 @@ public sealed class RabbitMqTransportConformanceTests : MessageTransportConforma
         => RabbitMqTransportFixture.Create(_container.AmqpUri, configure, preHandler);
 }
 
+[Collection(RabbitMqCollection.Name)]
+[Trait("Category", "Integration")]
+public sealed class RabbitMqEventTypeLayoutConformanceTests : MessageTransportConformanceTests
+{
+    private readonly RabbitMqContainerFixture _container;
+
+    public RabbitMqEventTypeLayoutConformanceTests(RabbitMqContainerFixture container) => _container = container;
+
+    protected override TransportConformanceFixture CreateFixture(
+        Action<MessageTransportOptions>? configure = null,
+        IMessagePreHandler? preHandler = null)
+        => RabbitMqTransportFixture.Create(_container.AmqpUri, options =>
+        {
+            configure?.Invoke(options);
+            var rabbit = Assert.IsType<RabbitMqTransportOptions>(options);
+            rabbit.QueueLayout = RabbitMqQueueLayout.EventType;
+        }, preHandler);
+}
+
 internal sealed class RabbitMqTransportFixture : TransportConformanceFixture
 {
     private readonly RabbitMqMessageTransport _transport;

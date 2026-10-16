@@ -10,6 +10,12 @@ changes to the public API.
 
 ## [Unreleased]
 
+### Changed
+
+- RabbitMQ uses one quorum queue per subscription. The queue name is the subscription name. It is bound to each event type that subscription handles. Set `QueueLayout` to `EventType` for one queue per event type, named `{subscription}.{event-type}`.
+- RabbitMQ retry and dead-letter resources are one set per subscription in both layouts. The names are `{subscription}.retry` (a direct exchange and a quorum queue), `{subscription}.delay`, `{subscription}.dlx`, and `{subscription}.dlq`. The delay and dead-letter exchanges route by event type name.
+- RabbitMQ queue and exchange names changed. A broker will not change an existing exchange type. Drain the old queues, delete the old exchanges and queues, or use a fresh vhost.
+
 ## [0.6.0-alpha.1] — 2026-10-15
 
 ### Breaking

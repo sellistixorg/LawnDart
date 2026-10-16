@@ -3,16 +3,60 @@ namespace LawnDart.Messaging.RabbitMQ.Tests;
 public class RabbitMqTransportOptionsTests
 {
     [Fact]
-    public void Names_use_the_declared_type_and_subscription()
+    public void Names_start_with_the_subscription_and_a_fixed_suffix()
     {
-        Assert.Equal("order.placed", RabbitMqNames.Exchange("order.placed"));
-        Assert.Equal("order.placed", RabbitMqNames.RoutingKey("order.placed"));
-        Assert.Equal("order.placed.billing", RabbitMqNames.Queue("order.placed", "billing"));
-        Assert.Equal("order.placed.dlx", RabbitMqNames.DeadLetterExchange("order.placed"));
-        Assert.Equal("order.placed.billing", RabbitMqNames.DeadLetterRoutingKey("order.placed", "billing"));
-        Assert.Equal("order.placed.billing.dlq", RabbitMqNames.DeadLetterQueue("order.placed", "billing"));
-        Assert.Equal("order.placed.billing.delay", RabbitMqNames.DelayExchange("order.placed", "billing"));
-        Assert.Equal("order.placed.billing.retry", RabbitMqNames.RetryQueue("order.placed", "billing"));
+        Assert.Equal(RabbitMqQueueLayout.Subscription, new RabbitMqTransportOptions().QueueLayout);
+        Assert.Equal("order-placed", RabbitMqNames.Exchange("order-placed"));
+        Assert.Equal("order-placed", RabbitMqNames.RoutingKey("order-placed"));
+
+        Assert.Equal("billing", RabbitMqNames.Queue("billing", RabbitMqQueueLayout.Subscription, "order-placed"));
+        Assert.Equal(
+            "billing.order-placed",
+            RabbitMqNames.Queue("billing", RabbitMqQueueLayout.EventType, "order-placed"));
+        Assert.Equal("billing.retry", RabbitMqNames.RetryQueue("billing"));
+        Assert.Equal("billing.retry", RabbitMqNames.RetryExchange("billing"));
+        Assert.Equal("billing.delay", RabbitMqNames.DelayExchange("billing"));
+        Assert.Equal("billing.dlx", RabbitMqNames.DeadLetterExchange("billing"));
+        Assert.Equal("billing.dlq", RabbitMqNames.DeadLetterQueue("billing"));
+
+        Assert.Equal(".retry", RabbitMqNames.RetrySuffix);
+        Assert.Equal(".delay", RabbitMqNames.DelaySuffix);
+        Assert.Equal(".dlx", RabbitMqNames.DeadLetterExchangeSuffix);
+        Assert.Equal(".dlq", RabbitMqNames.DeadLetterQueueSuffix);
+
+        RabbitMqNames.RequireConsumerNames("billing", RabbitMqQueueLayout.Subscription, "order-placed");
+        RabbitMqNames.RequireConsumerNames("billing", RabbitMqQueueLayout.EventType, "order-placed");
+    }
+
+    [Fact]
+    public void A_per_event_queue_that_matches_a_retry_or_dead_letter_name_is_rejected()
+    {
+        var retry = Assert.Throws<InvalidOperationException>(() =>
+            RabbitMqNames.RequireConsumerNames("billing", RabbitMqQueueLayout.EventType, "retry"));
+        Assert.Contains("billing.retry", retry.Message, StringComparison.Ordinal);
+
+        var deadLetter = Assert.Throws<InvalidOperationException>(() =>
+            RabbitMqNames.RequireConsumerNames("billing", RabbitMqQueueLayout.EventType, "dlq"));
+        Assert.Contains("billing.dlq", deadLetter.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_suffix_that_passes_255_bytes_is_rejected()
+    {
+        var subscription = new string('a', 250);
+        RabbitMqNames.RequireQueue(subscription);
+
+        var length = Assert.Throws<InvalidOperationException>(() =>
+            RabbitMqNames.RequireConsumerNames(subscription, RabbitMqQueueLayout.Subscription, "order-placed"));
+        Assert.Contains("255", length.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_unknown_queue_layout_is_rejected()
+    {
+        var options = new RabbitMqTransportOptions { QueueLayout = (RabbitMqQueueLayout)9 };
+        var ex = Assert.Throws<InvalidOperationException>(options.EnsureValid);
+        Assert.Contains("QueueLayout", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
