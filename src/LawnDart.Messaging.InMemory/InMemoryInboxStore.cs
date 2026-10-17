@@ -9,7 +9,10 @@ namespace LawnDart.Messaging.InMemory;
 /// </summary>
 public sealed class InMemoryInboxStore : IInboxStore
 {
-    private readonly ConcurrentDictionary<string, DateTimeOffset> _processed = new(StringComparer.Ordinal);
+    private static readonly TimeSpan ClaimLease = TimeSpan.FromSeconds(30);
+
+    private readonly ConcurrentDictionary<string, Entry> _entries = new(StringComparer.Ordinal);
+    private readonly object _gate = new();
     private readonly MessagingOptions _options;
 
     public InMemoryInboxStore(IOptions<MessagingOptions> options)
@@ -20,33 +23,101 @@ public sealed class InMemoryInboxStore : IInboxStore
     /// <inheritdoc />
     public Task<bool> IsProcessedAsync(string messageId, CancellationToken cancellationToken = default)
     {
-        if (!_processed.TryGetValue(messageId, out var processedAt))
-            return Task.FromResult(false);
-
-        var expired = DateTimeOffset.UtcNow - processedAt > _options.InboxDeduplicationWindow;
-        if (expired)
+        lock (_gate)
         {
-            _processed.TryRemove(messageId, out _);
-            return Task.FromResult(false);
-        }
+            if (!_entries.TryGetValue(messageId, out var entry) || entry.ProcessedAt is null)
+                return Task.FromResult(false);
 
-        return Task.FromResult(true);
+            if (DateTimeOffset.UtcNow - entry.ProcessedAt.Value > _options.InboxDeduplicationWindow)
+            {
+                _entries.TryRemove(messageId, out _);
+                return Task.FromResult(false);
+            }
+
+            return Task.FromResult(true);
+        }
     }
 
     /// <inheritdoc />
     public Task MarkProcessedAsync(string messageId, DateTimeOffset processedAt, CancellationToken cancellationToken = default)
     {
-        _processed[messageId] = processedAt;
+        lock (_gate)
+        {
+            _entries.AddOrUpdate(
+                messageId,
+                _ => new Entry { ProcessedAt = processedAt },
+                (_, existing) =>
+                {
+                    existing.ProcessedAt = processedAt;
+                    existing.ClaimedAt = null;
+                    return existing;
+                });
+        }
+
         return Task.CompletedTask;
+    }
+
+    /// <inheritdoc />
+    public Task<bool> TryClaimAsync(string messageId, CancellationToken cancellationToken = default)
+    {
+        lock (_gate)
+        {
+            var now = DateTimeOffset.UtcNow;
+            if (_entries.TryGetValue(messageId, out var entry))
+            {
+                if (entry.ProcessedAt is { } processed
+                    && now - processed <= _options.InboxDeduplicationWindow)
+                    return Task.FromResult(false);
+
+                if (entry.ClaimedAt is { } claimed && now - claimed <= ClaimLease && entry.ProcessedAt is null)
+                    return Task.FromResult(false);
+
+                entry.ProcessedAt = null;
+                entry.ClaimedAt = now;
+                return Task.FromResult(true);
+            }
+
+            _entries[messageId] = new Entry { ClaimedAt = now };
+            return Task.FromResult(true);
+        }
+    }
+
+    /// <inheritdoc />
+    public Task ReleaseClaimAsync(string messageId, CancellationToken cancellationToken = default)
+    {
+        lock (_gate)
+        {
+            if (_entries.TryGetValue(messageId, out var entry) && entry.ProcessedAt is null)
+                _entries.TryRemove(messageId, out _);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private sealed class Entry
+    {
+        public DateTimeOffset? ProcessedAt { get; set; }
+        public DateTimeOffset? ClaimedAt { get; set; }
     }
 
     /// <summary>
     /// Clears all stored entries. Useful for test teardown.
     /// </summary>
-    public void Clear() => _processed.Clear();
+    public void Clear()
+    {
+        lock (_gate)
+            _entries.Clear();
+    }
 
     /// <summary>
     /// Returns the number of currently tracked message IDs.
     /// </summary>
-    public int Count => _processed.Count;
+    public int Count
+    {
+        get
+        {
+            lock (_gate)
+                return _entries.Count;
+        }
+    }
 }

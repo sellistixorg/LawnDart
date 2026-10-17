@@ -51,10 +51,20 @@ public sealed class EventProcessorTestHarness<TProcessor, TEvent>
             ? null
             : InboxConsumerKey.ForProcessor(typeof(TProcessor), context.MessageId);
 
-        if (inboxKey is not null && await _inboxStore.IsProcessedAsync(inboxKey, cancellationToken).ConfigureAwait(false))
+        if (inboxKey is not null && !await _inboxStore.TryClaimAsync(inboxKey, cancellationToken).ConfigureAwait(false))
             return [];
 
-        var events = (await _processor.ProcessAsync(@event, context, cancellationToken).ConfigureAwait(false)).ToList();
+        IReadOnlyList<IEvent> events;
+        try
+        {
+            events = (await _processor.ProcessAsync(@event, context, cancellationToken).ConfigureAwait(false)).ToList();
+        }
+        catch
+        {
+            if (inboxKey is not null)
+                await _inboxStore.ReleaseClaimAsync(inboxKey, CancellationToken.None).ConfigureAwait(false);
+            throw;
+        }
 
         if (inboxKey is not null)
             await _inboxStore.MarkProcessedAsync(inboxKey, DateTimeOffset.UtcNow, cancellationToken).ConfigureAwait(false);

@@ -10,6 +10,18 @@ public class InMemoryInboxStoreTests
         new(Options.Create(new MessagingOptions()));
 
     [Fact]
+    public async Task TryClaim_SecondCallerLoses_UntilRelease()
+    {
+        Assert.True(await _store.TryClaimAsync("m1"));
+        Assert.False(await _store.TryClaimAsync("m1"));
+        await _store.ReleaseClaimAsync("m1");
+        Assert.True(await _store.TryClaimAsync("m1"));
+        await _store.MarkProcessedAsync("m1", DateTimeOffset.UtcNow);
+        Assert.False(await _store.TryClaimAsync("m1"));
+        Assert.True(await _store.IsProcessedAsync("m1"));
+    }
+
+    [Fact]
     public async Task IsProcessedAsync_UnknownId_ReturnsFalse()
     {
         var result = await _store.IsProcessedAsync("unknown-id");

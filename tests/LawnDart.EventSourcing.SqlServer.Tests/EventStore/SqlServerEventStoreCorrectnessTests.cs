@@ -243,6 +243,43 @@ public sealed class SqlServerEventStoreCorrectnessTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task LostCommitReply_ReturnsTheLandedAppend_AndDoesNotRetry()
+    {
+        var store = CreateStore(_connectionString, "ack");
+        await store.InitializeSchemaAsync();
+        var commits = 0;
+        store.CommitHook = async (transaction, ct) =>
+        {
+            Interlocked.Increment(ref commits);
+            await transaction.CommitAsync(ct);
+            throw new InvalidOperationException("commit reply lost");
+        };
+
+        var result = await store.AppendAsync("s1", [Evt()]);
+        Assert.Equal(1, commits);
+        Assert.Equal(1, result.SequencePositions[0]);
+        Assert.Single(await store.ReadStreamAsync("s1"));
+    }
+
+    [Fact]
+    public async Task CommitAttemptedThenFailed_IsNotRetried()
+    {
+        var store = CreateStore(_connectionString, "nretry");
+        await store.InitializeSchemaAsync();
+        await store.AppendAsync("s1", [Evt()]);
+        var commits = 0;
+        store.CommitHook = (_, _) =>
+        {
+            Interlocked.Increment(ref commits);
+            throw new InvalidOperationException("commit did not finish");
+        };
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => store.AppendAsync("s2", [Evt()]));
+        Assert.Equal(1, commits);
+        Assert.Empty(await store.ReadStreamAsync("s2"));
+    }
+
+    [Fact]
     public async Task RolledBackSequence_DoesNotStallTheNextCommit()
     {
         var logger = new ListLogger();
@@ -341,7 +378,7 @@ public sealed class SqlServerEventStoreCorrectnessTests : IAsyncLifetime
         await using (var connection = new SqlConnection(_connectionString))
         {
             await connection.OpenAsync();
-            Assert.Equal("3", await ScalarAsync(connection, """
+            Assert.Equal(SqlServerEventStore.CurrentSchemaFormat, await ScalarAsync(connection, """
                 SELECT CAST(value AS nvarchar(20))
                 FROM sys.extended_properties
                 WHERE major_id = OBJECT_ID(N'[upg].[Events]')

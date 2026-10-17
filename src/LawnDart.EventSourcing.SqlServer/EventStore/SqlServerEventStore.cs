@@ -30,13 +30,13 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
     internal const string SchemaFormatPropertyName = "LawnDart_SchemaFormat";
 
     /// <summary>
-    /// Format 3: <c>Events.RowVersion</c>, <c>AppendFence</c>, and a
-    /// case-sensitive <c>EventTags.Tag</c> collation. Format 2 upgrades in place.
+    /// Format 4: format 3 plus a unique <c>Events.EventId</c>.
+    /// Formats 2 and 3 upgrade in place.
     /// </summary>
-    internal const string CurrentSchemaFormat = "3";
+    internal const string CurrentSchemaFormat = "4";
 
-    /// <summary>Previous stamp <see cref="InitializeSchemaAsync"/> upgrades to <see cref="CurrentSchemaFormat"/>.</summary>
-    internal const string UpgradableSchemaFormat = "2";
+    /// <summary>Stamps <see cref="InitializeSchemaAsync"/> upgrades to <see cref="CurrentSchemaFormat"/>.</summary>
+    internal static readonly string[] UpgradableSchemaFormats = ["2", "3"];
 
     /// <summary>Single-use rows that hold a rowversion for the life of an append transaction.</summary>
     internal const string AppendFenceTableName = "AppendFence";
@@ -82,6 +82,11 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
     /// is held and the events are inserted, before <c>Commit</c>.
     /// </summary>
     internal Func<CancellationToken, Task>? BeforeAppendCommit { get; set; }
+
+    /// <summary>
+    /// Test seam. Replaces <c>Commit</c>. The store does not retry after this runs.
+    /// </summary>
+    internal Func<SqlTransaction, CancellationToken, Task>? CommitHook { get; set; }
 
     internal string QualifiedEventsTable => _qTable;
 
@@ -275,10 +280,11 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         string streamId,
         long startingVersion,
         IReadOnlyList<AppendEvent> envelopes,
+        IReadOnlyList<Guid> eventIds,
         CancellationToken cancellationToken)
     {
-        // 11 parameters per frame; stay under SQL Server's 2100-parameter limit.
-        const int maxEventsPerBatch = 190;
+        // 12 parameters per frame; stay under SQL Server's 2100-parameter limit.
+        const int maxEventsPerBatch = 170;
 
         var allSequencePositions = new List<long>();
         var commitTimestamp = DateTime.UtcNow;
@@ -319,8 +325,9 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                 var metadataParam = $"@Metadata{eventIndex}";
                 var timestampParam = $"@Timestamp{eventIndex}";
                 var partitionHashParam = $"@PartitionHash{eventIndex}";
+                var eventIdParam = $"@EventId{eventIndex}";
 
-                values.Add($"({streamIdParam}, {versionParam}, {seqPosParam}, {eventTypeIdParam}, {eventDataParam}, {schemaVersionParam}, {codecIdParam}, {tagsParam}, {metadataParam}, {timestampParam}, {partitionHashParam})");
+                values.Add($"({streamIdParam}, {versionParam}, {seqPosParam}, {eventTypeIdParam}, {eventDataParam}, {schemaVersionParam}, {codecIdParam}, {tagsParam}, {metadataParam}, {timestampParam}, {partitionHashParam}, {eventIdParam})");
 
                 if (!_eventTypes.TryGetId(envelope.EventType, out var eventTypeId))
                 {
@@ -340,11 +347,12 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                 parameters.Add(new SqlParameter(metadataParam, (object?)metadataText ?? DBNull.Value));
                 parameters.Add(new SqlParameter(timestampParam, commitTimestamp));
                 parameters.Add(new SqlParameter(partitionHashParam, partitionHash));
+                parameters.Add(new SqlParameter(eventIdParam, eventIds[eventIndex]));
             }
 
             var sql = $@"
                 INSERT INTO {_qTable}
-                (StreamId, Version, SequencePosition, EventTypeId, EventData, SchemaVersion, CodecId, Tags, Metadata, Timestamp, PartitionHash)
+                (StreamId, Version, SequencePosition, EventTypeId, EventData, SchemaVersion, CodecId, Tags, Metadata, Timestamp, PartitionHash, EventId)
                 VALUES {string.Join(", ", values)}";
 
             var command = new SqlCommand(sql, connection, transaction);
@@ -658,6 +666,149 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
     /// The retry budget is controlled by <see cref="SqlServerEventStoreOptions.MaxRetryCount"/>
     /// and <see cref="SqlServerEventStoreOptions.RetryDelay"/>.
     /// </summary>
+    private static List<Guid> ResolveEventIds(IReadOnlyList<AppendEvent> envelopes)
+        => EventIdResolver.ResolveBatch(envelopes.Select(e => e.Metadata).ToList());
+
+    private async Task<AppendResult> FinishAppendAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        long fenceId,
+        IReadOnlyList<Guid> eventIds,
+        AppendResult result,
+        CancellationToken cancellationToken)
+    {
+        if (BeforeAppendCommit is { } gate)
+            await gate(cancellationToken).ConfigureAwait(false);
+        await ReleaseAppendFenceAsync(connection, transaction, fenceId, cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            if (CommitHook is { } hook)
+                await hook(transaction, cancellationToken).ConfigureAwait(false);
+            else
+                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return result;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            var landed = await TryReadCommittedAppendAsync(eventIds, cancellationToken).ConfigureAwait(false);
+            if (landed is not null)
+                return landed;
+            throw new CommitUncertainException(ex);
+        }
+    }
+
+    private static async Task RollbackQuietlyAsync(SqlTransaction transaction, CancellationToken cancellationToken)
+    {
+        if (transaction.Connection is null)
+            return;
+        try
+        {
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The transaction is already finished or doomed.
+        }
+    }
+
+    private async Task<Guid?> FindExistingEventIdAsync(
+        IReadOnlyList<Guid> eventIds,
+        CancellationToken cancellationToken)
+    {
+        var rows = await ReadEventIdsAsync(eventIds, cancellationToken).ConfigureAwait(false);
+        return rows.Count == 0 ? null : rows[0].EventId;
+    }
+
+    private async Task<AppendResult?> TryReadCommittedAppendAsync(
+        IReadOnlyList<Guid> eventIds,
+        CancellationToken cancellationToken)
+    {
+        List<LandedEvent> rows;
+        try
+        {
+            rows = await ReadEventIdsAsync(eventIds, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return null;
+        }
+
+        if (rows.Count != eventIds.Count)
+            return null;
+
+        var byId = rows.ToDictionary(r => r.EventId);
+        var positions = new List<long>(eventIds.Count);
+        long version = 0;
+        foreach (var id in eventIds)
+        {
+            if (!byId.TryGetValue(id, out var row))
+                return null;
+            positions.Add(row.SequencePosition);
+            version = Math.Max(version, row.Version);
+        }
+
+        return new AppendResult(positions, null, version);
+    }
+
+    private async Task<List<LandedEvent>> ReadEventIdsAsync(
+        IReadOnlyList<Guid> eventIds,
+        CancellationToken cancellationToken)
+    {
+        if (eventIds.Count == 0)
+            return [];
+
+        var names = new string[eventIds.Count];
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        var command = new SqlCommand { Connection = connection };
+        await using var commandDisposal = command.ConfigureAwait(false);
+        for (var i = 0; i < eventIds.Count; i++)
+        {
+            names[i] = $"@Id{i}";
+            command.Parameters.Add(new SqlParameter(names[i], eventIds[i]));
+        }
+
+        command.CommandText = $"""
+            SELECT EventId, SequencePosition, Version
+            FROM {_qTable}
+            WHERE EventId IN ({string.Join(", ", names)})
+            """;
+
+        var rows = new List<LandedEvent>();
+        var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var readerDisposal = reader.ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            rows.Add(new LandedEvent(reader.GetGuid(0), reader.GetInt64(1), reader.GetInt64(2)));
+        return rows;
+    }
+
+    private readonly record struct LandedEvent(Guid EventId, long SequencePosition, long Version);
+
+    private sealed class CommitUncertainException : Exception
+    {
+        public CommitUncertainException(Exception inner)
+            : base(inner.Message, inner)
+        {
+        }
+    }
+
+    private async Task<T> AppendWithRetryAsync<T>(
+        Func<CancellationToken, Task<T>> operation,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await ExecuteWithRetryAsync(operation, cancellationToken).ConfigureAwait(false);
+        }
+        catch (CommitUncertainException ex)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex.InnerException ?? ex).Throw();
+            throw;
+        }
+    }
+
     private async Task<T> ExecuteWithRetryAsync<T>(
         Func<CancellationToken, Task<T>> operation,
         CancellationToken cancellationToken)
@@ -903,7 +1054,49 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
             await addCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
+        await EnsureEventIdColumnAsync(connection, cancellationToken).ConfigureAwait(false);
         await SetSchemaFormatAsync(connection, CurrentSchemaFormat, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task EnsureEventIdColumnAsync(SqlConnection connection, CancellationToken cancellationToken)
+    {
+        var add = $"""
+            IF NOT EXISTS (
+                SELECT 1 FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qTable)}') AND name = N'EventId')
+                ALTER TABLE {_qTable} ADD [EventId] UNIQUEIDENTIFIER NULL;
+            """;
+        await ExecuteNonQueryAsync(connection, add, cancellationToken).ConfigureAwait(false);
+
+        var fill = $"""
+            IF EXISTS (
+                SELECT 1 FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qTable)}')
+                  AND name = N'EventId' AND is_nullable = 1)
+            BEGIN
+                UPDATE {_qTable} SET [EventId] = NEWID() WHERE [EventId] IS NULL;
+                ALTER TABLE {_qTable} ALTER COLUMN [EventId] UNIQUEIDENTIFIER NOT NULL;
+            END
+            """;
+        await ExecuteNonQueryAsync(connection, fill, cancellationToken).ConfigureAwait(false);
+
+        var index = $"""
+            IF NOT EXISTS (
+                SELECT 1 FROM sys.indexes
+                WHERE name = N'UX_EventId' AND object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qTable)}'))
+                CREATE UNIQUE NONCLUSTERED INDEX [UX_EventId] ON {_qTable} ([EventId]);
+            """;
+        await ExecuteNonQueryAsync(connection, index, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task ExecuteNonQueryAsync(
+        SqlConnection connection,
+        string sql,
+        CancellationToken cancellationToken)
+    {
+        var command = new SqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async Task EnsureAppendFenceAsync(SqlConnection connection, CancellationToken cancellationToken)
@@ -1050,7 +1243,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
 
         var found = await ReadSchemaFormatAsync(connection, cancellationToken).ConfigureAwait(false);
         if (string.Equals(found, CurrentSchemaFormat, StringComparison.Ordinal)
-            || string.Equals(found, UpgradableSchemaFormat, StringComparison.Ordinal))
+            || UpgradableSchemaFormats.Contains(found, StringComparer.Ordinal))
             return;
 
         throw new IncompatibleEventStoreSchemaException(_qTable, found, CurrentSchemaFormat);
@@ -1083,12 +1276,15 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                 [Timestamp] DATETIME2 NOT NULL,
                 [PartitionHash] INT NOT NULL,
                 [RowVersion] ROWVERSION NOT NULL,
+                [EventId] UNIQUEIDENTIFIER NOT NULL,
                 PRIMARY KEY ([StreamId], [Version]),
                 CONSTRAINT {SqlIdentifier.Quote("FK_" + _tableName + "_EventTypes")} FOREIGN KEY ([EventTypeId])
                     REFERENCES {_qTypes}([Id])
             );
             CREATE UNIQUE NONCLUSTERED INDEX [UX_SequencePosition]
                 ON {_qTable} ([SequencePosition]);
+            CREATE UNIQUE NONCLUSTERED INDEX [UX_EventId]
+                ON {_qTable} ([EventId]);
             CREATE NONCLUSTERED INDEX [IX_Events_StreamId_Version]
                 ON {_qTable} ([StreamId], [Version])
                 INCLUDE ([SequencePosition], [EventTypeId], [Timestamp]);
@@ -1773,6 +1969,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         SqlTransaction transaction,
         IReadOnlyList<AppendEvent> envelopes,
         IReadOnlyList<long> sequencePositions,
+        IReadOnlyList<Guid> eventIds,
         string streamId,
         CancellationToken cancellationToken)
     {
@@ -1786,7 +1983,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
 
             var outboxMessage = new OutboxMessage
             {
-                Id = Guid.NewGuid(),
+                Id = eventIds[i],
                 EventType = envelope.EventType,
                 SchemaVersion = envelope.SchemaVersion,
                 CodecId = envelope.CodecId,
@@ -2069,8 +2266,9 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
 
         ValidateStreamTenant(streamId, envelopes);
         LogConnectionOnce();
+        var eventIds = ResolveEventIds(envelopes);
 
-        return await ExecuteWithRetryAsync(async ct =>
+        return await AppendWithRetryAsync(async ct =>
         {
             await EnsureEventTypeIdsAsync(envelopes, ct).ConfigureAwait(false);
 
@@ -2101,10 +2299,14 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                 try
                 {
                     sequencePositions = await InsertEventsBatchAsync(
-                        connection, transaction, streamId, startingVersion, envelopes, ct).ConfigureAwait(false);
+                        connection, transaction, streamId, startingVersion, envelopes, eventIds, ct).ConfigureAwait(false);
                 }
                 catch (EventsTableDuplicateKeyException ex)
                 {
+                    await RollbackQuietlyAsync(transaction, ct).ConfigureAwait(false);
+                    var duplicate = await FindExistingEventIdAsync(eventIds, ct).ConfigureAwait(false);
+                    if (duplicate is { } eventId)
+                        throw new EventAlreadyAppendedException(eventId);
                     var expected = expectedVersion ?? streamCurrentVersion;
                     throw await EventVersionConflictAsync(
                         connection, transaction, streamId, expected, ex.InnerException ?? ex, ct)
@@ -2127,15 +2329,17 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                 if (_options.EnableOutbox)
                 {
                     await WriteEventsToOutboxAsync(
-                        connection, transaction, envelopes, sequencePositions, streamId, ct)
+                        connection, transaction, envelopes, sequencePositions, eventIds, streamId, ct)
                         .ConfigureAwait(false);
                 }
 
-                if (BeforeAppendCommit is { } gate)
-                    await gate(ct).ConfigureAwait(false);
-                await ReleaseAppendFenceAsync(connection, transaction, fenceId, ct).ConfigureAwait(false);
-                await transaction.CommitAsync(ct).ConfigureAwait(false);
-                return new AppendResult(sequencePositions, null, startingVersion + envelopes.Count - 1);
+                return await FinishAppendAsync(
+                    connection,
+                    transaction,
+                    fenceId,
+                    eventIds,
+                    new AppendResult(sequencePositions, null, startingVersion + envelopes.Count - 1),
+                    ct).ConfigureAwait(false);
             }
             catch
             {
@@ -2160,8 +2364,9 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         ArgumentNullException.ThrowIfNull(condition);
 
         LogConnectionOnce();
+        var eventIds = ResolveEventIds(envelopes);
 
-        return await ExecuteWithRetryAsync(async ct =>
+        return await AppendWithRetryAsync(async ct =>
         {
             await EnsureEventTypeIdsAsync(envelopes, ct).ConfigureAwait(false);
             await EnsureQueryTypesResolvedAsync(condition.FailIfEventsMatch, ct).ConfigureAwait(false);
@@ -2199,10 +2404,14 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                 try
                 {
                     sequencePositions = await InsertEventsBatchAsync(
-                        connection, transaction, streamId, 0, envelopes, ct).ConfigureAwait(false);
+                        connection, transaction, streamId, 0, envelopes, eventIds, ct).ConfigureAwait(false);
                 }
                 catch (EventsTableDuplicateKeyException ex)
                 {
+                    await RollbackQuietlyAsync(transaction, ct).ConfigureAwait(false);
+                    var duplicate = await FindExistingEventIdAsync(eventIds, ct).ConfigureAwait(false);
+                    if (duplicate is { } eventId)
+                        throw new EventAlreadyAppendedException(eventId);
                     throw await EventVersionConflictAsync(
                         connection, transaction, streamId, -1, ex.InnerException ?? ex, ct)
                         .ConfigureAwait(false);
@@ -2224,15 +2433,17 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                 if (_options.EnableOutbox)
                 {
                     await WriteEventsToOutboxAsync(
-                        connection, transaction, envelopes, sequencePositions, streamId, ct)
+                        connection, transaction, envelopes, sequencePositions, eventIds, streamId, ct)
                         .ConfigureAwait(false);
                 }
 
-                if (BeforeAppendCommit is { } gate)
-                    await gate(ct).ConfigureAwait(false);
-                await ReleaseAppendFenceAsync(connection, transaction, fenceId, ct).ConfigureAwait(false);
-                await transaction.CommitAsync(ct).ConfigureAwait(false);
-                return new AppendResult(sequencePositions);
+                return await FinishAppendAsync(
+                    connection,
+                    transaction,
+                    fenceId,
+                    eventIds,
+                    new AppendResult(sequencePositions),
+                    ct).ConfigureAwait(false);
             }
             catch
             {

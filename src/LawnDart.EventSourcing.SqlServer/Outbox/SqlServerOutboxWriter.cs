@@ -15,8 +15,16 @@ public class SqlServerOutboxWriter : IOutboxWriter
     /// <summary>Extended property written on a fresh outbox table. Mismatch is a wipe.</summary>
     internal const string SchemaFormatPropertyName = "LawnDart_OutboxSchemaFormat";
 
-    /// <summary>CLN-07 shape: VARBINARY payload, CodecId TINYINT, no defaults.</summary>
-    internal const string CurrentSchemaFormat = "1";
+    /// <summary>
+    /// Format 2 adds <c>ClaimedUntil</c> so a processor can claim a row.
+    /// Format 1 is upgraded in place.
+    /// </summary>
+    internal const string CurrentSchemaFormat = "2";
+
+    internal const string UpgradableSchemaFormat = "1";
+
+    /// <summary>How long a claimed outbox row stays hidden from other processors.</summary>
+    internal static readonly TimeSpan ClaimLease = TimeSpan.FromSeconds(30);
 
     private readonly string _connectionString;
     private readonly string _tableName;
@@ -116,15 +124,46 @@ public class SqlServerOutboxWriter : IOutboxWriter
     public async Task<IReadOnlyList<OutboxMessage>> GetUnprocessedAsync(int batchSize, CancellationToken cancellationToken = default)
     {
         var sql = $@"
-            SELECT TOP (@BatchSize)
-                Id, EventType, Payload, Metadata, CreatedAt, ProcessedAt,
-                Attempts, LastError, LastAttemptAt, StreamId, SequencePosition, DeadLetteredAt,
-                SchemaVersion, CodecId
-            FROM {_qualifiedTableName}
-            WHERE ProcessedAt IS NULL AND DeadLetteredAt IS NULL
-            ORDER BY SequencePosition ASC";
+            DECLARE @now DATETIME2 = SYSUTCDATETIME();
+            ;WITH claim AS (
+                SELECT TOP (@BatchSize) *
+                FROM {_qualifiedTableName} WITH (UPDLOCK, READPAST, ROWLOCK)
+                WHERE ProcessedAt IS NULL
+                  AND DeadLetteredAt IS NULL
+                  AND (ClaimedUntil IS NULL OR ClaimedUntil <= @now)
+                ORDER BY SequencePosition
+            )
+            UPDATE claim
+            SET ClaimedUntil = DATEADD(second, @LeaseSeconds, @now)
+            OUTPUT
+                inserted.Id, inserted.EventType, inserted.Payload, inserted.Metadata, inserted.CreatedAt,
+                inserted.ProcessedAt, inserted.Attempts, inserted.LastError, inserted.LastAttemptAt,
+                inserted.StreamId, inserted.SequencePosition, inserted.DeadLetteredAt,
+                inserted.SchemaVersion, inserted.CodecId;";
 
-        return await QueryMessagesAsync(sql, batchSize, cancellationToken).ConfigureAwait(false);
+        using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            using var command = new SqlCommand(sql, connection, transaction);
+            command.Parameters.Add("@BatchSize", SqlDbType.Int).Value = batchSize;
+            command.Parameters.Add("@LeaseSeconds", SqlDbType.Int).Value = Math.Max(1, (int)ClaimLease.TotalSeconds);
+            var messages = new List<OutboxMessage>();
+            using (var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
+            {
+                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                    messages.Add(ReadMessage(reader));
+            }
+
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return messages;
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            throw;
+        }
     }
 
     /// <inheritdoc/>
@@ -194,7 +233,8 @@ public class SqlServerOutboxWriter : IOutboxWriter
     {
         var sql = $@"
             UPDATE {_qualifiedTableName}
-            SET ProcessedAt = @ProcessedAt
+            SET ProcessedAt = @ProcessedAt,
+                ClaimedUntil = NULL
             WHERE Id = @Id";
 
         using var connection = new SqlConnection(_connectionString);
@@ -216,7 +256,8 @@ public class SqlServerOutboxWriter : IOutboxWriter
             UPDATE {_qualifiedTableName}
             SET Attempts = Attempts + 1,
                 LastError = @LastError,
-                LastAttemptAt = @LastAttemptAt
+                LastAttemptAt = @LastAttemptAt,
+                ClaimedUntil = NULL
             WHERE Id = @Id";
 
         using var connection = new SqlConnection(_connectionString);
@@ -318,6 +359,12 @@ public class SqlServerOutboxWriter : IOutboxWriter
             if (exists)
             {
                 var found = await ReadSchemaFormatAsync(connection, cancellationToken).ConfigureAwait(false);
+                if (string.Equals(found, UpgradableSchemaFormat, StringComparison.Ordinal))
+                {
+                    await UpgradeFromFormat1Async(connection, cancellationToken).ConfigureAwait(false);
+                    return;
+                }
+
                 if (!string.Equals(found, CurrentSchemaFormat, StringComparison.Ordinal))
                     throw new IncompatibleOutboxSchemaException(_qualifiedTableName, found, CurrentSchemaFormat);
                 return;
@@ -339,7 +386,8 @@ public class SqlServerOutboxWriter : IOutboxWriter
                 LastAttemptAt DATETIME2 NULL,
                 StreamId NVARCHAR(500) NOT NULL,
                 SequencePosition BIGINT NOT NULL,
-                DeadLetteredAt DATETIME2 NULL
+                DeadLetteredAt DATETIME2 NULL,
+                ClaimedUntil DATETIME2 NULL
             );
 
             CREATE INDEX {SqlIdentifier.Quote("IX_" + _tableName + "_ProcessedAt_SequencePosition")}
@@ -359,6 +407,27 @@ public class SqlServerOutboxWriter : IOutboxWriter
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
         _logger?.LogInformation("Outbox schema initialized");
+    }
+
+    private async Task UpgradeFromFormat1Async(SqlConnection connection, CancellationToken cancellationToken)
+    {
+        var sql = $@"
+            IF NOT EXISTS (
+                SELECT 1 FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qualifiedTableName)}') AND name = N'ClaimedUntil')
+                ALTER TABLE {_qualifiedTableName} ADD ClaimedUntil DATETIME2 NULL;
+            IF EXISTS (
+                SELECT 1 FROM sys.extended_properties
+                WHERE major_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qualifiedTableName)}')
+                  AND name = N'{SchemaFormatPropertyName}' AND minor_id = 0)
+                EXEC sys.sp_updateextendedproperty
+                    @name = N'{SchemaFormatPropertyName}',
+                    @value = N'{CurrentSchemaFormat}',
+                    @level0type = N'SCHEMA', @level0name = N'{SqlIdentifier.Literal(_schemaName)}',
+                    @level1type = N'TABLE', @level1name = N'{SqlIdentifier.Literal(_tableName)}';
+            ";
+        using var command = new SqlCommand(sql, connection);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<string?> ReadSchemaFormatAsync(SqlConnection connection, CancellationToken cancellationToken)
