@@ -99,7 +99,10 @@ public sealed class EventStoreAdapter : IEventStore, IEventStoreSubscriptions
         var logResult = await _log.ReadByQueryAsync(
             query, fromSequencePosition, limit, toSequencePosition, toCommitTimestamp: null, cancellationToken)
             .ConfigureAwait(false);
-        return new QueryResult(Hydrate(logResult.Events, toTimestamp), logResult.ConsistencyMarker);
+        return new QueryResult(Hydrate(logResult.Events, toTimestamp), logResult.ConsistencyMarker)
+        {
+            TypesResolved = logResult.TypesResolved
+        };
     }
 
     /// <inheritdoc />

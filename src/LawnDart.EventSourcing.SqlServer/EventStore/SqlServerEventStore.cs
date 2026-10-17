@@ -29,8 +29,20 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
     /// <summary>Extended property written on a fresh events table. Mismatch is a wipe.</summary>
     internal const string SchemaFormatPropertyName = "LawnDart_SchemaFormat";
 
-    /// <summary>CLN-06 shape: EventTypeId INT FK, EventTypes lookup, no EventType column.</summary>
-    internal const string CurrentSchemaFormat = "2";
+    /// <summary>
+    /// Format 3: <c>Events.RowVersion</c>, <c>AppendFence</c>, and a
+    /// case-sensitive <c>EventTags.Tag</c> collation. Format 2 upgrades in place.
+    /// </summary>
+    internal const string CurrentSchemaFormat = "3";
+
+    /// <summary>Previous stamp <see cref="InitializeSchemaAsync"/> upgrades to <see cref="CurrentSchemaFormat"/>.</summary>
+    internal const string UpgradableSchemaFormat = "2";
+
+    /// <summary>Single-use rows that hold a rowversion for the life of an append transaction.</summary>
+    internal const string AppendFenceTableName = "AppendFence";
+
+    /// <summary>Ordinal tag match. The same rule as <see cref="EventQueryMatcher"/>.</summary>
+    internal const string TagCollation = "Latin1_General_100_BIN2";
 
     internal const string PartitionHashIndexName = "IX_Events_PartitionHash_SequencePosition";
 
@@ -45,8 +57,10 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
     private readonly string _typesTableName;
     private readonly bool _enableRegistry;
     private readonly EventTypeIdCache _eventTypes = new();
+    private readonly SemaphoreSlim _typeCacheRefresh = new(1, 1);
     private readonly SqlServerEventStoreOptions _options;
     private readonly ILogger<SqlServerEventStore>? _logger;
+    private readonly ReadHorizonGate _readHorizon;
     private readonly JsonSerializerOptions _jsonOptions;
     private readonly ConcurrentDictionary<SqlServerSubscriptionHandle, byte> _subscriptions = new();
     private bool _hasLoggedConnection = false;
@@ -61,6 +75,13 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
     private readonly string _qTags;
     private readonly string _qTypes;
     private readonly string _qSequence;
+    private readonly string _qFence;
+
+    /// <summary>
+    /// Test seam. Invoked inside the append transaction after the commit fence
+    /// is held and the events are inserted, before <c>Commit</c>.
+    /// </summary>
+    internal Func<CancellationToken, Task>? BeforeAppendCommit { get; set; }
 
     internal string QualifiedEventsTable => _qTable;
 
@@ -113,6 +134,8 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         _qTags      = SqlIdentifier.Qualify(_schemaName, _tagsTableName);
         _qTypes     = SqlIdentifier.Qualify(_schemaName, _typesTableName);
         _qSequence  = SqlIdentifier.Qualify(_schemaName, "EventSequencePosition");
+        _qFence     = SqlIdentifier.Qualify(_schemaName, AppendFenceTableName);
+        _readHorizon = new ReadHorizonGate(_qTable, _options, _logger);
 
         // Optimize connection string for performance
         // NOTE: If connection string already has pool settings, preserve them
@@ -766,6 +789,8 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         await ThrowIfIncompatibleEventsTableAsync(connection, cancellationToken).ConfigureAwait(false);
         await EnsureEventTypesTableAsync(connection, cancellationToken).ConfigureAwait(false);
         await EnsureEventsTableAsync(connection, cancellationToken).ConfigureAwait(false);
+        await UpgradeEventsSchemaAsync(connection, cancellationToken).ConfigureAwait(false);
+        await EnsureAppendFenceAsync(connection, cancellationToken).ConfigureAwait(false);
         await WarmEventTypesAsync(connection, cancellationToken).ConfigureAwait(false);
 
         var tagsSql = $@"
@@ -773,7 +798,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
             BEGIN
                 CREATE TABLE {_qTags} (
                     [GlobalSequencePosition] BIGINT NOT NULL,
-                    [Tag]                    NVARCHAR(256) NOT NULL,
+                    [Tag]                    NVARCHAR(256) COLLATE {TagCollation} NOT NULL,
                     CONSTRAINT {SqlIdentifier.Quote("PK_" + _tagsTableName)} PRIMARY KEY CLUSTERED ([Tag], [GlobalSequencePosition]),
                     CONSTRAINT {SqlIdentifier.Quote("FK_" + _tagsTableName + "_Events")} FOREIGN KEY ([GlobalSequencePosition])
                         REFERENCES {_qTable}([SequencePosition]) ON DELETE CASCADE
@@ -784,6 +809,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         var tagsCmd = new SqlCommand(tagsSql, connection);
         await using var tagsCmdDisposal = tagsCmd.ConfigureAwait(false);
         await tagsCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        await UpgradeTagCollationAsync(connection, cancellationToken).ConfigureAwait(false);
 
         // Create stream registry table if enabled
         if (_enableRegistry)
@@ -853,6 +879,150 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         _logger?.LogInformation("Initialized event store schema for table {TableName}", _tableName);
     }
 
+    private async Task UpgradeEventsSchemaAsync(SqlConnection connection, CancellationToken cancellationToken)
+    {
+        var existsCmd = new SqlCommand(
+            $"SELECT CASE WHEN OBJECT_ID(N'{SqlIdentifier.Literal(_qTable)}', 'U') IS NULL THEN 0 ELSE 1 END",
+            connection);
+        await using (existsCmd.ConfigureAwait(false))
+        {
+            var exists = Convert.ToInt32(await existsCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false)) == 1;
+            if (!exists)
+                return;
+        }
+
+        var addRowVersion = $"""
+            IF NOT EXISTS (
+                SELECT 1 FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qTable)}') AND name = N'RowVersion')
+            ALTER TABLE {_qTable} ADD [RowVersion] ROWVERSION NOT NULL;
+            """;
+        var addCmd = new SqlCommand(addRowVersion, connection);
+        await using (addCmd.ConfigureAwait(false))
+        {
+            await addCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await SetSchemaFormatAsync(connection, CurrentSchemaFormat, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task EnsureAppendFenceAsync(SqlConnection connection, CancellationToken cancellationToken)
+    {
+        var pk = SqlIdentifier.Quote("PK_" + AppendFenceTableName);
+        var sql = $"""
+            IF OBJECT_ID(N'{SqlIdentifier.Literal(_qFence)}', 'U') IS NULL
+            BEGIN
+                CREATE TABLE {_qFence} (
+                    [Id] BIGINT IDENTITY(1, 1) NOT NULL,
+                    [FenceVersion] ROWVERSION NOT NULL,
+                    CONSTRAINT {pk} PRIMARY KEY CLUSTERED ([Id])
+                );
+            END
+            """;
+        var command = new SqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task UpgradeTagCollationAsync(SqlConnection connection, CancellationToken cancellationToken)
+    {
+        var pkName = "PK_" + _tagsTableName;
+        var sql = $"""
+            IF OBJECT_ID(N'{SqlIdentifier.Literal(_qTags)}', 'U') IS NOT NULL
+               AND EXISTS (
+                    SELECT 1 FROM sys.columns
+                    WHERE object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qTags)}')
+                      AND name = N'Tag'
+                      AND collation_name <> N'{TagCollation}')
+            BEGIN
+                DECLARE @pk sysname;
+                SELECT @pk = kc.name
+                FROM sys.key_constraints kc
+                WHERE kc.parent_object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qTags)}')
+                  AND kc.[type] = N'PK';
+                IF @pk IS NOT NULL
+                BEGIN
+                    DECLARE @drop nvarchar(max) =
+                        N'ALTER TABLE {SqlIdentifier.Literal(_qTags)} DROP CONSTRAINT ' + QUOTENAME(@pk);
+                    EXEC sys.sp_executesql @drop;
+                END
+                ALTER TABLE {_qTags} ALTER COLUMN [Tag] NVARCHAR(256) COLLATE {TagCollation} NOT NULL;
+                IF NOT EXISTS (
+                    SELECT 1 FROM sys.key_constraints
+                    WHERE parent_object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qTags)}')
+                      AND [type] = N'PK')
+                BEGIN
+                    ALTER TABLE {_qTags}
+                        ADD CONSTRAINT {SqlIdentifier.Quote(pkName)} PRIMARY KEY CLUSTERED ([Tag], [GlobalSequencePosition]);
+                END
+            END
+            """;
+        var command = new SqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task SetSchemaFormatAsync(
+        SqlConnection connection,
+        string format,
+        CancellationToken cancellationToken)
+    {
+        var sql = $"""
+            IF EXISTS (
+                SELECT 1 FROM sys.extended_properties
+                WHERE major_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qTable)}')
+                  AND name = N'{SchemaFormatPropertyName}'
+                  AND minor_id = 0)
+                EXEC sys.sp_updateextendedproperty
+                    @name = N'{SchemaFormatPropertyName}',
+                    @value = N'{SqlIdentifier.Literal(format)}',
+                    @level0type = N'SCHEMA', @level0name = N'{SqlIdentifier.Literal(_schemaName)}',
+                    @level1type = N'TABLE',  @level1name = N'{SqlIdentifier.Literal(_tableName)}';
+            ELSE
+                EXEC sys.sp_addextendedproperty
+                    @name = N'{SchemaFormatPropertyName}',
+                    @value = N'{SqlIdentifier.Literal(format)}',
+                    @level0type = N'SCHEMA', @level0name = N'{SqlIdentifier.Literal(_schemaName)}',
+                    @level1type = N'TABLE',  @level1name = N'{SqlIdentifier.Literal(_tableName)}';
+            """;
+        var command = new SqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<long> TouchAppendFenceAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        var command = new SqlCommand(
+            $"""
+            INSERT INTO {_qFence}
+            OUTPUT INSERTED.[Id]
+            DEFAULT VALUES
+            """,
+            connection,
+            transaction);
+        await using var commandDisposal = command.ConfigureAwait(false);
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return Convert.ToInt64(result);
+    }
+
+    private async Task ReleaseAppendFenceAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        long fenceId,
+        CancellationToken cancellationToken)
+    {
+        var command = new SqlCommand(
+            $"DELETE FROM {_qFence} WHERE [Id] = @Id",
+            connection,
+            transaction);
+        await using var commandDisposal = command.ConfigureAwait(false);
+        command.Parameters.Add(new SqlParameter("@Id", fenceId));
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     private async Task EnsureSequenceAsync(SqlConnection connection, CancellationToken cancellationToken)
     {
         var sql = $@"
@@ -879,8 +1049,11 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
             return;
 
         var found = await ReadSchemaFormatAsync(connection, cancellationToken).ConfigureAwait(false);
-        if (!string.Equals(found, CurrentSchemaFormat, StringComparison.Ordinal))
-            throw new IncompatibleEventStoreSchemaException(_qTable, found, CurrentSchemaFormat);
+        if (string.Equals(found, CurrentSchemaFormat, StringComparison.Ordinal)
+            || string.Equals(found, UpgradableSchemaFormat, StringComparison.Ordinal))
+            return;
+
+        throw new IncompatibleEventStoreSchemaException(_qTable, found, CurrentSchemaFormat);
     }
 
     private async Task EnsureEventsTableAsync(SqlConnection connection, CancellationToken cancellationToken)
@@ -909,6 +1082,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                 [Metadata] NVARCHAR(MAX) NULL,
                 [Timestamp] DATETIME2 NOT NULL,
                 [PartitionHash] INT NOT NULL,
+                [RowVersion] ROWVERSION NOT NULL,
                 PRIMARY KEY ([StreamId], [Version]),
                 CONSTRAINT {SqlIdentifier.Quote("FK_" + _tableName + "_EventTypes")} FOREIGN KEY ([EventTypeId])
                     REFERENCES {_qTypes}([Id])
@@ -1355,26 +1529,22 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
 
     /// <inheritdoc />
     /// <remarks>
-    /// Returns the highest committed <c>SequencePosition</c> in the events table — the true head
-    /// of the readable log. These are written-watermark semantics: they avoid treating
-    /// SQL Server SEQUENCE cache jumps (allocator head ahead of committed rows) as the
-    /// store tail for projection polling.
+    /// Highest <c>SequencePosition</c> whose rowversion is below
+    /// <c>MIN_ACTIVE_ROWVERSION()</c>. An append holds a rowversion from before
+    /// it reserves a sequence, so a later commit stays behind that open append.
+    /// When the same unfinished write holds the horizon longer than
+    /// <see cref="SqlServerEventStoreOptions.ReadHorizonGracePeriod"/>, this returns
+    /// the highest committed sequence instead. Sequence cache jumps are not the tail:
+    /// only written rows count.
     /// </remarks>
     public async Task<long> GetCurrentSequenceAsync(CancellationToken cancellationToken = default)
     {
         var connection = new SqlConnection(_connectionString);
         await using var connectionDisposal = connection.ConfigureAwait(false);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-
-        var sql = $"""
-            SELECT ISNULL(MAX(SequencePosition), 0)
-            FROM {_qTable}
-            """;
-
-        var command = new SqlCommand(sql, connection);
-        await using var commandDisposal = command.ConfigureAwait(false);
-        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        return result is long l ? l : result is null ? 0L : Convert.ToInt64(result);
+        var horizon = await _readHorizon.ResolveAsync(
+            connection, LateWatch.Head, cancellationToken).ConfigureAwait(false);
+        return horizon.Head;
     }
 
     /// <inheritdoc />
@@ -1829,10 +1999,10 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(query);
-        var frames = await ReadRecordedQueryCoreAsync(
+        var read = await ReadRecordedQueryCoreAsync(
             query, fromSequencePosition, limit, toSequencePosition, toCommitTimestamp, cancellationToken)
             .ConfigureAwait(false);
-        return new EventLogQueryResult(frames);
+        return new EventLogQueryResult(read.Events) { TypesResolved = read.TypesResolved };
     }
 
     IAsyncEnumerable<RecordedEvent> IEventLog.ReadByQueryStreamAsync(
@@ -1901,6 +2071,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
 
                 var streamCurrentVersion = await GetCurrentVersionAsync(connection, transaction, streamId, ct).ConfigureAwait(false);
                 var startingVersion = streamCurrentVersion < 0 ? 1 : streamCurrentVersion + 1;
+                var fenceId = await TouchAppendFenceAsync(connection, transaction, ct).ConfigureAwait(false);
                 IReadOnlyList<long> sequencePositions;
                 try
                 {
@@ -1935,6 +2106,9 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                         .ConfigureAwait(false);
                 }
 
+                if (BeforeAppendCommit is { } gate)
+                    await gate(ct).ConfigureAwait(false);
+                await ReleaseAppendFenceAsync(connection, transaction, fenceId, ct).ConfigureAwait(false);
                 await transaction.CommitAsync(ct).ConfigureAwait(false);
                 return new AppendResult(sequencePositions, null, startingVersion + envelopes.Count - 1);
             }
@@ -1965,6 +2139,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         return await ExecuteWithRetryAsync(async ct =>
         {
             await EnsureEventTypeIdsAsync(envelopes, ct).ConfigureAwait(false);
+            await EnsureQueryTypesResolvedAsync(condition.FailIfEventsMatch, ct).ConfigureAwait(false);
 
             var connection = new SqlConnection(_connectionString);
             await using var connectionDisposal = connection.ConfigureAwait(false);
@@ -1994,6 +2169,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                 var streamId = !string.IsNullOrWhiteSpace(tenantId)
                     ? $"{tenantId}:dcb:{Guid.NewGuid()}"
                     : $"dcb:{Guid.NewGuid()}";
+                var fenceId = await TouchAppendFenceAsync(connection, transaction, ct).ConfigureAwait(false);
                 IReadOnlyList<long> sequencePositions;
                 try
                 {
@@ -2027,6 +2203,9 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                         .ConfigureAwait(false);
                 }
 
+                if (BeforeAppendCommit is { } gate)
+                    await gate(ct).ConfigureAwait(false);
+                await ReleaseAppendFenceAsync(connection, transaction, fenceId, ct).ConfigureAwait(false);
                 await transaction.CommitAsync(ct).ConfigureAwait(false);
                 return new AppendResult(sequencePositions);
             }
@@ -2082,7 +2261,9 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         return await MaterializeAsync(rows, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<IReadOnlyList<RecordedEvent>> ReadRecordedQueryCoreAsync(
+    private readonly record struct QueryRead(IReadOnlyList<RecordedEvent> Events, bool TypesResolved);
+
+    private async Task<QueryRead> ReadRecordedQueryCoreAsync(
         Query query,
         long? fromSequencePosition,
         int? limit,
@@ -2090,23 +2271,31 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         DateTime? toCommitTimestamp,
         CancellationToken cancellationToken)
     {
+        if (!await EnsureQueryTypesResolvedAsync(query, cancellationToken).ConfigureAwait(false))
+            return new QueryRead([], false);
+
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        var window = await ApplyReadHorizonAsync(
+            connection, LateWatch.Read(fromSequencePosition), toSequencePosition, cancellationToken)
+            .ConfigureAwait(false);
+
         var built = DcbQuerySql.Build(
             _qTable,
             _qTags,
             query,
             _eventTypes.FindId,
             fromSequencePosition,
-            toSequencePosition,
+            window.ToSequencePosition,
             toCommitTimestamp,
             limit,
-            DcbQuerySql.Mode.Events);
+            DcbQuerySql.Mode.Events,
+            window.ApplyStableHorizon);
 
         if (built.ShortCircuited)
-            return [];
+            return new QueryRead([], true);
 
-        var connection = new SqlConnection(_connectionString);
-        await using var connectionDisposal = connection.ConfigureAwait(false);
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         var command = new SqlCommand(built.Sql, connection);
         await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddRange(built.Parameters.ToArray());
@@ -2119,7 +2308,50 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                 rows.Add(ReadEventRow(reader));
         }
 
-        return await MaterializeAsync(rows, cancellationToken).ConfigureAwait(false);
+        return new QueryRead(await MaterializeAsync(rows, cancellationToken).ConfigureAwait(false), true);
+    }
+
+    private async Task<bool> EnsureQueryTypesResolvedAsync(Query query, CancellationToken cancellationToken)
+    {
+        var tokens = QueryTypeTokens(query);
+        if (tokens.Count == 0 || tokens.All(token => _eventTypes.FindId(token) is not null))
+            return true;
+
+        await _typeCacheRefresh.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (tokens.All(token => _eventTypes.FindId(token) is not null))
+                return true;
+
+            var connection = new SqlConnection(_connectionString);
+            await using var connectionDisposal = connection.ConfigureAwait(false);
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await ReloadEventTypeCacheAsync(connection, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _typeCacheRefresh.Release();
+        }
+
+        return tokens.All(token => _eventTypes.FindId(token) is not null);
+    }
+
+    private static List<string> QueryTypeTokens(Query query)
+    {
+        var tokens = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var item in query.Items)
+        {
+            if (item.Types is not { Count: > 0 })
+                continue;
+            foreach (var token in item.Types)
+            {
+                if (!string.IsNullOrEmpty(token) && seen.Add(token))
+                    tokens.Add(token);
+            }
+        }
+
+        return tokens;
     }
 
     private async IAsyncEnumerable<RecordedEvent> ReadRecordedQueryStreamAsync(
@@ -2129,11 +2361,11 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         DateTime? toCommitTimestamp = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var frames = await ReadRecordedQueryCoreAsync(
+        var read = await ReadRecordedQueryCoreAsync(
             query, fromSequencePosition, limit: null, toSequencePosition, toCommitTimestamp, cancellationToken)
             .ConfigureAwait(false);
 
-        foreach (var frame in frames)
+        foreach (var frame in read.Events)
         {
             cancellationToken.ThrowIfCancellationRequested();
             yield return frame;
@@ -2147,28 +2379,54 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         DateTime? toCommitTimestamp,
         CancellationToken cancellationToken)
     {
+        if (!await EnsureQueryTypesResolvedAsync(query, cancellationToken).ConfigureAwait(false))
+            return 0L;
+
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        var window = await ApplyReadHorizonAsync(
+            connection, LateWatch.None, toSequencePosition, cancellationToken)
+            .ConfigureAwait(false);
+
         var built = DcbQuerySql.Build(
             _qTable,
             _qTags,
             query,
             _eventTypes.FindId,
             fromSequencePosition,
-            toSequencePosition,
+            window.ToSequencePosition,
             toCommitTimestamp,
             limit: null,
-            DcbQuerySql.Mode.MaxSequence);
+            DcbQuerySql.Mode.MaxSequence,
+            window.ApplyStableHorizon);
 
         if (built.ShortCircuited)
             return 0L;
 
-        var connection = new SqlConnection(_connectionString);
-        await using var connectionDisposal = connection.ConfigureAwait(false);
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         var command = new SqlCommand(built.Sql, connection);
         await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddRange(built.Parameters.ToArray());
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return result is long l ? l : result is null || result is DBNull ? 0L : Convert.ToInt64(result);
     }
+
+    private async Task<HorizonWindow> ApplyReadHorizonAsync(
+        SqlConnection connection,
+        LateWatch watch,
+        long? toSequencePosition,
+        CancellationToken cancellationToken)
+    {
+        var horizon = await _readHorizon.ResolveAsync(
+            connection, watch, cancellationToken).ConfigureAwait(false);
+        if (!horizon.Advanced)
+            return new HorizonWindow(toSequencePosition, ApplyStableHorizon: true);
+
+        var cap = horizon.Head;
+        var to = toSequencePosition is null ? cap : Math.Min(toSequencePosition.Value, cap);
+        return new HorizonWindow(to, ApplyStableHorizon: false);
+    }
+
+    private readonly record struct HorizonWindow(long? ToSequencePosition, bool ApplyStableHorizon);
 }
 

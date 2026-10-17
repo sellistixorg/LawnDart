@@ -127,13 +127,14 @@ public interface IEventStore : IStreamRegistry
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Returns the current global sequence position — the highest sequence number
-    /// assigned by this store. This is the store's logical clock and is always
-    /// greater than or equal to the number of events written (gaps may exist due to
-    /// HiLo pre-allocation on crash recovery).
+    /// Highest sequence a consumer can treat as caught up, or 0 when the log is empty.
+    /// An open append stays below this value while the store is still waiting on it.
+    /// A store may stop waiting and return a higher committed sequence. A checkpoint
+    /// at that value can then sit above a sequence that commits later.
+    /// Sequence-cache gaps may leave the value above the event count.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The current global sequence position, or 0 if no events have been written.</returns>
+    /// <returns>The caught-up sequence, or 0 if no events are visible.</returns>
     Task<long> GetCurrentSequenceAsync(CancellationToken cancellationToken = default);
 
     /// <summary>

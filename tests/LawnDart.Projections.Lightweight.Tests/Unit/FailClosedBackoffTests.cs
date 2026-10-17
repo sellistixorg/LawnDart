@@ -84,7 +84,10 @@ public sealed class FailClosedBackoffTests
             long? toSequencePosition = null,
             DateTime? toTimestamp = null,
             CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
+        {
+            Interlocked.Increment(ref Reads);
+            throw new EventSchemaTooNewException("author-registered", 99, 1);
+        }
 
         public Task<AppendResult> AppendAsync(
             string streamId,

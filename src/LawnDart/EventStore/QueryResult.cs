@@ -16,4 +16,12 @@ namespace LawnDart.EventStore;
 /// <param name="ConsistencyMarker">Optional hash representing the state of the matched event set at read time. Null for SQL Server / in-memory backends.</param>
 public record QueryResult(
     IReadOnlyList<SequencedEvent> Events,
-    byte[]? ConsistencyMarker = null);
+    byte[]? ConsistencyMarker = null)
+{
+    /// <summary>
+    /// False when a type token in the query is still absent after the store
+    /// reloads its type map. An empty <see cref="Events"/> list then does not
+    /// prove the range has no match. A checkpoint must not advance through it.
+    /// </summary>
+    public bool TypesResolved { get; init; } = true;
+}

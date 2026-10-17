@@ -134,4 +134,24 @@ public class SqlServerEventStoreOptions : EventSourcingOptions
     /// Default: 500.
     /// </summary>
     public int SqlSubscriptionBatchSize { get; set; } = 500;
+
+    /// <summary>
+    /// How long one unfinished write may hold the <c>MIN_ACTIVE_ROWVERSION()</c> read horizon.
+    /// Default: 30 seconds.
+    /// </summary>
+    /// <remarks>
+    /// Global reads stop at that horizon, so a later commit cannot pass an open append.
+    /// Thirty seconds covers a lock wait or a slow batch. A stuck write then stops
+    /// holding every reader. When the same write is still open after this period,
+    /// readers move to the highest committed sequence and the store logs a warning.
+    /// The warning names the blocking session when SQL Server reports it, and how
+    /// long the write has been open.
+    /// <see cref="Timeout.InfiniteTimeSpan"/>, <see cref="TimeSpan.MaxValue"/>, and any
+    /// negative value wait until the write ends. <see cref="TimeSpan.Zero"/> moves
+    /// readers forward once the write has been open for more than zero milliseconds.
+    /// A row that commits below a head returned after this move is a skipped event.
+    /// This process logs an error when a later check sees that row. The watch list
+    /// is in memory: a restart, or a process that exits before the commit, stays quiet.
+    /// </remarks>
+    public TimeSpan ReadHorizonGracePeriod { get; set; } = TimeSpan.FromSeconds(30);
 }

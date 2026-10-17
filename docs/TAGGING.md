@@ -13,6 +13,11 @@ cross-stream slice.
 
 Keep tags stable. Do not put free-text names in tags.
 
+Tags match as exact strings. `Customer:ABC` and `customer:abc` are different
+tags. SQL Server stores `EventTags.Tag` with the `Latin1_General_100_BIN2`
+collation. In-memory reads and subscription filters use the same ordinal
+comparison.
+
 ## Providing tags
 
 Register `ITagProvider` globally (`AddTagProvider<T>`) or per context

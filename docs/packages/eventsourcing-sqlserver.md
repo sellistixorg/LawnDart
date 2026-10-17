@@ -27,15 +27,54 @@ An orphan `EventTypes` row is harmless.
 
 `Tags` is `NVARCHAR(4000)` and is a read projection only. DCB queries
 and append-condition fences use the `EventTags` side table (clustered on
-`(Tag, GlobalSequencePosition)`). That table is always created and always
-written. There is no `UseEventTagsTable` flag and no `OPENJSON` fallback
-on `Events.Tags`. Metadata stays `NVARCHAR` JSON.
+`(Tag, GlobalSequencePosition)`, collation `Latin1_General_100_BIN2`).
+Tag equality is ordinal. `Customer:ABC` and `customer:abc` are different
+tags. That table is always created and always written. There is no
+`UseEventTagsTable` flag and no `OPENJSON` fallback on `Events.Tags`.
+Metadata stays `NVARCHAR` JSON.
+
+A type filter reloads `EventTypes` when the token is missing from the
+process cache. If the token is still absent, the read returns no rows and
+`TypesResolved` is false. Do not checkpoint past that range. A projection
+reads the range again on the next poll.
 
 Init writes an extended property `LawnDart_SchemaFormat` on the events
-table (current format `2`). Drop and recreate a table that is already
-present without that stamp, or with a different value. Opening it throws
-and names drop-and-recreate. There is no in-place `ALTER` and no
-migration tool.
+table (current format `3`). Format `2` is upgraded in place.
+`InitializeSchemaAsync` adds `Events.RowVersion` (`rowversion`), creates
+`AppendFence`, and alters `EventTags.Tag` to `Latin1_General_100_BIN2`.
+Existing rows stay. Call it once on each database before the new process
+reads. A table with no stamp, or with any stamp other than `2` or `3`,
+throws and names drop-and-recreate. There is no migration tool for those
+stamps.
+
+`RowVersion` is the commit horizon. An append inserts an `AppendFence` row
+before it reserves a sequence, so the transaction owns a rowversion first.
+Global reads and `GetCurrentSequenceAsync` include a row only when its
+rowversion is below `MIN_ACTIVE_ROWVERSION()`. A sequence reserved by an
+open append stays invisible while that append is open. A later committed
+sequence stays invisible with it.
+
+`ReadHorizonGracePeriod` (default 30 seconds) is how long one unfinished
+write may hold that horizon. Thirty seconds covers a lock wait or a slow
+batch. A stuck write then stops holding every reader. When the same write
+is still open after the grace period, readers move to the highest committed
+sequence and log a warning. The warning names the blocking session when
+SQL Server reports it, and how long the write has been open. Set the option
+to `Timeout.InfiniteTimeSpan` to wait until the write ends. `TimeSpan.Zero`
+moves readers forward once the write has been open for more than zero
+milliseconds.
+
+A row that commits below a head taken after that move is a skipped event.
+The process that moved the horizon logs an error when a later check sees
+the row. The watch list lives in that process. After a restart, or when
+the process exits before the late commit, the late row is quiet. A read
+whose window still starts at or below the sequence can still return the
+row, and that read does not log. The in-memory store has no rowversion
+horizon. A rolled-back sequence is a permanent gap. Readers continue at
+the next committed row.
+
+A transaction that writes any `rowversion` in this database holds the
+horizon for every reader. Read-only work does not.
 
 SSMS: `{table}_Readable` projects `CAST(EventData AS VARCHAR(MAX)) AS EventJson`
 alongside the scalar columns and the family token from `EventTypes`.

@@ -74,7 +74,11 @@ public interface IEventLog : IStreamRegistry
         AppendCondition condition,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Highest global sequence assigned by this log, or 0 if empty.</summary>
+    /// <summary>
+    /// Highest sequence a consumer can treat as caught up, or 0 when the log is empty.
+    /// An open append stays below this value while the store is still waiting on it.
+    /// A store may stop waiting and return a higher committed sequence.
+    /// </summary>
     Task<long> GetCurrentSequenceAsync(CancellationToken cancellationToken = default);
 
     /// <summary>

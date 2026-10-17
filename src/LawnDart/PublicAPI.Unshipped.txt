@@ -1,3 +1,7 @@
 #nullable enable
+LawnDart.EventStore.EventLogQueryResult.TypesResolved.get -> bool
+LawnDart.EventStore.EventLogQueryResult.TypesResolved.init -> void
+LawnDart.EventStore.QueryResult.TypesResolved.get -> bool
+LawnDart.EventStore.QueryResult.TypesResolved.init -> void
 LawnDart.Outbox.IOutboxWriter.ResetAllDeadLetteredAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
 LawnDart.Outbox.IOutboxWriter.ResetDeadLetteredAsync(System.Guid messageId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!

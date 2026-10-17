@@ -61,4 +61,12 @@ public sealed class SqlServerEventLogContractTests : IAsyncLifetime
     [Fact]
     public Task Append_CodecId2_ReadsCodecId2()
         => EventLogContract.Append_CodecId2_ReadsCodecId2Async(Log);
+
+    [Fact]
+    public Task TagQuery_IsOrdinalCaseSensitive()
+        => EventLogContract.TagQuery_IsOrdinalCaseSensitiveAsync(Log);
+
+    [Fact]
+    public Task Subscription_TagQuery_IsOrdinalCaseSensitive()
+        => EventLogContract.Subscription_TagQuery_IsOrdinalCaseSensitiveAsync(_store);
 }

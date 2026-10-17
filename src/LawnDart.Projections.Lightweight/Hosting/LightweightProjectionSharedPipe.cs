@@ -368,8 +368,12 @@ internal sealed class LightweightProjectionSharedPipe : IAsyncDisposable
 
         var query = BuildUnionQuery();
         var batchCount = 0;
-        await foreach (var se in _eventStore.ReadByQueryStreamAsync(
-                           query, from, to, cancellationToken: ct).ConfigureAwait(false))
+        var result = await _eventStore.ReadByQueryAsync(
+            query, from, toSequencePosition: to, cancellationToken: ct).ConfigureAwait(false);
+        if (!result.TypesResolved)
+            return;
+
+        foreach (var se in result.Events)
         {
             if (se.SequencePosition <= _lastFanoutSequence)
                 continue;
