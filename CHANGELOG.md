@@ -13,6 +13,7 @@ changes to the public API.
 ### Breaking
 
 - A custom `IInboxStore` must implement `TryClaimAsync` and `ReleaseClaimAsync`. `TryClaimAsync` returns true only when this caller holds the key. Return false when the key is already processed inside the deduplication window, or a live claim is held. `ReleaseClaimAsync` drops a claim that has not been marked processed and leaves a processed key in place. Hosted reactors and processors claim before the handler and release when the handler throws.
+- `Events.EventId` is unique. An append whose metadata `EventId` is already in the log throws `EventAlreadyAppendedException`, and the stored row stays. This applies to an app that sets `EventId` in metadata and sends that same id on a later append. Give each new event its own id. Catch `EventAlreadyAppendedException` when the call is a retry of an append that already landed. The in-memory log rejects that reuse the same way. A format 2 or 3 table has no `EventId` column, so the upgrade fills each row with `NEWID()` and the unique index succeeds. If the column is already there and two rows share an id, creating `UX_EventId` fails and the stamp stays put. Give those rows distinct ids and call `InitializeSchemaAsync` again.
 
 ### Added
 

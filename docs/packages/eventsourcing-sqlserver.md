@@ -58,8 +58,8 @@ append result is the row that landed.
 
 Init writes an extended property `LawnDart_SchemaFormat` on the events
 table (current format `4`). Formats `2` and `3` are upgraded in place.
-Format `3` gains `Events.EventId`. Format `2` also gains the format 3
-objects below.
+Format `4` adds a unique `Events.EventId`. Format `2` also gains the
+format 3 objects below.
 `InitializeSchemaAsync` adds `Events.RowVersion` (`rowversion`), creates
 `AppendFence`, and alters `EventTags.Tag` to `Latin1_General_100_BIN2`.
 Existing rows stay. Call it once on each database before the new process
@@ -171,6 +171,22 @@ A format 2 or 3 events table becomes 4 in that call. Format 3 is
 (`UNIQUEIDENTIFIER NOT NULL`) and a unique index. Existing rows are filled
 with `NEWID()`. Those values are new. 0.6.0-alpha.2 did not store an event
 id, so the filled value is not an old `IEvent.Id`.
+
+`Events.EventId` is unique on SQL Server and in the in-memory log. An append
+whose metadata `EventId` is already stored throws
+`EventAlreadyAppendedException`. The stored row stays. This applies to an
+app that writes `EventId` into metadata and reuses that value on a later
+append. Use a new id for each new event. When the call is a retry of an
+append that already landed, catch `EventAlreadyAppendedException`. One
+metadata object copied onto several events in a single append keeps the id
+for the first event. The rest of that batch get distinct ids. A later
+append of the first id still throws.
+
+A format 2 or 3 table has no `EventId` column, so that upgrade cannot
+start from duplicate ids. If the column is already present and two rows
+share a value, `CREATE UNIQUE INDEX UX_EventId` fails.
+`InitializeSchemaAsync` throws that error and leaves the old stamp. Assign
+distinct ids to the duplicates, then call it again.
 
 Outbox format 1 becomes 2 by adding nullable `ClaimedUntil`. Inbox format
 1 becomes 2 by making `ProcessedAt` nullable and adding nullable
