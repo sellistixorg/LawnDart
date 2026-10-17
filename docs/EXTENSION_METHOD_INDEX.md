@@ -25,7 +25,7 @@ These live on `IAggregateRepository` in Core (not `Add*` extensions). Guid overl
 | `AddLawnDart` | `LawnDart` | Core options + default `IMetadataProvider` |
 | `AddTenantContextProvider<T>` | `LawnDart` | Tenant metadata source |
 | `AddMetadataProvider<T>` | `LawnDart` | Replace default metadata |
-| `AddTagProvider<T>` | `LawnDart` | Default tag provider |
+| `AddTagProvider<T>` | `LawnDart` | Default or named-context `ITagProvider` |
 | `AddBoundedContext` | `LawnDart` | Named/keyed context builder |
 | `AddLawnDartAuthorization` | `LawnDart` | Core `AuthorizationService` |
 | `AddCompositeAuthorizationContext` | `LawnDart` | Compose leaf context providers |
@@ -41,7 +41,7 @@ These live on `IAggregateRepository` in Core (not `Add*` extensions). Guid overl
 | `AddSnapshotWriteInfrastructure` | `LawnDart.EventSourcing` | Snapshot write channel + hosted consumer. `UseInMemory` / `UseSqlServer` already call it; third-party `Use*` methods must |
 | `EventSourcingRepositories.Create*` | `LawnDart.EventSourcing` | Build repositories with the write queue. Public constructors omit the queue. |
 | `WithCommandHandlers` / `WithCommandHandlers<TMarker>` | `LawnDart.EventSourcing` | The only handler registrar. Scan `ICommandHandler<T>` and register `ICommandDispatcher` (`LawnDart.Messaging` namespace, Core package) |
-| `WithTagProvider` | `LawnDart.EventSourcing` | Per-context tags |
+| `WithTagProvider` | `LawnDart.EventSourcing` | Context `ITagProvider` |
 
 ## Projections
 

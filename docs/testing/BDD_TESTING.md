@@ -62,6 +62,11 @@ await DcbSpec
     .RunAsync();
 ```
 
+`BookLoan.GetTags` returns `book:{id}` and `member:{id}` (lowercase,
+`Guid` format `D`). `Emit` in `BookLoan` writes those same prefixes.
+Return those strings from the context `ITagProvider`.
+See [TAGGING.md](../TAGGING.md).
+
 Input: `build-kit/library-dcb-slice.json`.
 Framework proofs also live in
 `tests/LawnDart.Testing.Tests/Bdd/InMemoryGwtTests.cs`.

@@ -48,12 +48,18 @@ public class EnrollmentEntity : DcbEntity<EnrollmentState>
 are on the same type. Source:
 `demos/LawnDart.Demo.Academy/Enrollment/EnrollmentEntity.cs`.
 
+`EnrollmentEntity.GetTags` and each `Emit` in that file use the same
+lowercase prefixes: `student:`, `section:`, and `course:`. Call one
+format method, the one the context `ITagProvider` uses, from that
+`GetTags`, from `Emit`, and from the load. A second spelling is a
+different tag. See [TAGGING.md](TAGGING.md).
+
 The repository:
 
-1. Reads events for the tag set (`student:{id}`, `section:{id}`).
+1. Reads events for that exact tag set (`student:{id}`, `section:{id}`).
 2. Rebuilds the entity.
 3. Runs the command.
-4. Appends emitted events with `FailIfMatches` after the last seen sequence.
+4. Appends emitted events with `FailIfMatches` on the same strings, after the last seen sequence.
 
 ## Versus choreography
 

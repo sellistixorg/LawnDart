@@ -32,7 +32,9 @@ services.AddReactor<PaymentReactor, SeatReservationConfirmed>();
 
 `IReactor<TEvent>` is the broker path (`MessageContext`). `IDcbReactor`
 is the in-process DCB path (`EventMetadata`, `GetTagsForReaction()`).
-See [Intentional verb differences](GLOSSARY.md#intentional-verb-differences).
+`GetTagsForReaction()` returns the same strings the context
+`ITagProvider` writes. See [Tagging](TAGGING.md) and
+[Intentional verb differences](GLOSSARY.md#intentional-verb-differences).
 
 Academy Showcase A wires `InMemoryMessageTransport` so the reservation
 event becomes a payment command, then a confirmation command.
