@@ -28,8 +28,9 @@ An orphan `EventTypes` row is harmless.
 `Tags` is `NVARCHAR(4000)` and is a read projection only. DCB queries
 and append-condition fences use the `EventTags` side table (clustered on
 `(Tag, GlobalSequencePosition)`, collation `Latin1_General_100_BIN2`).
-Tag equality is ordinal. `Customer:ABC` and `customer:abc` are different
-tags. That table is always created and always written. There is no
+Tag equality is ordinal. `student:{id}` and `Student:{id}` are different
+tags. That table is always created and always written. See
+[Tagging](../TAGGING.md). There is no
 `UseEventTagsTable` flag and no `OPENJSON` fallback on `Events.Tags`.
 Metadata stays `NVARCHAR` JSON.
 
