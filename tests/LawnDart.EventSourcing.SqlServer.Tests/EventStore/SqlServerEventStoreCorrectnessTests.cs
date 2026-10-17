@@ -15,23 +15,23 @@ namespace LawnDart.EventSourcing.SqlServer.Tests.EventStore;
 [Trait("Category", "Integration")]
 public sealed class SqlServerEventStoreCorrectnessTests : IAsyncLifetime
 {
-    private readonly MsSqlContainer _container;
+    private MsSqlContainer? _container;
     private string _connectionString = "";
-
-    public SqlServerEventStoreCorrectnessTests()
-    {
-        _container = new MsSqlBuilder(MsSqlTestImage.Server2022)
-            .WithPassword("Test123!")
-            .Build();
-    }
 
     public async Task InitializeAsync()
     {
-        await _container.StartAsync();
+        _container = await MsSqlContainerStartup.StartAsync(() =>
+            new MsSqlBuilder(MsSqlTestImage.Server2025)
+                .WithPassword("Test123!")
+                .Build());
         _connectionString = _container.GetConnectionString();
     }
 
-    public async Task DisposeAsync() => await _container.DisposeAsync();
+    public async Task DisposeAsync()
+    {
+        if (_container is not null)
+            await _container.DisposeAsync();
+    }
 
     [Theory]
     [InlineData(false)]
