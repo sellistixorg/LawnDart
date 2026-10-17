@@ -64,8 +64,8 @@ objects below.
 `AppendFence`, and alters `EventTags.Tag` to `Latin1_General_100_BIN2`.
 Existing rows stay. Call it once on each database before the new process
 reads. A table with no stamp, or with any stamp other than `2`, `3`, or `4`,
-throws and names drop-and-recreate. There is no migration tool for those
-stamps.
+throws and names drop-and-recreate. Back up first. See
+[Upgrading from 0.6.0-alpha.2](#upgrading-from-060-alpha2).
 
 `RowVersion` is the commit horizon. An append inserts an `AppendFence` row
 before it reserves a sequence, so the transaction owns a rowversion first.
@@ -152,6 +152,48 @@ without CLR types). See
 [BACKEND_SELECTION.md](../BACKEND_SELECTION.md).
 
 InMemory remains the documented default for local work and Academy.
+
+## Upgrading from 0.6.0-alpha.2
+
+0.6.0-alpha.2 stamped the events table `LawnDart_SchemaFormat` 2, the
+outbox `LawnDart_OutboxSchemaFormat` 1, and the inbox
+`LawnDart_InboxSchemaFormat` 1. This process stamps events 4, outbox 2,
+and inbox 2.
+
+Call `InitializeSchemaAsync` on the SQL event store once on each database
+before the new process reads. Call it on the outbox writer when
+`EnableOutbox` is on. Call `InitializeSqlInboxStoreAsync` when the inbox
+is SQL Server. A second call on a table that is already current returns.
+
+A format 2 or 3 events table becomes 4 in that call. Format 3 is
+`Events.RowVersion`, the `AppendFence` table, and `EventTags.Tag` set to
+`Latin1_General_100_BIN2`. Format 4 adds `Events.EventId`
+(`UNIQUEIDENTIFIER NOT NULL`) and a unique index. Existing rows are filled
+with `NEWID()`. Those values are new. 0.6.0-alpha.2 did not store an event
+id, so the filled value is not an old `IEvent.Id`.
+
+Outbox format 1 becomes 2 by adding nullable `ClaimedUntil`. Inbox format
+1 becomes 2 by making `ProcessedAt` nullable and adding nullable
+`ClaimedAt`.
+
+The stamp moves forward only. There is no downgrade. An older process that
+does not accept the new stamp throws and names drop and recreate.
+
+A missing stamp, or any stamp other than 2, 3, or 4 on events, 1 or 2 on
+the outbox, and 1 or 2 on the inbox, throws the same way. Back up the
+database before you drop the table. This process does not copy the rows.
+
+The steps run as separate batches. Run the call again after a failure.
+Work that is already in place is skipped.
+
+On a large `Events` table, `UPDATE ... SET EventId = NEWID()` rewrites
+every row that has no id. That holds locks and writes the log until it
+finishes. Run it when other writers can wait. `ALTER TABLE` for
+`RowVersion`, for `EventId` `NOT NULL`, and for the tag collation takes a
+schema modification lock for that statement. The tag change drops and
+rebuilds the `EventTags` primary key, so its duration follows the number
+of tag rows. Adding `AppendFence`, `ClaimedUntil`, and `ClaimedAt` is a
+short schema change.
 
 ## Related
 
