@@ -128,10 +128,10 @@ public interface IEventStore : IStreamRegistry
 
     /// <summary>
     /// Highest sequence a consumer can treat as caught up, or 0 when the log is empty.
-    /// At or below this value, every event that will ever occupy that position is
-    /// already visible. A sequence reserved by an open append is not included, so a
-    /// checkpoint here does not skip an event that commits later. Sequence-cache
-    /// gaps may leave the value above the event count.
+    /// An open append stays below this value while the store is still waiting on it.
+    /// A store may stop waiting and return a higher committed sequence. A checkpoint
+    /// at that value can then sit above a sequence that commits later.
+    /// Sequence-cache gaps may leave the value above the event count.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The caught-up sequence, or 0 if no events are visible.</returns>

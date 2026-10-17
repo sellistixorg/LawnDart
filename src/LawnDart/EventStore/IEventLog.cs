@@ -76,7 +76,8 @@ public interface IEventLog : IStreamRegistry
 
     /// <summary>
     /// Highest sequence a consumer can treat as caught up, or 0 when the log is empty.
-    /// A sequence reserved by an open append is not included.
+    /// An open append stays below this value while the store is still waiting on it.
+    /// A store may stop waiting and return a higher committed sequence.
     /// </summary>
     Task<long> GetCurrentSequenceAsync(CancellationToken cancellationToken = default);
 

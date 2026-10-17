@@ -51,10 +51,30 @@ stamps.
 before it reserves a sequence, so the transaction owns a rowversion first.
 Global reads and `GetCurrentSequenceAsync` include a row only when its
 rowversion is below `MIN_ACTIVE_ROWVERSION()`. A sequence reserved by an
-open append stays invisible until that append commits or rolls back. A
-later committed sequence does not skip it. A transaction that writes any
-`rowversion` in this database holds the horizon for every reader.
-Read-only work does not.
+open append stays invisible while that append is open. A later committed
+sequence stays invisible with it.
+
+`ReadHorizonGracePeriod` (default 30 seconds) is how long one unfinished
+write may hold that horizon. Thirty seconds covers a lock wait or a slow
+batch. A stuck write then stops holding every reader. When the same write
+is still open after the grace period, readers move to the highest committed
+sequence and log a warning. The warning names the blocking session when
+SQL Server reports it, and how long the write has been open. Set the option
+to `Timeout.InfiniteTimeSpan` to wait until the write ends. `TimeSpan.Zero`
+moves readers forward once the write has been open for more than zero
+milliseconds.
+
+A row that commits below a head taken after that move is a skipped event.
+The process that moved the horizon logs an error when a later check sees
+the row. The watch list lives in that process. After a restart, or when
+the process exits before the late commit, the late row is quiet. A read
+whose window still starts at or below the sequence can still return the
+row, and that read does not log. The in-memory store has no rowversion
+horizon. A rolled-back sequence is a permanent gap. Readers continue at
+the next committed row.
+
+A transaction that writes any `rowversion` in this database holds the
+horizon for every reader. Read-only work does not.
 
 SSMS: `{table}_Readable` projects `CAST(EventData AS VARCHAR(MAX)) AS EventJson`
 alongside the scalar columns and the family token from `EventTypes`.

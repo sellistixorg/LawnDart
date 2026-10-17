@@ -12,4 +12,25 @@ internal static partial class SqlServerEventStoreLog
 
     [LoggerMessage(EventId = 3, Level = LogLevel.Error, Message = "SQL Server subscription {SubscriberId} failed.")]
     internal static partial void SubscriptionFailed(ILogger logger, Exception exception, string subscriberId);
+
+    [LoggerMessage(
+        EventId = 4,
+        Level = LogLevel.Warning,
+        Message = "Read horizon advanced past an unfinished write held for {HeldMilliseconds}ms by session {SessionId} (transaction {TransactionId}). Stable sequence {StableHead}, committed sequence {CommittedHead}.")]
+    internal static partial void ReadHorizonAdvanced(
+        ILogger logger,
+        long heldMilliseconds,
+        string sessionId,
+        string transactionId,
+        long stableHead,
+        long committedHead);
+
+    [LoggerMessage(
+        EventId = 5,
+        Level = LogLevel.Error,
+        Message = "Committed event at sequence {SequencePosition} on stream {StreamId} landed below a read horizon that had already moved past it.")]
+    internal static partial void ReadHorizonSkippedEvent(
+        ILogger logger,
+        long sequencePosition,
+        string streamId);
 }
