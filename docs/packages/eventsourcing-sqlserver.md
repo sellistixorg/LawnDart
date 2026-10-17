@@ -38,8 +38,20 @@ process cache. If the token is still absent, the read returns no rows and
 `TypesResolved` is false. Do not checkpoint past that range. A projection
 reads the range again on the next poll.
 
+Each appended frame has an `EventId` (`UNIQUEIDENTIFIER`, unique). The id
+is the metadata `EventId` when that value is a GUID. Otherwise the store
+mints one before the commit and reuses it if the commit is retried inside
+the same call. A second append of the same id throws
+`EventAlreadyAppendedException`. The outbox row uses that same id.
+
+The store does not retry an append after `Commit` has been attempted. When
+the commit reply is lost, it reads those event ids. If they are present, the
+append result is the row that landed.
+
 Init writes an extended property `LawnDart_SchemaFormat` on the events
-table (current format `3`). Format `2` is upgraded in place.
+table (current format `4`). Formats `2` and `3` are upgraded in place.
+Format `3` gains `Events.EventId`. Format `2` also gains the format 3
+objects below.
 `InitializeSchemaAsync` adds `Events.RowVersion` (`rowversion`), creates
 `AppendFence`, and alters `EventTags.Tag` to `Latin1_General_100_BIN2`.
 Existing rows stay. Call it once on each database before the new process

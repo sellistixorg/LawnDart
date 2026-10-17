@@ -51,10 +51,20 @@ public sealed class ReactorTestHarness<TReactor, TEvent>
             ? null
             : InboxConsumerKey.ForReactor(typeof(TReactor), context.MessageId);
 
-        if (inboxKey is not null && await _inboxStore.IsProcessedAsync(inboxKey, cancellationToken).ConfigureAwait(false))
+        if (inboxKey is not null && !await _inboxStore.TryClaimAsync(inboxKey, cancellationToken).ConfigureAwait(false))
             return [];
 
-        var commands = (await _reactor.ReactAsync(@event, context, cancellationToken).ConfigureAwait(false)).ToList();
+        IReadOnlyList<ICommand> commands;
+        try
+        {
+            commands = (await _reactor.ReactAsync(@event, context, cancellationToken).ConfigureAwait(false)).ToList();
+        }
+        catch
+        {
+            if (inboxKey is not null)
+                await _inboxStore.ReleaseClaimAsync(inboxKey, CancellationToken.None).ConfigureAwait(false);
+            throw;
+        }
 
         if (inboxKey is not null)
             await _inboxStore.MarkProcessedAsync(inboxKey, DateTimeOffset.UtcNow, cancellationToken).ConfigureAwait(false);

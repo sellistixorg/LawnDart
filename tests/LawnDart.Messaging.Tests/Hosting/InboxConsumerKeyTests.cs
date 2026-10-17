@@ -130,6 +130,15 @@ public class InboxConsumerKeyTests
             Keys.Add(messageId);
             return Task.CompletedTask;
         }
+
+        public Task<bool> TryClaimAsync(string messageId, CancellationToken cancellationToken = default)
+        {
+            Keys.Add(messageId);
+            return Task.FromResult(true);
+        }
+
+        public Task ReleaseClaimAsync(string messageId, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
     }
 }
 

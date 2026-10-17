@@ -251,6 +251,21 @@ internal static class EventLogContract
         return list;
     }
 
+    public static async Task Append_SameEventId_FailsAsAlreadyWrittenAsync(IEventLog log)
+    {
+        var eventId = Guid.NewGuid();
+        var metadata = Encoding.UTF8.GetBytes($$"""{"EventId":"{{eventId}}"}""");
+        var first = Unique("event-id");
+        await log.AppendAsync(first, [new AppendEvent(ForeignFamily, Encoding.UTF8.GetBytes("{}"), metadata)]);
+
+        var ex = await Assert.ThrowsAsync<EventAlreadyAppendedException>(() =>
+            log.AppendAsync(Unique("event-id-replay"), [new AppendEvent(ForeignFamily, Encoding.UTF8.GetBytes("{}"), metadata)]));
+        Assert.Equal(eventId, ex.EventId);
+
+        var stored = await log.ReadStreamAsync(first);
+        Assert.Single(stored);
+    }
+
     private static string Unique(string suffix) => $"log-contract:{suffix}:{Guid.NewGuid():N}";
 
     private sealed record ContractTick(Guid Id, DateTime Timestamp, string Name) : IEvent;

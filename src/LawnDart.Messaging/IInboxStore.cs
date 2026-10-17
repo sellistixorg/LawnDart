@@ -2,8 +2,10 @@ namespace LawnDart.Messaging;
 
 /// <summary>
 /// Pluggable inbox deduplication store.
-/// Used by reactor and event processor hosted services to guarantee at-most-once handler dispatch
-/// despite at-least-once transport delivery.
+/// Used by reactor and event processor hosted services so two deliveries of the same
+/// message do not both run the handler. A claim is held while the handler runs.
+/// <see cref="MarkProcessedAsync"/> records success. <see cref="ReleaseClaimAsync"/>
+/// drops a claim when the handler fails, so the message can be delivered again.
 /// </summary>
 public interface IInboxStore
 {
@@ -31,4 +33,20 @@ public interface IInboxStore
     /// <param name="processedAt">When the message was processed.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task MarkProcessedAsync(string messageId, DateTimeOffset processedAt, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Claims <paramref name="messageId"/> for this caller. False when the key is
+    /// already processed inside the deduplication window, or a live claim is held.
+    /// A claim expires after 30 seconds so a crashed handler can be retried.
+    /// </summary>
+    /// <param name="messageId">Dedup key. Same shape as <see cref="IsProcessedAsync"/>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<bool> TryClaimAsync(string messageId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Drops a claim that has not been marked processed. A processed key is left alone.
+    /// </summary>
+    /// <param name="messageId">Dedup key.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task ReleaseClaimAsync(string messageId, CancellationToken cancellationToken = default);
 }
