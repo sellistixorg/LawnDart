@@ -352,14 +352,9 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
                     continue;
                 }
 
-                if (UsesSharedPipe && _sharedPipePrivateCatchUp
-                    && lastPosition >= 0
-                    && lastPosition >= Math.Max(
-                        _sharedPipe!.JoinSequence - 1,
-                        Math.Max(_sharedPipe.CaughtUpSequence, _sharedPipe.LastFanoutSequence)))
+                if (UsesSharedPipe && _sharedPipePrivateCatchUp && lastPosition >= 0
+                    && _sharedPipe!.TryAttachIfCaughtUp(StorageKey, lastPosition))
                 {
-                    _sharedPipe.ReportLastApplied(StorageKey, lastPosition);
-                    _sharedPipe.Attach(StorageKey);
                     _sharedPipePrivateCatchUp = false;
                     continue;
                 }

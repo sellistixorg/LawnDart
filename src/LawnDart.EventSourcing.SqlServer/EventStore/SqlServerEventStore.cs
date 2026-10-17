@@ -2084,9 +2084,30 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
             {
                 var delivered = 0;
                 var from = lastDelivered + 1;
+                var head = await GetCurrentSequenceAsync(ct).ConfigureAwait(false);
+                var page = await ReadRecordedQueryCoreAsync(
+                    readQuery,
+                    fromSequencePosition: from,
+                    limit: batchSize,
+                    toSequencePosition: head,
+                    toCommitTimestamp: null,
+                    cancellationToken: ct).ConfigureAwait(false);
 
-                await foreach (var frame in ReadRecordedQueryStreamAsync(readQuery, fromSequencePosition: from, cancellationToken: ct)
-                    .ConfigureAwait(false))
+                if (!page.TypesResolved)
+                {
+                    try
+                    {
+                        await Task.Delay(pollInterval, ct).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                    {
+                        break;
+                    }
+
+                    continue;
+                }
+
+                foreach (var frame in page.Events)
                 {
                     if (ct.IsCancellationRequested || handle.IsDisposed)
                         break;
@@ -2094,19 +2115,22 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                     if (frame.SequencePosition <= lastDelivered)
                         continue;
 
-                    if (!handle.Filter.Matches(frame))
-                        continue;
+                    if (handle.Filter.Matches(frame))
+                    {
+                        await handle.WriteAsync(frame, ct).ConfigureAwait(false);
+                        delivered++;
+                    }
 
-                    await handle.WriteAsync(frame, ct).ConfigureAwait(false);
                     lastDelivered = frame.SequencePosition;
-                    delivered++;
-
                     if (delivered >= batchSize)
                         break;
                 }
 
-                if (delivered > 0)
-                    continue; // More pages may remain — keep catching up without idle delay.
+                if (page.Events.Count < batchSize && head > lastDelivered)
+                    lastDelivered = head;
+
+                if (delivered > 0 || page.Events.Count >= batchSize)
+                    continue; // More pages may remain. Keep catching up without an idle delay.
 
                 // Idle live wait (poll-backed).
                 try
@@ -2131,6 +2155,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         {
             if (_logger is not null)
                 SqlServerEventStoreLog.SubscriptionFailed(_logger, ex, handle.SubscriberId);
+            handle.Fault(new EventSubscriptionFailedException(handle.SubscriberId, ex));
         }
         finally
         {

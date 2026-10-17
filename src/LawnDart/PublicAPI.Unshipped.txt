@@ -4,6 +4,9 @@ LawnDart.EventStore.EventAlreadyAppendedException.EventAlreadyAppendedException(
 LawnDart.EventStore.EventAlreadyAppendedException.EventId.get -> System.Guid
 LawnDart.EventStore.EventLogQueryResult.TypesResolved.get -> bool
 LawnDart.EventStore.EventLogQueryResult.TypesResolved.init -> void
+LawnDart.EventStore.EventSubscriptionFailedException
+LawnDart.EventStore.EventSubscriptionFailedException.EventSubscriptionFailedException(string! subscriberId, System.Exception! inner) -> void
+LawnDart.EventStore.EventSubscriptionFailedException.SubscriberId.get -> string!
 LawnDart.EventStore.QueryResult.TypesResolved.get -> bool
 LawnDart.EventStore.QueryResult.TypesResolved.init -> void
 LawnDart.Outbox.IOutboxWriter.ResetAllDeadLetteredAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
