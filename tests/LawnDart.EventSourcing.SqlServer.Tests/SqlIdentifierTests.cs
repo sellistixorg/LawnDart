@@ -52,20 +52,24 @@ public class SqlIdentifierTests
 [Trait("Category", "Integration")]
 public class OddSchemaNameTests : IAsyncLifetime
 {
-    private readonly MsSqlContainer _sqlContainer = new MsSqlBuilder(MsSqlTestImage.Server2022)
-        .WithPassword("Test123!")
-        .Build();
+    private MsSqlContainer? _sqlContainer;
 
     private string? _connectionString;
 
     public async Task InitializeAsync()
     {
-        await _sqlContainer.StartAsync();
+        _sqlContainer = await MsSqlContainerStartup.StartAsync(() =>
+            new MsSqlBuilder(MsSqlTestImage.Server2025)
+                .WithPassword("Test123!")
+                .Build());
         _connectionString = _sqlContainer.GetConnectionString();
     }
 
     public async Task DisposeAsync()
-        => await _sqlContainer.DisposeAsync();
+    {
+        if (_sqlContainer is not null)
+            await _sqlContainer.DisposeAsync();
+    }
 
     [Fact]
     public async Task InitializeSchemaAsync_SchemaNameWithClosingBracket_CreatesObjects()
