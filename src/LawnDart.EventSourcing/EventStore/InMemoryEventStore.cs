@@ -20,6 +20,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
     private readonly EventStoreAdapter _adapter;
     private readonly Dictionary<string, List<RecordedEvent>> _streams = new();
     private readonly List<RecordedEvent> _allEvents = new();
+    private readonly HashSet<Guid> _eventIds = [];
     private readonly Dictionary<string, StreamMetadata> _streamRegistry = new();
     private readonly ConcurrentDictionary<InMemorySubscriptionHandle, byte> _subscriptions = new();
     private readonly int _subscriptionChannelCapacity;
@@ -363,6 +364,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         lock (_lock)
         {
             _streams.Clear();
+            _eventIds.Clear();
             _allEvents.Clear();
             _streamRegistry.Clear();
             _nextSequencePosition = 1;
@@ -578,6 +580,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         if (!_streams.ContainsKey(streamId))
             _streams[streamId] = [];
 
+        ReserveEventIds(envelopes);
         foreach (var envelope in envelopes)
         {
             var recorded = Record(envelope, streamId, ++streamVersion);
@@ -624,6 +627,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         var streamId = BuildDcbStreamId(tenantId);
         var sequencePositions = new List<long>();
 
+        ReserveEventIds(envelopes);
         foreach (var envelope in envelopes)
         {
             var recorded = Record(envelope, streamId, streamVersion: 0);
@@ -660,6 +664,19 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
             envelope.SchemaVersion,
             envelope.CodecId,
             envelope.Tags);
+    }
+
+    private void ReserveEventIds(IReadOnlyList<AppendEvent> envelopes)
+    {
+        var ids = EventIdResolver.ResolveBatch(envelopes.Select(e => e.Metadata).ToList());
+        foreach (var id in ids)
+        {
+            if (_eventIds.Contains(id))
+                throw new EventAlreadyAppendedException(id);
+        }
+
+        foreach (var id in ids)
+            _eventIds.Add(id);
     }
 
     private static IReadOnlyList<string> UnionTags(IReadOnlyList<AppendEvent> envelopes)

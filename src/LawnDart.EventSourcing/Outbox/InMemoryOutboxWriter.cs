@@ -11,7 +11,10 @@ namespace LawnDart.EventSourcing.Outbox;
 /// </remarks>
 public sealed class InMemoryOutboxWriter : IOutboxWriter
 {
+    private static readonly TimeSpan ClaimLease = TimeSpan.FromSeconds(30);
+
     private readonly List<OutboxMessage> _messages = [];
+    private readonly Dictionary<Guid, DateTime> _claims = [];
     private readonly object _lock = new();
 
     /// <inheritdoc/>
@@ -45,11 +48,16 @@ public sealed class InMemoryOutboxWriter : IOutboxWriter
         cancellationToken.ThrowIfCancellationRequested();
         lock (_lock)
         {
+            var now = DateTime.UtcNow;
             var unprocessed = _messages
                 .Where(m => m.ProcessedAt is null && m.DeadLetteredAt is null)
+                .Where(m => !_claims.TryGetValue(m.Id, out var until) || until <= now)
                 .OrderBy(m => m.SequencePosition)
                 .Take(batchSize)
                 .ToList();
+            var lease = now + ClaimLease;
+            foreach (var message in unprocessed)
+                _claims[message.Id] = lease;
             return Task.FromResult<IReadOnlyList<OutboxMessage>>(unprocessed);
         }
     }
@@ -79,6 +87,7 @@ public sealed class InMemoryOutboxWriter : IOutboxWriter
             var message = _messages.FirstOrDefault(m => m.Id == messageId);
             if (message is not null)
                 message.ProcessedAt = DateTime.UtcNow;
+            _claims.Remove(messageId);
         }
         return Task.CompletedTask;
     }
@@ -92,6 +101,7 @@ public sealed class InMemoryOutboxWriter : IOutboxWriter
             var message = _messages.FirstOrDefault(m => m.Id == messageId);
             if (message is not null && message.DeadLetteredAt is null)
                 message.DeadLetteredAt = DateTime.UtcNow;
+            _claims.Remove(messageId);
         }
         return Task.CompletedTask;
     }
@@ -149,6 +159,8 @@ public sealed class InMemoryOutboxWriter : IOutboxWriter
                 message.LastError = error;
                 message.LastAttemptAt = DateTime.UtcNow;
             }
+
+            _claims.Remove(messageId);
         }
         return Task.CompletedTask;
     }

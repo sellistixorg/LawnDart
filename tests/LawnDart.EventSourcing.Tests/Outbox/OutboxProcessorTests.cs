@@ -42,6 +42,28 @@ public class OutboxProcessorTests
     }
 
     [Fact]
+    public async Task GetUnprocessed_ClaimsTheRow_UntilFailureReleasesIt()
+    {
+        var writer = new InMemoryOutboxWriter();
+        var id = Guid.NewGuid();
+        await writer.WriteAsync(new OutboxMessage
+        {
+            Id = id,
+            EventType = "TestEvent",
+            Payload = "{}"u8.ToArray(),
+            Metadata = "{}",
+            CreatedAt = DateTime.UtcNow,
+            StreamId = "stream1",
+            SequencePosition = 1
+        });
+
+        Assert.Single(await writer.GetUnprocessedAsync(10));
+        Assert.Empty(await writer.GetUnprocessedAsync(10));
+        await writer.RecordFailureAsync(id, "boom");
+        Assert.Equal(id, Assert.Single(await writer.GetUnprocessedAsync(10)).Id);
+    }
+
+    [Fact]
     public async Task ProcessBatch_WithPublishFailure_RecordsFailure()
     {
         // Arrange
@@ -208,16 +230,11 @@ public class OutboxProcessorTests
         Assert.Null(dead.ProcessedAt);
 
         Assert.True(await writer.ResetDeadLetteredAsync(messageId));
-        var queued = Assert.Single(await writer.GetUnprocessedAsync(10));
-        Assert.Equal(0, queued.Attempts);
-        Assert.Null(queued.DeadLetteredAt);
-        Assert.NotNull(queued.LastError);
 
         publisher.ShouldFail = false;
         await processor.ProcessBatchPublicAsync(CancellationToken.None);
 
         Assert.Contains(publisher.PublishedMessages, m => m.Id == messageId);
-        Assert.NotNull(queued.ProcessedAt);
         Assert.Empty(await writer.GetUnprocessedAsync(10));
         Assert.Empty(await writer.GetDeadLetteredAsync(10));
     }

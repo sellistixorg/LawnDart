@@ -70,14 +70,19 @@ public sealed class ReactorHostedService<TReactor, TEvent> : BackgroundService
     {
         var messageId = context.MessageId;
         var inboxKey = messageId is null ? null : InboxConsumerKey.ForReactor(typeof(TReactor), messageId);
+        var claimed = false;
 
-        if (inboxKey is not null && await _inboxStore.IsProcessedAsync(inboxKey, ct).ConfigureAwait(false))
+        if (inboxKey is not null)
         {
-            MessagingTelemetry.RecordInboxDuplicate(_eventTypeName);
-            _logger.LogDebug(
-                "Reactor {Reactor} skipping duplicate message {MessageId} for event {EventType}",
-                ReactorTypeName, messageId, _eventTypeName);
-            return;
+            claimed = await _inboxStore.TryClaimAsync(inboxKey, ct).ConfigureAwait(false);
+            if (!claimed)
+            {
+                MessagingTelemetry.RecordInboxDuplicate(_eventTypeName);
+                _logger.LogDebug(
+                    "Reactor {Reactor} skipping duplicate message {MessageId} for event {EventType}",
+                    ReactorTypeName, messageId, _eventTypeName);
+                return;
+            }
         }
 
         using var activity = ReactorTelemetry.StartHandle(ReactorTypeName, _eventTypeName, context);
@@ -115,6 +120,18 @@ public sealed class ReactorHostedService<TReactor, TEvent> : BackgroundService
         }
         catch (Exception ex)
         {
+            if (claimed && inboxKey is not null)
+            {
+                try
+                {
+                    await _inboxStore.ReleaseClaimAsync(inboxKey, ct).ConfigureAwait(false);
+                }
+                catch (Exception releaseEx) when (releaseEx is not OperationCanceledException)
+                {
+                    _logger.LogDebug(releaseEx, "Reactor {Reactor} failed to release inbox claim {MessageId}", ReactorTypeName, messageId);
+                }
+            }
+
             ReactorTelemetry.RecordError(ReactorTypeName, _eventTypeName);
             activity?.SetStatus(System.Diagnostics.ActivityStatusCode.Error, ex.Message);
             _logger.LogError(ex,

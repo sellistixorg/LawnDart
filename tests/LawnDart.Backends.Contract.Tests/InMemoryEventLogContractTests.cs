@@ -43,4 +43,8 @@ public sealed class InMemoryEventLogContractTests
     [Fact]
     public Task Subscription_TagQuery_IsOrdinalCaseSensitive()
         => EventLogContract.Subscription_TagQuery_IsOrdinalCaseSensitiveAsync((InMemoryEventStore)_log);
+
+    [Fact]
+    public Task Append_SameEventId_FailsAsAlreadyWritten()
+        => EventLogContract.Append_SameEventId_FailsAsAlreadyWrittenAsync(_log);
 }

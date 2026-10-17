@@ -15,8 +15,15 @@ public sealed class SqlServerInboxStore : IInboxStore
     /// <summary>Extended property written on a fresh inbox table. Mismatch is a wipe.</summary>
     internal const string SchemaFormatPropertyName = "LawnDart_InboxSchemaFormat";
 
-    /// <summary>Column shape: MessageId NVARCHAR(256) primary key, ProcessedAt DATETIMEOFFSET(7).</summary>
-    internal const string CurrentSchemaFormat = "1";
+    /// <summary>
+    /// Format 2: <c>ProcessedAt</c> is nullable and <c>ClaimedAt</c> holds an in-flight claim.
+    /// Format 1 is upgraded in place.
+    /// </summary>
+    internal const string CurrentSchemaFormat = "2";
+
+    internal const string UpgradableSchemaFormat = "1";
+
+    internal static readonly TimeSpan ClaimLease = TimeSpan.FromSeconds(30);
 
     /// <summary>Maximum characters stored in <c>MessageId</c>.</summary>
     public const int MaxKeyLength = 256;
@@ -96,7 +103,7 @@ public sealed class SqlServerInboxStore : IInboxStore
             USING (SELECT @MessageId AS MessageId) AS source
             ON target.MessageId = source.MessageId
             WHEN MATCHED THEN
-                UPDATE SET ProcessedAt = @ProcessedAt
+                UPDATE SET ProcessedAt = @ProcessedAt, ClaimedAt = NULL
             WHEN NOT MATCHED THEN
                 INSERT (MessageId, ProcessedAt) VALUES (@MessageId, @ProcessedAt);";
 
@@ -159,6 +166,12 @@ public sealed class SqlServerInboxStore : IInboxStore
             if (exists)
             {
                 var found = await ReadSchemaFormatAsync(connection, cancellationToken).ConfigureAwait(false);
+                if (string.Equals(found, UpgradableSchemaFormat, StringComparison.Ordinal))
+                {
+                    await UpgradeFromFormat1Async(connection, cancellationToken).ConfigureAwait(false);
+                    return;
+                }
+
                 var shapeOk = await HasCurrentShapeAsync(connection, cancellationToken).ConfigureAwait(false);
                 if (!string.Equals(found, CurrentSchemaFormat, StringComparison.Ordinal) || !shapeOk)
                     throw new IncompatibleInboxSchemaException(_qualifiedTableName, found, CurrentSchemaFormat, !shapeOk);
@@ -171,7 +184,8 @@ public sealed class SqlServerInboxStore : IInboxStore
         var sql = $@"
             CREATE TABLE {_qualifiedTableName} (
                 MessageId NVARCHAR(256) NOT NULL,
-                ProcessedAt DATETIMEOFFSET(7) NOT NULL,
+                ProcessedAt DATETIMEOFFSET(7) NULL,
+                ClaimedAt DATETIMEOFFSET(7) NULL,
                 CONSTRAINT {pkName} PRIMARY KEY CLUSTERED (MessageId)
             );
 
@@ -206,6 +220,102 @@ public sealed class SqlServerInboxStore : IInboxStore
         var deleted = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         _logger?.LogInformation("Purged {Count} expired inbox row(s) from {Table}", deleted, _qualifiedTableName);
         return deleted;
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> TryClaimAsync(string messageId, CancellationToken cancellationToken = default)
+    {
+        ValidateKey(messageId);
+        var now = DateTimeOffset.UtcNow;
+        var leaseCutoff = now - ClaimLease;
+
+        var sql = $@"
+            DECLARE @processed DATETIMEOFFSET(7);
+            DECLARE @claimed DATETIMEOFFSET(7);
+            SELECT @processed = ProcessedAt, @claimed = ClaimedAt
+            FROM {_qualifiedTableName} WITH (UPDLOCK, HOLDLOCK)
+            WHERE MessageId = @MessageId;
+
+            IF @@ROWCOUNT = 0
+            BEGIN
+                INSERT INTO {_qualifiedTableName} (MessageId, ClaimedAt) VALUES (@MessageId, @Now);
+                SELECT 1;
+                RETURN;
+            END
+
+            IF @processed IS NOT NULL AND @processed >= @Cutoff
+            BEGIN
+                SELECT 0;
+                RETURN;
+            END
+
+            IF @claimed IS NOT NULL AND @claimed >= @LeaseCutoff AND @processed IS NULL
+            BEGIN
+                SELECT 0;
+                RETURN;
+            END
+
+            UPDATE {_qualifiedTableName}
+            SET ClaimedAt = @Now, ProcessedAt = NULL
+            WHERE MessageId = @MessageId;
+            SELECT 1;";
+
+        using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            using var command = new SqlCommand(sql, connection, transaction);
+            AddKey(command, messageId);
+            command.Parameters.Add("@Now", SqlDbType.DateTimeOffset).Value = now;
+            command.Parameters.Add("@Cutoff", SqlDbType.DateTimeOffset).Value = Cutoff();
+            command.Parameters.Add("@LeaseCutoff", SqlDbType.DateTimeOffset).Value = leaseCutoff;
+            var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return Convert.ToInt32(result) == 1;
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            throw;
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task ReleaseClaimAsync(string messageId, CancellationToken cancellationToken = default)
+    {
+        ValidateKey(messageId);
+        var sql = $@"
+            DELETE FROM {_qualifiedTableName}
+            WHERE MessageId = @MessageId AND ProcessedAt IS NULL";
+
+        using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        using var command = new SqlCommand(sql, connection);
+        AddKey(command, messageId);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task UpgradeFromFormat1Async(SqlConnection connection, CancellationToken cancellationToken)
+    {
+        var sql = $@"
+            ALTER TABLE {_qualifiedTableName} ALTER COLUMN ProcessedAt DATETIMEOFFSET(7) NULL;
+            IF NOT EXISTS (
+                SELECT 1 FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qualifiedTableName)}') AND name = N'ClaimedAt')
+                ALTER TABLE {_qualifiedTableName} ADD ClaimedAt DATETIMEOFFSET(7) NULL;
+            IF EXISTS (
+                SELECT 1 FROM sys.extended_properties
+                WHERE major_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qualifiedTableName)}')
+                  AND name = N'{SchemaFormatPropertyName}' AND minor_id = 0)
+                EXEC sys.sp_updateextendedproperty
+                    @name = N'{SchemaFormatPropertyName}',
+                    @value = N'{CurrentSchemaFormat}',
+                    @level0type = N'SCHEMA', @level0name = N'{SqlIdentifier.Literal(_schemaName)}',
+                    @level1type = N'TABLE', @level1name = N'{SqlIdentifier.Literal(_tableName)}';
+            ";
+        using var command = new SqlCommand(sql, connection);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private DateTimeOffset Cutoff()
@@ -255,8 +365,13 @@ public sealed class SqlServerInboxStore : IInboxStore
                 SUM(CASE WHEN c.name = N'ProcessedAt'
                           AND ty.name = N'datetimeoffset'
                           AND c.scale = 7
-                          AND c.is_nullable = 0
-                     THEN 1 ELSE 0 END) AS ProcessedAtOk
+                          AND c.is_nullable = 1
+                     THEN 1 ELSE 0 END) AS ProcessedAtOk,
+                SUM(CASE WHEN c.name = N'ClaimedAt'
+                          AND ty.name = N'datetimeoffset'
+                          AND c.scale = 7
+                          AND c.is_nullable = 1
+                     THEN 1 ELSE 0 END) AS ClaimedAtOk
             FROM sys.columns c
             INNER JOIN sys.types ty ON c.user_type_id = ty.user_type_id
             WHERE c.object_id = OBJECT_ID(@Table)
@@ -271,7 +386,8 @@ public sealed class SqlServerInboxStore : IInboxStore
         var columnCount = reader.GetInt32(0);
         var messageIdOk = reader.IsDBNull(1) ? 0 : reader.GetInt32(1);
         var processedAtOk = reader.IsDBNull(2) ? 0 : reader.GetInt32(2);
-        if (columnCount != 2 || messageIdOk != 1 || processedAtOk != 1)
+        var claimedAtOk = reader.IsDBNull(3) ? 0 : reader.GetInt32(3);
+        if (columnCount != 3 || messageIdOk != 1 || processedAtOk != 1 || claimedAtOk != 1)
             return false;
 
         await reader.CloseAsync().ConfigureAwait(false);

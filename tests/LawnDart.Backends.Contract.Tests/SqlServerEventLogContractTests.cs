@@ -69,4 +69,8 @@ public sealed class SqlServerEventLogContractTests : IAsyncLifetime
     [Fact]
     public Task Subscription_TagQuery_IsOrdinalCaseSensitive()
         => EventLogContract.Subscription_TagQuery_IsOrdinalCaseSensitiveAsync(_store);
+
+    [Fact]
+    public Task Append_SameEventId_FailsAsAlreadyWritten()
+        => EventLogContract.Append_SameEventId_FailsAsAlreadyWrittenAsync(Log);
 }

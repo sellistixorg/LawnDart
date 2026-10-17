@@ -67,14 +67,19 @@ public sealed class EventProcessorHostedService<TProcessor, TEvent> : Background
     {
         var messageId = context.MessageId;
         var inboxKey = messageId is null ? null : InboxConsumerKey.ForProcessor(typeof(TProcessor), messageId);
+        var claimed = false;
 
-        if (inboxKey is not null && await _inboxStore.IsProcessedAsync(inboxKey, ct).ConfigureAwait(false))
+        if (inboxKey is not null)
         {
-            MessagingTelemetry.RecordInboxDuplicate(_eventTypeName);
-            _logger.LogDebug(
-                "EventProcessor {Processor} skipping duplicate message {MessageId} for event {EventType}",
-                ProcessorTypeName, messageId, _eventTypeName);
-            return;
+            claimed = await _inboxStore.TryClaimAsync(inboxKey, ct).ConfigureAwait(false);
+            if (!claimed)
+            {
+                MessagingTelemetry.RecordInboxDuplicate(_eventTypeName);
+                _logger.LogDebug(
+                    "EventProcessor {Processor} skipping duplicate message {MessageId} for event {EventType}",
+                    ProcessorTypeName, messageId, _eventTypeName);
+                return;
+            }
         }
 
         using var activity = EventProcessorTelemetry.StartProcess(ProcessorTypeName, _eventTypeName, context);
@@ -105,6 +110,18 @@ public sealed class EventProcessorHostedService<TProcessor, TEvent> : Background
         }
         catch (Exception ex)
         {
+            if (claimed && inboxKey is not null)
+            {
+                try
+                {
+                    await _inboxStore.ReleaseClaimAsync(inboxKey, ct).ConfigureAwait(false);
+                }
+                catch (Exception releaseEx) when (releaseEx is not OperationCanceledException)
+                {
+                    _logger.LogDebug(releaseEx, "EventProcessor {Processor} failed to release inbox claim {MessageId}", ProcessorTypeName, messageId);
+                }
+            }
+
             EventProcessorTelemetry.RecordError(ProcessorTypeName, _eventTypeName);
             activity?.SetStatus(System.Diagnostics.ActivityStatusCode.Error, ex.Message);
             _logger.LogError(ex,

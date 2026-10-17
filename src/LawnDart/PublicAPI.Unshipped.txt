@@ -1,4 +1,7 @@
 #nullable enable
+LawnDart.EventStore.EventAlreadyAppendedException
+LawnDart.EventStore.EventAlreadyAppendedException.EventAlreadyAppendedException(System.Guid eventId) -> void
+LawnDart.EventStore.EventAlreadyAppendedException.EventId.get -> System.Guid
 LawnDart.EventStore.EventLogQueryResult.TypesResolved.get -> bool
 LawnDart.EventStore.EventLogQueryResult.TypesResolved.init -> void
 LawnDart.EventStore.QueryResult.TypesResolved.get -> bool
