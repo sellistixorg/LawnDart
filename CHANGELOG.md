@@ -10,6 +10,21 @@ changes to the public API.
 
 ## [Unreleased]
 
+### Added
+
+- `QueryResult.TypesResolved` and `EventLogQueryResult.TypesResolved` are false when a queried event type is still unknown after the store reloads its type map. An empty result then does not mean the range was empty.
+
+### Changed
+
+- `InitializeSchemaAsync` upgrades a SQL Server events table stamped `LawnDart_SchemaFormat` 2 to format 3. It adds `Events.RowVersion`, creates `AppendFence`, and sets `EventTags.Tag` to the `Latin1_General_100_BIN2` collation. Existing rows stay. A missing stamp, or any stamp other than 2 or 3, is still a drop and recreate.
+- `GetCurrentSequenceAsync` on SQL Server returns the highest sequence a gap-free reader can see. A sequence reserved by an open append is not included.
+- Tag equality is ordinal. `Customer:ABC` and `customer:abc` are different tags on SQL Server reads, SQL Server subscriptions, and the in-memory store.
+
+### Fixed
+
+- A SQL Server subscription or projection no longer skips an event when a later sequence commits first, including when `READ_COMMITTED_SNAPSHOT` is on.
+- A SQL Server reader in another process sees an event type that was first written elsewhere. It reloads `EventTypes` on a cache miss. A projection does not checkpoint past a type that is still unknown.
+
 ## [0.6.0-alpha.2] — 2026-10-16
 
 ### Breaking

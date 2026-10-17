@@ -75,14 +75,15 @@ public static class EventQueryMatcher
                 return false;
         }
 
-        if (item.Types is { Count: > 0 } && !item.Types.Contains(eventTypeName))
+        if (item.Types is { Count: > 0 }
+            && !item.Types.Any(t => string.Equals(t, eventTypeName, StringComparison.Ordinal)))
             return false;
 
         if (item.Tags is { Count: > 0 })
         {
             foreach (var requiredTag in item.Tags)
             {
-                if (!tags.Contains(requiredTag))
+                if (!tags.Any(t => string.Equals(t, requiredTag, StringComparison.Ordinal)))
                     return false;
             }
         }

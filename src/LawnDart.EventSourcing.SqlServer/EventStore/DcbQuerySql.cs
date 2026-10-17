@@ -15,6 +15,12 @@ internal static class DcbQuerySql
     internal const string EventColumns =
         "e.StreamId, e.Version, e.SequencePosition, e.EventTypeId, e.EventData, e.SchemaVersion, e.CodecId, e.Tags, e.Metadata, e.Timestamp";
 
+    /// <summary>
+    /// Rows whose rowversion is still owned by an open transaction, or that
+    /// were written after the oldest open rowversion, stay out of the result.
+    /// </summary>
+    internal const string StableHorizon = "e.[RowVersion] < MIN_ACTIVE_ROWVERSION()";
+
     internal enum Mode
     {
         Events,
@@ -200,6 +206,9 @@ internal static class DcbQuerySql
             seqColumn = "e.SequencePosition";
         }
 
+        if (needsEvents || !hasTags)
+            where.Append(" AND ").Append(StableHorizon);
+
         return new ItemSource(from.ToString(), where.ToString(), seqColumn, needsEvents || !hasTags);
     }
 
@@ -212,6 +221,17 @@ internal static class DcbQuerySql
     {
         if (mode == Mode.MaxSequence)
         {
+            if (!source.IncludesEvents)
+            {
+                return $"""
+                    SELECT ISNULL(MAX(e.SequencePosition), 0)
+                    FROM {source.FromClause}
+                    INNER JOIN {qTable} e ON e.SequencePosition = {source.SequenceColumn}
+                    {source.WhereClause}
+                      AND {StableHorizon}
+                    """;
+            }
+
             return $"""
                 SELECT ISNULL(MAX({source.SequenceColumn}), 0)
                 FROM {source.FromClause}
@@ -236,6 +256,7 @@ internal static class DcbQuerySql
                 FROM {source.FromClause}
                 INNER JOIN {qTable} e ON e.SequencePosition = {source.SequenceColumn}
                 {source.WhereClause}
+                  AND {StableHorizon}
                 ORDER BY {source.SequenceColumn}
                 """;
         }
@@ -264,10 +285,12 @@ internal static class DcbQuerySql
         if (mode == Mode.MaxSequence)
         {
             return $"""
-                SELECT ISNULL(MAX(m.SequencePosition), 0)
+                SELECT ISNULL(MAX(e.SequencePosition), 0)
                 FROM (
                 {union}
                 ) m
+                INNER JOIN {qTable} e ON e.SequencePosition = m.SequencePosition
+                WHERE {StableHorizon}
                 """;
         }
 
@@ -277,6 +300,7 @@ internal static class DcbQuerySql
             {union}
             ) m
             INNER JOIN {qTable} e ON e.SequencePosition = m.SequencePosition
+            WHERE {StableHorizon}
             ORDER BY e.SequencePosition
             """;
         return AppendFetch(sql, limit, parameters);
@@ -304,6 +328,7 @@ internal static class DcbQuerySql
         AppendSequenceWindow(where, $"{alias}.SequencePosition", fromSequencePosition, toSequencePosition);
         if (toTimestamp.HasValue)
             where.Append(" AND ").Append(alias).Append(".Timestamp <= @ToTimestamp");
+        where.Append(" AND ").Append(alias).Append(".[RowVersion] < MIN_ACTIVE_ROWVERSION()");
         return where.ToString();
     }
 

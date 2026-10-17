@@ -27,15 +27,34 @@ An orphan `EventTypes` row is harmless.
 
 `Tags` is `NVARCHAR(4000)` and is a read projection only. DCB queries
 and append-condition fences use the `EventTags` side table (clustered on
-`(Tag, GlobalSequencePosition)`). That table is always created and always
-written. There is no `UseEventTagsTable` flag and no `OPENJSON` fallback
-on `Events.Tags`. Metadata stays `NVARCHAR` JSON.
+`(Tag, GlobalSequencePosition)`, collation `Latin1_General_100_BIN2`).
+Tag equality is ordinal. `Customer:ABC` and `customer:abc` are different
+tags. That table is always created and always written. There is no
+`UseEventTagsTable` flag and no `OPENJSON` fallback on `Events.Tags`.
+Metadata stays `NVARCHAR` JSON.
+
+A type filter reloads `EventTypes` when the token is missing from the
+process cache. If the token is still absent, the read returns no rows and
+`TypesResolved` is false. Do not checkpoint past that range. A projection
+reads the range again on the next poll.
 
 Init writes an extended property `LawnDart_SchemaFormat` on the events
-table (current format `2`). Drop and recreate a table that is already
-present without that stamp, or with a different value. Opening it throws
-and names drop-and-recreate. There is no in-place `ALTER` and no
-migration tool.
+table (current format `3`). Format `2` is upgraded in place.
+`InitializeSchemaAsync` adds `Events.RowVersion` (`rowversion`), creates
+`AppendFence`, and alters `EventTags.Tag` to `Latin1_General_100_BIN2`.
+Existing rows stay. Call it once on each database before the new process
+reads. A table with no stamp, or with any stamp other than `2` or `3`,
+throws and names drop-and-recreate. There is no migration tool for those
+stamps.
+
+`RowVersion` is the commit horizon. An append inserts an `AppendFence` row
+before it reserves a sequence, so the transaction owns a rowversion first.
+Global reads and `GetCurrentSequenceAsync` include a row only when its
+rowversion is below `MIN_ACTIVE_ROWVERSION()`. A sequence reserved by an
+open append stays invisible until that append commits or rolls back. A
+later committed sequence does not skip it. A transaction that writes any
+`rowversion` in this database holds the horizon for every reader.
+Read-only work does not.
 
 SSMS: `{table}_Readable` projects `CAST(EventData AS VARCHAR(MAX)) AS EventJson`
 alongside the scalar columns and the family token from `EventTypes`.

@@ -152,6 +152,105 @@ internal static class EventLogContract
         Assert.Equal(EventCodec.MemoryPack, recorded.CodecId);
     }
 
+    public static async Task TagQuery_IsOrdinalCaseSensitiveAsync(IEventLog log)
+    {
+        var streamId = Unique("tag-case");
+        var upper = "Customer:ABC:" + Guid.NewGuid().ToString("N");
+        var lower = upper.ToLowerInvariant();
+        await log.AppendAsync(
+            streamId,
+            [new AppendEvent(ForeignFamily, Encoding.UTF8.GetBytes("{}"), tags: [upper])]);
+
+        var exact = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(upper)));
+        Assert.Contains(exact.Events, e => e.StreamId == streamId);
+        Assert.True(exact.TypesResolved);
+
+        var otherCase = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(lower)));
+        Assert.DoesNotContain(otherCase.Events, e => e.StreamId == streamId);
+
+        var bothId = Unique("tag-both");
+        await log.AppendAsync(
+            bothId,
+            [new AppendEvent(ForeignFamily, Encoding.UTF8.GetBytes("{}"), tags: [upper, lower])]);
+        var byUpper = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(upper)));
+        var byLower = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(lower)));
+        Assert.Contains(byUpper.Events, e => e.StreamId == bothId);
+        Assert.Contains(byLower.Events, e => e.StreamId == bothId);
+    }
+
+    public static async Task Subscription_TagQuery_IsOrdinalCaseSensitiveAsync(IEventStore store)
+    {
+        if (store is not IEventLogSubscriptions subscriptions)
+            throw new InvalidOperationException("Store does not subscribe.");
+
+        var streamId = Unique("tag-sub");
+        var upper = "Customer:ABC:" + Guid.NewGuid().ToString("N");
+        var lower = upper.ToLowerInvariant();
+        var log = (IEventLog)store;
+        var appended = await log.AppendAsync(
+            streamId,
+            [new AppendEvent(ForeignFamily, Encoding.UTF8.GetBytes("{}"), tags: [upper])]);
+        var sequence = appended.SequencePositions[0];
+
+        var exact = Query.FromItems(QueryItem.ByTags(upper));
+        await using (var handle = subscriptions.Subscribe(
+            "tag-case-exact-" + Guid.NewGuid().ToString("N"),
+            sequence,
+            EventSubscriptionFilter.ForQuery(exact)))
+        {
+            var received = await ReadCountAsync(handle, 1, TimeSpan.FromSeconds(10));
+            Assert.Equal(sequence, Assert.Single(received).SequencePosition);
+        }
+
+        var other = Query.FromItems(QueryItem.ByTags(lower));
+        await using (var handle = subscriptions.Subscribe(
+            "tag-case-other-" + Guid.NewGuid().ToString("N"),
+            sequence,
+            EventSubscriptionFilter.ForQuery(other)))
+        {
+            var received = await DrainAsync(handle, TimeSpan.FromMilliseconds(400));
+            Assert.DoesNotContain(received, e => e.SequencePosition == sequence);
+        }
+    }
+
+    private static async Task<List<RecordedEvent>> ReadCountAsync(
+        IEventLogSubscriptionHandle handle,
+        int count,
+        TimeSpan timeout)
+    {
+        var list = new List<RecordedEvent>(count);
+        using var cts = new CancellationTokenSource(timeout);
+        while (list.Count < count && await handle.Events.WaitToReadAsync(cts.Token).ConfigureAwait(false))
+        {
+            while (list.Count < count && handle.Events.TryRead(out var recorded))
+                list.Add(recorded);
+        }
+
+        if (list.Count < count)
+            throw new TimeoutException($"Expected {count} events, received {list.Count}.");
+        return list;
+    }
+
+    private static async Task<List<RecordedEvent>> DrainAsync(IEventLogSubscriptionHandle handle, TimeSpan wait)
+    {
+        var list = new List<RecordedEvent>();
+        using var cts = new CancellationTokenSource(wait);
+        try
+        {
+            while (await handle.Events.WaitToReadAsync(cts.Token).ConfigureAwait(false))
+            {
+                while (handle.Events.TryRead(out var recorded))
+                    list.Add(recorded);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // The wait ended.
+        }
+
+        return list;
+    }
+
     private static string Unique(string suffix) => $"log-contract:{suffix}:{Guid.NewGuid():N}";
 
     private sealed record ContractTick(Guid Id, DateTime Timestamp, string Name) : IEvent;

@@ -35,4 +35,12 @@ public sealed class InMemoryEventLogContractTests
     [Fact]
     public Task Append_CodecId2_ReadsCodecId2()
         => EventLogContract.Append_CodecId2_ReadsCodecId2Async(_log);
+
+    [Fact]
+    public Task TagQuery_IsOrdinalCaseSensitive()
+        => EventLogContract.TagQuery_IsOrdinalCaseSensitiveAsync(_log);
+
+    [Fact]
+    public Task Subscription_TagQuery_IsOrdinalCaseSensitive()
+        => EventLogContract.Subscription_TagQuery_IsOrdinalCaseSensitiveAsync((InMemoryEventStore)_log);
 }

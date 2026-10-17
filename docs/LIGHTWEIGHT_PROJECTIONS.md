@@ -78,6 +78,12 @@ Historical rows arrive as the current CLR type after upcast.
 InMemory checkpoints reset when the process exits. SQL checkpoints resume
 after restart.
 
+A filtered catch-up does not advance the checkpoint through a window whose
+event type the store has not seen (`QueryResult.TypesResolved` is false).
+The runner reads that window again on the next poll. On SQL Server the
+checkpoint also stops at the gap-free head, so an open append cannot be
+skipped by a later commit.
+
 ## Poison events
 
 When a compiled `Handle` method throws, the runner restores the in-memory

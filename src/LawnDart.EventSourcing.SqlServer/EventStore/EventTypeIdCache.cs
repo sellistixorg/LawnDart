@@ -4,7 +4,8 @@ namespace LawnDart.EventSourcing.SqlServer.EventStore;
 
 /// <summary>
 /// Process-local token↔id map for <c>EventTypes</c>. Reads resolve from here
-/// and never join the lookup table. A miss is a refresh, then fail-closed.
+/// and never join the lookup table. The store reloads this map on a miss
+/// before it builds a query. A token that is still absent does not match.
 /// </summary>
 internal sealed class EventTypeIdCache
 {

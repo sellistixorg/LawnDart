@@ -438,8 +438,22 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
                 //   • a partial batch transitions to the sequence-check / idle-wait path
                 long toPosition = lastPosition + _options.BatchSize;
                 var pollSw = Stopwatch.StartNew();
+                long? headBeforeRead = null;
+                if (_supportsSequenceCheck)
+                {
+                    try
+                    {
+                        headBeforeRead = await _eventStore.GetCurrentSequenceAsync(stoppingToken).ConfigureAwait(false);
+                    }
+                    catch (NotSupportedException)
+                    {
+                        _supportsSequenceCheck = false;
+                    }
+                }
 
-                await foreach (var se in ReadEventsAsync(fromPosition, toPosition, stoppingToken).ConfigureAwait(false))
+                var window = await ReadWindowAsync(fromPosition, toPosition, stoppingToken).ConfigureAwait(false);
+                var typesResolved = window.TypesResolved;
+                foreach (var se in window.Events)
                 {
                     if (!await DispatchEventAsync(se, stoppingToken).ConfigureAwait(false))
                         break;
@@ -467,7 +481,9 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
                 // the batch as empty and walking the cursor forward without dispatching.
                 if (batchCount == 0 && UsesFilteredEventQuery())
                 {
-                    await foreach (var se in ReadEventsAsync(fromPosition, toPosition, stoppingToken).ConfigureAwait(false))
+                    var retry = await ReadWindowAsync(fromPosition, toPosition, stoppingToken).ConfigureAwait(false);
+                    typesResolved = retry.TypesResolved;
+                    foreach (var se in retry.Events)
                     {
                         if (!await DispatchEventAsync(se, stoppingToken).ConfigureAwait(false))
                             break;
@@ -517,9 +533,16 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
                 {
                     // Ask the store whether any new events exist beyond our last position.
                     // This is a cheap in-memory read for in-process stores and a lightweight
-                    // round trip for remote ones.
-                    var headSeq = await _eventStore.GetCurrentSequenceAsync(stoppingToken).ConfigureAwait(false);
+                    // round trip for remote ones. Empty-window advances use the head captured
+                    // before the read, so a commit during the read cannot be skipped.
+                    var headSeq = headBeforeRead
+                        ?? await _eventStore.GetCurrentSequenceAsync(stoppingToken).ConfigureAwait(false);
                     ProjectionTelemetry.RecordCheckpointLag(StorageKey, headSeq - lastPosition);
+                    if (!typesResolved)
+                    {
+                        await Task.Delay(_options.PollInterval, stoppingToken).ConfigureAwait(false);
+                        continue;
+                    }
                     if (!IsFarBehind(lastPosition, headSeq))
                     {
                         _suppressResubscribe = false;
@@ -650,26 +673,20 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
 
     // ── Event reading ──────────────────────────────────────────────────────────
 
+    private readonly record struct ReadWindow(IReadOnlyList<SequencedEvent> Events, bool TypesResolved);
+
     /// <summary>
-    /// Returns an async sequence of at most <see cref="LightweightProjectionOptions.BatchSize"/>
-    /// events from the event store starting at <paramref name="fromPosition"/>, applying the
-    /// appropriate query for the projection kind.
+    /// Reads one catch-up window. <see cref="ReadWindow.TypesResolved"/> is false when a
+    /// type token is still unknown, and the caller must not checkpoint through the window.
     /// </summary>
-    /// <remarks>
-    /// Capping reads to <c>BatchSize</c> events per cycle keeps memory pressure bounded during
-    /// large backlog catch-ups and gives the poll loop a natural decision point: when a full
-    /// batch is returned the loop continues immediately (more events almost certainly exist);
-    /// when fewer than <c>BatchSize</c> events are returned the loop transitions to the
-    /// sequence-check / idle-wait path.
-    /// </remarks>
-    private IAsyncEnumerable<SequencedEvent> ReadEventsAsync(
-        long fromPosition, long toPosition, CancellationToken ct)
+    private async Task<ReadWindow> ReadWindowAsync(long fromPosition, long toPosition, CancellationToken ct)
     {
-        return _eventStore.ReadByQueryStreamAsync(
+        var result = await _eventStore.ReadByQueryAsync(
             GetLiveQuery() ?? Query.All(),
             fromSequencePosition: fromPosition,
             toSequencePosition: toPosition,
-            cancellationToken: ct);
+            cancellationToken: ct).ConfigureAwait(false);
+        return new ReadWindow(result.Events, result.TypesResolved);
     }
 
     /// <summary>
@@ -1708,11 +1725,27 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
             }
         }
 
-        var batchCount = 0;
-
-        async Task ReadWindowAsync()
+        long? advanceHead = queriedThroughHead ? toPosition : null;
+        if (!queriedThroughHead && _supportsSequenceCheck)
         {
-            await foreach (var se in ReadEventsAsync(fromPosition, toPosition, stoppingToken).ConfigureAwait(false))
+            try
+            {
+                advanceHead = await _eventStore.GetCurrentSequenceAsync(stoppingToken).ConfigureAwait(false);
+            }
+            catch (NotSupportedException)
+            {
+                _supportsSequenceCheck = false;
+            }
+        }
+
+        var batchCount = 0;
+        var typesResolved = true;
+
+        async Task ConsumeAsync()
+        {
+            var window = await ReadWindowAsync(fromPosition, toPosition, stoppingToken).ConfigureAwait(false);
+            typesResolved = window.TypesResolved;
+            foreach (var se in window.Events)
             {
                 if (se.SequencePosition <= cursor.LastPosition)
                     continue;
@@ -1735,22 +1768,24 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
             }
         }
 
-        await ReadWindowAsync().ConfigureAwait(false);
+        await ConsumeAsync().ConfigureAwait(false);
         if (_poisoned)
             return;
 
         // Same visibility retry as the poll loop: empty typed window can be a store race.
         if (batchCount == 0 && UsesFilteredEventQuery())
-            await ReadWindowAsync().ConfigureAwait(false);
+            await ConsumeAsync().ConfigureAwait(false);
 
         if (_poisoned)
             return;
 
+        if (!typesResolved)
+            return;
+
         if (batchCount == 0 && UsesFilteredEventQuery() && _supportsSequenceCheck)
         {
-            var headSeq = queriedThroughHead
-                ? toPosition
-                : await _eventStore.GetCurrentSequenceAsync(stoppingToken).ConfigureAwait(false);
+            var headSeq = advanceHead
+                ?? await _eventStore.GetCurrentSequenceAsync(stoppingToken).ConfigureAwait(false);
             if (headSeq > cursor.LastPosition)
             {
                 long windowEnd = queriedThroughHead

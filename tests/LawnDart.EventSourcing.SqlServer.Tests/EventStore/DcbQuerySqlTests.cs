@@ -78,4 +78,44 @@ public class DcbQuerySqlTests
         Assert.Equal("", built.Sql);
         Assert.Empty(built.Parameters);
     }
+
+    [Fact]
+    public void Reads_stop_at_the_stable_rowversion_horizon()
+    {
+        var all = DcbQuerySql.Build(
+            "[dbo].[Events]",
+            "[dbo].[EventTags]",
+            Query.All(),
+            _ => null,
+            fromSequencePosition: 1,
+            toSequencePosition: null,
+            toTimestamp: null,
+            limit: null,
+            DcbQuerySql.Mode.Events);
+        Assert.Contains(DcbQuerySql.StableHorizon, all.Sql, StringComparison.Ordinal);
+
+        var tags = DcbQuerySql.Build(
+            "[dbo].[Events]",
+            "[dbo].[EventTags]",
+            Query.FromItems(QueryItem.ByTags("Customer:ABC")),
+            _ => null,
+            fromSequencePosition: null,
+            toSequencePosition: null,
+            toTimestamp: null,
+            limit: null,
+            DcbQuerySql.Mode.Events);
+        Assert.Contains(DcbQuerySql.StableHorizon, tags.Sql, StringComparison.Ordinal);
+
+        var max = DcbQuerySql.Build(
+            "[dbo].[Events]",
+            "[dbo].[EventTags]",
+            Query.FromItems(QueryItem.ByType("order-placed")),
+            token => token == "order-placed" ? 4 : null,
+            fromSequencePosition: null,
+            toSequencePosition: null,
+            toTimestamp: null,
+            limit: null,
+            DcbQuerySql.Mode.MaxSequence);
+        Assert.Contains("MIN_ACTIVE_ROWVERSION()", max.Sql, StringComparison.Ordinal);
+    }
 }

@@ -1,8 +1,9 @@
 namespace LawnDart.EventSourcing.SqlServer.EventStore;
 
 /// <summary>
-/// The events table exists but is not this process's schema format.
-/// Drop and recreate the table. Pre-1.0 has no in-place migration.
+/// The events table exists but is not a schema format this process can open.
+/// Format 2 is upgraded in place by <c>InitializeSchemaAsync</c>. Any other
+/// stamp, including a missing stamp, is a wipe: drop and recreate the table.
 /// </summary>
 public sealed class IncompatibleEventStoreSchemaException : InvalidOperationException
 {

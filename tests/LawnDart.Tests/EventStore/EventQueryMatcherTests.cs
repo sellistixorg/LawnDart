@@ -71,4 +71,24 @@ public class EventQueryMatcherTests
             recorded,
             Query.FromItems(QueryItem.ByType("NamedTick"))));
     }
+
+    [Fact]
+    public void ByTag_is_ordinal()
+    {
+        var recorded = new RecordedEvent(
+            "named.tick",
+            ReadOnlyMemory<byte>.Empty,
+            "s",
+            streamVersion: 1,
+            sequencePosition: 1,
+            commitTimestamp: DateTime.UtcNow,
+            tags: ["Customer:ABC"]);
+
+        Assert.True(EventQueryMatcher.Matches(
+            recorded,
+            Query.FromItems(QueryItem.ByTags("Customer:ABC"))));
+        Assert.False(EventQueryMatcher.Matches(
+            recorded,
+            Query.FromItems(QueryItem.ByTags("customer:abc"))));
+    }
 }

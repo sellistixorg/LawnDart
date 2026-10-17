@@ -15,4 +15,12 @@ namespace LawnDart.EventStore;
 /// </param>
 public record EventLogQueryResult(
     IReadOnlyList<RecordedEvent> Events,
-    byte[]? ConsistencyMarker = null);
+    byte[]? ConsistencyMarker = null)
+{
+    /// <summary>
+    /// False when a type token in the query is still absent after the store
+    /// reloads its type map. An empty <see cref="Events"/> list then does not
+    /// prove the range has no match. A checkpoint must not advance through it.
+    /// </summary>
+    public bool TypesResolved { get; init; } = true;
+}
