@@ -11,22 +11,18 @@ namespace LawnDart.EventSourcing.SqlServer.Tests.EventStore;
 [Trait("Category", "Integration")]
 public class SqlServerEventStoreRegistryTests : IAsyncLifetime
 {
-    private readonly MsSqlContainer _sqlContainer;
+    private MsSqlContainer? _sqlContainer;
     private SqlServerEventStore? _eventStore;
     private string? _connectionString;
     private readonly string _tableName = $"Events_{Guid.NewGuid():N}";
     private readonly string _registryTableName = $"Streams_{Guid.NewGuid():N}";
 
-    public SqlServerEventStoreRegistryTests()
-    {
-        _sqlContainer = new MsSqlBuilder(MsSqlTestImage.Server2022)
-            .WithPassword("Test123!")
-            .Build();
-    }
-
     public async Task InitializeAsync()
     {
-        await _sqlContainer.StartAsync();
+        _sqlContainer = await MsSqlContainerStartup.StartAsync(() =>
+            new MsSqlBuilder(MsSqlTestImage.Server2025)
+                .WithPassword("Test123!")
+                .Build());
         _connectionString = _sqlContainer.GetConnectionString();
         
         var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Warning));
@@ -38,7 +34,8 @@ public class SqlServerEventStoreRegistryTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        await _sqlContainer.DisposeAsync();
+        if (_sqlContainer is not null)
+            await _sqlContainer.DisposeAsync();
     }
 
     [Fact]

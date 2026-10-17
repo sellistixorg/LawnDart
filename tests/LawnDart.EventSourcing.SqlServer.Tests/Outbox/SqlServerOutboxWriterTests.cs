@@ -17,10 +17,8 @@ public class SqlServerOutboxWriterTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _container = new MsSqlBuilder(MsSqlTestImage.Server2022)
-            .Build();
-
-        await _container.StartAsync();
+        _container = await MsSqlContainerStartup.StartAsync(() =>
+            new MsSqlBuilder(MsSqlTestImage.Server2025).Build());
         _connectionString = _container.GetConnectionString();
         
         _writer = new SqlServerOutboxWriter(_connectionString, "Outbox", NullLogger<SqlServerOutboxWriter>.Instance);
