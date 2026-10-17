@@ -1,10 +1,12 @@
 using System.Text;
+using System.Text.RegularExpressions;
 using LawnDart;
 using LawnDart.EventSourcing.SqlServer;
 using LawnDart.EventSourcing.SqlServer.EventStore;
 using LawnDart.EventStore;
 using LawnDart.TestUtilities;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Logging;
 using Testcontainers.MsSql;
 
 namespace LawnDart.EventSourcing.SqlServer.Tests.EventStore;
@@ -78,6 +80,101 @@ public sealed class SqlServerEventStoreCorrectnessTests : IAsyncLifetime
         Assert.Equal(fast.SequencePositions[0], await store.GetCurrentSequenceAsync());
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task HeldAppend_LongerThanGrace_IsSkippedWithAWarning(bool readCommittedSnapshot)
+    {
+        var name = "grace_" + (readCommittedSnapshot ? "on" : "off") + "_" + Guid.NewGuid().ToString("N")[..8];
+        var cs = await CreateDatabaseAsync(name, readCommittedSnapshot);
+        var logger = new ListLogger();
+        var store = CreateStore(cs, "grace", TimeSpan.FromMilliseconds(250), logger);
+        await store.InitializeSchemaAsync();
+        var first = await store.AppendAsync("s1", [Evt()]);
+
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var gates = 0;
+        store.BeforeAppendCommit = async ct =>
+        {
+            if (Interlocked.Increment(ref gates) != 1)
+                return;
+            entered.TrySetResult();
+            await release.Task.WaitAsync(ct).ConfigureAwait(false);
+        };
+
+        var slow = store.AppendAsync("slow", [Evt()]);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
+        var fast = await store.AppendAsync("fast", [Evt()]);
+
+        var head = await WaitForHeadAsync(store, fast.SequencePositions[0], TimeSpan.FromSeconds(5));
+        Assert.Equal(fast.SequencePositions[0], head);
+
+        var during = await ((IEventLog)store).ReadByQueryAsync(Query.All());
+        Assert.Contains(during.Events, e => e.SequencePosition == fast.SequencePositions[0]);
+        Assert.DoesNotContain(during.Events, e => e.StreamId == "slow");
+        Assert.Contains(during.Events, e => e.SequencePosition == first.SequencePositions[0]);
+
+        var warning = logger.Entries.Single(e => e.Level == LogLevel.Warning && e.Message.Contains("Read horizon advanced", StringComparison.Ordinal));
+        Assert.Matches(new Regex(@"held for \d+ms by session \d+ \(transaction \d+\)", RegexOptions.CultureInvariant), warning.Message);
+        var held = long.Parse(Regex.Match(warning.Message, @"held for (\d+)ms").Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+        Assert.True(held > 250, warning.Message);
+
+        release.TrySetResult();
+        var slowResult = await slow.WaitAsync(TimeSpan.FromSeconds(15));
+        var sawLate = await WaitForLogAsync(
+            logger,
+            store,
+            e => e.Level == LogLevel.Error && e.Message.Contains("landed below a read horizon", StringComparison.Ordinal),
+            TimeSpan.FromSeconds(5));
+        Assert.Contains(slowResult.SequencePositions[0].ToString(System.Globalization.CultureInfo.InvariantCulture), sawLate, StringComparison.Ordinal);
+        Assert.Contains("slow", sawLate, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task HeldAppend_ShorterThanGrace_IsReadInOrder(bool waitForever)
+    {
+        var grace = waitForever ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(10);
+        var schema = "hold" + (waitForever ? "inf" : "short") + Guid.NewGuid().ToString("N")[..6];
+        var logger = new ListLogger();
+        var store = CreateStore(_connectionString, schema, grace, logger);
+        await store.InitializeSchemaAsync();
+        var first = await store.AppendAsync("s1", [Evt()]);
+
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var gates = 0;
+        store.BeforeAppendCommit = async ct =>
+        {
+            if (Interlocked.Increment(ref gates) != 1)
+                return;
+            entered.TrySetResult();
+            await release.Task.WaitAsync(ct).ConfigureAwait(false);
+        };
+
+        var slow = store.AppendAsync("slow", [Evt()]);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
+        var fast = await store.AppendAsync("fast", [Evt()]);
+
+        await Task.Delay(400);
+        Assert.Equal(first.SequencePositions[0], await store.GetCurrentSequenceAsync());
+        Assert.DoesNotContain(
+            logger.Entries,
+            e => e.Level == LogLevel.Warning && e.Message.Contains("Read horizon advanced", StringComparison.Ordinal));
+
+        release.TrySetResult();
+        var slowResult = await slow.WaitAsync(TimeSpan.FromSeconds(15));
+        var read = await ((IEventLog)store).ReadByQueryAsync(Query.All());
+        Assert.Equal(
+            new[] { first.SequencePositions[0], slowResult.SequencePositions[0], fast.SequencePositions[0] },
+            read.Events.Select(e => e.SequencePosition));
+        Assert.DoesNotContain(
+            logger.Entries,
+            e => e.Level == LogLevel.Error && e.Message.Contains("landed below a read horizon", StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task LostCommitReply_ReturnsTheLandedAppend_AndDoesNotRetry()
     {
@@ -118,7 +215,8 @@ public sealed class SqlServerEventStoreCorrectnessTests : IAsyncLifetime
     [Fact]
     public async Task RolledBackSequence_DoesNotStallTheNextCommit()
     {
-        var store = CreateStore(_connectionString, "gaproll");
+        var logger = new ListLogger();
+        var store = CreateStore(_connectionString, "gaproll", TimeSpan.FromMilliseconds(200), logger);
         await store.InitializeSchemaAsync();
         await store.AppendAsync("s1", [Evt()]);
 
@@ -146,6 +244,10 @@ public sealed class SqlServerEventStoreCorrectnessTests : IAsyncLifetime
         }
 
         var fast = await store.AppendAsync("s2", [Evt()]);
+        Assert.Equal(fast.SequencePositions[0], await store.GetCurrentSequenceAsync());
+        Assert.DoesNotContain(
+            logger.Entries,
+            e => e.Level == LogLevel.Warning && e.Message.Contains("Read horizon advanced", StringComparison.Ordinal));
         await using var handle = store.Subscribe("gap-sub", fromSequence: 1);
         var received = await ReadCountAsync(handle, 2, TimeSpan.FromSeconds(15));
         Assert.Equal(1, received[0].SequencePosition);
@@ -238,20 +340,66 @@ public sealed class SqlServerEventStoreCorrectnessTests : IAsyncLifetime
         Assert.True(appended.SequencePositions[0] > 1);
     }
 
-    private SqlServerEventStore CreateStore(string connectionString, string schema) =>
-        new(
+    private SqlServerEventStore CreateStore(
+        string connectionString,
+        string schema,
+        TimeSpan? readHorizonGracePeriod = null,
+        ILogger<SqlServerEventStore>? logger = null)
+    {
+        var options = new SqlServerEventStoreOptions
+        {
+            RequireTenantId = false,
+            SchemaName = schema,
+            ContextName = schema,
+            SqlSubscriptionPollInterval = TimeSpan.FromMilliseconds(50)
+        };
+        if (readHorizonGracePeriod is { } grace)
+            options.ReadHorizonGracePeriod = grace;
+
+        return new SqlServerEventStore(
             connectionString,
             serializer: null,
             tableName: "Events",
             registryTableName: "Streams",
             enableRegistry: true,
-            options: new SqlServerEventStoreOptions
-            {
-                RequireTenantId = false,
-                SchemaName = schema,
-                ContextName = schema,
-                SqlSubscriptionPollInterval = TimeSpan.FromMilliseconds(50)
-            });
+            options: options,
+            outboxWriter: null,
+            logger: logger);
+    }
+
+    private static async Task<long> WaitForHeadAsync(SqlServerEventStore store, long expected, TimeSpan timeout)
+    {
+        var started = DateTime.UtcNow;
+        long head = 0;
+        while (DateTime.UtcNow - started < timeout)
+        {
+            head = await store.GetCurrentSequenceAsync();
+            if (head == expected)
+                return head;
+            await Task.Delay(40);
+        }
+
+        return head;
+    }
+
+    private static async Task<string> WaitForLogAsync(
+        ListLogger logger,
+        SqlServerEventStore store,
+        Func<(LogLevel Level, string Message), bool> match,
+        TimeSpan timeout)
+    {
+        var started = DateTime.UtcNow;
+        while (DateTime.UtcNow - started < timeout)
+        {
+            await store.GetCurrentSequenceAsync();
+            var found = logger.Entries.FirstOrDefault(match);
+            if (found.Message is not null)
+                return found.Message;
+            await Task.Delay(40);
+        }
+
+        return "";
+    }
 
     private async Task<string> CreateDatabaseAsync(string database, bool readCommittedSnapshot)
     {
@@ -330,6 +478,36 @@ public sealed class SqlServerEventStoreCorrectnessTests : IAsyncLifetime
     }
 
     private static StubEvent Evt() => new(Guid.NewGuid(), DateTime.UtcNow);
+
+    private sealed class ListLogger : ILogger<SqlServerEventStore>
+    {
+        private readonly object _gate = new();
+        private readonly List<(LogLevel Level, string Message)> _entries = new();
+
+        public IReadOnlyList<(LogLevel Level, string Message)> Entries
+        {
+            get
+            {
+                lock (_gate)
+                    return _entries.ToArray();
+            }
+        }
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            lock (_gate)
+                _entries.Add((logLevel, formatter(state, exception)));
+        }
+    }
 
     [EventTypeName("sql-correctness.stub")]
     private sealed record StubEvent(Guid Id, DateTime Timestamp) : IEvent;
