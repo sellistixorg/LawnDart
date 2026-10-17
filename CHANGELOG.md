@@ -22,7 +22,7 @@ changes to the public API.
 
 ### Fixed
 
-- An append is not retried after `Commit` has been attempted. If that commit's reply is lost, the store reads the event ids back and returns the append that landed. Replaying the same event id fails with `EventAlreadyAppendedException` instead of writing a second row.
+- An append is not retried after `Commit` has been attempted. If that commit's reply is lost, the store reads the event ids back and returns the append that landed. Replaying the same event id fails with `EventAlreadyAppendedException` instead of writing a second row. A typed append uses `IEvent.Id` as that id, so one `EventMetadata` object can be passed to several appends.
 - Outbox message ids are the event ids. A processor claims outbox rows (`UPDLOCK, READPAST`) for 30 seconds, so two processors do not publish the same row. A failed publish releases the claim.
 - Inbox delivery claims the message key before the handler runs. A second delivery does not run the handler while that claim is live. A failed handler releases the claim.
 - A SQL Server subscription or projection no longer skips an event when a later sequence commits first, including when `READ_COMMITTED_SNAPSHOT` is on.

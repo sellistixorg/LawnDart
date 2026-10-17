@@ -180,6 +180,9 @@ public sealed class EventSession
         if (string.IsNullOrWhiteSpace(copy.SchemaName))
             copy.SchemaName = token;
         copy.SchemaVersion = schemaVersion;
+        // One metadata object is often reused across appends. The event id is
+        // the event's own id, so those appends do not collide.
+        copy.EventId = @event.Id.ToString();
         return copy;
     }
 

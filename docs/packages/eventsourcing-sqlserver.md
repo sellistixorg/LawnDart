@@ -38,11 +38,13 @@ process cache. If the token is still absent, the read returns no rows and
 `TypesResolved` is false. Do not checkpoint past that range. A projection
 reads the range again on the next poll.
 
-Each appended frame has an `EventId` (`UNIQUEIDENTIFIER`, unique). The id
-is the metadata `EventId` when that value is a GUID. Otherwise the store
-mints one before the commit and reuses it if the commit is retried inside
-the same call. A second append of the same id throws
-`EventAlreadyAppendedException`. The outbox row uses that same id.
+Each appended frame has an `EventId` (`UNIQUEIDENTIFIER`, unique). A typed
+append stores `IEvent.Id`, including when several appends share one
+`EventMetadata` object. A raw append uses metadata `EventId` when that
+value is a GUID. Otherwise the store mints one before the commit and
+reuses it if the commit is retried inside the same call. A second append
+of the same id throws `EventAlreadyAppendedException`. The outbox row
+uses that same id.
 
 The store does not retry an append after `Commit` has been attempted. When
 the commit reply is lost, it reads those event ids. If they are present, the

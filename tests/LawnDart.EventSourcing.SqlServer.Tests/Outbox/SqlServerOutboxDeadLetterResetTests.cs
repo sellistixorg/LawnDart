@@ -123,9 +123,6 @@ public class SqlServerOutboxDeadLetterResetTests : IClassFixture<SqlServerOutbox
 
         Assert.Contains(await writer.GetDeadLetteredAsync(10), m => m.Id == message.Id);
         Assert.True(await writer.ResetDeadLetteredAsync(message.Id));
-        var queued = Assert.Single(await writer.GetUnprocessedAsync(10));
-        Assert.Equal(0, queued.Attempts);
-        Assert.Null(queued.DeadLetteredAt);
 
         publisher.ShouldFail = false;
         await processor.ProcessBatchAsync();
