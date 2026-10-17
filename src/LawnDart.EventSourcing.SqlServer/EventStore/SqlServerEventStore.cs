@@ -60,6 +60,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
     private readonly SemaphoreSlim _typeCacheRefresh = new(1, 1);
     private readonly SqlServerEventStoreOptions _options;
     private readonly ILogger<SqlServerEventStore>? _logger;
+    private readonly ReadHorizonGate _readHorizon;
     private readonly JsonSerializerOptions _jsonOptions;
     private readonly ConcurrentDictionary<SqlServerSubscriptionHandle, byte> _subscriptions = new();
     private bool _hasLoggedConnection = false;
@@ -134,6 +135,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         _qTypes     = SqlIdentifier.Qualify(_schemaName, _typesTableName);
         _qSequence  = SqlIdentifier.Qualify(_schemaName, "EventSequencePosition");
         _qFence     = SqlIdentifier.Qualify(_schemaName, AppendFenceTableName);
+        _readHorizon = new ReadHorizonGate(_qTable, _options, _logger);
 
         // Optimize connection string for performance
         // NOTE: If connection string already has pool settings, preserve them
@@ -1529,25 +1531,20 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
     /// <remarks>
     /// Highest <c>SequencePosition</c> whose rowversion is below
     /// <c>MIN_ACTIVE_ROWVERSION()</c>. An append holds a rowversion from before
-    /// it reserves a sequence, so a later commit cannot appear above an open
-    /// earlier one. Sequence cache jumps are not the tail: only written rows count.
+    /// it reserves a sequence, so a later commit stays behind that open append.
+    /// When the same unfinished write holds the horizon longer than
+    /// <see cref="SqlServerEventStoreOptions.ReadHorizonGracePeriod"/>, this returns
+    /// the highest committed sequence instead. Sequence cache jumps are not the tail:
+    /// only written rows count.
     /// </remarks>
     public async Task<long> GetCurrentSequenceAsync(CancellationToken cancellationToken = default)
     {
         var connection = new SqlConnection(_connectionString);
         await using var connectionDisposal = connection.ConfigureAwait(false);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-
-        var sql = $"""
-            SELECT ISNULL(MAX(SequencePosition), 0)
-            FROM {_qTable}
-            WHERE [RowVersion] < MIN_ACTIVE_ROWVERSION()
-            """;
-
-        var command = new SqlCommand(sql, connection);
-        await using var commandDisposal = command.ConfigureAwait(false);
-        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        return result is long l ? l : result is null ? 0L : Convert.ToInt64(result);
+        var horizon = await _readHorizon.ResolveAsync(
+            connection, LateWatch.Head, cancellationToken).ConfigureAwait(false);
+        return horizon.Head;
     }
 
     /// <inheritdoc />
@@ -2302,23 +2299,28 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         if (!await EnsureQueryTypesResolvedAsync(query, cancellationToken).ConfigureAwait(false))
             return new QueryRead([], false);
 
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        var window = await ApplyReadHorizonAsync(
+            connection, LateWatch.Read(fromSequencePosition), toSequencePosition, cancellationToken)
+            .ConfigureAwait(false);
+
         var built = DcbQuerySql.Build(
             _qTable,
             _qTags,
             query,
             _eventTypes.FindId,
             fromSequencePosition,
-            toSequencePosition,
+            window.ToSequencePosition,
             toCommitTimestamp,
             limit,
-            DcbQuerySql.Mode.Events);
+            DcbQuerySql.Mode.Events,
+            window.ApplyStableHorizon);
 
         if (built.ShortCircuited)
             return new QueryRead([], true);
 
-        var connection = new SqlConnection(_connectionString);
-        await using var connectionDisposal = connection.ConfigureAwait(false);
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         var command = new SqlCommand(built.Sql, connection);
         await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddRange(built.Parameters.ToArray());
@@ -2405,28 +2407,51 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         if (!await EnsureQueryTypesResolvedAsync(query, cancellationToken).ConfigureAwait(false))
             return 0L;
 
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        var window = await ApplyReadHorizonAsync(
+            connection, LateWatch.None, toSequencePosition, cancellationToken)
+            .ConfigureAwait(false);
+
         var built = DcbQuerySql.Build(
             _qTable,
             _qTags,
             query,
             _eventTypes.FindId,
             fromSequencePosition,
-            toSequencePosition,
+            window.ToSequencePosition,
             toCommitTimestamp,
             limit: null,
-            DcbQuerySql.Mode.MaxSequence);
+            DcbQuerySql.Mode.MaxSequence,
+            window.ApplyStableHorizon);
 
         if (built.ShortCircuited)
             return 0L;
 
-        var connection = new SqlConnection(_connectionString);
-        await using var connectionDisposal = connection.ConfigureAwait(false);
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         var command = new SqlCommand(built.Sql, connection);
         await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddRange(built.Parameters.ToArray());
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return result is long l ? l : result is null || result is DBNull ? 0L : Convert.ToInt64(result);
     }
+
+    private async Task<HorizonWindow> ApplyReadHorizonAsync(
+        SqlConnection connection,
+        LateWatch watch,
+        long? toSequencePosition,
+        CancellationToken cancellationToken)
+    {
+        var horizon = await _readHorizon.ResolveAsync(
+            connection, watch, cancellationToken).ConfigureAwait(false);
+        if (!horizon.Advanced)
+            return new HorizonWindow(toSequencePosition, ApplyStableHorizon: true);
+
+        var cap = horizon.Head;
+        var to = toSequencePosition is null ? cap : Math.Min(toSequencePosition.Value, cap);
+        return new HorizonWindow(to, ApplyStableHorizon: false);
+    }
+
+    private readonly record struct HorizonWindow(long? ToSequencePosition, bool ApplyStableHorizon);
 }
 

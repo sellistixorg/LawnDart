@@ -117,5 +117,19 @@ public class DcbQuerySqlTests
             limit: null,
             DcbQuerySql.Mode.MaxSequence);
         Assert.Contains("MIN_ACTIVE_ROWVERSION()", max.Sql, StringComparison.Ordinal);
+
+        var advanced = DcbQuerySql.Build(
+            "[dbo].[Events]",
+            "[dbo].[EventTags]",
+            Query.All(),
+            _ => null,
+            fromSequencePosition: 1,
+            toSequencePosition: 4,
+            toTimestamp: null,
+            limit: null,
+            DcbQuerySql.Mode.Events,
+            applyStableHorizon: false);
+        Assert.DoesNotContain("MIN_ACTIVE_ROWVERSION()", advanced.Sql, StringComparison.Ordinal);
+        Assert.Contains("READPAST", advanced.Sql, StringComparison.Ordinal);
     }
 }
