@@ -22,23 +22,23 @@ namespace LawnDart.Projections.Lightweight.Tests.Integration;
 [Trait("Category", "Integration")]
 public sealed class ProjectionRebuildSqlTests : IAsyncLifetime
 {
-    private readonly MsSqlContainer _container;
+    private MsSqlContainer? _container;
     private string _cs = string.Empty;
-
-    public ProjectionRebuildSqlTests()
-    {
-        _container = new MsSqlBuilder(MsSqlTestImage.Server2022)
-            .WithPassword("RebuildTest1!")
-            .Build();
-    }
 
     public async Task InitializeAsync()
     {
-        await _container.StartAsync();
+        _container = await MsSqlContainerStartup.StartAsync(() =>
+            new MsSqlBuilder(MsSqlTestImage.Server2025)
+                .WithPassword("RebuildTest1!")
+                .Build());
         _cs = _container.GetConnectionString();
     }
 
-    public async Task DisposeAsync() => await _container.DisposeAsync();
+    public async Task DisposeAsync()
+    {
+        if (_container is not null)
+            await _container.DisposeAsync();
+    }
 
     // ── helpers ──────────────────────────────────────────────────────────────
 

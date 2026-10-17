@@ -20,10 +20,10 @@ public sealed class DcbSqlServerConcurrencyTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _container = new MsSqlBuilder(MsSqlTestImage.Server2022)
-            .WithPassword("Test123!")
-            .Build();
-        await _container.StartAsync();
+        _container = await MsSqlContainerStartup.StartAsync(() =>
+            new MsSqlBuilder(MsSqlTestImage.Server2025)
+                .WithPassword("Test123!")
+                .Build());
 
         _store = new SqlServerEventStore(
             _container.GetConnectionString(),

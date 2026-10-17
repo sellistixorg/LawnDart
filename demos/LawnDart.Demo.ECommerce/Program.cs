@@ -38,7 +38,7 @@ internal static class Program
 {
     // DEMO ONLY. The container accepts this password for the local SQL run.
     private const string DemoSqlPassword = "Your_password123";
-    private const string DemoSqlImage = "mcr.microsoft.com/mssql/server:2022-CU20-ubuntu-22.04";
+    private const string DemoSqlImage = "mcr.microsoft.com/mssql/server:2025-CU9-GDR1-ubuntu-22.04";
 
     private static readonly string[] Approaches =
         ["traditional", "dcb", "hybrid", "eda", "multicontext", "outbox"];

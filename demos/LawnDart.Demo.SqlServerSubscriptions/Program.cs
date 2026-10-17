@@ -4,7 +4,7 @@
 // It does not create the database.
 //
 //   docker run -e "ACCEPT_EULA=Y" -e "MSSQL_SA_PASSWORD=Your_password123" \
-//     -p 1433:1433 -d mcr.microsoft.com/mssql/server:2022-latest
+//     -p 1433:1433 -d mcr.microsoft.com/mssql/server:2025-CU9-GDR1-ubuntu-22.04
 //
 // DEMO ONLY: Your_password123 is a sample password.
 //
