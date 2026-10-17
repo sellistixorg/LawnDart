@@ -110,7 +110,8 @@ Outbox rows copy the appended frame in the same transaction: payload
 bytes (`VARBINARY`), `CodecId` (`TINYINT`), and `SchemaVersion` (`INT`),
 none of them with a column default. Opening an older outbox table throws
 and names drop-and-recreate. `EnableOutbox = true` writes those rows
-whether or not an `IOutboxWriter` was injected. A row that exhausts
+whether or not an `IOutboxWriter` was injected. `OutboxClaimLease`
+(default 30 seconds) is how long a claim hides a row. A row that exhausts
 publish attempts is dead-lettered. `ResetDeadLetteredAsync` and
 `ResetAllDeadLetteredAsync` clear that state on this context's table so
 the processor publishes the row again. See

@@ -34,6 +34,44 @@ public class SqlServerOutboxWriterTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task GetUnprocessedAsync_HonorsClaimLease()
+    {
+        var held = new SqlServerOutboxWriter(
+            _connectionString!, "OutboxHeld", NullLogger<SqlServerOutboxWriter>.Instance, "dbo", TimeSpan.FromHours(1));
+        await held.InitializeSchemaAsync();
+        var heldMessage = new OutboxMessage
+        {
+            Id = Guid.NewGuid(),
+            EventType = "TestEvent",
+            Payload = "{}"u8.ToArray(),
+            Metadata = "{}",
+            CreatedAt = DateTime.UtcNow,
+            StreamId = "held",
+            SequencePosition = 1
+        };
+        await held.WriteAsync(heldMessage);
+        Assert.Equal(heldMessage.Id, Assert.Single(await held.GetUnprocessedAsync(10)).Id);
+        Assert.Empty(await held.GetUnprocessedAsync(10));
+
+        var open = new SqlServerOutboxWriter(
+            _connectionString!, "OutboxOpen", NullLogger<SqlServerOutboxWriter>.Instance, "dbo", TimeSpan.Zero);
+        await open.InitializeSchemaAsync();
+        var openMessage = new OutboxMessage
+        {
+            Id = Guid.NewGuid(),
+            EventType = "TestEvent",
+            Payload = "{}"u8.ToArray(),
+            Metadata = "{}",
+            CreatedAt = DateTime.UtcNow,
+            StreamId = "open",
+            SequencePosition = 1
+        };
+        await open.WriteAsync(openMessage);
+        Assert.Equal(openMessage.Id, Assert.Single(await open.GetUnprocessedAsync(10)).Id);
+        Assert.Equal(openMessage.Id, Assert.Single(await open.GetUnprocessedAsync(10)).Id);
+    }
+
+    [Fact]
     public async Task WriteAsync_AddsMessageToOutbox()
     {
         // Arrange

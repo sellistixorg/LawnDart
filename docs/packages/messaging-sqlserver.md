@@ -33,8 +33,10 @@ await app.Services.InitializeSqlInboxStoreAsync();
 
 `IsProcessedAsync` returns true only when `ProcessedAt` is inside
 `MessagingOptions.InboxDeduplicationWindow` (default 24 hours).
-`MarkProcessedAsync` is idempotent. `PurgeExpiredAsync` deletes rows older
-than that window and returns the count.
+`TryClaimAsync` holds the key for `InboxClaimLease` (default 30 seconds).
+`TimeSpan.Zero` lets the next caller claim it at once. A failed handler
+releases the claim. `MarkProcessedAsync` is idempotent. `PurgeExpiredAsync`
+deletes rows older than the deduplication window and returns the count.
 
 Hosted reactors store `reactor:{hash}:{message id}`. Hosted processors
 store `processor:{hash}:{message id}`. `hash` is 32 hexadecimal characters

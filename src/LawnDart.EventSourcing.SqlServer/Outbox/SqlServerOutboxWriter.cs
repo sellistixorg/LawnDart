@@ -23,9 +23,7 @@ public class SqlServerOutboxWriter : IOutboxWriter
 
     internal const string UpgradableSchemaFormat = "1";
 
-    /// <summary>How long a claimed outbox row stays hidden from other processors.</summary>
-    internal static readonly TimeSpan ClaimLease = TimeSpan.FromSeconds(30);
-
+    private readonly TimeSpan _claimLease;
     private readonly string _connectionString;
     private readonly string _tableName;
     private readonly string _schemaName;
@@ -36,15 +34,25 @@ public class SqlServerOutboxWriter : IOutboxWriter
 
     internal string QualifiedTableName => _qualifiedTableName;
 
+    private int ClaimLeaseSeconds =>
+        _claimLease <= TimeSpan.Zero
+            ? 0
+            : (int)Math.Min(int.MaxValue, Math.Ceiling(_claimLease.TotalSeconds));
+
     /// <summary>
     /// Initializes a new instance of the SqlServerOutboxWriter.
+    /// <paramref name="claimLease"/> defaults to 30 seconds.
+    /// <see cref="TimeSpan.Zero"/> lets the next poll claim the row again.
+    /// SQL Server stores whole seconds, rounded up.
     /// </summary>
     public SqlServerOutboxWriter(
         string connectionString,
         string tableName = "Outbox",
         ILogger<SqlServerOutboxWriter>? logger = null,
-        string schemaName = "dbo")
+        string schemaName = "dbo",
+        TimeSpan? claimLease = null)
     {
+        _claimLease            = claimLease ?? TimeSpan.FromSeconds(30);
         _connectionString      = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
         _tableName             = tableName;
         _schemaName            = string.IsNullOrWhiteSpace(schemaName) ? "dbo" : schemaName;
@@ -148,7 +156,7 @@ public class SqlServerOutboxWriter : IOutboxWriter
         {
             using var command = new SqlCommand(sql, connection, transaction);
             command.Parameters.Add("@BatchSize", SqlDbType.Int).Value = batchSize;
-            command.Parameters.Add("@LeaseSeconds", SqlDbType.Int).Value = Math.Max(1, (int)ClaimLease.TotalSeconds);
+            command.Parameters.Add("@LeaseSeconds", SqlDbType.Int).Value = ClaimLeaseSeconds;
             var messages = new List<OutboxMessage>();
             using (var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
             {

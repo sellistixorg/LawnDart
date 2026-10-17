@@ -176,14 +176,26 @@ public class SqlServerInboxStoreTests
         Assert.True(await store.IsProcessedAsync("from-di"));
     }
 
-    private async Task<SqlServerInboxStore> CreateReadyStoreAsync(TimeSpan? window = null)
+    [Fact]
+    public async Task Claim_lease_override_is_honored()
     {
-        var store = CreateStore(window: window);
+        var held = await CreateReadyStoreAsync(claimLease: TimeSpan.FromHours(1));
+        Assert.True(await held.TryClaimAsync("held"));
+        Assert.False(await held.TryClaimAsync("held"));
+
+        var open = await CreateReadyStoreAsync(claimLease: TimeSpan.Zero);
+        Assert.True(await open.TryClaimAsync("open"));
+        Assert.True(await open.TryClaimAsync("open"));
+    }
+
+    private async Task<SqlServerInboxStore> CreateReadyStoreAsync(TimeSpan? window = null, TimeSpan? claimLease = null)
+    {
+        var store = CreateStore(window: window, claimLease: claimLease);
         await store.InitializeSchemaAsync();
         return store;
     }
 
-    private SqlServerInboxStore CreateStore(string? table = null, TimeSpan? window = null)
+    private SqlServerInboxStore CreateStore(string? table = null, TimeSpan? window = null, TimeSpan? claimLease = null)
     {
         table ??= NewTable();
         return new SqlServerInboxStore(
@@ -194,7 +206,8 @@ public class SqlServerInboxStoreTests
             }),
             Options.Create(new MessagingOptions
             {
-                InboxDeduplicationWindow = window ?? TimeSpan.FromHours(24)
+                InboxDeduplicationWindow = window ?? TimeSpan.FromHours(24),
+                InboxClaimLease = claimLease ?? TimeSpan.FromSeconds(30)
             }));
     }
 

@@ -14,6 +14,7 @@ changes to the public API.
 
 - `QueryResult.TypesResolved` and `EventLogQueryResult.TypesResolved` are false when a queried event type is still unknown after the store reloads its type map. An empty result then does not mean the range was empty.
 - `SqlServerEventStoreOptions.ReadHorizonGracePeriod` (default 30 seconds) is how long one unfinished SQL Server write may hold the read horizon. After that, readers move to committed rows past it and log a warning. `Timeout.InfiniteTimeSpan` waits until the write ends. A row that commits below that head logs an error in the process that moved the horizon.
+- `OutboxClaimLease` (default 30 seconds) is how long an outbox claim hides a row. `InboxClaimLease` (default 30 seconds) is how long an inbox claim blocks a second delivery. `TimeSpan.Zero` expires either claim at once.
 
 ### Changed
 

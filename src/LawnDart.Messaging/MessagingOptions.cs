@@ -11,4 +11,15 @@ public class MessagingOptions
     /// Defaults to 24 hours.
     /// </summary>
     public TimeSpan InboxDeduplicationWindow { get; set; } = TimeSpan.FromHours(24);
+
+    /// <summary>
+    /// How long an inbox claim blocks another delivery of the same key.
+    /// Default: 30 seconds.
+    /// </summary>
+    /// <remarks>
+    /// A claim expires so a handler that crashes can run again.
+    /// <see cref="TimeSpan.Zero"/> expires the claim at once, so the next
+    /// caller can take the key.
+    /// </remarks>
+    public TimeSpan InboxClaimLease { get; set; } = TimeSpan.FromSeconds(30);
 }

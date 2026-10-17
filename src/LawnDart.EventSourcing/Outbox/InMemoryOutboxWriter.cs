@@ -11,11 +11,16 @@ namespace LawnDart.EventSourcing.Outbox;
 /// </remarks>
 public sealed class InMemoryOutboxWriter : IOutboxWriter
 {
-    private static readonly TimeSpan ClaimLease = TimeSpan.FromSeconds(30);
-
+    private readonly TimeSpan _claimLease;
     private readonly List<OutboxMessage> _messages = [];
     private readonly Dictionary<Guid, DateTime> _claims = [];
     private readonly object _lock = new();
+
+    /// <summary>Creates a writer. <paramref name="claimLease"/> defaults to 30 seconds.</summary>
+    public InMemoryOutboxWriter(TimeSpan? claimLease = null)
+    {
+        _claimLease = claimLease ?? TimeSpan.FromSeconds(30);
+    }
 
     /// <inheritdoc/>
     public Task InitializeSchemaAsync(CancellationToken cancellationToken = default)
@@ -55,7 +60,7 @@ public sealed class InMemoryOutboxWriter : IOutboxWriter
                 .OrderBy(m => m.SequencePosition)
                 .Take(batchSize)
                 .ToList();
-            var lease = now + ClaimLease;
+            var lease = now + _claimLease;
             foreach (var message in unprocessed)
                 _claims[message.Id] = lease;
             return Task.FromResult<IReadOnlyList<OutboxMessage>>(unprocessed);

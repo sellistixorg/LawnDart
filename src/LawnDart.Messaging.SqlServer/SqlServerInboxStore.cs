@@ -23,8 +23,6 @@ public sealed class SqlServerInboxStore : IInboxStore
 
     internal const string UpgradableSchemaFormat = "1";
 
-    internal static readonly TimeSpan ClaimLease = TimeSpan.FromSeconds(30);
-
     /// <summary>Maximum characters stored in <c>MessageId</c>.</summary>
     public const int MaxKeyLength = 256;
 
@@ -227,7 +225,8 @@ public sealed class SqlServerInboxStore : IInboxStore
     {
         ValidateKey(messageId);
         var now = DateTimeOffset.UtcNow;
-        var leaseCutoff = now - ClaimLease;
+        var lease = _messagingOptions.InboxClaimLease;
+        var leaseCutoff = lease > TimeSpan.Zero ? now - lease : DateTimeOffset.MaxValue;
 
         var sql = $@"
             DECLARE @processed DATETIMEOFFSET(7);
