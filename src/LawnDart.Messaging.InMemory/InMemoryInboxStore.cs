@@ -9,8 +9,6 @@ namespace LawnDart.Messaging.InMemory;
 /// </summary>
 public sealed class InMemoryInboxStore : IInboxStore
 {
-    private static readonly TimeSpan ClaimLease = TimeSpan.FromSeconds(30);
-
     private readonly ConcurrentDictionary<string, Entry> _entries = new(StringComparer.Ordinal);
     private readonly object _gate = new();
     private readonly MessagingOptions _options;
@@ -69,7 +67,7 @@ public sealed class InMemoryInboxStore : IInboxStore
                     && now - processed <= _options.InboxDeduplicationWindow)
                     return Task.FromResult(false);
 
-                if (entry.ClaimedAt is { } claimed && now - claimed <= ClaimLease && entry.ProcessedAt is null)
+                if (ClaimIsLive(entry.ClaimedAt, entry.ProcessedAt, now))
                     return Task.FromResult(false);
 
                 entry.ProcessedAt = null;
@@ -93,6 +91,12 @@ public sealed class InMemoryInboxStore : IInboxStore
 
         return Task.CompletedTask;
     }
+
+    private bool ClaimIsLive(DateTimeOffset? claimedAt, DateTimeOffset? processedAt, DateTimeOffset now) =>
+        _options.InboxClaimLease > TimeSpan.Zero
+        && processedAt is null
+        && claimedAt is { } claimed
+        && now - claimed <= _options.InboxClaimLease;
 
     private sealed class Entry
     {

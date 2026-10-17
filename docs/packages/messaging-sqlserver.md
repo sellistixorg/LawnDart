@@ -33,8 +33,13 @@ await app.Services.InitializeSqlInboxStoreAsync();
 
 `IsProcessedAsync` returns true only when `ProcessedAt` is inside
 `MessagingOptions.InboxDeduplicationWindow` (default 24 hours).
-`MarkProcessedAsync` is idempotent. `PurgeExpiredAsync` deletes rows older
-than that window and returns the count.
+`TryClaimAsync` holds the key for `InboxClaimLease` (default 30 seconds).
+`TimeSpan.Zero` lets the next caller claim it at once. A failed handler
+releases the claim. A custom `IInboxStore` implements both
+`TryClaimAsync` and `ReleaseClaimAsync`. See
+[Custom inbox](messaging.md#custom-inbox). `MarkProcessedAsync` is
+idempotent. `PurgeExpiredAsync`
+deletes rows older than the deduplication window and returns the count.
 
 Hosted reactors store `reactor:{hash}:{message id}`. Hosted processors
 store `processor:{hash}:{message id}`. `hash` is 32 hexadecimal characters
@@ -43,9 +48,12 @@ stays inside the column. Two consumers of one message each keep their own
 row. The key must be 256 characters or fewer. A message id that would push
 the key over that limit is stored as a hash of the same length.
 
-An existing table with the wrong shape throws
-`IncompatibleInboxSchemaException`. Drop and recreate the table. There is
-no in-place migration.
+Format 1 is upgraded in place by `InitializeSqlInboxStoreAsync`. It makes
+`ProcessedAt` nullable and adds nullable `ClaimedAt`, then stamps format
+2. A missing stamp, or any stamp other than 1 or 2, throws
+`IncompatibleInboxSchemaException` and names drop and recreate. Back up
+first. The events and outbox stamps are on
+[Upgrading from 0.6.0-alpha.2](eventsourcing-sqlserver.md#upgrading-from-060-alpha2).
 
 Defaults are schema `dbo` and table `Inbox`. Pass a configure delegate to
 `AddSqlInboxStore` to change them.
@@ -58,4 +66,5 @@ Defaults are schema `dbo` and table `Inbox`. Pass a configure delegate to
 - [RabbitMQ](messaging-rabbitmq.md)
 - [Azure Service Bus](messaging-azureservicebus.md)
 - [Outbox](../OUTBOX_PATTERN.md)
+- [Upgrading from 0.6.0-alpha.2](eventsourcing-sqlserver.md#upgrading-from-060-alpha2)
 - [EDA patterns](../EDA-Patterns.md)

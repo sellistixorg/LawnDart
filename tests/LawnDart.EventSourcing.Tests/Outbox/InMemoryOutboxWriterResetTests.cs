@@ -1,3 +1,4 @@
+using LawnDart.EventSourcing;
 using LawnDart.EventSourcing.Outbox;
 using LawnDart.Outbox;
 
@@ -125,6 +126,24 @@ public class InMemoryOutboxWriterResetTests
             () => writer.ResetDeadLetteredAsync(Guid.NewGuid(), cts.Token));
         await Assert.ThrowsAsync<OperationCanceledException>(
             () => writer.ResetAllDeadLetteredAsync(cts.Token));
+    }
+
+    [Fact]
+    public async Task GetUnprocessed_HonorsClaimLease()
+    {
+        Assert.Equal(TimeSpan.FromSeconds(30), new EventSourcingOptions().OutboxClaimLease);
+
+        var held = new InMemoryOutboxWriter(TimeSpan.FromHours(1));
+        var heldMessage = NewMessage();
+        await held.WriteAsync(heldMessage);
+        Assert.Equal(heldMessage.Id, Assert.Single(await held.GetUnprocessedAsync(10)).Id);
+        Assert.Empty(await held.GetUnprocessedAsync(10));
+
+        var open = new InMemoryOutboxWriter(TimeSpan.Zero);
+        var openMessage = NewMessage();
+        await open.WriteAsync(openMessage);
+        Assert.Equal(openMessage.Id, Assert.Single(await open.GetUnprocessedAsync(10)).Id);
+        Assert.Equal(openMessage.Id, Assert.Single(await open.GetUnprocessedAsync(10)).Id);
     }
 
     private static OutboxMessage NewMessage(long sequence = 1, int attempts = 0)

@@ -72,6 +72,10 @@ for the session; the log has `IEventLogSubscriptions`.
 
 - `Subscribe(string subscriberId, long fromSequence, EventSubscriptionFilter? filter = null, CancellationToken cancellationToken = default)`
 
+`IEventStore` and `IEventLog` have the same members as 0.6.0-alpha.2.
+`QueryResult.TypesResolved` and `EventLogQueryResult.TypesResolved`
+default to true. An existing constructor call still compiles.
+
 The Core package ships `PublicAPI.Shipped.txt`. Adding or removing a public
 member fails the build (`RS0016` / `RS0017`) unless that file is updated.
 See [Backend selection](../BACKEND_SELECTION.md).

@@ -50,6 +50,26 @@ public class InMemoryInboxStoreTests
     }
 
     [Fact]
+    public async Task TryClaim_HonorsClaimLease()
+    {
+        Assert.Equal(TimeSpan.FromSeconds(30), new MessagingOptions().InboxClaimLease);
+
+        var held = new InMemoryInboxStore(Options.Create(new MessagingOptions
+        {
+            InboxClaimLease = TimeSpan.FromHours(1)
+        }));
+        Assert.True(await held.TryClaimAsync("held"));
+        Assert.False(await held.TryClaimAsync("held"));
+
+        var open = new InMemoryInboxStore(Options.Create(new MessagingOptions
+        {
+            InboxClaimLease = TimeSpan.Zero
+        }));
+        Assert.True(await open.TryClaimAsync("open"));
+        Assert.True(await open.TryClaimAsync("open"));
+    }
+
+    [Fact]
     public async Task IsProcessedAsync_ExpiredEntry_ReturnsFalse()
     {
         // Use a very short deduplication window.

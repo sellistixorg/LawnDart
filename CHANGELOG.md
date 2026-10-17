@@ -10,16 +10,23 @@ changes to the public API.
 
 ## [Unreleased]
 
+### Breaking
+
+- A custom `IInboxStore` must implement `TryClaimAsync` and `ReleaseClaimAsync`. `TryClaimAsync` returns true only when this caller holds the key. Return false when the key is already processed inside the deduplication window, or a live claim is held. `ReleaseClaimAsync` drops a claim that has not been marked processed and leaves a processed key in place. Hosted reactors and processors claim before the handler and release when the handler throws.
+- `Events.EventId` is unique. An append whose metadata `EventId` is already in the log throws `EventAlreadyAppendedException`, and the stored row stays. This applies to an app that sets `EventId` in metadata and sends that same id on a later append. Give each new event its own id. Catch `EventAlreadyAppendedException` when the call is a retry of an append that already landed. The in-memory log rejects that reuse the same way. A format 2 or 3 table has no `EventId` column, so the upgrade fills each row with `NEWID()` and the unique index succeeds. If the column is already there and two rows share an id, creating `UX_EventId` fails and the stamp stays put. Give those rows distinct ids and call `InitializeSchemaAsync` again.
+
 ### Added
 
 - `QueryResult.TypesResolved` and `EventLogQueryResult.TypesResolved` are false when a queried event type is still unknown after the store reloads its type map. An empty result then does not mean the range was empty.
 - `SqlServerEventStoreOptions.ReadHorizonGracePeriod` (default 30 seconds) is how long one unfinished SQL Server write may hold the read horizon. After that, readers move to committed rows past it and log a warning. `Timeout.InfiniteTimeSpan` waits until the write ends. A row that commits below that head logs an error in the process that moved the horizon.
+- `OutboxClaimLease` (default 30 seconds) is how long an outbox claim hides a row. `InboxClaimLease` (default 30 seconds) is how long an inbox claim blocks a second delivery. `TimeSpan.Zero` expires either claim at once.
 
 ### Changed
 
 - `InitializeSchemaAsync` upgrades a SQL Server events table stamped `LawnDart_SchemaFormat` 2 to format 3. It adds `Events.RowVersion`, creates `AppendFence`, and sets `EventTags.Tag` to the `Latin1_General_100_BIN2` collation. Existing rows stay. A missing stamp, or any stamp other than 2 or 3, is still a drop and recreate.
 - `GetCurrentSequenceAsync` on SQL Server returns the highest sequence below `MIN_ACTIVE_ROWVERSION()`. When one unfinished write holds that horizon longer than `ReadHorizonGracePeriod`, the call returns the highest committed sequence instead.
 - Tag equality is ordinal. `Customer:ABC` and `customer:abc` are different tags on SQL Server reads, SQL Server subscriptions, and the in-memory store.
+- `IEventStore` and `IEventLog` have the same members as 0.6.0-alpha.2. `QueryResult.TypesResolved` and `EventLogQueryResult.TypesResolved` are new properties and default to true, so an existing constructor call still compiles.
 
 ### Fixed
 

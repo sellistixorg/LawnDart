@@ -36,6 +36,7 @@ public static class BoundedContextBuilderExtensions
 
     /// <summary>
     /// Configures this bounded context to use the in-memory event store.
+    /// <paramref name="configure"/> sets options such as <see cref="EventSourcingOptions.OutboxClaimLease"/>.
     /// </summary>
     /// <remarks>
     /// All context-specific services (<see cref="IEventStore"/>,
@@ -48,9 +49,14 @@ public static class BoundedContextBuilderExtensions
     /// hand-written bridge. Named contexts stay keyed-only.
     /// </remarks>
     /// <returns>The builder for further chaining.</returns>
-    public static BoundedContextBuilder UseInMemory(this BoundedContextBuilder builder)
+    public static BoundedContextBuilder UseInMemory(
+        this BoundedContextBuilder builder,
+        Action<EventSourcingOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(builder);
+
+        var options = new EventSourcingOptions();
+        configure?.Invoke(options);
 
         var services     = builder.Services;
         var contextName  = builder.ContextName;
@@ -82,7 +88,7 @@ public static class BoundedContextBuilderExtensions
         services.AddKeyedSingleton<ISnapshotAdmin>(contextName,
             (sp, key) => sp.GetRequiredKeyedService<InMemorySnapshotStore>((string)key!));
 
-        services.AddKeyedSingleton<IOutboxWriter>(contextName, (_, _) => new InMemoryOutboxWriter());
+        services.AddKeyedSingleton<IOutboxWriter>(contextName, (_, _) => new InMemoryOutboxWriter(options.OutboxClaimLease));
 
         // Keyed repositories — transient (scoped not supported for keyed in all scenarios)
         services.AddKeyedTransient<IAggregateRepository>(contextName,

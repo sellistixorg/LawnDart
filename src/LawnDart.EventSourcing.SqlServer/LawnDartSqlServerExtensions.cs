@@ -84,7 +84,8 @@ public static class LawnDartSqlServerExtensions
                 options.ConnectionString,
                 options.OutboxTableName,
                 sp.GetService<ILogger<SqlServerOutboxWriter>>(),
-                options.SchemaName));
+                options.SchemaName,
+                options.OutboxClaimLease));
 
         // Keyed event store
         services.AddKeyedSingleton<IEventStore>(contextName, (sp, key) =>

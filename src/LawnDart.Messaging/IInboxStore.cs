@@ -37,7 +37,8 @@ public interface IInboxStore
     /// <summary>
     /// Claims <paramref name="messageId"/> for this caller. False when the key is
     /// already processed inside the deduplication window, or a live claim is held.
-    /// A claim expires after 30 seconds so a crashed handler can be retried.
+    /// A claim lasts for <see cref="MessagingOptions.InboxClaimLease"/> (default 30 seconds)
+    /// so a crashed handler can be retried.
     /// </summary>
     /// <param name="messageId">Dedup key. Same shape as <see cref="IsProcessedAsync"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>

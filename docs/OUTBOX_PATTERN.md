@@ -22,9 +22,12 @@ meter when a publish throws, and `outbox.deadlettered` when it parks a row
 that used its attempts. Both are tagged with `outbox.event_type`.
 
 The outbox row id is the event id. `GetUnprocessedAsync` claims each row
-for 30 seconds (`ClaimedUntil`) with `UPDLOCK, READPAST`, so a second
-processor does not publish it. A failed publish clears the claim. Format
-`1` outbox tables gain `ClaimedUntil` when `InitializeSchemaAsync` runs.
+for `OutboxClaimLease` (default 30 seconds) in `ClaimedUntil`, with
+`UPDLOCK, READPAST`, so a second processor does not publish it. Set the
+lease to `TimeSpan.Zero` when the next poll should claim the row again.
+A failed publish clears the claim. Format `1` outbox tables gain
+`ClaimedUntil` when `InitializeSchemaAsync` runs. The in-memory writer
+uses the same option.
 
 The outbox row is a copy of the appended frame, written in the same
 transaction: family token, payload **bytes**, metadata as UTF-8 JSON

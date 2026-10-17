@@ -58,14 +58,14 @@ append result is the row that landed.
 
 Init writes an extended property `LawnDart_SchemaFormat` on the events
 table (current format `4`). Formats `2` and `3` are upgraded in place.
-Format `3` gains `Events.EventId`. Format `2` also gains the format 3
-objects below.
+Format `4` adds a unique `Events.EventId`. Format `2` also gains the
+format 3 objects below.
 `InitializeSchemaAsync` adds `Events.RowVersion` (`rowversion`), creates
 `AppendFence`, and alters `EventTags.Tag` to `Latin1_General_100_BIN2`.
 Existing rows stay. Call it once on each database before the new process
 reads. A table with no stamp, or with any stamp other than `2`, `3`, or `4`,
-throws and names drop-and-recreate. There is no migration tool for those
-stamps.
+throws and names drop-and-recreate. Back up first. See
+[Upgrading from 0.6.0-alpha.2](#upgrading-from-060-alpha2).
 
 `RowVersion` is the commit horizon. An append inserts an `AppendFence` row
 before it reserves a sequence, so the transaction owns a rowversion first.
@@ -79,8 +79,19 @@ write may hold that horizon. Thirty seconds covers a lock wait or a slow
 batch. A stuck write then stops holding every reader. When the same write
 is still open after the grace period, readers move to the highest committed
 sequence and log a warning. The warning names the blocking session when
-SQL Server reports it, and how long the write has been open. Set the option
-to `Timeout.InfiniteTimeSpan` to wait until the write ends. `TimeSpan.Zero`
+SQL Server reports it, and how long the write has been open. That name
+comes from `sys.dm_tran_active_transactions`,
+`sys.dm_tran_session_transactions`, and
+`sys.dm_tran_database_transactions`. SQL Server and Azure SQL Managed
+Instance need `VIEW SERVER STATE`. On Azure SQL Database, grant
+`VIEW DATABASE STATE` on the database. Basic, S0, S1, and databases in
+an elastic pool do not accept that grant for these views. Use the server
+admin, the Microsoft Entra admin, or the `##MS_ServerStateReader##`
+server role there. Without the permission the warning reports session
+`unknown` and transaction `unknown`. The grace period still moves
+readers to the committed rows. The hold time then starts when this
+process first sees that stable head. Set the option to
+`Timeout.InfiniteTimeSpan` to wait until the write ends. `TimeSpan.Zero`
 moves readers forward once the write has been open for more than zero
 milliseconds.
 
@@ -110,7 +121,8 @@ Outbox rows copy the appended frame in the same transaction: payload
 bytes (`VARBINARY`), `CodecId` (`TINYINT`), and `SchemaVersion` (`INT`),
 none of them with a column default. Opening an older outbox table throws
 and names drop-and-recreate. `EnableOutbox = true` writes those rows
-whether or not an `IOutboxWriter` was injected. A row that exhausts
+whether or not an `IOutboxWriter` was injected. `OutboxClaimLease`
+(default 30 seconds) is how long a claim hides a row. A row that exhausts
 publish attempts is dead-lettered. `ResetDeadLetteredAsync` and
 `ResetAllDeadLetteredAsync` clear that state on this context's table so
 the processor publishes the row again. See
@@ -140,6 +152,64 @@ without CLR types). See
 [BACKEND_SELECTION.md](../BACKEND_SELECTION.md).
 
 InMemory remains the documented default for local work and Academy.
+
+## Upgrading from 0.6.0-alpha.2
+
+0.6.0-alpha.2 stamped the events table `LawnDart_SchemaFormat` 2, the
+outbox `LawnDart_OutboxSchemaFormat` 1, and the inbox
+`LawnDart_InboxSchemaFormat` 1. This process stamps events 4, outbox 2,
+and inbox 2.
+
+Call `InitializeSchemaAsync` on the SQL event store once on each database
+before the new process reads. Call it on the outbox writer when
+`EnableOutbox` is on. Call `InitializeSqlInboxStoreAsync` when the inbox
+is SQL Server. A second call on a table that is already current returns.
+
+A format 2 or 3 events table becomes 4 in that call. Format 3 is
+`Events.RowVersion`, the `AppendFence` table, and `EventTags.Tag` set to
+`Latin1_General_100_BIN2`. Format 4 adds `Events.EventId`
+(`UNIQUEIDENTIFIER NOT NULL`) and a unique index. Existing rows are filled
+with `NEWID()`. Those values are new. 0.6.0-alpha.2 did not store an event
+id, so the filled value is not an old `IEvent.Id`.
+
+`Events.EventId` is unique on SQL Server and in the in-memory log. An append
+whose metadata `EventId` is already stored throws
+`EventAlreadyAppendedException`. The stored row stays. This applies to an
+app that writes `EventId` into metadata and reuses that value on a later
+append. Use a new id for each new event. When the call is a retry of an
+append that already landed, catch `EventAlreadyAppendedException`. One
+metadata object copied onto several events in a single append keeps the id
+for the first event. The rest of that batch get distinct ids. A later
+append of the first id still throws.
+
+A format 2 or 3 table has no `EventId` column, so that upgrade cannot
+start from duplicate ids. If the column is already present and two rows
+share a value, `CREATE UNIQUE INDEX UX_EventId` fails.
+`InitializeSchemaAsync` throws that error and leaves the old stamp. Assign
+distinct ids to the duplicates, then call it again.
+
+Outbox format 1 becomes 2 by adding nullable `ClaimedUntil`. Inbox format
+1 becomes 2 by making `ProcessedAt` nullable and adding nullable
+`ClaimedAt`.
+
+The stamp moves forward only. There is no downgrade. An older process that
+does not accept the new stamp throws and names drop and recreate.
+
+A missing stamp, or any stamp other than 2, 3, or 4 on events, 1 or 2 on
+the outbox, and 1 or 2 on the inbox, throws the same way. Back up the
+database before you drop the table. This process does not copy the rows.
+
+The steps run as separate batches. Run the call again after a failure.
+Work that is already in place is skipped.
+
+On a large `Events` table, `UPDATE ... SET EventId = NEWID()` rewrites
+every row that has no id. That holds locks and writes the log until it
+finishes. Run it when other writers can wait. `ALTER TABLE` for
+`RowVersion`, for `EventId` `NOT NULL`, and for the tag collation takes a
+schema modification lock for that statement. The tag change drops and
+rebuilds the `EventTags` primary key, so its duration follows the number
+of tag rows. Adding `AppendFence`, `ClaimedUntil`, and `ClaimedAt` is a
+short schema change.
 
 ## Related
 
