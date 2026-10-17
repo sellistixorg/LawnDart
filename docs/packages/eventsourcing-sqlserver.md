@@ -79,8 +79,19 @@ write may hold that horizon. Thirty seconds covers a lock wait or a slow
 batch. A stuck write then stops holding every reader. When the same write
 is still open after the grace period, readers move to the highest committed
 sequence and log a warning. The warning names the blocking session when
-SQL Server reports it, and how long the write has been open. Set the option
-to `Timeout.InfiniteTimeSpan` to wait until the write ends. `TimeSpan.Zero`
+SQL Server reports it, and how long the write has been open. That name
+comes from `sys.dm_tran_active_transactions`,
+`sys.dm_tran_session_transactions`, and
+`sys.dm_tran_database_transactions`. SQL Server and Azure SQL Managed
+Instance need `VIEW SERVER STATE`. On Azure SQL Database, grant
+`VIEW DATABASE STATE` on the database. Basic, S0, S1, and databases in
+an elastic pool do not accept that grant for these views. Use the server
+admin, the Microsoft Entra admin, or the `##MS_ServerStateReader##`
+server role there. Without the permission the warning reports session
+`unknown` and transaction `unknown`. The grace period still moves
+readers to the committed rows. The hold time then starts when this
+process first sees that stable head. Set the option to
+`Timeout.InfiniteTimeSpan` to wait until the write ends. `TimeSpan.Zero`
 moves readers forward once the write has been open for more than zero
 milliseconds.
 
