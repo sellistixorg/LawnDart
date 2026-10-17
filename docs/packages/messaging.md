@@ -50,6 +50,25 @@ or exchanges at startup. The host skips that step when the flag is false.
 Write a transport with [Custom message transport](../CUSTOM_MESSAGE_TRANSPORT.md).
 Prove it with [`LawnDart.Messaging.Testing`](messaging-testing.md).
 
+## Custom inbox
+
+A custom `IInboxStore` implements `TryClaimAsync` and `ReleaseClaimAsync`
+as well as `IsProcessedAsync` and `MarkProcessedAsync`.
+
+`TryClaimAsync` returns true only when this caller now holds the key.
+Return false when the key was processed inside
+`InboxDeduplicationWindow`, or another caller holds a claim that is still
+inside `InboxClaimLease` (default 30 seconds). `ReleaseClaimAsync` deletes
+a claim that has not been marked processed. Leave a processed key in
+place. Hosted reactors and processors claim before the handler and
+release when the handler throws.
+
+`IEventStore` and `IEventLog` have the same members as 0.6.0-alpha.2.
+`QueryResult.TypesResolved` and `EventLogQueryResult.TypesResolved`
+default to true. An existing constructor call still compiles. A custom log
+that leaves a type unresolved sets `TypesResolved` to false so a caller
+does not checkpoint past that range.
+
 ## Meter
 
 The `LawnDart.Messaging` meter carries:

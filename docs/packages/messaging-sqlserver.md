@@ -35,7 +35,10 @@ await app.Services.InitializeSqlInboxStoreAsync();
 `MessagingOptions.InboxDeduplicationWindow` (default 24 hours).
 `TryClaimAsync` holds the key for `InboxClaimLease` (default 30 seconds).
 `TimeSpan.Zero` lets the next caller claim it at once. A failed handler
-releases the claim. `MarkProcessedAsync` is idempotent. `PurgeExpiredAsync`
+releases the claim. A custom `IInboxStore` implements both
+`TryClaimAsync` and `ReleaseClaimAsync`. See
+[Custom inbox](messaging.md#custom-inbox). `MarkProcessedAsync` is
+idempotent. `PurgeExpiredAsync`
 deletes rows older than the deduplication window and returns the count.
 
 Hosted reactors store `reactor:{hash}:{message id}`. Hosted processors

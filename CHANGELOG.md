@@ -10,6 +10,10 @@ changes to the public API.
 
 ## [Unreleased]
 
+### Breaking
+
+- A custom `IInboxStore` must implement `TryClaimAsync` and `ReleaseClaimAsync`. `TryClaimAsync` returns true only when this caller holds the key. Return false when the key is already processed inside the deduplication window, or a live claim is held. `ReleaseClaimAsync` drops a claim that has not been marked processed and leaves a processed key in place. Hosted reactors and processors claim before the handler and release when the handler throws.
+
 ### Added
 
 - `QueryResult.TypesResolved` and `EventLogQueryResult.TypesResolved` are false when a queried event type is still unknown after the store reloads its type map. An empty result then does not mean the range was empty.
@@ -21,6 +25,7 @@ changes to the public API.
 - `InitializeSchemaAsync` upgrades a SQL Server events table stamped `LawnDart_SchemaFormat` 2 to format 3. It adds `Events.RowVersion`, creates `AppendFence`, and sets `EventTags.Tag` to the `Latin1_General_100_BIN2` collation. Existing rows stay. A missing stamp, or any stamp other than 2 or 3, is still a drop and recreate.
 - `GetCurrentSequenceAsync` on SQL Server returns the highest sequence below `MIN_ACTIVE_ROWVERSION()`. When one unfinished write holds that horizon longer than `ReadHorizonGracePeriod`, the call returns the highest committed sequence instead.
 - Tag equality is ordinal. `Customer:ABC` and `customer:abc` are different tags on SQL Server reads, SQL Server subscriptions, and the in-memory store.
+- `IEventStore` and `IEventLog` have the same members as 0.6.0-alpha.2. `QueryResult.TypesResolved` and `EventLogQueryResult.TypesResolved` are new properties and default to true, so an existing constructor call still compiles.
 
 ### Fixed
 
