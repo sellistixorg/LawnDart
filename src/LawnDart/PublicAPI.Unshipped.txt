@@ -1,4 +1,7 @@
 #nullable enable
+LawnDart.EventStore.EventSubscriptionFailedException
+LawnDart.EventStore.EventSubscriptionFailedException.EventSubscriptionFailedException(string! subscriberId, System.Exception! inner) -> void
+LawnDart.EventStore.EventSubscriptionFailedException.SubscriberId.get -> string!
 LawnDart.EventStore.EventLogQueryResult.TypesResolved.get -> bool
 LawnDart.EventStore.EventLogQueryResult.TypesResolved.init -> void
 LawnDart.EventStore.QueryResult.TypesResolved.get -> bool

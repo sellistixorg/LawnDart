@@ -142,11 +142,28 @@ internal sealed class LightweightProjectionSharedPipe : IAsyncDisposable
             slot.LastApplied = lastApplied;
     }
 
-    public void Attach(string storageKey)
+    /// <summary>
+    /// Attaches <paramref name="storageKey"/> only when <paramref name="lastApplied"/>
+    /// is already at the fan-out horizon. The check and the flag share the pipe lock
+    /// with <see cref="FanoutAsync"/>, so an event cannot be skipped between them.
+    /// </summary>
+    public bool TryAttachIfCaughtUp(string storageKey, long lastApplied)
     {
-        if (!_slots.TryGetValue(storageKey, out var slot))
-            return;
-        slot.Attached = true;
+        lock (_gate)
+        {
+            if (!_slots.TryGetValue(storageKey, out var slot))
+                return false;
+
+            slot.LastApplied = lastApplied;
+            var horizon = Math.Max(
+                JoinSequence - 1,
+                Math.Max(CaughtUpSequence, LastFanoutSequence));
+            if (lastApplied < 0 || lastApplied < horizon)
+                return false;
+
+            slot.Attached = true;
+            return true;
+        }
     }
 
     public void CancelForTests()
@@ -405,11 +422,19 @@ internal sealed class LightweightProjectionSharedPipe : IAsyncDisposable
 
     private async Task FanoutAsync(SequencedEvent se, CancellationToken ct)
     {
-        foreach (var slot in _slots.Values)
+        Slot[] targets;
+        lock (_gate)
         {
-            if (!slot.Attached || se.SequencePosition <= slot.LastApplied)
-                continue;
+            if (se.SequencePosition > _lastFanoutSequence)
+                _lastFanoutSequence = se.SequencePosition;
 
+            targets = _slots.Values
+                .Where(slot => slot.Attached && se.SequencePosition > slot.LastApplied)
+                .ToArray();
+        }
+
+        foreach (var slot in targets)
+        {
             try
             {
                 await slot.Inbox.Writer.WriteAsync(se, ct).ConfigureAwait(false);
@@ -419,9 +444,6 @@ internal sealed class LightweightProjectionSharedPipe : IAsyncDisposable
                 // runner unregistered
             }
         }
-
-        if (se.SequencePosition > _lastFanoutSequence)
-            Interlocked.Exchange(ref _lastFanoutSequence, se.SequencePosition);
     }
 
     private async Task<long?> TryGetHeadAsync(CancellationToken ct)

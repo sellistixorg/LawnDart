@@ -14,6 +14,7 @@ internal sealed class SqlServerSubscriptionHandle : IEventLogSubscriptionHandle
     private readonly CancellationTokenSource _linkedCts;
     private long _lastDelivered;
     private int _disposed;
+    private Exception? _fault;
 
     public SqlServerSubscriptionHandle(
         string subscriberId,
@@ -50,6 +51,12 @@ internal sealed class SqlServerSubscriptionHandle : IEventLogSubscriptionHandle
 
     internal bool IsDisposed => Volatile.Read(ref _disposed) != 0;
 
+    internal void Fault(Exception exception)
+    {
+        _fault = exception;
+        _channel.Writer.TryComplete(exception);
+    }
+
     internal async ValueTask WriteAsync(RecordedEvent evt, CancellationToken cancellationToken)
     {
         await _channel.Writer.WriteAsync(evt, cancellationToken).ConfigureAwait(false);
@@ -64,7 +71,7 @@ internal sealed class SqlServerSubscriptionHandle : IEventLogSubscriptionHandle
             return ValueTask.CompletedTask;
 
         try { _linkedCts.Cancel(); } catch (ObjectDisposedException) { /* ignore */ }
-        _channel.Writer.TryComplete();
+        _channel.Writer.TryComplete(_fault);
         _onDispose(this);
         _linkedCts.Dispose();
         return ValueTask.CompletedTask;

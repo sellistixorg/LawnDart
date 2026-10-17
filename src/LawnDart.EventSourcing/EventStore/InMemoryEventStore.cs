@@ -329,6 +329,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         {
             if (_logger is not null)
                 InMemoryEventStoreLog.SubscriptionFailed(_logger, ex, handle.SubscriberId);
+            handle.Fault(new EventSubscriptionFailedException(handle.SubscriberId, ex));
         }
         finally
         {

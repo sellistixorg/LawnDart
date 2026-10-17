@@ -22,6 +22,9 @@ changes to the public API.
 
 ### Fixed
 
+- A failed event subscription completes with `EventSubscriptionFailedException`. Cancellation and dispose still complete the channel without an error.
+- A projection joins the shared event pipe under the pipe lock, so an event fanned out during the join is not skipped.
+- SQL Server subscription catch-up reads one page at a time and moves its scan cursor to the highest position it examined.
 - A SQL Server subscription or projection no longer skips an event when a later sequence commits first, including when `READ_COMMITTED_SNAPSHOT` is on.
 - A SQL Server reader in another process sees an event type that was first written elsewhere. It reloads `EventTypes` on a cache miss. A projection does not checkpoint past a type that is still unknown.
 

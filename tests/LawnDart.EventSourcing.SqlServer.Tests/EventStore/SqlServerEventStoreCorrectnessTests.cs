@@ -79,6 +79,73 @@ public sealed class SqlServerEventStoreCorrectnessTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task FailedSubscription_CompletesWithSubscriptionFailedException()
+    {
+        var store = CreateStore(_connectionString, "failsub");
+        await store.InitializeSchemaAsync();
+        await store.AppendAsync("s1", [Evt()]);
+        await using var handle = store.Subscribe("failsub", fromSequence: 1);
+        await ReadCountAsync(handle, 1, TimeSpan.FromSeconds(15));
+
+        await using (var connection = new SqlConnection(_connectionString))
+        {
+            await connection.OpenAsync();
+            await using var rename = new SqlCommand(
+                """
+                SET LOCK_TIMEOUT 3000;
+                EXEC sp_rename 'failsub.Events.EventData', 'EventData_x', 'COLUMN';
+                """,
+                connection)
+            {
+                CommandTimeout = 15
+            };
+            for (var attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    await rename.ExecuteNonQueryAsync();
+                    break;
+                }
+                catch (SqlException) when (attempt < 5)
+                {
+                    await Task.Delay(200);
+                }
+            }
+        }
+
+        var completed = await Task.WhenAny(handle.Events.Completion, Task.Delay(TimeSpan.FromSeconds(20)));
+        Assert.Same(handle.Events.Completion, completed);
+        var ex = await Assert.ThrowsAsync<EventSubscriptionFailedException>(() => handle.Events.Completion);
+        Assert.Equal("failsub", ex.SubscriberId);
+    }
+
+    [Fact]
+    public async Task PagedSubscription_DeliversEveryEvent()
+    {
+        var store = new SqlServerEventStore(
+            _connectionString,
+            serializer: null,
+            tableName: "Events",
+            registryTableName: "Streams",
+            enableRegistry: true,
+            options: new SqlServerEventStoreOptions
+            {
+                RequireTenantId = false,
+                SchemaName = "paged",
+                ContextName = "paged",
+                SqlSubscriptionPollInterval = TimeSpan.FromMilliseconds(50),
+                SqlSubscriptionBatchSize = 2
+            });
+        await store.InitializeSchemaAsync();
+        for (var i = 0; i < 5; i++)
+            await store.AppendAsync("s1", [Evt()]);
+
+        await using var handle = store.Subscribe("paged", fromSequence: 1);
+        var received = await ReadCountAsync(handle, 5, TimeSpan.FromSeconds(15));
+        Assert.Equal(new long[] { 1, 2, 3, 4, 5 }, received.Select(e => e.SequencePosition));
+    }
+
+    [Fact]
     public async Task RolledBackSequence_DoesNotStallTheNextCommit()
     {
         var store = CreateStore(_connectionString, "gaproll");

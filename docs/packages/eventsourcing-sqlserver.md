@@ -33,6 +33,12 @@ tags. That table is always created and always written. There is no
 `UseEventTagsTable` flag and no `OPENJSON` fallback on `Events.Tags`.
 Metadata stays `NVARCHAR` JSON.
 
+A subscription read asks for one page (`SqlSubscriptionBatchSize`) up to
+the gap-free head. The scan cursor then moves to the highest position
+examined, including positions that did not match the filter. A failed
+read completes the subscription with `EventSubscriptionFailedException`.
+Cancel and dispose still end it without an error.
+
 A type filter reloads `EventTypes` when the token is missing from the
 process cache. If the token is still absent, the read returns no rows and
 `TypesResolved` is false. Do not checkpoint past that range. A projection
