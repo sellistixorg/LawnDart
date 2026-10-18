@@ -43,6 +43,7 @@ public static class LawnDartExtensions
 
         services.TryAddSingleton<ITenantContextProvider, AmbientTenantContextProvider>();
         services.TryAddSingleton<Tagging.ITagFormat, Tagging.LowercaseTagFormat>();
+        services.TryAddSingleton(_ => new Tagging.UnknownTagWarningLog());
 
         // Register default metadata provider if not already registered
         services.AddSingleton<IMetadataProvider>(sp =>

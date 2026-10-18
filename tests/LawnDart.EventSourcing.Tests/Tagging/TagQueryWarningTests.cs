@@ -35,6 +35,46 @@ public class TagQueryWarningTests
     }
 
     [Fact]
+    public async Task Warning_SameBadType_LogsOnceAcrossIds()
+    {
+        var store = new InMemoryEventStore();
+        var logger = new ListLogger();
+        var repo = Repository(store, logger, warn: true);
+        var first = $"Student:{Guid.NewGuid():D}";
+        var second = $"Student:{Guid.NewGuid():D}";
+
+        await repo.GetStateAsync<CountingState>([first]);
+        await repo.GetStateAsync<CountingState>([second]);
+
+        var other = Repository(new InMemoryEventStore(), logger, warn: true);
+        await other.GetStateAsync<CountingState>([$"Student:{Guid.NewGuid():D}"]);
+
+        Assert.Equal(1, logger.WarningsFor(first));
+        Assert.Equal(0, logger.WarningsFor(second));
+        Assert.Equal(2, logger.Warnings.Count(message => message.Contains("Student:", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public async Task Warning_Cap_SuppressesFurtherTypes()
+    {
+        var store = new InMemoryEventStore();
+        var logger = new ListLogger();
+        var repo = Repository(store, logger, warn: true, warnings: new UnknownTagWarningLog(maxTypes: 2));
+
+        await repo.GetStateAsync<CountingState>([$"TypeA:{Guid.NewGuid():D}"]);
+        await repo.GetStateAsync<CountingState>([$"TypeB:{Guid.NewGuid():D}"]);
+        await repo.GetStateAsync<CountingState>([$"TypeC:{Guid.NewGuid():D}"]);
+        await repo.GetStateAsync<CountingState>([$"TypeD:{Guid.NewGuid():D}"]);
+        await repo.GetStateAsync<CountingState>([$"TypeA:{Guid.NewGuid():D}"]);
+
+        Assert.Equal(1, logger.WarningsFor("TypeA:"));
+        Assert.Equal(1, logger.WarningsFor("TypeB:"));
+        Assert.Equal(0, logger.WarningsFor("TypeC:"));
+        Assert.Equal(0, logger.WarningsFor("TypeD:"));
+        Assert.Equal(1, logger.Warnings.Count(message => message.Contains("suppressed", StringComparison.Ordinal)));
+    }
+
+    [Fact]
     public async Task Warning_DoesNotFireWhenDisabled()
     {
         var store = new InMemoryEventStore();
@@ -156,7 +196,8 @@ public class TagQueryWarningTests
         InMemoryEventStore store,
         ListLogger logger,
         bool warn,
-        ITagFormat? format = null)
+        ITagFormat? format = null,
+        UnknownTagWarningLog? warnings = null)
         => new(
             store,
             new DefaultMetadataProvider(),
@@ -169,7 +210,8 @@ public class TagQueryWarningTests
             dcbSnapshotStore: null,
             strategyResolver: null,
             snapshotWriteQueue: null,
-            tagFormat: format ?? LowercaseTagFormat.Instance);
+            tagFormat: format ?? LowercaseTagFormat.Instance,
+            unknownTagWarnings: warnings);
 
     private static NotedEvent Event() => new(Guid.NewGuid(), DateTime.UtcNow, "n");
 

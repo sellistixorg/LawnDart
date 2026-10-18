@@ -11,6 +11,7 @@ namespace LawnDart.Dcb;
 /// <typeparam name="TState">The read model state type.</typeparam>
 public abstract class DcbProjector<TState> where TState : IState, new()
 {
+    private readonly UnknownTagWarningLog _tagWarnings = new();
     private ITagFormat? _tagFormat;
     private ILogger? _tagLogger;
     private bool _warnOnUnknownTag = true;
@@ -27,8 +28,8 @@ public abstract class DcbProjector<TState> where TState : IState, new()
     /// <c>EventSourcingOptions.WarnOnUnknownTag</c>.
     /// </param>
     /// <remarks>
-    /// <see cref="InitializeFromHistoryAsync"/> logs once per tag that does not
-    /// round-trip. The check does not throw and does not change the query.
+    /// <see cref="InitializeFromHistoryAsync"/> logs once per tag type that does not
+    /// round-trip. The record is capped. The check does not throw and does not change the query.
     /// </remarks>
     public void UseTagFormat(ITagFormat format, ILogger? logger = null, bool warnOnUnknownTag = true)
     {
@@ -65,7 +66,8 @@ public abstract class DcbProjector<TState> where TState : IState, new()
     public virtual async Task InitializeFromHistoryAsync(IEventStore eventStore, CancellationToken cancellationToken = default)
     {
         var tags = GetTagsForProjection();
-        TagFormatRoundTrip.WarnOnce(_tagLogger, _tagFormat, _warnOnUnknownTag, tags);
+        if (_warnOnUnknownTag && _tagLogger is not null && _tagFormat is not null)
+            _tagWarnings.Warn(_tagLogger, _tagFormat, tags);
 
         // Create a query with OR logic - match events with ANY of the specified tags
         var queryItems = tags.Select(tag => QueryItem.ByTags(new[] { tag })).ToArray();

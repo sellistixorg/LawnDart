@@ -82,6 +82,7 @@ public static class EventSourcingRepositories
             services.GetKeyedService<IDcbSnapshotStore>(serviceKey) ?? services.GetService<IDcbSnapshotStore>(),
             services.GetService<ISnapshotStrategyResolver>(),
             services.GetService<ISnapshotWriteQueue>(),
-            services.GetKeyedService<ITagFormat>(serviceKey) ?? services.GetService<ITagFormat>());
+            services.GetKeyedService<ITagFormat>(serviceKey) ?? services.GetService<ITagFormat>(),
+            services.GetKeyedService<UnknownTagWarningLog>(serviceKey) ?? services.GetService<UnknownTagWarningLog>());
     }
 }

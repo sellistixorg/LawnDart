@@ -45,7 +45,9 @@ public object Deserialize(ReadOnlyMemory<byte> data, Type type)
 ```
 `WithTagFormat<T>()` registers the context `ITagFormat`. `AddLawnDart`
 already registered `LowercaseTagFormat`. `WarnOnUnknownTag` (default true)
-logs once when a queried tag does not round-trip. `FormatAggregateFallbackTag`
+logs once per tag type in that context when a queried tag does not
+round-trip. After 128 tag types, further unknown tag warnings in that
+context are suppressed. `FormatAggregateFallbackTag`
 (default false) leaves the aggregate fallback tag as `{ClrTypeName}:{id}`.
 Leave that flag false on a store that already has events. See
 [Tagging](../TAGGING.md).

@@ -26,15 +26,17 @@ public class EventSourcingOptions
     public TimeSpan OutboxClaimLease { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
-    /// Log once when a queried tag does not round-trip through the context
-    /// <see cref="LawnDart.Tagging.ITagFormat"/>.
+    /// Log once per tag type, in this context, when a queried tag does not
+    /// round-trip through the context <see cref="LawnDart.Tagging.ITagFormat"/>.
     /// </summary>
     /// <remarks>
     /// Default: true. The check covers Dynamic Consistency Boundary loads
     /// (<c>QueryItem.ByTags</c>), append fences (<c>AppendCondition.FailIfMatches</c>),
-    /// and projector or reactor tags after <c>UseTagFormat</c>. It does not throw
-    /// and does not change which events match. Set false to skip the log.
-    /// A host with no <see cref="LawnDart.Tagging.ITagFormat"/> skips the check.
+    /// and projector or reactor tags after <c>UseTagFormat</c>. Different ids of
+    /// one type share one warning. After 128 tag types, further unknown tag
+    /// warnings in that context are suppressed. It does not throw and does not
+    /// change which events match. Set false to skip the log. A host with no
+    /// <see cref="LawnDart.Tagging.ITagFormat"/> skips the check.
     /// </remarks>
     public bool WarnOnUnknownTag { get; set; } = true;
 

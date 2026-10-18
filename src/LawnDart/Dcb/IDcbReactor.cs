@@ -33,6 +33,7 @@ public interface IDcbReactor
 /// <typeparam name="TEvent">Event type to react to.</typeparam>
 public abstract class DcbReactor<TEvent> : IDcbReactor where TEvent : IEvent
 {
+    private readonly UnknownTagWarningLog _tagWarnings = new();
     private ITagFormat? _tagFormat;
     private ILogger? _tagLogger;
     private bool _warnOnUnknownTag = true;
@@ -49,8 +50,8 @@ public abstract class DcbReactor<TEvent> : IDcbReactor where TEvent : IEvent
     /// <c>EventSourcingOptions.WarnOnUnknownTag</c>.
     /// </param>
     /// <remarks>
-    /// <see cref="ReactAsync"/> logs once per tag that does not round-trip.
-    /// The check does not throw and does not change the commands returned.
+    /// <see cref="ReactAsync"/> logs once per tag type that does not round-trip.
+    /// The record is capped. The check does not throw and does not change the commands returned.
     /// </remarks>
     public void UseTagFormat(ITagFormat format, ILogger? logger = null, bool warnOnUnknownTag = true)
     {
@@ -80,7 +81,8 @@ public abstract class DcbReactor<TEvent> : IDcbReactor where TEvent : IEvent
     /// </summary>
     public async Task<IEnumerable<ICommand>> ReactAsync(IEvent @event, EventMetadata metadata, CancellationToken cancellationToken = default)
     {
-        TagFormatRoundTrip.WarnOnce(_tagLogger, _tagFormat, _warnOnUnknownTag, GetTagsForReaction());
+        if (_warnOnUnknownTag && _tagLogger is not null && _tagFormat is not null)
+            _tagWarnings.Warn(_tagLogger, _tagFormat, GetTagsForReaction());
 
         if (@event is TEvent typedEvent)
         {

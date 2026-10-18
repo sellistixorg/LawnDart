@@ -180,6 +180,7 @@ public static class LawnDartSqlServerExtensions
         }
 
         services.AddKeyedSingleton(contextName, options);
+        services.TryAddKeyedSingleton<UnknownTagWarningLog>(contextName, (_, _) => new UnknownTagWarningLog());
         services.Configure<EventSourcingOptions>(o =>
         {
             // Copy only values the callback moved off the default, so a prior

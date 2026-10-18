@@ -98,6 +98,37 @@ public class TagFormatRegistrationTests
     }
 
     [Fact]
+    public async Task TwoContexts_WithDifferentFormats_WarnIndependently()
+    {
+        var logger = new ListLogger<DcbRepository>();
+        var services = BaseServices();
+        services.AddSingleton<ILogger<DcbRepository>>(logger);
+        services.AddLawnDart(o => o.RequireTenantId = false);
+        services.AddBoundedContext("alpha")
+            .UseInMemory()
+            .WithEventTypes(typeof(CatalogPlaceholderEvent))
+            .WithTagFormat<AlphaFormat>();
+        services.AddBoundedContext("beta")
+            .UseInMemory()
+            .WithEventTypes(typeof(CatalogPlaceholderEvent))
+            .WithTagFormat<BetaFormat>();
+
+        var sp = services.BuildServiceProvider();
+        var alpha = sp.GetRequiredKeyedService<IDcbRepository>("alpha");
+        var beta = sp.GetRequiredKeyedService<IDcbRepository>("beta");
+        var first = $"Student:{Guid.NewGuid():D}";
+        var second = $"Student:{Guid.NewGuid():D}";
+
+        await alpha.GetStateAsync<EmptyState>([first]);
+        await alpha.GetStateAsync<EmptyState>([second]);
+        await beta.GetStateAsync<EmptyState>([first]);
+        await beta.GetStateAsync<EmptyState>([second]);
+
+        Assert.Equal(2, logger.Warnings.Count(message => message.Contains(first, StringComparison.Ordinal)));
+        Assert.Equal(0, logger.Warnings.Count(message => message.Contains(second, StringComparison.Ordinal)));
+    }
+
+    [Fact]
     public async Task Configure_WarnOnUnknownTagFalse_ReachesTheRepository()
     {
         var logger = new ListLogger<DcbRepository>();

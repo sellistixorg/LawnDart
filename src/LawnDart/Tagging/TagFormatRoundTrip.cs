@@ -1,6 +1,3 @@
-using System.Collections.Concurrent;
-using Microsoft.Extensions.Logging;
-
 namespace LawnDart.Tagging;
 
 /// <summary>
@@ -8,8 +5,6 @@ namespace LawnDart.Tagging;
 /// </summary>
 public static class TagFormatRoundTrip
 {
-    private static readonly ConcurrentDictionary<string, byte> Warned = new(StringComparer.Ordinal);
-
     /// <summary>
     /// Returns true when <paramref name="tag"/> equals the string
     /// <paramref name="format"/> builds for its type and id.
@@ -42,49 +37,5 @@ public static class TagFormatRoundTrip
             return string.Equals(tag, format.Tag(type, guid), StringComparison.Ordinal);
 
         return string.Equals(tag, format.Tag(type, id), StringComparison.Ordinal);
-    }
-
-    /// <summary>
-    /// Logs one warning per distinct tag that does not round-trip.
-    /// </summary>
-    /// <param name="logger">Warning destination. No log is written when this is null.</param>
-    /// <param name="format">The context format. The check is skipped when this is null.</param>
-    /// <param name="warn">When false, the check is skipped.</param>
-    /// <param name="tags">Tags to check.</param>
-    /// <remarks>
-    /// The log is once per distinct string for the process. The method does not throw.
-    /// A format that throws is treated as a mismatch and does not escape.
-    /// </remarks>
-    public static void WarnOnce(ILogger? logger, ITagFormat? format, bool warn, IEnumerable<string>? tags)
-    {
-        if (!warn || logger is null || format is null || tags is null)
-            return;
-
-        foreach (var tag in tags)
-        {
-            if (string.IsNullOrEmpty(tag))
-                continue;
-
-            bool matches;
-            try
-            {
-                matches = Matches(format, tag);
-            }
-            catch (Exception ex)
-            {
-                logger.LogDebug(ex, "Tag format check failed for {Tag}.", tag);
-                matches = false;
-            }
-
-            if (matches)
-                continue;
-
-            if (!Warned.TryAdd(tag, 0))
-                continue;
-
-            logger.LogWarning(
-                "Tag {Tag} does not round-trip through the context tag format. Loads, fences, and later search compare the whole string.",
-                tag);
-        }
     }
 }

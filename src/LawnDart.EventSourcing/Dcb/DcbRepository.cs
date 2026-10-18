@@ -26,6 +26,7 @@ public class DcbRepository : IDcbRepository
     private readonly ITenantContextProvider _tenantContextProvider;
     private readonly ITagProvider? _tagProvider;
     private readonly ITagFormat? _tagFormat;
+    private readonly UnknownTagWarningLog _unknownTagWarnings;
     private readonly AuthorizationService? _authorizationService;
     private readonly LawnDartOptions _options;
     private readonly EventSourcingOptions _eventSourcingOptions;
@@ -75,7 +76,8 @@ public class DcbRepository : IDcbRepository
         IDcbSnapshotStore? dcbSnapshotStore,
         ISnapshotStrategyResolver? strategyResolver,
         ISnapshotWriteQueue? snapshotWriteQueue,
-        ITagFormat? tagFormat = null)
+        ITagFormat? tagFormat = null,
+        UnknownTagWarningLog? unknownTagWarnings = null)
     {
         _eventStore = eventStore ?? throw new ArgumentNullException(nameof(eventStore));
         _metadataProvider = metadataProvider ?? throw new ArgumentNullException(nameof(metadataProvider));
@@ -84,6 +86,7 @@ public class DcbRepository : IDcbRepository
         _eventSourcingOptions = eventSourcingOptions?.Value ?? new EventSourcingOptions();
         _tagProvider = tagProvider;
         _tagFormat = tagFormat;
+        _unknownTagWarnings = unknownTagWarnings ?? new UnknownTagWarningLog();
         _authorizationService = authorizationService;
         _logger = logger;
         _dcbSnapshotStore = dcbSnapshotStore;
@@ -570,15 +573,16 @@ public class DcbRepository : IDcbRepository
     }
 
     /// <summary>
-    /// Logs once when a load tag does not round-trip through the context format.
+    /// Logs once per tag type when a load tag does not round-trip through the context format.
     /// Never throws and never changes the tag list.
     /// </summary>
     private void WarnOnQueriedTags(IEnumerable<string>? tags)
-        => TagFormatRoundTrip.WarnOnce(
-            _logger,
-            _tagFormat,
-            _eventSourcingOptions.WarnOnUnknownTag,
-            tags);
+    {
+        if (!_eventSourcingOptions.WarnOnUnknownTag || _logger is null || _tagFormat is null)
+            return;
+
+        _unknownTagWarnings.Warn(_logger, _tagFormat, tags);
+    }
 
     /// <summary>
     /// Logs once for each tag inside an <see cref="AppendCondition.FailIfMatches"/> query.

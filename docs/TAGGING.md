@@ -181,11 +181,16 @@ including the one `HandleCommandAsync` builds and any condition passed
 to `AppendWithContextAsync`. `DcbProjector.InitializeFromHistoryAsync`
 and `DcbReactor.ReactAsync` check their tags after `UseTagFormat`.
 
-The log is once per distinct tag for the process. It goes to
-`ILogger<DcbRepository>`, or to the logger you passed to `UseTagFormat`.
-With no logger, or with no `ITagFormat`, the check is skipped. The
-check does not throw. It does not change which events match. Set
-`WarnOnUnknownTag` to false to skip it.
+The repository keeps one record per context. The key is the tag type,
+the text before the first colon. `Student:{id-1}` and `Student:{id-2}`
+share one warning. Another context, with its own format, warns on its
+own. The record stops at 128 tag types and logs once that further
+unknown tag warnings in that context are suppressed. A projector or
+reactor that calls `UseTagFormat` keeps its own record, with the same
+cap. The log goes to `ILogger<DcbRepository>`, or to the logger you
+passed to `UseTagFormat`. With no logger, or with no `ITagFormat`, the
+check is skipped. The check does not throw. It does not change which
+events match. Set `WarnOnUnknownTag` to false to skip it.
 
 A tag round-trips when it equals `ITagFormat.Tag` for its type and id.
 The type is the text before the first colon. The id is the rest. An id

@@ -72,6 +72,7 @@ public static class BoundedContextBuilderExtensions
             services.Configure(configure);
 
         services.AddKeyedSingleton(contextName, EventStoreContextMarker.Instance);
+        services.TryAddKeyedSingleton<UnknownTagWarningLog>(contextName, (_, _) => new UnknownTagWarningLog());
 
         // Keyed IEventStore + IStreamRegistry + portable subscriptions
         services.AddKeyedSingleton<IEventStore>(contextName, (sp, _) =>
