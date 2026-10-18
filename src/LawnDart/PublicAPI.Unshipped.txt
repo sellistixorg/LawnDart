@@ -31,3 +31,15 @@ LawnDart.Tagging.TagProvider.Tag(string! type, string! id) -> string!
 LawnDart.Tagging.TagProvider.TagProvider(LawnDart.Tagging.ITagFormat! format) -> void
 static LawnDart.LawnDartExtensions.AddTagFormat<T>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static LawnDart.LawnDartExtensions.AddTagFormat<T>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, string! contextName) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+LawnDart.LawnDartNames
+const LawnDart.LawnDartNames.DefaultContextName = "default" -> string!
+const LawnDart.LawnDartNames.MaxLength = 63 -> int
+const LawnDart.LawnDartNames.Pattern = "^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$" -> string!
+static LawnDart.LawnDartNames.IsValid(string? value) -> bool
+static LawnDart.LawnDartNames.Validate(string? value, string! paramName) -> void
+static LawnDart.LawnDartNames.ValidateContextName(string? contextName, string! paramName, bool validateFormat = true) -> void
+static LawnDart.LawnDartNames.ValidateTenantId(string? tenantId, string! paramName, bool validateFormat = true) -> void
+LawnDart.LawnDartOptions.ValidateNames.get -> bool
+LawnDart.LawnDartOptions.ValidateNames.set -> void
+LawnDart.Metadata.AmbientTenantContextProvider.AmbientTenantContextProvider(Microsoft.Extensions.Options.IOptions<LawnDart.LawnDartOptions!>! options) -> void
+LawnDart.Metadata.FixedTenantContextProvider.FixedTenantContextProvider(string! tenantId, bool validateNames) -> void

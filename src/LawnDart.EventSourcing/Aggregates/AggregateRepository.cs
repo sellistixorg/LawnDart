@@ -253,14 +253,16 @@ public class AggregateRepository : IAggregateRepository
             // Tenant is required
             var tenantIdFromMetadata = commandMetadata.TenantId 
                 ?? throw new ArgumentException("TenantId is required in command metadata when RequireTenantId is true", nameof(commandMetadata));
-            
+
+            LawnDartNames.ValidateTenantId(tenantIdFromMetadata, nameof(commandMetadata), _options.ValidateNames);
+
             var tenantIdFromContext = _tenantContextProvider.GetTenantId();
             if (tenantIdFromContext != null && tenantIdFromContext != tenantIdFromMetadata)
             {
                 throw new InvalidOperationException(
                     $"Tenant ID mismatch: metadata has '{tenantIdFromMetadata}' but context has '{tenantIdFromContext}'");
             }
-            
+
             tenantId = tenantIdFromMetadata;
         }
         else
@@ -467,6 +469,7 @@ public class AggregateRepository : IAggregateRepository
         if (_options.RequireTenantId)
         {
             var tenantId = _tenantContextProvider.GetTenantIdRequired();
+            LawnDartNames.ValidateTenantId(tenantId, "tenantId", _options.ValidateNames);
             return GetStreamId<T>(id, tenantId);
         }
 

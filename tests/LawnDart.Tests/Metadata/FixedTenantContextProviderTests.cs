@@ -1,4 +1,5 @@
 using LawnDart.Metadata;
+using LawnDart;
 
 namespace LawnDart.Tests.Metadata;
 
@@ -36,6 +37,24 @@ public class FixedTenantContextProviderTests
     [Fact]
     public void Constructor_WhitespaceTenantId_Throws()
         => Assert.Throws<ArgumentException>(() => new FixedTenantContextProvider("   "));
+
+    [Fact]
+    public void Constructor_InvalidTenantId_NamesTheRule()
+    {
+        var ex = Assert.Throws<ArgumentException>(() => new FixedTenantContextProvider("bad name"));
+        Assert.Contains(LawnDartNames.Pattern, ex.Message);
+    }
+
+    [Fact]
+    public void Constructor_ValidateNamesFalse_AllowsExistingId_RejectsColon()
+    {
+        var provider = new FixedTenantContextProvider("My Tenant", validateNames: false);
+        Assert.Equal("My Tenant", provider.GetTenantId());
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+            new FixedTenantContextProvider("a:b", validateNames: false));
+        Assert.Contains(":", ex.Message);
+    }
 
     [Fact]
     public void TwoInstances_SameValue_BehaveIndependently()

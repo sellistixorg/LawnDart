@@ -165,8 +165,7 @@ public static class BoundedContextProjectionExtensions
         this IServiceCollection services,
         string contextName)
     {
-        if (string.IsNullOrWhiteSpace(contextName))
-            throw new ArgumentException("Context name must not be null or whitespace.", nameof(contextName));
+        LawnDartNames.RequireContextName(services, contextName, nameof(contextName));
 
         services.AddKeyedSingleton<IViewStore>(contextName, (_, _) => new InMemoryViewStore());
         services.AddKeyedSingleton<ICheckpointStore>(contextName, (sp, key) =>
@@ -188,8 +187,9 @@ public static class BoundedContextProjectionExtensions
     /// <remarks>
     /// Call this <b>before</b> <c>WithProjections(contextName)</c>.
     /// When <paramref name="schemaName"/> is null or whitespace, the SQL schema defaults to
-    /// <paramref name="contextName"/> (multi-context convention). Pass <c>"dbo"</c> explicitly
-    /// to keep the default schema while still using a non-dbo DI key.
+    /// <paramref name="contextName"/>. Pass <c>"dbo"</c> explicitly
+    /// to keep that schema while still using a non-dbo dependency injection key.
+    /// <paramref name="contextName"/> is checked with <see cref="LawnDartNames"/>.
     /// <para>
     /// After the host is built, call <see cref="InitializeSqlProjectionStoresAsync"/> once with
     /// an elevated connection so tables and indexes exist before runners start.
@@ -208,8 +208,7 @@ public static class BoundedContextProjectionExtensions
         string connectionString,
         string? schemaName = null)
     {
-        if (string.IsNullOrWhiteSpace(contextName))
-            throw new ArgumentException("Context name must not be null or whitespace.", nameof(contextName));
+        LawnDartNames.RequireContextName(services, contextName, nameof(contextName));
         if (string.IsNullOrWhiteSpace(connectionString))
             throw new ArgumentException("Connection string must not be null or whitespace.", nameof(connectionString));
 

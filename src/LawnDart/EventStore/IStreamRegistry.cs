@@ -38,7 +38,10 @@ public interface IStreamRegistry
     /// <summary>
     /// Enumerates all stream IDs, optionally filtered by prefix.
     /// </summary>
-    /// <param name="prefix">Optional prefix to filter stream IDs (e.g., "Order:").</param>
+    /// <param name="prefix">
+    /// Optional prefix. The match is case-insensitive.
+    /// <c>_</c>, <c>%</c>, and <c>[</c> are literal characters.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>List of stream IDs.</returns>
     Task<IReadOnlyList<string>> EnumerateStreamIdsAsync(
@@ -61,7 +64,10 @@ public interface IStreamRegistry
     /// <summary>
     /// Returns the total number of streams in the registry, optionally filtered by prefix.
     /// </summary>
-    /// <param name="prefix">Optional stream ID prefix filter (e.g. "buyers:OrderAggregate:").</param>
+    /// <param name="prefix">
+    /// Optional prefix. The match is case-insensitive.
+    /// <c>_</c>, <c>%</c>, and <c>[</c> are literal characters.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The number of streams matching the filter.</returns>
     Task<long> GetStreamCountAsync(

@@ -122,6 +122,30 @@ public class InMemoryEventStoreAdminTests
 
         Assert.Equal(2L, await store.GetStreamCountAsync(null));
     }
+
+    [Fact]
+    public async Task PrefixMatch_IsCaseInsensitive_AndTreatsLikeMetacharactersAsLiteral()
+    {
+        var store = new InMemoryEventStore(enableRegistry: true);
+        await store.AppendAsync("acme_west:Order:1", OneEvent());
+        await store.AppendAsync("acmeXwest:Order:1", OneEvent());
+        await store.AppendAsync("acme%west:Order:1", OneEvent());
+        await store.AppendAsync("acme[west:Order:1", OneEvent());
+        await store.AppendAsync("ACME_WEST:Order:2", OneEvent());
+
+        var underscore = await store.EnumerateStreamIdsAsync("acme_west:");
+        Assert.Equal(2, underscore.Count);
+        Assert.Contains("acme_west:Order:1", underscore);
+        Assert.Contains("ACME_WEST:Order:2", underscore);
+        Assert.DoesNotContain("acmeXwest:Order:1", underscore);
+
+        Assert.Equal(["acme%west:Order:1"], await store.EnumerateStreamIdsAsync("acme%west:"));
+        Assert.Equal(["acme[west:Order:1"], await store.EnumerateStreamIdsAsync("acme[west:"));
+        Assert.Equal(2L, await store.GetStreamCountAsync("acme_west:"));
+        Assert.Equal(1L, await store.GetStreamCountAsync("acme%west:"));
+        Assert.Equal(1L, await store.GetStreamCountAsync("acme[west:"));
+        Assert.Equal(2L, await store.GetStreamCountAsync("acme_"));
+    }
 [EventTypeName("in-memory-event-store-admin-test.test-event")]
 
     private record TestEvent(Guid Id, DateTime Timestamp) : IEvent;

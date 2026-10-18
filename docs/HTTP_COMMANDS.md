@@ -75,10 +75,13 @@ caller left it unset. Default fill: [Metadata](METADATA.md).
 | Outcome | Status | Body |
 |---|---|---|
 | Handler succeeds | `202 Accepted` | empty |
+| `X-Tenant-Id` is present and invalid | `400 Bad Request` | `ProblemDetails`, title `Invalid tenant id` |
 | Auth attributes fail | `403 Forbidden` | `ProblemDetails`, title `Forbidden` |
 | `ConcurrencyException` | `409 Conflict` | `ProblemDetails`, title `Conflict` |
 | `DomainException` | `422 Unprocessable Entity` | `ProblemDetails`, title `ex.Title` (default `Domain rule violated`) |
 
 Commands with no auth attributes skip the permission check.
+
+A missing `X-Tenant-Id` header is left unset. A header that is empty, contains `:`, or fails `LawnDartNames.Pattern` returns 400 and the handler does not run. `LawnDartOptions.ValidateNames` set to false skips the pattern and still rejects a colon. See [Metadata](METADATA.md).
 
 See Academy WebApi: `demos/LawnDart.Demo.Academy.WebApi`.

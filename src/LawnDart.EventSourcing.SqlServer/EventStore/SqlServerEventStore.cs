@@ -1637,7 +1637,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
 
         if (!string.IsNullOrWhiteSpace(prefix))
         {
-            sql += " AND StreamId LIKE @Prefix";
+            sql += " AND " + StreamIdPrefixSql.Predicate("StreamId");
         }
 
         sql += " ORDER BY StreamId";
@@ -1646,7 +1646,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         await using var commandDisposal = command.ConfigureAwait(false);
         if (!string.IsNullOrWhiteSpace(prefix))
         {
-            command.Parameters.AddWithValue("@Prefix", prefix + "%");
+            command.Parameters.AddWithValue("@Prefix", StreamIdPrefixSql.LikeParameter(prefix));
         }
 
         var streamIds = new List<string>();
@@ -1712,12 +1712,12 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
 
         var sql = $"SELECT COUNT_BIG(*) FROM {_qRegistry} WHERE Status = 'Active'";
         if (!string.IsNullOrWhiteSpace(prefix))
-            sql += " AND StreamId LIKE @Prefix";
+            sql += " AND " + StreamIdPrefixSql.Predicate("StreamId");
 
         var command = new SqlCommand(sql, connection);
         await using var commandDisposal = command.ConfigureAwait(false);
         if (!string.IsNullOrWhiteSpace(prefix))
-            command.Parameters.AddWithValue("@Prefix", prefix + "%");
+            command.Parameters.AddWithValue("@Prefix", StreamIdPrefixSql.LikeParameter(prefix));
 
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return result is long l ? l : Convert.ToInt64(result);
@@ -1912,7 +1912,13 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                 nameof(streamId));
         }
 
+        if (_options.RequireTenantId && tenantIdFromStream != null)
+            LawnDartNames.ValidateTenantId(tenantIdFromStream, nameof(streamId), _options.ValidateNames);
+
         var tenantIdFromMetadata = TryReadTenantId(envelopes);
+        if (_options.RequireTenantId && tenantIdFromMetadata != null)
+            LawnDartNames.ValidateTenantId(tenantIdFromMetadata, "metadata", _options.ValidateNames);
+
         if (tenantIdFromStream != null && tenantIdFromMetadata != null && tenantIdFromMetadata != tenantIdFromStream)
         {
             throw new ArgumentException(
@@ -2260,6 +2266,8 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         if (string.IsNullOrWhiteSpace(streamId))
             throw new ArgumentException("Stream ID cannot be null or empty", nameof(streamId));
 
+        SqlServerColumnLimits.EnsureStreamId(streamId, nameof(streamId));
+
         var envelopes = events?.ToList() ?? throw new ArgumentNullException(nameof(events));
         if (envelopes.Count == 0)
             throw new ArgumentException("At least one event is required", nameof(events));
@@ -2368,6 +2376,21 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
 
         return await AppendWithRetryAsync(async ct =>
         {
+            var tenantId = TryReadTenantId(envelopes);
+            if (_options.RequireTenantId && string.IsNullOrWhiteSpace(tenantId))
+            {
+                throw new ArgumentException(
+                    "TenantId is required in event metadata when RequireTenantId is true for DCB appends.");
+            }
+
+            if (_options.RequireTenantId && !string.IsNullOrWhiteSpace(tenantId))
+                LawnDartNames.ValidateTenantId(tenantId, "metadata", _options.ValidateNames);
+
+            var streamId = !string.IsNullOrWhiteSpace(tenantId)
+                ? $"{tenantId}:dcb:{Guid.NewGuid()}"
+                : $"dcb:{Guid.NewGuid()}";
+            SqlServerColumnLimits.EnsureStreamId(streamId, "streamId");
+
             await EnsureEventTypeIdsAsync(envelopes, ct).ConfigureAwait(false);
             await EnsureQueryTypesResolvedAsync(condition.FailIfEventsMatch, ct).ConfigureAwait(false);
 
@@ -2389,16 +2412,6 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                         condition.After);
                 }
 
-                var tenantId = TryReadTenantId(envelopes);
-                if (_options.RequireTenantId && string.IsNullOrWhiteSpace(tenantId))
-                {
-                    throw new ArgumentException(
-                        "TenantId is required in event metadata when RequireTenantId is true for DCB appends.");
-                }
-
-                var streamId = !string.IsNullOrWhiteSpace(tenantId)
-                    ? $"{tenantId}:dcb:{Guid.NewGuid()}"
-                    : $"dcb:{Guid.NewGuid()}";
                 var fenceId = await TouchAppendFenceAsync(connection, transaction, ct).ConfigureAwait(false);
                 IReadOnlyList<long> sequencePositions;
                 try

@@ -38,8 +38,12 @@ stream version, or commit timestamp.
 ## B
 
 **Bounded context**  
-A named DI slice (`AddBoundedContext("orders")`) with its own keyed event store
+A named dependency injection slice (`AddBoundedContext("orders")`) with its own keyed event store
 and optional projections. Not the same as multi-tenancy.
+
+The name starts with a letter or digit. Then letters, digits, `.`, `_`, or `-`, up to 63 characters. The spelling is kept. Uniqueness ignores case. The default context is `default`. `Default` is rejected. `LawnDartOptions.ValidateNames` (default true) turns the format check off. See [Stream IDs](STREAM_IDS.md).
+
+`AddSqlProjectionStores` uses the context name as the SQL Server schema when you omit the schema.
 
 ## C
 
@@ -241,3 +245,6 @@ State → Command. `ITaskProcessor` polls read models and emits commands.
 
 **Tenant context**  
 Optional `ITenantContextProvider` for metadata on events and stream IDs.
+A tenant id uses the same rule as a bounded context name (`LawnDartNames`).
+A colon is rejected even when `LawnDartOptions.ValidateNames` is false.
+See [Metadata](METADATA.md).

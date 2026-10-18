@@ -113,6 +113,66 @@ public class AggregateRepositoryTests
     }
 
     [Fact]
+    public async Task SaveAsync_InvalidTenant_WhenRequired_NamesTheRule()
+    {
+        var eventStore = new InMemoryEventStore();
+        var options = Options.Create(new LawnDartOptions { RequireTenantId = true });
+        var repository = new AggregateRepository(
+            eventStore,
+            new DefaultMetadataProvider(),
+            new TestTenantContextProvider("acme"),
+            options);
+
+        var aggregate = new TestAggregate();
+        aggregate.SetStreamId("bad name:TestAggregate:" + Guid.NewGuid());
+        aggregate.ApplyTest(new TestEvent(Guid.NewGuid(), DateTime.UtcNow));
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+            repository.SaveAsync(aggregate, new CommandMetadata { TenantId = "bad name" }));
+        Assert.Contains(LawnDartNames.Pattern, ex.Message);
+    }
+
+    [Fact]
+    public async Task SaveAsync_ValidateNamesFalse_AllowsExistingTenant_RejectsColon()
+    {
+        var eventStore = new InMemoryEventStore();
+        var options = Options.Create(new LawnDartOptions { RequireTenantId = true, ValidateNames = false });
+        var repository = new AggregateRepository(
+            eventStore,
+            new DefaultMetadataProvider(),
+            new TestTenantContextProvider("My Tenant"),
+            options);
+
+        var id = Guid.NewGuid();
+        var aggregate = new TestAggregate();
+        aggregate.SetStreamId($"My Tenant:TestAggregate:{id}");
+        aggregate.ApplyTest(new TestEvent(Guid.NewGuid(), DateTime.UtcNow));
+        await repository.SaveAsync(aggregate, new CommandMetadata { TenantId = "My Tenant" });
+
+        var colon = new TestAggregate();
+        colon.SetStreamId($"a:b:TestAggregate:{Guid.NewGuid()}");
+        colon.ApplyTest(new TestEvent(Guid.NewGuid(), DateTime.UtcNow));
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+            repository.SaveAsync(colon, new CommandMetadata { TenantId = "a:b" }));
+        Assert.Contains(":", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetOrCreateAsync_InvalidProviderTenant_WhenRequired_Throws()
+    {
+        var options = Options.Create(new LawnDartOptions { RequireTenantId = true });
+        var repository = new AggregateRepository(
+            new InMemoryEventStore(),
+            new DefaultMetadataProvider(),
+            new TestTenantContextProvider("bad name"),
+            options);
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+            repository.GetOrCreateAsync<TestAggregate>(Guid.NewGuid()));
+        Assert.Contains(LawnDartNames.Pattern, ex.Message);
+    }
+
+    [Fact]
     public async Task SaveAsync_PropagatesMetadata()
     {
         // Arrange

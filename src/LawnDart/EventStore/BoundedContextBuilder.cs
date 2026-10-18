@@ -54,16 +54,19 @@ public static class BoundedContextExtensions
     /// or <c>"default"</c>).  Used as the keyed-DI key for all context-specific services.
     /// </param>
     /// <returns>A <see cref="BoundedContextBuilder"/> for further configuration.</returns>
-    /// <exception cref="ArgumentException">Thrown when <paramref name="contextName"/> is null or whitespace.</exception>
-    /// <exception cref="InvalidOperationException">Thrown when the same context name is registered more than once.</exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="contextName"/> is null, whitespace, a case variant of
+    /// <see cref="LawnDartNames.DefaultContextName"/>, or (when
+    /// <see cref="LawnDartOptions.ValidateNames"/> is true) outside <see cref="LawnDartNames.Pattern"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">Thrown when the same context name is registered more than once. Comparison ignores case.</exception>
     public static BoundedContextBuilder AddBoundedContext(
         this IServiceCollection services,
         string contextName)
     {
-        if (string.IsNullOrWhiteSpace(contextName))
-            throw new ArgumentException("Context name must not be null or whitespace.", nameof(contextName));
+        LawnDartNames.RequireContextName(services, contextName, nameof(contextName));
 
-        // Guard: prevent duplicate context names
+        // Guard: prevent duplicate context names (case-insensitive)
         var registry = GetOrCreateRegistry(services);
         registry.Register(contextName);
 
@@ -219,7 +222,7 @@ public static class BoundedContextExtensions
         var catalog = EventTypeCatalog.Materialize(types);
         builder.EventCatalog = catalog;
         builder.Services.AddKeyedSingleton<IEventTypeCatalog>(builder.ContextName, catalog);
-        if (string.Equals(builder.ContextName, "default", StringComparison.Ordinal))
+        if (string.Equals(builder.ContextName, LawnDartNames.DefaultContextName, StringComparison.Ordinal))
             builder.Services.TryAddSingleton<IEventTypeCatalog>(catalog);
     }
 
@@ -237,7 +240,7 @@ public static class BoundedContextExtensions
         var pipeline = EventUpcastPipeline.Materialize(catalog, types);
         builder.UpcastPipeline = pipeline;
         builder.Services.AddKeyedSingleton(builder.ContextName, pipeline);
-        if (string.Equals(builder.ContextName, "default", StringComparison.Ordinal))
+        if (string.Equals(builder.ContextName, LawnDartNames.DefaultContextName, StringComparison.Ordinal))
             builder.Services.TryAddSingleton(pipeline);
     }
 

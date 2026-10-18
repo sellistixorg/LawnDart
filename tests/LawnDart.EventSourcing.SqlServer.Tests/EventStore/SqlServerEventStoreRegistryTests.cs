@@ -110,6 +110,33 @@ public class SqlServerEventStoreRegistryTests : IAsyncLifetime
         Assert.Contains("test-tenant:Order:12345", streamIds);
         Assert.Contains("test-tenant:Order:67890", streamIds);
     }
+
+    [Fact]
+    public async Task PrefixQueries_TreatLikeMetacharactersAsLiteral_AndIgnoreCase()
+    {
+        await _eventStore!.AppendAsync("acme_west:Order:1", OneEvent());
+        await _eventStore.AppendAsync("acmeXwest:Order:1", OneEvent());
+        await _eventStore.AppendAsync("acme%west:Order:1", OneEvent());
+        await _eventStore.AppendAsync("acme[west:Order:1", OneEvent());
+        await _eventStore.AppendAsync("ACME_WEST:Order:2", OneEvent());
+
+        var underscore = await _eventStore.EnumerateStreamIdsAsync("acme_west:");
+        Assert.Equal(2, underscore.Count);
+        Assert.Contains("acme_west:Order:1", underscore);
+        Assert.Contains("ACME_WEST:Order:2", underscore);
+        Assert.DoesNotContain("acmeXwest:Order:1", underscore);
+
+        Assert.Equal(new[] { "acme%west:Order:1" }, await _eventStore.EnumerateStreamIdsAsync("acme%west:"));
+        Assert.Equal(new[] { "acme[west:Order:1" }, await _eventStore.EnumerateStreamIdsAsync("acme[west:"));
+
+        Assert.Equal(2L, await _eventStore.GetStreamCountAsync("acme_west:"));
+        Assert.Equal(1L, await _eventStore.GetStreamCountAsync("acmeXwest:"));
+        Assert.Equal(1L, await _eventStore.GetStreamCountAsync("acme%west:"));
+        Assert.Equal(1L, await _eventStore.GetStreamCountAsync("acme[west:"));
+        Assert.Equal(2L, await _eventStore.GetStreamCountAsync("acme_"));
+    }
+
+    private static IEvent[] OneEvent() => [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)];
 [EventTypeName("sql-server-event-store-registry-.test-event")]
 
     private record TestEvent(Guid Id, DateTime Timestamp) : IEvent;

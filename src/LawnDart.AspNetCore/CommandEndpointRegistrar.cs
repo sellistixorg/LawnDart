@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using LawnDart.Authorization;
 using LawnDart.EventStore;
 using LawnDart.Messaging;
@@ -22,7 +23,7 @@ internal static class CommandEndpointRegistrar
     private static readonly Type CommandHandlerOpenType = typeof(ICommandHandler<>);
     private static readonly ActivitySource ActivitySource = new("LawnDart.AspNetCore");
 
-    internal const string DefaultContextName = "default";
+    internal const string DefaultContextName = LawnDartNames.DefaultContextName;
 
     /// <summary>
     /// <c>true</c> when HTTP should resolve unkeyed handlers (no context name, or
@@ -192,6 +193,7 @@ internal static class CommandEndpointRegistrar
             .WithSummary(summary)
             .WithDescription($"Executes the {summary} command.")
             .Produces(StatusCodes.Status202Accepted)
+            .Produces<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")
             .Produces<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")
             .Produces<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")
             .Produces<ProblemDetails>(StatusCodes.Status422UnprocessableEntity, "application/problem+json");
@@ -278,6 +280,10 @@ internal static class CommandEndpointRegistrar
         CancellationToken ct)
         where TCommand : ICommand
     {
+        var tenantProblem = RejectInvalidTenant(http);
+        if (tenantProblem is not null)
+            return tenantProblem;
+
         AssignCommandIdIfEmpty(command, http);
         var message = CreateInboundContext(http);
         using var activity = MessageTrace.Start(
@@ -300,6 +306,27 @@ internal static class CommandEndpointRegistrar
         var property = typeof(TCommand).GetProperty(nameof(ICommand.Id));
         if (property?.SetMethod is not null)
             property.SetValue(command, id);
+    }
+
+    private static IResult? RejectInvalidTenant(HttpContext http)
+    {
+        if (!http.Request.Headers.ContainsKey("X-Tenant-Id"))
+            return null;
+
+        var tenantId = http.Request.Headers["X-Tenant-Id"].ToString();
+        var validateNames = http.RequestServices.GetService<IOptions<LawnDartOptions>>()?.Value.ValidateNames ?? true;
+        try
+        {
+            LawnDartNames.ValidateTenantId(tenantId, "X-Tenant-Id", validateNames);
+            return null;
+        }
+        catch (ArgumentException ex)
+        {
+            return Results.Problem(
+                title: "Invalid tenant id",
+                detail: ex.Message,
+                statusCode: StatusCodes.Status400BadRequest);
+        }
     }
 
     private static MessageContext CreateInboundContext(HttpContext http)

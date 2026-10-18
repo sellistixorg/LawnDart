@@ -148,8 +148,7 @@ public static class LawnDartExtensions
         string contextName)
         where T : class, Tagging.ITagProvider
     {
-        if (string.IsNullOrWhiteSpace(contextName))
-            throw new ArgumentException("Context name must not be null or whitespace.", nameof(contextName));
+        LawnDartNames.RequireContextName(services, contextName, nameof(contextName));
 
         services.AddKeyedSingleton<Tagging.ITagProvider, T>(contextName);
         return services;
@@ -199,8 +198,7 @@ public static class LawnDartExtensions
         string contextName)
         where T : class, Tagging.ITagFormat
     {
-        if (string.IsNullOrWhiteSpace(contextName))
-            throw new ArgumentException("Context name must not be null or whitespace.", nameof(contextName));
+        LawnDartNames.RequireContextName(services, contextName, nameof(contextName));
 
         services.AddKeyedSingleton<Tagging.ITagFormat, T>(contextName);
         return services;

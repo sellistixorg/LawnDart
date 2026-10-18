@@ -48,3 +48,29 @@ var streamId = $"{tenantId}:Student:{command.StudentId}";
 ```
 
 Tenant prefix comes from `ITenantContextProvider`. See [Metadata](METADATA.md).
+
+## Context names and tenant ids
+
+A bounded context name and a tenant id use one rule. `LawnDartNames` is that rule.
+
+The value starts with a letter or digit. The rest is letters, digits, `.`, `_`, or `-`. The longest value is 63 characters. `LawnDartNames.Pattern` is the expression. `LawnDartNames.IsValid` and `LawnDartNames.Validate` apply it.
+
+The stored spelling is the spelling you registered. A second context whose name differs only by case is rejected. The default context is `default`. `Default` is rejected. Keyed services for the unkeyed alias use that lowercase spelling.
+
+`LawnDartOptions.ValidateNames` defaults to true. Set it to false before `AddBoundedContext` when an existing name does not match. Call `AddLawnDart` first so registration sees the flag. A colon in a tenant id is still rejected. A stream id is `{tenantId}:{type}:{id}` and is split on every colon.
+
+`FixedTenantContextProvider` takes `validateNames` for the same flag. `AmbientTenantContextProvider` reads `LawnDartOptions` when dependency injection constructs it. `SetTenant` checks the id. An invalid `X-Tenant-Id` header returns 400. See [HTTP commands](HTTP_COMMANDS.md).
+
+`HandleCommandAsync` and a SQL Server append check the tenant id when `RequireTenantId` is true. `UseSqlServer` copies `ValidateNames` onto `SqlServerEventStoreOptions.ValidateNames` before the SQL callback runs.
+
+## Prefix match
+
+`EnumerateStreamIdsAsync` and `GetStreamCountAsync` match a stream id prefix. The match is case-insensitive. The in-memory store uses ordinal ignore-case. SQL Server uses the `Latin1_General_100_CI_AS` collation, so the database collation does not change the match. For letters A through Z the two agree.
+
+`_`, `%`, and `[` in the prefix are literal characters. `acme_west:` does not match `acmeXwest:`.
+
+## Length
+
+SQL Server stores a stream id in `NVARCHAR(255)` on `Events`, `Streams`, and `EventSnapshots`. A longer id throws `ArgumentException` before the write.
+
+`AddSqlProjectionStores` uses the context name as the SQL Server schema when you omit the schema. The name rule fits a schema identifier. Pass `schemaName: "dbo"` to keep the `dbo` schema.
