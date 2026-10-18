@@ -18,11 +18,14 @@ public static class LawnDartExtensions
     /// <param name="configure">Optional callback for <see cref="LawnDartOptions"/>.</param>
     /// <returns>The service collection for chaining.</returns>
     /// <remarks>
-    /// Registers default metadata generation using <see cref="DefaultMetadataProvider"/>
-    /// and a no-tenant <see cref="AmbientTenantContextProvider"/> so
+    /// Registers default metadata generation using <see cref="DefaultMetadataProvider"/>,
+    /// <see cref="Tagging.LowercaseTagFormat"/> as <see cref="Tagging.ITagFormat"/>
+    /// (kept when one is already registered), and a no-tenant
+    /// <see cref="AmbientTenantContextProvider"/> so
     /// <c>IAggregateRepository</c> resolves without a hand-written tenant line.
     /// Replace the provider with <see cref="AddTenantContextProvider{T}"/> when the
-    /// host is multi-tenant.
+    /// host is multi-tenant. Replace the format with
+    /// <see cref="AddTagFormat{T}(IServiceCollection)"/>.
     /// </remarks>
     public static IServiceCollection AddLawnDart(
         this IServiceCollection services,
@@ -39,6 +42,8 @@ public static class LawnDartExtensions
         }
 
         services.TryAddSingleton<ITenantContextProvider, AmbientTenantContextProvider>();
+        services.TryAddSingleton<Tagging.ITagFormat, Tagging.LowercaseTagFormat>();
+        services.TryAddSingleton(_ => new Tagging.UnknownTagWarningLog());
 
         // Register default metadata provider if not already registered
         services.AddSingleton<IMetadataProvider>(sp =>
@@ -147,6 +152,57 @@ public static class LawnDartExtensions
             throw new ArgumentException("Context name must not be null or whitespace.", nameof(contextName));
 
         services.AddKeyedSingleton<Tagging.ITagProvider, T>(contextName);
+        return services;
+    }
+
+    /// <summary>
+    /// Adds a global tag format shared by every bounded context that has no keyed format.
+    /// </summary>
+    /// <typeparam name="T">The tag format implementation type.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <returns>The service collection for chaining.</returns>
+    /// <remarks>
+    /// <para>
+    /// <see cref="AddLawnDart"/> registers <see cref="Tagging.LowercaseTagFormat"/> with
+    /// <c>TryAdd</c>. Call this before <see cref="AddLawnDart"/> to keep <typeparamref name="T"/>,
+    /// or after it to replace the default. The last registration of <see cref="Tagging.ITagFormat"/>
+    /// is the one that resolves.
+    /// </para>
+    /// <para>
+    /// For one context, use <see cref="AddTagFormat{T}(IServiceCollection, string)"/> or
+    /// <c>WithTagFormat&lt;T&gt;()</c> on the bounded context builder.
+    /// </para>
+    /// </remarks>
+    public static IServiceCollection AddTagFormat<T>(this IServiceCollection services)
+        where T : class, Tagging.ITagFormat
+    {
+        services.AddSingleton<Tagging.ITagFormat, T>();
+        return services;
+    }
+
+    /// <summary>
+    /// Adds a tag format that applies only to the named bounded context.
+    /// </summary>
+    /// <typeparam name="T">The tag format implementation type.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <param name="contextName">
+    /// The bounded context name (dependency injection key). Must match
+    /// <c>AddBoundedContext(contextName)</c>.
+    /// </param>
+    /// <returns>The service collection for chaining.</returns>
+    /// <remarks>
+    /// Repositories for <paramref name="contextName"/> prefer this keyed format.
+    /// A context with no keyed format uses the global <see cref="Tagging.ITagFormat"/>.
+    /// </remarks>
+    public static IServiceCollection AddTagFormat<T>(
+        this IServiceCollection services,
+        string contextName)
+        where T : class, Tagging.ITagFormat
+    {
+        if (string.IsNullOrWhiteSpace(contextName))
+            throw new ArgumentException("Context name must not be null or whitespace.", nameof(contextName));
+
+        services.AddKeyedSingleton<Tagging.ITagFormat, T>(contextName);
         return services;
     }
 

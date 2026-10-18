@@ -18,7 +18,7 @@ This is the foundation package. All other LawnDart packages depend on it.
 - **Snapshots**: `ISnapshotStore`, `IDcbSnapshotStore`, `ISnapshotStrategy`, built-in strategies
 - **Authorization**: `IAuthorizationProvider`, attributes, `AuthorizationService`
 - **Metadata**: `IMetadataProvider`, `ITenantContextProvider`, `EventMetadata`, `CommandMetadata`. See [Metadata](https://github.com/sellistixorg/LawnDart/blob/main/docs/METADATA.md)
-- **Tagging**: `ITagProvider`, `[Tag]` attribute
+- **Tagging**: `ITagFormat`, `LowercaseTagFormat`, `TagProvider`, `ITagProvider`, `[Tag]` attribute
 - **Serialization**: `IEventSerializer` (`ReadOnlyMemory<byte>`), `[PropertyOrder]`
 - **Event session**: `EventSession` maps `IEvent` to `AppendEvent` / `RecordedEvent`
 - **Outbox**: `IOutboxWriter`, `IOutboxPublisher`, `OutboxMessage`

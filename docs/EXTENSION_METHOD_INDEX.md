@@ -26,6 +26,7 @@ These live on `IAggregateRepository` in Core (not `Add*` extensions). Guid overl
 | `AddTenantContextProvider<T>` | `LawnDart` | Tenant metadata source |
 | `AddMetadataProvider<T>` | `LawnDart` | Replace default metadata |
 | `AddTagProvider<T>` | `LawnDart` | Default or named-context `ITagProvider` |
+| `AddTagFormat<T>` | `LawnDart` | Default or named-context `ITagFormat` |
 | `AddBoundedContext` | `LawnDart` | Named/keyed context builder |
 | `AddLawnDartAuthorization` | `LawnDart` | Core `AuthorizationService` |
 | `AddCompositeAuthorizationContext` | `LawnDart` | Compose leaf context providers |
@@ -42,6 +43,7 @@ These live on `IAggregateRepository` in Core (not `Add*` extensions). Guid overl
 | `EventSourcingRepositories.Create*` | `LawnDart.EventSourcing` | Build repositories with the write queue. Public constructors omit the queue. |
 | `WithCommandHandlers` / `WithCommandHandlers<TMarker>` | `LawnDart.EventSourcing` | The only handler registrar. Scan `ICommandHandler<T>` and register `ICommandDispatcher` (`LawnDart.Messaging` namespace, Core package) |
 | `WithTagProvider` | `LawnDart.EventSourcing` | Context `ITagProvider` |
+| `WithTagFormat` | `LawnDart.EventSourcing` | Context `ITagFormat` |
 
 ## Projections
 

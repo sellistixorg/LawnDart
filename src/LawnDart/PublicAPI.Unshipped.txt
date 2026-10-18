@@ -11,3 +11,23 @@ LawnDart.EventStore.QueryResult.TypesResolved.get -> bool
 LawnDart.EventStore.QueryResult.TypesResolved.init -> void
 LawnDart.Outbox.IOutboxWriter.ResetAllDeadLetteredAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
 LawnDart.Outbox.IOutboxWriter.ResetDeadLetteredAsync(System.Guid messageId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+LawnDart.Dcb.DcbProjector<TState>.UseTagFormat(LawnDart.Tagging.ITagFormat! format, Microsoft.Extensions.Logging.ILogger? logger = null, bool warnOnUnknownTag = true) -> void
+LawnDart.Dcb.DcbReactor<TEvent>.UseTagFormat(LawnDart.Tagging.ITagFormat! format, Microsoft.Extensions.Logging.ILogger? logger = null, bool warnOnUnknownTag = true) -> void
+LawnDart.Tagging.ITagFormat
+LawnDart.Tagging.ITagFormat.Tag(string! type, System.Guid id) -> string!
+LawnDart.Tagging.ITagFormat.Tag(string! type, string! id) -> string!
+LawnDart.Tagging.LowercaseTagFormat
+static LawnDart.Tagging.LowercaseTagFormat.Instance.get -> LawnDart.Tagging.LowercaseTagFormat!
+LawnDart.Tagging.LowercaseTagFormat.LowercaseTagFormat() -> void
+LawnDart.Tagging.LowercaseTagFormat.Tag(string! type, System.Guid id) -> string!
+LawnDart.Tagging.LowercaseTagFormat.Tag(string! type, string! id) -> string!
+LawnDart.Tagging.TagFormatRoundTrip
+static LawnDart.Tagging.TagFormatRoundTrip.Matches(LawnDart.Tagging.ITagFormat! format, string! tag) -> bool
+LawnDart.Tagging.TagProvider
+LawnDart.Tagging.TagProvider.Format.get -> LawnDart.Tagging.ITagFormat!
+abstract LawnDart.Tagging.TagProvider.GetTags(LawnDart.IEvent! event, object? context = null) -> System.Collections.Generic.IEnumerable<string!>!
+LawnDart.Tagging.TagProvider.Tag(string! type, System.Guid id) -> string!
+LawnDart.Tagging.TagProvider.Tag(string! type, string! id) -> string!
+LawnDart.Tagging.TagProvider.TagProvider(LawnDart.Tagging.ITagFormat! format) -> void
+static LawnDart.LawnDartExtensions.AddTagFormat<T>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static LawnDart.LawnDartExtensions.AddTagFormat<T>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, string! contextName) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
