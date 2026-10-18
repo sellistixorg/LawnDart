@@ -18,8 +18,8 @@ public class SqlServerStreamIdLengthTests
         Assert.Equal(@"acme\[west:%", StreamIdPrefixSql.LikeParameter("acme[west:"));
         Assert.Equal(@"a\\b%", StreamIdPrefixSql.LikeParameter(@"a\b"));
         var predicate = StreamIdPrefixSql.Predicate("StreamId");
-        Assert.Contains("Latin1_General_100_CI_AS", predicate);
-        Assert.Contains(@"ESCAPE '\'", predicate);
+        Assert.DoesNotContain("COLLATE", predicate, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("StreamId LIKE @Prefix ESCAPE '\\'", predicate);
     }
 
     [Fact]

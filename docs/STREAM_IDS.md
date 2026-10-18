@@ -65,9 +65,9 @@ The stored spelling is the spelling you registered. A second context whose name 
 
 ## Prefix match
 
-`EnumerateStreamIdsAsync` and `GetStreamCountAsync` match a stream id prefix. The match is case-insensitive. The in-memory store uses ordinal ignore-case. SQL Server uses the `Latin1_General_100_CI_AS` collation, so the database collation does not change the match. For letters A through Z the two agree.
+`EnumerateStreamIdsAsync` and `GetStreamCountAsync` match a stream id prefix. `_`, `%`, and `[` in the prefix are literal characters. `acme_west:` does not match `acmeXwest:`.
 
-`_`, `%`, and `[` in the prefix are literal characters. `acme_west:` does not match `acmeXwest:`.
+The in-memory store compares with ordinal ignore-case. SQL Server uses the `StreamId` column collation, so `LIKE 'prefix%'` can seek the primary key. A new SQL Server database is case-insensitive. A case-sensitive database matches case.
 
 ## Length
 

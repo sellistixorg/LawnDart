@@ -39,8 +39,10 @@ public interface IStreamRegistry
     /// Enumerates all stream IDs, optionally filtered by prefix.
     /// </summary>
     /// <param name="prefix">
-    /// Optional prefix. The match is case-insensitive.
-    /// <c>_</c>, <c>%</c>, and <c>[</c> are literal characters.
+    /// Optional prefix. <c>_</c>, <c>%</c>, and <c>[</c> are literal characters.
+    /// The in-memory store matches with ordinal ignore-case.
+    /// SQL Server uses the <c>StreamId</c> column collation, so the prefix can seek that index.
+    /// A new database is case-insensitive.
     /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>List of stream IDs.</returns>
@@ -65,8 +67,10 @@ public interface IStreamRegistry
     /// Returns the total number of streams in the registry, optionally filtered by prefix.
     /// </summary>
     /// <param name="prefix">
-    /// Optional prefix. The match is case-insensitive.
-    /// <c>_</c>, <c>%</c>, and <c>[</c> are literal characters.
+    /// Optional prefix. <c>_</c>, <c>%</c>, and <c>[</c> are literal characters.
+    /// The in-memory store matches with ordinal ignore-case.
+    /// SQL Server uses the <c>StreamId</c> column collation, so the prefix can seek that index.
+    /// A new database is case-insensitive.
     /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The number of streams matching the filter.</returns>

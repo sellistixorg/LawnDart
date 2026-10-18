@@ -112,12 +112,13 @@ public class SqlServerEventStoreRegistryTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task PrefixQueries_TreatLikeMetacharactersAsLiteral_AndIgnoreCase()
+    public async Task PrefixQueries_TreatLikeMetacharactersAsLiteral()
     {
         await _eventStore!.AppendAsync("acme_west:Order:1", OneEvent());
         await _eventStore.AppendAsync("acmeXwest:Order:1", OneEvent());
         await _eventStore.AppendAsync("acme%west:Order:1", OneEvent());
         await _eventStore.AppendAsync("acme[west:Order:1", OneEvent());
+        // The test database uses the default case-insensitive collation.
         await _eventStore.AppendAsync("ACME_WEST:Order:2", OneEvent());
 
         var underscore = await _eventStore.EnumerateStreamIdsAsync("acme_west:");

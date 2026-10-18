@@ -441,8 +441,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
                 .Where(s => s.Status == StreamStatus.Active)
                 .Select(s => s.StreamId)
                 .Where(id => prefix == null || id.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                // OrdinalIgnoreCase matches SQL Server prefix queries (Latin1_General_100_CI_AS).
-                // '_' '%' and '[' are literal, the same as the escaped SQL LIKE.
+                // Ordinal ignore-case. SQL Server prefix queries follow the StreamId column collation.
                 .OrderBy(id => id)
                 .ToList();
             return Task.FromResult<IReadOnlyList<string>>(streamIds.AsReadOnly());
@@ -484,7 +483,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
             var count = _streamRegistry.Values
                 .Where(s => s.Status == StreamStatus.Active &&
                             (prefix == null || s.StreamId.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
-                // OrdinalIgnoreCase matches SQL Server prefix queries (Latin1_General_100_CI_AS).
+                // Ordinal ignore-case. SQL Server prefix queries follow the StreamId column collation.
                 .LongCount();
             return Task.FromResult(count);
         }

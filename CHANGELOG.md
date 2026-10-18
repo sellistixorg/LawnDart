@@ -33,7 +33,7 @@ changes to the public API.
 
 ### Fixed
 
-- A SQL Server stream id prefix treats `_`, `%`, and `[` as literal characters. `acme_west:` does not match `acmeXwest:`. Prefix matching is case-insensitive on the in-memory store (ordinal) and on SQL Server (`Latin1_General_100_CI_AS`).
+- A SQL Server stream id prefix treats `_`, `%`, and `[` as literal characters. `acme_west:` does not match `acmeXwest:`. The query uses the `StreamId` column collation, so the prefix can seek that index. A new database is case-insensitive. The in-memory store matches with ordinal ignore-case.
 - A SQL Server stream id longer than 255 characters throws `ArgumentException` before the write. `Events.StreamId`, `Streams.StreamId`, and `EventSnapshots.StreamId` are `NVARCHAR(255)`.
 - An append is not retried after `Commit` has been attempted. If that commit's reply is lost, the store reads the event ids back and returns the append that landed. Replaying the same event id fails with `EventAlreadyAppendedException` instead of writing a second row. A typed append uses `IEvent.Id` as that id, so one `EventMetadata` object can be passed to several appends.
 - Outbox message ids are the event ids. A processor claims outbox rows (`UPDLOCK, READPAST`) for 30 seconds, so two processors do not publish the same row. A failed publish releases the claim.
