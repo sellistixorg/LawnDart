@@ -1,4 +1,6 @@
+using Microsoft.Extensions.Logging;
 using LawnDart.Metadata;
+using LawnDart.Tagging;
 
 namespace LawnDart.Dcb;
 
@@ -31,6 +33,33 @@ public interface IDcbReactor
 /// <typeparam name="TEvent">Event type to react to.</typeparam>
 public abstract class DcbReactor<TEvent> : IDcbReactor where TEvent : IEvent
 {
+    private ITagFormat? _tagFormat;
+    private ILogger? _tagLogger;
+    private bool _warnOnUnknownTag = true;
+
+    /// <summary>
+    /// Supplies the context format used to check <see cref="GetTagsForReaction"/>.
+    /// </summary>
+    /// <param name="format">The context <see cref="ITagFormat"/>.</param>
+    /// <param name="logger">
+    /// Warning destination. No log is written when this is null.
+    /// </param>
+    /// <param name="warnOnUnknownTag">
+    /// When false, reaction tags are not checked. Matches
+    /// <c>EventSourcingOptions.WarnOnUnknownTag</c>.
+    /// </param>
+    /// <remarks>
+    /// <see cref="ReactAsync"/> logs once per tag that does not round-trip.
+    /// The check does not throw and does not change the commands returned.
+    /// </remarks>
+    public void UseTagFormat(ITagFormat format, ILogger? logger = null, bool warnOnUnknownTag = true)
+    {
+        ArgumentNullException.ThrowIfNull(format);
+        _tagFormat = format;
+        _tagLogger = logger;
+        _warnOnUnknownTag = warnOnUnknownTag;
+    }
+
     /// <summary>
     /// Gets the tags that this reactor subscribes to.
     /// Override this to specify which events to react to.
@@ -51,6 +80,8 @@ public abstract class DcbReactor<TEvent> : IDcbReactor where TEvent : IEvent
     /// </summary>
     public async Task<IEnumerable<ICommand>> ReactAsync(IEvent @event, EventMetadata metadata, CancellationToken cancellationToken = default)
     {
+        TagFormatRoundTrip.WarnOnce(_tagLogger, _tagFormat, _warnOnUnknownTag, GetTagsForReaction());
+
         if (@event is TEvent typedEvent)
         {
             return await ReactToEventAsync(typedEvent, metadata, cancellationToken).ConfigureAwait(false);

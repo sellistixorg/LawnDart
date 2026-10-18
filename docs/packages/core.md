@@ -16,6 +16,7 @@ Take it first. It does not include an event-store implementation.
 - `IEventLog` is the durable log (`AppendEvent` in, `RecordedEvent` out). Third-party stores implement this. `IEventSerializer` is `ReadOnlyMemory<byte>`.
 - Authorization attributes and `AuthorizationService`
 - `AddLawnDart`, `AddBoundedContext`, `AddLawnDartAuthorization`
+- `ITagFormat` and `LowercaseTagFormat`. `AddLawnDart` registers the format. `TagProvider` is an optional base for `ITagProvider`. See [Tagging](../TAGGING.md).
 - Hosted pattern contracts (`IReactor`, `IEventProcessor`, `ITaskProcessor`)
 
 Author Lightweight views as `ProjectionBase<TView>` plus scope attributes

@@ -233,8 +233,8 @@ Identity of an event stream. See [STREAM_IDS.md](STREAM_IDS.md).
 
 **Tag**  
 Exact string stored on an event. DCB loads, append fences, and later
-search use it as a key. The context `ITagProvider` is the source of the
-string. See [TAGGING.md](TAGGING.md).
+search use it as a key. Build it with the context `ITagFormat`. See
+[TAGGING.md](TAGGING.md).
 
 **Task Processing**  
 State → Command. `ITaskProcessor` polls read models and emits commands.

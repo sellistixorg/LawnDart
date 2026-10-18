@@ -43,8 +43,8 @@ are on the same type. Source:
 `demos/LawnDart.Demo.Academy/Enrollment/EnrollmentEntity.cs`.
 
 Those prefixes are lowercase `student:`, `section:`, and `course:`.
-Build the load and the `Emit` arguments with the same format method
-the context `ITagProvider` uses. See [TAGGING.md](../TAGGING.md).
+Build the load and the `Emit` arguments with the context `ITagFormat`.
+See [TAGGING.md](../TAGGING.md).
 
 The repository loads events for that exact tag set, rebuilds the entity,
 runs the command, and appends with `FailIfMatches` on the same strings,

@@ -29,6 +29,8 @@ public class AggregateRepository : IAggregateRepository
     private readonly ISnapshotStore? _snapshotStore;
     private readonly ISnapshotStrategyResolver? _strategyResolver;
     private readonly ISnapshotWriteQueue? _snapshotWriteQueue;
+    private readonly ITagFormat? _tagFormat;
+    private readonly EventSourcingOptions _eventSourcingOptions;
 
     public AggregateRepository(
         IEventStore eventStore,
@@ -64,7 +66,9 @@ public class AggregateRepository : IAggregateRepository
         ILogger<AggregateRepository>? logger,
         ISnapshotStore? snapshotStore,
         ISnapshotStrategyResolver? strategyResolver,
-        ISnapshotWriteQueue? snapshotWriteQueue)
+        ISnapshotWriteQueue? snapshotWriteQueue,
+        ITagFormat? tagFormat = null,
+        IOptions<EventSourcingOptions>? eventSourcingOptions = null)
     {
         _eventStore = eventStore ?? throw new ArgumentNullException(nameof(eventStore));
         _metadataProvider = metadataProvider ?? throw new ArgumentNullException(nameof(metadataProvider));
@@ -76,6 +80,8 @@ public class AggregateRepository : IAggregateRepository
         _snapshotStore = snapshotStore;
         _strategyResolver = strategyResolver;
         _snapshotWriteQueue = snapshotWriteQueue;
+        _tagFormat = tagFormat;
+        _eventSourcingOptions = eventSourcingOptions?.Value ?? new EventSourcingOptions();
     }
 
     public Task<T?> GetAsync<T>(Guid id, CancellationToken cancellationToken = default) where T : AggregateRoot, new()
@@ -562,17 +568,30 @@ public class AggregateRepository : IAggregateRepository
             tags.AddRange(providerTags);
         }
 
-        // Default: add aggregate tag
-        if (!tags.Any(t => t.StartsWith($"{aggregate.GetType().Name}:", StringComparison.Ordinal)))
+        // Default: add aggregate tag. The prefix check stays on the CLR type name.
+        var aggregateTypeName = aggregate.GetType().Name;
+        if (!tags.Any(t => t.StartsWith($"{aggregateTypeName}:", StringComparison.Ordinal)))
         {
             var aggregateId = ExtractAggregateId(aggregate.StreamId);
             if (aggregateId != null)
             {
-                tags.Add($"{aggregate.GetType().Name}:{aggregateId}");
+                tags.Add(FormatFallbackTag(aggregateTypeName, aggregateId));
             }
         }
 
         return tags.Distinct();
+    }
+
+    private string FormatFallbackTag(string aggregateTypeName, string aggregateId)
+    {
+        if (!_eventSourcingOptions.FormatAggregateFallbackTag)
+            return $"{aggregateTypeName}:{aggregateId}";
+
+        var format = _tagFormat ?? LowercaseTagFormat.Instance;
+        if (Guid.TryParse(aggregateId, out var guid))
+            return format.Tag(aggregateTypeName, guid);
+
+        return format.Tag(aggregateTypeName, aggregateId);
     }
 
     private static string? ExtractAggregateId(string streamId)

@@ -51,7 +51,9 @@ public static class EventSourcingRepositories
             services.GetService<ILogger<AggregateRepository>>(),
             services.GetKeyedService<ISnapshotStore>(serviceKey) ?? services.GetService<ISnapshotStore>(),
             services.GetService<ISnapshotStrategyResolver>(),
-            services.GetService<ISnapshotWriteQueue>());
+            services.GetService<ISnapshotWriteQueue>(),
+            services.GetKeyedService<ITagFormat>(serviceKey) ?? services.GetService<ITagFormat>(),
+            services.GetService<IOptions<EventSourcingOptions>>());
     }
 
     /// <summary>
@@ -79,6 +81,7 @@ public static class EventSourcingRepositories
             services.GetService<IOptions<EventSourcingOptions>>(),
             services.GetKeyedService<IDcbSnapshotStore>(serviceKey) ?? services.GetService<IDcbSnapshotStore>(),
             services.GetService<ISnapshotStrategyResolver>(),
-            services.GetService<ISnapshotWriteQueue>());
+            services.GetService<ISnapshotWriteQueue>(),
+            services.GetKeyedService<ITagFormat>(serviceKey) ?? services.GetService<ITagFormat>());
     }
 }

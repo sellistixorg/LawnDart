@@ -17,6 +17,7 @@ changes to the public API.
 
 ### Added
 
+- `ITagFormat` builds a tag from a type and an id. `AddLawnDart` registers `LowercaseTagFormat` (lowercase type, `Guid` format `D`, other ids unchanged) unless a format is already registered. Override it with `AddTagFormat<T>()` or `WithTagFormat<T>()`. `TagProvider` is an optional base class that takes that format. `WarnOnUnknownTag` (default true) logs once when a queried tag does not round-trip through the format. The check does not throw and does not change which events match. `FormatAggregateFallbackTag` (default false) formats the aggregate fallback tag. Leave it false on a store that already has `{Type}:{id}` tags. Those events stay under the old tag.
 - `QueryResult.TypesResolved` and `EventLogQueryResult.TypesResolved` are false when a queried event type is still unknown after the store reloads its type map. An empty result then does not mean the range was empty.
 - `SqlServerEventStoreOptions.ReadHorizonGracePeriod` (default 30 seconds) is how long one unfinished SQL Server write may hold the read horizon. After that, readers move to committed rows past it and log a warning. `Timeout.InfiniteTimeSpan` waits until the write ends. A row that commits below that head logs an error in the process that moved the horizon.
 - `OutboxClaimLease` (default 30 seconds) is how long an outbox claim hides a row. `InboxClaimLease` (default 30 seconds) is how long an inbox claim blocks a second delivery. `TimeSpan.Zero` expires either claim at once.

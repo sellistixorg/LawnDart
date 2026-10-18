@@ -49,10 +49,9 @@ are on the same type. Source:
 `demos/LawnDart.Demo.Academy/Enrollment/EnrollmentEntity.cs`.
 
 `EnrollmentEntity.GetTags` and each `Emit` in that file use the same
-lowercase prefixes: `student:`, `section:`, and `course:`. Call one
-format method, the one the context `ITagProvider` uses, from that
-`GetTags`, from `Emit`, and from the load. A second spelling is a
-different tag. See [TAGGING.md](TAGGING.md).
+lowercase prefixes: `student:`, `section:`, and `course:`. Build the
+load, `Emit`, and the provider with the context `ITagFormat`. A second
+spelling is a different tag. See [TAGGING.md](TAGGING.md).
 
 The repository:
 

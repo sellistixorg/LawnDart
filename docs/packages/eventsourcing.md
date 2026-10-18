@@ -43,6 +43,13 @@ public object Deserialize(ReadOnlyMemory<byte> data, Type type)
         ?? throw new InvalidOperationException($"Failed to deserialize {type.Name}");
 }
 ```
+`WithTagFormat<T>()` registers the context `ITagFormat`. `AddLawnDart`
+already registered `LowercaseTagFormat`. `WarnOnUnknownTag` (default true)
+logs once when a queried tag does not round-trip. `FormatAggregateFallbackTag`
+(default false) leaves the aggregate fallback tag as `{ClrTypeName}:{id}`.
+Leave that flag false on a store that already has events. See
+[Tagging](../TAGGING.md).
+
 `ContextAwareCommandDispatcher` publishes inbound `MessageContext` (and
 continues `traceparent`) before `HandleAsync`. `HandleCommandAsync` sets
 envelope `CausationId` to the command id when the caller left it unset.

@@ -52,6 +52,9 @@ public static class LawnDartSqlServerExtensions
     /// <param name="builder">The bounded-context builder.</param>
     /// <param name="configure">
     /// Callback that must provide at least <see cref="SqlServerEventStoreOptions.ConnectionString"/>.
+    /// <see cref="EventSourcingOptions.WarnOnUnknownTag"/> set to false and
+    /// <see cref="EventSourcingOptions.FormatAggregateFallbackTag"/> set to true
+    /// are copied onto <c>IOptions&lt;EventSourcingOptions&gt;</c> for the repositories.
     /// </param>
     /// <returns>The same <paramref name="builder"/> for fluent chaining (<c>WithSnapshots</c>, <c>WithCommandHandlers</c>).</returns>
     public static BoundedContextBuilder UseSqlServer(
@@ -177,6 +180,16 @@ public static class LawnDartSqlServerExtensions
         }
 
         services.AddKeyedSingleton(contextName, options);
+        services.Configure<EventSourcingOptions>(o =>
+        {
+            // Copy only values the callback moved off the default, so a prior
+            // Configure<EventSourcingOptions> is kept when the SQL callback
+            // left the flag alone.
+            if (!options.WarnOnUnknownTag)
+                o.WarnOnUnknownTag = false;
+            if (options.FormatAggregateFallbackTag)
+                o.FormatAggregateFallbackTag = true;
+        });
 
         return builder;
     }

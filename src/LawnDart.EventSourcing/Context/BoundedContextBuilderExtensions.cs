@@ -36,7 +36,12 @@ public static class BoundedContextBuilderExtensions
 
     /// <summary>
     /// Configures this bounded context to use the in-memory event store.
-    /// <paramref name="configure"/> sets options such as <see cref="EventSourcingOptions.OutboxClaimLease"/>.
+    /// <paramref name="configure"/> sets options such as <see cref="EventSourcingOptions.OutboxClaimLease"/>,
+    /// <see cref="EventSourcingOptions.WarnOnUnknownTag"/>, and
+    /// <see cref="EventSourcingOptions.FormatAggregateFallbackTag"/>.
+    /// The callback is also registered on <c>IOptions&lt;EventSourcingOptions&gt;</c>
+    /// so the repositories see those flags. The outbox writer reads the same values
+    /// from the object built here.
     /// </summary>
     /// <remarks>
     /// All context-specific services (<see cref="IEventStore"/>,
@@ -60,6 +65,11 @@ public static class BoundedContextBuilderExtensions
 
         var services     = builder.Services;
         var contextName  = builder.ContextName;
+
+        // The outbox writer reads the local object. Repositories read
+        // IOptions<EventSourcingOptions>, so the same callback is registered there.
+        if (configure != null)
+            services.Configure(configure);
 
         services.AddKeyedSingleton(contextName, EventStoreContextMarker.Instance);
 
@@ -174,6 +184,71 @@ public static class BoundedContextBuilderExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(factory);
         builder.Services.AddKeyedSingleton<ITagProvider>(
+            builder.ContextName,
+            (sp, _) => factory(sp));
+        return builder;
+    }
+
+    // -------------------------------------------------------------------------
+    // WithTagFormat
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Registers a context-specific <see cref="ITagFormat"/> for this bounded context.
+    /// </summary>
+    /// <typeparam name="T">The tag format implementation type.</typeparam>
+    /// <param name="builder">The bounded context builder.</param>
+    /// <returns>The same builder for fluent chaining.</returns>
+    /// <remarks>
+    /// <para>
+    /// The format is registered as a keyed singleton using the context name as the key.
+    /// Repositories belonging to this context prefer the keyed format over any global
+    /// <see cref="ITagFormat"/> registered via
+    /// <see cref="LawnDartExtensions.AddTagFormat{T}(Microsoft.Extensions.DependencyInjection.IServiceCollection)"/>.
+    /// <c>AddLawnDart</c> registers <see cref="LowercaseTagFormat"/> as that global format.
+    /// </para>
+    /// <para>
+    /// <c>WithTagProvider&lt;T&gt;()</c> injects the unkeyed format. A context that
+    /// overrides the format passes the keyed instance into the provider factory.
+    /// </para>
+    /// </remarks>
+    public static BoundedContextBuilder WithTagFormat<T>(this BoundedContextBuilder builder)
+        where T : class, ITagFormat
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        builder.Services.AddKeyedSingleton<ITagFormat, T>(builder.ContextName);
+        return builder;
+    }
+
+    /// <summary>
+    /// Registers a context-specific <see cref="ITagFormat"/> instance for this bounded context.
+    /// </summary>
+    /// <param name="builder">The bounded context builder.</param>
+    /// <param name="instance">The tag format instance to use.</param>
+    /// <returns>The same builder for fluent chaining.</returns>
+    public static BoundedContextBuilder WithTagFormat(
+        this BoundedContextBuilder builder,
+        ITagFormat instance)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(instance);
+        builder.Services.AddKeyedSingleton<ITagFormat>(builder.ContextName, instance);
+        return builder;
+    }
+
+    /// <summary>
+    /// Registers a context-specific <see cref="ITagFormat"/> using a factory for this bounded context.
+    /// </summary>
+    /// <param name="builder">The bounded context builder.</param>
+    /// <param name="factory">Factory that receives the <see cref="IServiceProvider"/> and returns the format.</param>
+    /// <returns>The same builder for fluent chaining.</returns>
+    public static BoundedContextBuilder WithTagFormat(
+        this BoundedContextBuilder builder,
+        Func<IServiceProvider, ITagFormat> factory)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(factory);
+        builder.Services.AddKeyedSingleton<ITagFormat>(
             builder.ContextName,
             (sp, _) => factory(sp));
         return builder;

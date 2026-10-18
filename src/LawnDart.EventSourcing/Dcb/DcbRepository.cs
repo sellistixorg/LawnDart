@@ -25,6 +25,7 @@ public class DcbRepository : IDcbRepository
     private readonly IMetadataProvider _metadataProvider;
     private readonly ITenantContextProvider _tenantContextProvider;
     private readonly ITagProvider? _tagProvider;
+    private readonly ITagFormat? _tagFormat;
     private readonly AuthorizationService? _authorizationService;
     private readonly LawnDartOptions _options;
     private readonly EventSourcingOptions _eventSourcingOptions;
@@ -73,7 +74,8 @@ public class DcbRepository : IDcbRepository
         IOptions<EventSourcingOptions>? eventSourcingOptions,
         IDcbSnapshotStore? dcbSnapshotStore,
         ISnapshotStrategyResolver? strategyResolver,
-        ISnapshotWriteQueue? snapshotWriteQueue)
+        ISnapshotWriteQueue? snapshotWriteQueue,
+        ITagFormat? tagFormat = null)
     {
         _eventStore = eventStore ?? throw new ArgumentNullException(nameof(eventStore));
         _metadataProvider = metadataProvider ?? throw new ArgumentNullException(nameof(metadataProvider));
@@ -81,6 +83,7 @@ public class DcbRepository : IDcbRepository
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _eventSourcingOptions = eventSourcingOptions?.Value ?? new EventSourcingOptions();
         _tagProvider = tagProvider;
+        _tagFormat = tagFormat;
         _authorizationService = authorizationService;
         _logger = logger;
         _dcbSnapshotStore = dcbSnapshotStore;
@@ -104,6 +107,8 @@ public class DcbRepository : IDcbRepository
             {
                 EnsureTenantTag(tagsList);
             }
+
+            WarnOnQueriedTags(tagsList);
 
             // ── DCB snapshot restore (optional) ────────────────────────────────
             // Derive a stable DCB id from the sorted tag set so snapshots survive
@@ -205,6 +210,8 @@ public class DcbRepository : IDcbRepository
             EnsureTenantTag(tagsList);
         }
 
+        WarnOnQueriedTags(tagsList);
+
         var query = Query.FromItems(QueryItem.ByTags(tagsList.ToArray()));
         var events = new List<SequencedEvent>();
         await foreach (var evt in _eventStore.ReadByQueryStreamAsync(
@@ -237,6 +244,8 @@ public class DcbRepository : IDcbRepository
             EnsureTenantTag(tagsList);
         }
 
+        WarnOnQueriedTags(tagsList);
+
         var query = Query.FromItems(QueryItem.ByTags(tagsList.ToArray()));
         return await _eventStore.GetMaxSequencePositionAsync(query, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -257,6 +266,8 @@ public class DcbRepository : IDcbRepository
             var eventsList = events.ToList();
             if (eventsList.Count == 0)
                 throw new ArgumentException("At least one event is required", nameof(events));
+
+            WarnOnCondition(condition);
 
             var tagsList = tags.ToList();
             
@@ -363,6 +374,8 @@ public class DcbRepository : IDcbRepository
         {
             EnsureTenantTag(tagsList);
         }
+
+        WarnOnQueriedTags(tagsList);
 
         // ── DCB entity snapshot restore (optional) ──────────────────────────────
         var dcbId = DcbSnapshotId.FromLoadTags(tagsList);
@@ -553,6 +566,32 @@ public class DcbRepository : IDcbRepository
         {
             activity?.SetStatus(System.Diagnostics.ActivityStatusCode.Error, ex.Message);
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Logs once when a load tag does not round-trip through the context format.
+    /// Never throws and never changes the tag list.
+    /// </summary>
+    private void WarnOnQueriedTags(IEnumerable<string>? tags)
+        => TagFormatRoundTrip.WarnOnce(
+            _logger,
+            _tagFormat,
+            _eventSourcingOptions.WarnOnUnknownTag,
+            tags);
+
+    /// <summary>
+    /// Logs once for each tag inside an <see cref="AppendCondition.FailIfMatches"/> query.
+    /// </summary>
+    private void WarnOnCondition(AppendCondition? condition)
+    {
+        if (condition is null)
+            return;
+
+        foreach (var item in condition.FailIfEventsMatch.Items)
+        {
+            if (item.Tags is { Count: > 0 })
+                WarnOnQueriedTags(item.Tags);
         }
     }
 
