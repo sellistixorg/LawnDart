@@ -42,8 +42,13 @@ public class EnrollmentEntity : DcbEntity<EnrollmentState>
 are on the same type. Source:
 `demos/LawnDart.Demo.Academy/Enrollment/EnrollmentEntity.cs`.
 
-The repository loads events for the tag set, rebuilds the entity, runs
-the command, and appends with `FailIfMatches` after the last seen sequence.
+Those prefixes are lowercase `student:`, `section:`, and `course:`.
+Build the load and the `Emit` arguments with the same format method
+the context `ITagProvider` uses. See [TAGGING.md](../TAGGING.md).
+
+The repository loads events for that exact tag set, rebuilds the entity,
+runs the command, and appends with `FailIfMatches` on the same strings,
+after the last seen sequence.
 Excerpted from `demos/LawnDart.Demo.Academy/Showcases/ShowcaseB_DcbInProcess.cs`
 (seed and projector lines omitted):
 
@@ -54,8 +59,8 @@ await _dcbRepository.HandleCommandAsync<EnrollmentEntity, EnrollStudentCommand>(
     new EnrollStudentCommand(Guid.NewGuid(), studentId, courseId));
 ```
 
-Bootstrap events must carry the same tag set the entity loads, or they
-will not appear in state. Same InMemory host as
+Bootstrap events must carry that same tag set, character for character,
+or they will not appear in state. Same InMemory host as
 [step 2](02-first-aggregate.md).
 
 Academy Showcase B appends `SeatReserved` and `StudentEnrolled` in one

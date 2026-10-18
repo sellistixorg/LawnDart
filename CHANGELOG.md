@@ -27,6 +27,7 @@ changes to the public API.
 - `GetCurrentSequenceAsync` on SQL Server returns the highest sequence below `MIN_ACTIVE_ROWVERSION()`. When one unfinished write holds that horizon longer than `ReadHorizonGracePeriod`, the call returns the highest committed sequence instead.
 - Tag equality is ordinal. `Customer:ABC` and `customer:abc` are different tags on SQL Server reads, SQL Server subscriptions, and the in-memory store.
 - `IEventStore` and `IEventLog` have the same members as 0.6.0-alpha.2. `QueryResult.TypesResolved` and `EventLogQueryResult.TypesResolved` are new properties and default to true, so an existing constructor call still compiles.
+- [Tagging](docs/TAGGING.md) treats the context `ITagProvider` as the source of tag strings. Load queries, `Emit`, and append fences use that same lowercase format (`student:{id}`). A different spelling does not match.
 
 ### Fixed
 

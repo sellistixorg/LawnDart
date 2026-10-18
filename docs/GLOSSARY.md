@@ -25,7 +25,7 @@ rebuilds state. The Command → Event pattern.
 
 **AppendCondition**  
 A write-time fence for DCB appends. If any later event matches the condition's
-tags, the append fails with `ConcurrencyException`.
+tag strings exactly, the append fails with `ConcurrencyException`.
 
 **AuthorizationContext**  
 User roles, permission claims, and entitlements used by `AuthorizationService`.
@@ -232,7 +232,9 @@ Identity of an event stream. See [STREAM_IDS.md](STREAM_IDS.md).
 ## T
 
 **Tag**  
-Index key on an event used by DCB queries. See [TAGGING.md](TAGGING.md).
+Exact string stored on an event. DCB loads, append fences, and later
+search use it as a key. The context `ITagProvider` is the source of the
+string. See [TAGGING.md](TAGGING.md).
 
 **Task Processing**  
 State → Command. `ITaskProcessor` polls read models and emits commands.

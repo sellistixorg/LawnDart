@@ -33,8 +33,10 @@ var shipment = await repo.GetOrCreateAsync<InboundShipmentAggregate>(streamId);
 
 ## DCB
 
-DCB reads by **tags**, not by guessing every stream. Appends still land in an
-event store stream. Tags use `type:id`; stream IDs stay `{tenant}:{type}:{id}`.
+DCB reads by tags. Appends still land in an event store stream. A tag
+is a lowercase type, a colon, and the id (`student:{id}`). The context
+`ITagProvider` is the source of that string. Stream IDs stay
+`{tenant}:{Type}:{id}`. See [TAGGING.md](TAGGING.md).
 
 ## HTTP handlers
 
