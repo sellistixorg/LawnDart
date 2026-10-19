@@ -124,6 +124,61 @@ namespace LawnDart.AspNetCore.Tests.Integration
             Assert.Single(events);
         }
 
+        [Fact]
+        public async Task PostCommand_InvalidTenantHeader_Returns400()
+        {
+            using var host = BuildHost(services =>
+            {
+                services.AddLawnDart(o => o.RequireTenantId = false);
+                services.AddBoundedContext("default")
+                    .UseInMemory()
+                    .WithEventTypes(typeof(NoteAppended))
+                    .WithCommandHandlers<AppendNoteCommandHandler>();
+                services.AddLawnDartHttpCommands(typeof(AppendNoteCommand).Assembly);
+            }, endpoints => endpoints.MapLawnDartCommands());
+
+            var client = host.GetTestClient();
+            using var request = new HttpRequestMessage(HttpMethod.Post, "/api/default-context/append-note")
+            {
+                Content = JsonContent.Create(new { Id = Guid.NewGuid(), Text = "nope" })
+            };
+            request.Headers.TryAddWithoutValidation("X-Tenant-Id", "bad name");
+
+            var response = await client.SendAsync(request);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            var body = await response.Content.ReadAsStringAsync();
+            Assert.Contains("Invalid tenant id", body);
+            Assert.Contains(LawnDartNames.Pattern, body);
+        }
+
+        [Fact]
+        public async Task PostCommand_TenantColon_Returns400_WhenNameCheckIsOff()
+        {
+            using var host = BuildHost(services =>
+            {
+                services.AddLawnDart(o =>
+                {
+                    o.RequireTenantId = false;
+                    o.ValidateNames = false;
+                });
+                services.AddBoundedContext("default")
+                    .UseInMemory()
+                    .WithEventTypes(typeof(NoteAppended))
+                    .WithCommandHandlers<AppendNoteCommandHandler>();
+                services.AddLawnDartHttpCommands(typeof(AppendNoteCommand).Assembly);
+            }, endpoints => endpoints.MapLawnDartCommands());
+
+            var client = host.GetTestClient();
+            using var request = new HttpRequestMessage(HttpMethod.Post, "/api/default-context/append-note")
+            {
+                Content = JsonContent.Create(new { Id = Guid.NewGuid(), Text = "nope" })
+            };
+            request.Headers.TryAddWithoutValidation("X-Tenant-Id", "a:b");
+
+            var response = await client.SendAsync(request);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+
         private static IHost BuildHost(
             Action<IServiceCollection> configureServices,
             Action<IEndpointRouteBuilder> configureEndpoints)

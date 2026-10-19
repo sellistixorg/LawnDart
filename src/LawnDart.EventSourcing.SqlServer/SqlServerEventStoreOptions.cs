@@ -80,6 +80,17 @@ public class SqlServerEventStoreOptions : EventSourcingOptions
     public bool RequireTenantId { get; set; } = true;
 
     /// <summary>
+    /// Check tenant ids on append against <see cref="LawnDartNames.Pattern"/> when
+    /// <see cref="RequireTenantId"/> is true.
+    /// </summary>
+    /// <remarks>
+    /// Default: true. <c>UseSqlServer</c> copies <see cref="LawnDartOptions.ValidateNames"/>
+    /// onto this property before the configure callback runs. The callback can change it.
+    /// A colon in a tenant id is still rejected when this is false.
+    /// </remarks>
+    public bool ValidateNames { get; set; } = true;
+
+    /// <summary>
     /// Enable transactional outbox pattern.
     /// When true, events are automatically written to the outbox table in the same transaction as event append.
     /// Default: false

@@ -58,6 +58,16 @@ Read the stored envelope on `SequencedEvent.Metadata` after
 `TransportType` is `HTTP`. Routes and status codes are on
 [HTTP commands](HTTP_COMMANDS.md).
 
+## Tenant id
+
+A tenant id uses the same rule as a context name. `LawnDartNames` holds the pattern, the 63 character limit, `IsValid`, and `Validate`.
+
+`FixedTenantContextProvider` checks the id in the constructor. Pass `validateNames: false` when `LawnDartOptions.ValidateNames` is false. `AmbientTenantContextProvider` reads that option when dependency injection constructs it, and `SetTenant` checks the id. An `X-Tenant-Id` header that fails the check returns 400. A missing header is left unset.
+
+`HandleCommandAsync` and a SQL Server append check the tenant id when `RequireTenantId` is true.
+
+`ValidateNames` defaults to true. Set it to false to keep an existing id that does not match the pattern. A colon is still rejected. A stream id is `{tenantId}:{type}:{id}` and is split on every colon.
+
 ## Extra fields
 
 These exist on `CommandMetadata` / `EventMetadata` and stay empty on the

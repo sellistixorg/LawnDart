@@ -301,6 +301,13 @@ public class DcbRepository : IDcbRepository
                 new EventMetadata(),
                 metadata,
                 eventsList.First());
+
+            if (_options.RequireTenantId)
+            {
+                var tenantId = metadata.TenantId ?? _tenantContextProvider.GetTenantId();
+                if (!string.IsNullOrWhiteSpace(tenantId))
+                    LawnDartNames.ValidateTenantId(tenantId, nameof(commandMetadata), _options.ValidateNames);
+            }
             
             // Append to event store
             IReadOnlyList<long> sequencePositions;

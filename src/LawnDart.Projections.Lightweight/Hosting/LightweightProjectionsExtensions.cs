@@ -133,15 +133,14 @@ public static class LightweightProjectionsExtensions
         string contextName,
         params string[] additionalContextNames)
     {
-        if (string.IsNullOrWhiteSpace(contextName))
-            throw new ArgumentException("Context name must not be null or whitespace.", nameof(contextName));
+        LawnDartNames.RequireContextName(app.ServiceProvider, contextName, nameof(contextName));
 
         MapProjectionQueriesForContext(app, contextName);
 
         foreach (var extra in additionalContextNames)
         {
-            if (!string.IsNullOrWhiteSpace(extra))
-                MapProjectionQueriesForContext(app, extra);
+            LawnDartNames.RequireContextName(app.ServiceProvider, extra, nameof(additionalContextNames));
+            MapProjectionQueriesForContext(app, extra);
         }
 
         return app;
@@ -629,8 +628,9 @@ public static class LightweightProjectionsExtensions
         string primaryContextName,
         params string[] additionalContextNames)
     {
-        if (string.IsNullOrWhiteSpace(primaryContextName))
-            throw new ArgumentException("Primary context name must not be null or whitespace.", nameof(primaryContextName));
+        LawnDartNames.RequireContextName(services, primaryContextName, nameof(primaryContextName));
+        foreach (var extra in additionalContextNames)
+            LawnDartNames.RequireContextName(services, extra, nameof(additionalContextNames));
 
         var rootOpts = EnsureDebugOptions(services);
         var endpoint = CreateEndpointRegistration(

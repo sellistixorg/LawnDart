@@ -68,7 +68,12 @@ public static class LawnDartSqlServerExtensions
         var contextName = builder.ContextName;
 
         // Build options eagerly so we can read SchemaName / ConnectionString at registration time.
-        var options = new SqlServerEventStoreOptions { ContextName = contextName };
+        // Copy the name check first so the callback can still override it.
+        var options = new SqlServerEventStoreOptions
+        {
+            ContextName = contextName,
+            ValidateNames = LawnDartNames.IsFormatCheckEnabled(services),
+        };
         configure(options);
 
         if (string.IsNullOrWhiteSpace(options.ConnectionString))
@@ -134,7 +139,7 @@ public static class LawnDartSqlServerExtensions
 
         BoundedContextBuilderExtensions.AddSnapshotWriteInfrastructure(services);
 
-        if (string.Equals(contextName, "default", StringComparison.Ordinal))
+        if (string.Equals(contextName, LawnDartNames.DefaultContextName, StringComparison.Ordinal))
         {
             services.TryAddSingleton<IEventStore>(sp =>
                 sp.GetRequiredKeyedService<IEventStore>("default"));
@@ -242,7 +247,7 @@ public static class LawnDartSqlServerExtensions
         builder.Services.AddSingleton<ISnapshotStrategyResolver>(resolver);
         BoundedContextBuilderExtensions.EnsureSnapshotWriteInfrastructure(builder.Services);
 
-        if (string.Equals(contextName, "default", StringComparison.Ordinal))
+        if (string.Equals(contextName, LawnDartNames.DefaultContextName, StringComparison.Ordinal))
         {
             builder.Services.TryAddSingleton<ISnapshotStore>(sp =>
                 sp.GetRequiredKeyedService<ISnapshotStore>("default"));

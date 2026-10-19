@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using LawnDart.Metadata;
 
 namespace LawnDart.Tests.Metadata;
@@ -121,5 +122,28 @@ public class AmbientTenantContextProviderTests
         }
 
         Assert.Equal("continuation-tenant", readInContinuation);
+    }
+
+    [Fact]
+    public void SetTenant_InvalidId_Throws()
+    {
+        var provider = new AmbientTenantContextProvider();
+        var ex = Assert.Throws<ArgumentException>(() => provider.SetTenant("bad name"));
+        Assert.Contains(LawnDartNames.Pattern, ex.Message);
+    }
+
+    [Fact]
+    public void SetTenant_ValidateNamesFalse_AllowsExistingId_RejectsColon()
+    {
+        var services = new ServiceCollection();
+        services.AddLawnDart(o => o.ValidateNames = false);
+        var provider = services.BuildServiceProvider().GetRequiredService<ITenantContextProvider>();
+        var ambient = Assert.IsType<AmbientTenantContextProvider>(provider);
+
+        using (ambient.SetTenant("My Tenant"))
+            Assert.Equal("My Tenant", ambient.GetTenantId());
+
+        var ex = Assert.Throws<ArgumentException>(() => ambient.SetTenant("a:b"));
+        Assert.Contains(":", ex.Message);
     }
 }

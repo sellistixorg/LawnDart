@@ -291,6 +291,8 @@ public sealed class SqlServerSnapshotStore : ISnapshotStore, IDcbSnapshotStore, 
         TState state,
         CancellationToken ct = default)
     {
+        SqlServerColumnLimits.EnsureStreamId(streamId, nameof(streamId));
+
         var data = JsonSerializer.Serialize(state, JsonOptions);
         var checksum = ComputeChecksum(data);
         var taken = DateTime.UtcNow;

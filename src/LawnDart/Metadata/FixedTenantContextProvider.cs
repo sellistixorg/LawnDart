@@ -34,8 +34,22 @@ public sealed class FixedTenantContextProvider : ITenantContextProvider
 
     /// <param name="tenantId">The tenant ID that this provider always returns. Must not be null or whitespace.</param>
     public FixedTenantContextProvider(string tenantId)
+        : this(tenantId, validateNames: true)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(tenantId);
+    }
+
+    /// <summary>
+    /// Creates a provider that always returns <paramref name="tenantId"/>.
+    /// </summary>
+    /// <param name="tenantId">The tenant id this provider returns.</param>
+    /// <param name="validateNames">
+    /// Matches <see cref="LawnDartOptions.ValidateNames"/>.
+    /// When <see langword="false"/>, the character rule is skipped.
+    /// A colon is still rejected.
+    /// </param>
+    public FixedTenantContextProvider(string tenantId, bool validateNames)
+    {
+        LawnDartNames.ValidateTenantId(tenantId, nameof(tenantId), validateNames);
         _tenantId = tenantId;
     }
 

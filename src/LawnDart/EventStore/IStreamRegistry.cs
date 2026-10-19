@@ -38,7 +38,12 @@ public interface IStreamRegistry
     /// <summary>
     /// Enumerates all stream IDs, optionally filtered by prefix.
     /// </summary>
-    /// <param name="prefix">Optional prefix to filter stream IDs (e.g., "Order:").</param>
+    /// <param name="prefix">
+    /// Optional prefix. <c>_</c>, <c>%</c>, and <c>[</c> are literal characters.
+    /// The in-memory store matches with ordinal ignore-case.
+    /// SQL Server uses the <c>StreamId</c> column collation, so the prefix can seek that index.
+    /// A new database is case-insensitive.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>List of stream IDs.</returns>
     Task<IReadOnlyList<string>> EnumerateStreamIdsAsync(
@@ -61,7 +66,12 @@ public interface IStreamRegistry
     /// <summary>
     /// Returns the total number of streams in the registry, optionally filtered by prefix.
     /// </summary>
-    /// <param name="prefix">Optional stream ID prefix filter (e.g. "buyers:OrderAggregate:").</param>
+    /// <param name="prefix">
+    /// Optional prefix. <c>_</c>, <c>%</c>, and <c>[</c> are literal characters.
+    /// The in-memory store matches with ordinal ignore-case.
+    /// SQL Server uses the <c>StreamId</c> column collation, so the prefix can seek that index.
+    /// A new database is case-insensitive.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The number of streams matching the filter.</returns>
     Task<long> GetStreamCountAsync(

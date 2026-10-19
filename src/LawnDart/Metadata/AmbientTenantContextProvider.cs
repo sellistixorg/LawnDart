@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Options;
+
 namespace LawnDart.Metadata;
 
 /// <summary>
@@ -29,15 +31,45 @@ namespace LawnDart.Metadata;
 public sealed class AmbientTenantContextProvider : ITenantContextProvider
 {
     private static readonly AsyncLocal<string?> _current = new();
+    private readonly bool _validateNames;
+
+    /// <summary>
+    /// Creates a provider that checks tenant ids against <see cref="LawnDartNames.Pattern"/>.
+    /// </summary>
+    public AmbientTenantContextProvider()
+        : this(validateNames: true)
+    {
+    }
+
+    /// <summary>
+    /// Creates a provider that follows <see cref="LawnDartOptions.ValidateNames"/>.
+    /// Dependency injection uses this constructor when options are registered.
+    /// A colon in a tenant id is still rejected when the format check is off.
+    /// </summary>
+    /// <param name="options">Host options. <see cref="LawnDartOptions.ValidateNames"/> controls the format check.</param>
+    public AmbientTenantContextProvider(IOptions<LawnDartOptions> options)
+        : this(RequireOptions(options).ValidateNames)
+    {
+    }
+
+    private static LawnDartOptions RequireOptions(IOptions<LawnDartOptions> options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return options.Value;
+    }
+
+    private AmbientTenantContextProvider(bool validateNames) => _validateNames = validateNames;
 
     /// <summary>
     /// Sets the tenant ID for the current asynchronous execution context.
     /// Disposing the returned scope restores the previous tenant ID (or null if there was none).
     /// </summary>
-    /// <param name="tenantId">The tenant ID to set.</param>
+    /// <param name="tenantId">The tenant ID to set. Checked with <see cref="LawnDartNames.ValidateTenantId"/>.</param>
     /// <returns>A scope that restores the previous tenant ID on disposal.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="tenantId"/> is empty, contains ':', or fails the format check.</exception>
     public IDisposable SetTenant(string tenantId)
     {
+        LawnDartNames.ValidateTenantId(tenantId, nameof(tenantId), _validateNames);
         var previous = _current.Value;
         _current.Value = tenantId;
         return new TenantScope(previous);

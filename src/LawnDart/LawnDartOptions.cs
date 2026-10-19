@@ -17,6 +17,18 @@ public class LawnDartOptions
     public bool RequireTenantId { get; set; } = true;
 
     /// <summary>
+    /// Check bounded context names and tenant ids against <see cref="LawnDartNames.Pattern"/>.
+    /// </summary>
+    /// <remarks>
+    /// Default: true. Set false before <c>AddBoundedContext</c> when an existing name
+    /// does not match the pattern. Call <c>AddLawnDart</c> first so registration sees the flag.
+    /// A colon in a tenant id is still rejected, because a stream id is split on every colon.
+    /// <c>UseSqlServer</c> copies this value onto <c>SqlServerEventStoreOptions.ValidateNames</c>
+    /// before the SQL callback runs.
+    /// </remarks>
+    public bool ValidateNames { get; set; } = true;
+
+    /// <summary>
     /// Enable authorization checks on command execution.
     /// When true, commands decorated with authorization attributes will be checked before execution.
     /// Requires AuthorizationService to be registered.
