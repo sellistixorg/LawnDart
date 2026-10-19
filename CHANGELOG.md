@@ -10,11 +10,17 @@ changes to the public API.
 
 ## [Unreleased]
 
+## [0.6.0-alpha.3] — 2026-10-18
+
+Upgrade SQL Server before the new process reads. The steps are in [Upgrading from 0.6.0-alpha.2](docs/packages/eventsourcing-sqlserver.md#upgrading-from-060-alpha2). Set `LawnDartOptions.ValidateNames` to false before `AddBoundedContext` to keep a bounded context name or tenant id that does not match `LawnDartNames.Pattern`.
+
 ### Breaking
 
 - Bounded context names and tenant ids must match `LawnDartNames.Pattern` (`^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$`). A name starts with a letter or digit, then letters, digits, `.`, `_`, or `-`, and is at most 63 characters. The spelling is kept. A second context whose name differs only by case is still rejected. `Default` is rejected. The default context is `default`. Set `LawnDartOptions.ValidateNames` to false before `AddBoundedContext` to keep an existing name. A colon in a tenant id is still rejected, because a stream id is split on every colon. An invalid `X-Tenant-Id` header returns 400.
 - A custom `IInboxStore` must implement `TryClaimAsync` and `ReleaseClaimAsync`. `TryClaimAsync` returns true only when this caller holds the key. Return false when the key is already processed inside the deduplication window, or a live claim is held. `ReleaseClaimAsync` drops a claim that has not been marked processed and leaves a processed key in place. Hosted reactors and processors claim before the handler and release when the handler throws.
 - `Events.EventId` is unique. An append whose metadata `EventId` is already in the log throws `EventAlreadyAppendedException`, and the stored row stays. This applies to an app that sets `EventId` in metadata and sends that same id on a later append. Give each new event its own id. Catch `EventAlreadyAppendedException` when the call is a retry of an append that already landed. The in-memory log rejects that reuse the same way. A format 2 or 3 table has no `EventId` column, so the upgrade fills each row with `NEWID()` and the unique index succeeds. If the column is already there and two rows share an id, creating `UX_EventId` fails and the stamp stays put. Give those rows distinct ids and call `InitializeSchemaAsync` again.
+- `InitializeSchemaAsync` upgrades a SQL Server events table stamped `LawnDart_SchemaFormat` 2 or 3 to format 4. It adds `Events.RowVersion`, creates `AppendFence`, sets `EventTags.Tag` to the `Latin1_General_100_BIN2` collation, and adds unique `Events.EventId`. The same call on the outbox writer upgrades outbox format 1 to 2 by adding nullable `ClaimedUntil`. `InitializeSqlInboxStoreAsync` upgrades inbox format 1 to 2 by making `ProcessedAt` nullable and adding nullable `ClaimedAt`. Existing rows stay. A missing stamp, or any stamp other than 2, 3, or 4 on events, 1 or 2 on the outbox, and 1 or 2 on the inbox, is a drop and recreate. The stamp does not move backward.
+- SQL Server reads use a commit horizon. `GetCurrentSequenceAsync` returns the highest sequence below `MIN_ACTIVE_ROWVERSION()`. One unfinished write may hold that horizon for `ReadHorizonGracePeriod` (default 30 seconds). After that, readers move to committed rows past it and log a warning. `Timeout.InfiniteTimeSpan` waits until the write ends. A row that commits below that head logs an error in the process that moved the horizon.
 
 ### Added
 
@@ -25,8 +31,6 @@ changes to the public API.
 
 ### Changed
 
-- `InitializeSchemaAsync` upgrades a SQL Server events table stamped `LawnDart_SchemaFormat` 2 to format 3. It adds `Events.RowVersion`, creates `AppendFence`, and sets `EventTags.Tag` to the `Latin1_General_100_BIN2` collation. Existing rows stay. A missing stamp, or any stamp other than 2 or 3, is still a drop and recreate.
-- `GetCurrentSequenceAsync` on SQL Server returns the highest sequence below `MIN_ACTIVE_ROWVERSION()`. When one unfinished write holds that horizon longer than `ReadHorizonGracePeriod`, the call returns the highest committed sequence instead.
 - Tag equality is ordinal. `Customer:ABC` and `customer:abc` are different tags on SQL Server reads, SQL Server subscriptions, and the in-memory store.
 - `IEventStore` and `IEventLog` have the same members as 0.6.0-alpha.2. `QueryResult.TypesResolved` and `EventLogQueryResult.TypesResolved` are new properties and default to true, so an existing constructor call still compiles.
 - [Tagging](docs/TAGGING.md) treats the context `ITagProvider` as the source of tag strings. Load queries, `Emit`, and append fences use that same lowercase format (`student:{id}`). A different spelling does not match.
