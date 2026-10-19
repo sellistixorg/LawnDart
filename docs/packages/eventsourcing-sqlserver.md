@@ -2,26 +2,28 @@
 
 Durable SQL Server implementation of `IEventLog` plus the typed `IEventStore`
 session. Same repositories and domain types as InMemory; only the backend
-changes. The log stores recorded frames (family token, schema version,
-codec id, payload bytes, metadata JSON). The session serializes on
-append and hydrates on read.
+changes. The log stores records (event name, schema version,
+payload-format number, payload bytes, metadata JSON). The session
+serializes on append and reads them back into objects.
 
-Take it when you leave the zero-infra path. Keep the same bounded-context
+Take it when InMemory is no longer enough. Keep the same bounded-context
 name so projections and HTTP mapping stay pointed at the same stack.
 
 ## Payload layout
 
 One payload column: `EventData VARBINARY(MAX) NOT NULL`. `SchemaVersion`
 (`INT`), `CodecId` (`TINYINT`), and `EventTypeId` (`INT`) are `NOT NULL`
-with no defaults. The session stamps all three on append. Family tokens
+with no defaults. The session stamps all three on append. Event names
 live in an `EventTypes` lookup (`Id INT IDENTITY`, `Token NVARCHAR(500)`
 unique). `Events` stores `EventTypeId` and a foreign key; the store
-caches token↔id both ways at schema init so reads do not join. A cache
-miss reloads `EventTypes` once, then fails closed.
+caches each event name and its id both ways at schema init so reads do
+not join. A cache miss reloads `EventTypes` once. If the id is still
+missing, the read throws and names drop-and-recreate. It does not invent
+an event name.
 
-Type filters are `EventTypeId IN (...)`. A queried token that is not in
+Type filters are `EventTypeId IN (...)`. A queried event name that is not in
 the cache matches zero rows and does not emit SQL. `IEventLog.AppendAsync`
-still accepts an unregistered (foreign) token: get-or-insert runs in its
+still accepts an event name that is not in the lookup yet: get-or-insert runs in its
 own short transaction and commits before the append transaction opens.
 An orphan `EventTypes` row is harmless.
 
@@ -45,7 +47,7 @@ process cache. If the token is still absent, the read returns no rows and
 `TypesResolved` is false. Do not checkpoint past that range. A projection
 reads the range again on the next poll.
 
-Each appended frame has an `EventId` (`UNIQUEIDENTIFIER`, unique). A typed
+Each appended record has an `EventId` (`UNIQUEIDENTIFIER`, unique). A typed
 append stores `IEvent.Id`, including when several appends share one
 `EventMetadata` object. A raw append uses metadata `EventId` when that
 value is a GUID. Otherwise the store mints one before the commit and
@@ -109,7 +111,7 @@ A transaction that writes any `rowversion` in this database holds the
 horizon for every reader. Read-only work does not.
 
 SSMS: `{table}_Readable` projects `CAST(EventData AS VARCHAR(MAX)) AS EventJson`
-alongside the scalar columns and the family token from `EventTypes`.
+alongside the scalar columns and the event name from `EventTypes`.
 Non-ASCII text needs a `_UTF8` collation on that cast (an operator
 choice). The store does not detect server capability.
 
@@ -118,8 +120,8 @@ SELECT EventJson, EventType, EventTypeId, SchemaVersion, CodecId
 FROM dbo.Events_Readable;
 ```
 
-Outbox rows copy the appended frame in the same transaction: payload
-bytes (`VARBINARY`), `CodecId` (`TINYINT`), and `SchemaVersion` (`INT`),
+Outbox rows copy the stored record in the same transaction: payload
+bytes (`VARBINARY`), payload-format number `CodecId` (`TINYINT`), and `SchemaVersion` (`INT`),
 none of them with a column default. Opening an older outbox table throws
 and names drop-and-recreate. `EnableOutbox = true` writes those rows
 whether or not an `IOutboxWriter` was injected. `OutboxClaimLease`
@@ -148,8 +150,8 @@ durability is the same channel + hosted consumer as InMemory; see
 are tagged `Category=Integration`. The InMemory → SQL swap contract
 (`Category=Contract`) covers dispatch, persist, reload, project, and
 read-back. Outbox and subscriptions have their own tests. The same project also covers the
-`IEventLog` contract (payload round-trip, token/tag query, thesis read
-without CLR types). See
+`IEventLog` contract (payload round-trip, event-name and tag query, and a
+read without registered .NET types). See
 [BACKEND_SELECTION.md](../BACKEND_SELECTION.md).
 
 InMemory remains the documented default for local work and Academy.

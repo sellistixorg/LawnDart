@@ -8,8 +8,8 @@ using LawnDart.Serialization;
 namespace LawnDart.Messaging.Outbox;
 
 /// <summary>
-/// Sample <see cref="IOutboxPublisher"/> that hydrates <see cref="OutboxMessage"/>
-/// rows through <see cref="EventSession"/> and publishes them through
+/// Sample <see cref="IOutboxPublisher"/> that reads <see cref="OutboxMessage"/>
+/// rows into objects through <see cref="EventSession"/> and publishes them through
 /// <see cref="IMessageTransport"/>.
 /// The shipped transports are the in-process, RabbitMQ, and Azure Service Bus implementations.
 /// </summary>
@@ -20,7 +20,7 @@ namespace LawnDart.Messaging.Outbox;
 /// <see cref="MessageContext.MessageId"/> (this type uses the outbox row id).
 /// </para>
 /// <para>
-/// Hydrate uses the scoped catalog (token + <see cref="OutboxMessage.SchemaVersion"/>)
+/// The read uses the scoped catalog (event name plus <see cref="OutboxMessage.SchemaVersion"/>)
 /// and the same upcast chain as typed store reads. There is no private deserialize
 /// of the event payload.
 /// </para>
@@ -32,14 +32,14 @@ public sealed class MessageTransportOutboxPublisher : IOutboxPublisher
     private readonly JsonSerializerOptions _jsonOptions;
 
     /// <summary>
-    /// Creates a publisher that hydrates through <paramref name="catalog"/>.
+    /// Creates a publisher that reads rows into objects through <paramref name="catalog"/>.
     /// </summary>
     /// <param name="transport">
     /// Transport used to publish. The shipped transports are the in-process,
     /// RabbitMQ, and Azure Service Bus implementations.
     /// </param>
     /// <param name="catalog">
-    /// Scoped catalog. Resolve uses family token plus
+    /// Scoped catalog. Resolve uses the event name plus
     /// <see cref="OutboxMessage.SchemaVersion"/>.
     /// </param>
     /// <param name="jsonOptions">
@@ -54,7 +54,7 @@ public sealed class MessageTransportOutboxPublisher : IOutboxPublisher
     }
 
     /// <summary>
-    /// Creates a publisher that hydrates through <paramref name="catalog"/> and
+    /// Creates a publisher that reads rows into objects through <paramref name="catalog"/> and
     /// upcasts historical rows to the current type.
     /// </summary>
     public MessageTransportOutboxPublisher(
@@ -73,7 +73,7 @@ public sealed class MessageTransportOutboxPublisher : IOutboxPublisher
 
     /// <summary>
     /// Creates a publisher that materializes <paramref name="eventTypes"/> into
-    /// an isolated catalog and hydrates through that catalog (not a private token map).
+    /// an isolated catalog and reads rows into objects through that catalog (not a private name map).
     /// </summary>
     public MessageTransportOutboxPublisher(
         IMessageTransport transport,

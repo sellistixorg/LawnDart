@@ -19,7 +19,7 @@ namespace LawnDart.EventSourcing.SqlServer.Snapshots;
 /// for operations.
 /// </summary>
 /// <remarks>
-/// Latest snapshot per key is upserted (one row). A missing, corrupt, or checksum-mismatched
+/// Latest snapshot per key is upserted (one row). A missing, corrupt, or bad-checksum
 /// snapshot returns <c>(default, null)</c> so the repository falls back to full event replay.
 /// Register via <c>UseSqlServer(...).WithSnapshots(...)</c>.
 /// </remarks>

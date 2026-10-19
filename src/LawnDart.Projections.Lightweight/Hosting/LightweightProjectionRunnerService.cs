@@ -41,13 +41,13 @@ namespace LawnDart.Projections.Lightweight.Hosting;
 ///         before trying again. No segment I/O is performed on a genuinely idle cycle.
 ///         Live reads (Subscribe and poll) use a type filter from DCB/MultiStream
 ///         <c>QueryTypes</c> or compiled <c>Handle</c> methods. Empty typed windows
-///         advance the cursor by one <see cref="LightweightProjectionOptions.BatchSize"/> —
-///         they do not fall back to <c>Query.All()</c>. <c>Query.All()</c> is rebuild-only
+///         advance the cursor by one <see cref="LightweightProjectionOptions.BatchSize"/>.
+///         They do not fall back to <c>Query.All()</c>. <c>Query.All()</c> is rebuild-only
 ///         when the projection has no live type list.</item>
 /// </list>
 /// </para>
 /// <para>
-/// <strong>Poison events</strong><br/>
+/// <strong>Handler failures</strong><br/>
 /// When a compiled <c>Handle</c> method throws, the runner restores the instance to its
 /// pre-apply view snapshot and retries up to <see cref="PoisonRetryAttempts"/> times.
 /// If every attempt fails, the global checkpoint does not advance past the failed sequence,
@@ -57,9 +57,9 @@ namespace LawnDart.Projections.Lightweight.Hosting;
 /// advance the cursor.
 /// </para>
 /// <para>
-/// <strong>Fail-closed typed reads</strong><br/>
-/// <see cref="EventHydrationException"/> (newer schema, unknown family, missing
-/// historical type, content-type mismatch, bad payload, missing upcaster) does not
+/// <strong>Typed reads that throw</strong><br/>
+/// <see cref="EventHydrationException"/> (newer schema, event name not registered, missing
+/// historical type, payload format does not match, bad payload, missing upcaster) does not
 /// skip the sequence. The runner logs the stuck position and waits
 /// <see cref="FailClosedBackoff"/>. There is no runtime override; deploy the
 /// missing type or upcaster.
@@ -84,7 +84,7 @@ namespace LawnDart.Projections.Lightweight.Hosting;
 public sealed class LightweightProjectionRunnerService : BackgroundService
 {
     /// <summary>
-    /// Delay after a typed fail-closed read so a stuck sequence does not hot-loop.
+    /// Delay after a typed read that throws, so a stuck sequence does not spin.
     /// There is no skip override; deploy the missing type or upcaster.
     /// </summary>
     internal static readonly TimeSpan FailClosedBackoff = TimeSpan.FromSeconds(5);
@@ -840,7 +840,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
     }
 
     /// <summary>
-    /// Loads an instance from the working set, or creates one hydrated from durable storage
+    /// Loads an instance from the working set, or creates one loaded from storage
     /// when missing (Lazy cold start or post-eviction).
     /// </summary>
     private async Task<object> GetOrHydrateInstanceAsync(string instanceId, CancellationToken ct)

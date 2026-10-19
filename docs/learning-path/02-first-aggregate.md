@@ -104,7 +104,7 @@ type to `422 Unprocessable Entity`.
 
 Keep `Id` and `Timestamp` first on events if you follow the Eventhesis
 field-order convention. Every concrete `IEvent` needs `[EventTypeName]`.
-The token is a family name; versioning is
+The token is the event name. Versioning is
 [Event schema versioning](../EVENT_SCHEMA_VERSIONING.md).
 `BookState` is decision state only: no title, no ISBN. Those live on
 `BookCatalogView` ([step 4](04-reading-state.md)). Envelope fields:

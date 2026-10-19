@@ -150,7 +150,7 @@ Package: `LawnDart.EventSourcing`.
 | `outbox.publish.failures` | Counter of long | `count` | `outbox.event_type` |
 | `outbox.deadlettered` | Counter of long | `count` | `outbox.event_type` |
 
-`outbox.event_type` is the family token stored on the outbox row.
+`outbox.event_type` is the event name stored on the outbox row.
 
 ### LawnDart.EventStore
 

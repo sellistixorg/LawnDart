@@ -14,7 +14,7 @@ public class OutboxMessage
     public required Guid Id { get; init; }
     
     /// <summary>
-    /// Family catalog token stored on the appended frame (not a CLR type name).
+    /// Event name stored on the appended record (not a .NET type name).
     /// </summary>
     public required string EventType { get; init; }
 
@@ -25,13 +25,13 @@ public class OutboxMessage
     public int SchemaVersion { get; init; } = 1;
 
     /// <summary>
-    /// Payload codec id copied from <c>AppendEvent</c>. MIME is not stored
+    /// Payload-format number (<see cref="CodecId"/>) copied from <c>AppendEvent</c>. The media type is not stored
     /// on the message. The column has no default.
     /// </summary>
     public byte CodecId { get; init; } = EventCodec.Json;
     
     /// <summary>
-    /// Serialized event payload bytes, copied from the appended frame.
+    /// Serialized event payload bytes, copied from the stored record.
     /// </summary>
     public required ReadOnlyMemory<byte> Payload { get; init; }
     

@@ -31,9 +31,9 @@ tag strings exactly, the append fails with `ConcurrencyException`.
 User roles, permission claims, and entitlements used by `AuthorizationService`.
 
 **AppendEvent**  
-Caller-supplied log envelope: family token, schema version, codec id,
-payload bytes, UTF-8 JSON metadata bytes, tags. No store-assigned sequence,
-stream version, or commit timestamp.
+Caller-supplied log record: event name, schema version, payload-format
+number (`CodecId`), payload bytes, UTF-8 JSON metadata bytes, tags. No
+store-assigned sequence, stream version, or commit timestamp.
 
 ## B
 
@@ -48,24 +48,25 @@ The name starts with a letter or digit. Then letters, digits, `.`, `_`, or `-`, 
 ## C
 
 **Catalog token**  
-Stable kebab-case **family** name stored for an event type (`[EventTypeName]`).
-Required on every concrete `IEvent` that is written. The token does not change
-when the payload shape versions (`SchemaVersion` on the log frame). CLR
-`FullName` is not stored. `GetName` returns the family token, not
+Stable kebab-case **event name** stored for an event type (`[EventTypeName]`).
+Required on every concrete `IEvent` that is written. The name does not change
+when the payload shape versions (`SchemaVersion` on the stored record). The
+.NET type's `FullName` is not stored. `GetName` returns the event name, not
 `author-registered.v2`.
 
 `WithEventTypes` is mandatory. It calls `EventTypeCatalog.Materialize` and
-registers that **scoped immutable** catalog on the bounded context. A host
-that skips it fails at startup. Resolve-on-read is `(token, SchemaVersion)`
-→ CLR type. One-arg `[EventTypeName("token")]` is version 1 and implicitly
-current when it is the only type for that family. A family with two or more
+registers that catalog on the bounded context. The catalog does not change.
+A host that skips it throws at startup. Resolve-on-read is `(token, SchemaVersion)`
+to the .NET type. One-arg `[EventTypeName("token")]` is version 1 and implicitly
+current when it is the only type for that event name. An event name with two or more
 types needs exactly one `current: true`. Duplicate `(token, version)` or two
-currents fail at materialize. An unknown token fails closed. Register the family with `WithEventTypes`.
-Current CLR type keeps the domain name; historical is
+currents throw when the catalog is built. An event name that is not in the
+catalog makes the typed read throw. Register the event name with `WithEventTypes`.
+The current .NET type keeps the domain name. Historical is
 `AuthorRegisteredV1`. Historical versions reach current through
 `IEventUpcaster<TTo, TFrom>` registered with `WithUpcasters`. Optional
 `LawnDart.Analyzers` reports `LDT001` to `LDT003` for the same rules at
-compile time; warmup is the runtime authority. See
+compile time. Warmup is the runtime authority. See
 [Event schema versioning](EVENT_SCHEMA_VERSIONING.md).
 
 See **Event log** / **Event store**.
@@ -106,7 +107,7 @@ Command → State. Planned for a later release. No public type until a host exis
 **Envelope**  
 `EventMetadata` / `CommandMetadata` / `MessageContext` on the typed session.
 Source of truth for event id, business time, commit time, correlation,
-causation, `TraceId`, `SpanId`, and tenant. `SchemaName` is the catalog token.
+causation, `TraceId`, `SpanId`, and tenant. `SchemaName` is the event name.
 The durable log does not carry `EventMetadata`; see **AppendEvent**.
 How-to: [Metadata](METADATA.md).
 
@@ -122,18 +123,19 @@ Three times on the envelope. Keep them apart:
 - **Trace:** `TraceId` / `SpanId` (W3C hex). The Activity clock is not stored as a third `DateTime`.
 
 **Event log**  
-`IEventLog`: schema-dumb durability. Append `AppendEvent`, read `RecordedEvent`.
-Family token, `SchemaVersion`, `CodecId`, payload bytes, metadata JSON
-bytes, tags, stream id/version, global sequence, commit timestamp. No CLR
-event type. Third-party stores implement this. A process that has **not**
-registered event CLR types still appends, filters, and copies frames here.
-Typed hydrate (`EventSession` / `IEventStore`) fails closed on an unknown
-family. Deploy the missing type. It does not invent a stand-in event.
+`IEventLog`: the log keeps records and does not know .NET types. Append
+`AppendEvent`, read `RecordedEvent`. Event name, `SchemaVersion`,
+payload-format number `CodecId`, payload bytes, metadata JSON bytes, tags,
+stream id/version, global sequence, commit timestamp. Third-party stores
+implement this. A process that has not registered the event .NET types still
+appends, filters, and copies records here. A typed read (`EventSession` /
+`IEventStore`) throws when the event name is not in this process's catalog.
+Deploy the missing type. It does not invent a stand-in event.
 
 **Event store**  
 `IEventStore`: typed application session over a log. Append/read `IEvent` /
-`SequencedEvent`. Stream registry and live subscriptions hydrate in the
-session. Unchanged for handlers and aggregates.
+`SequencedEvent`. The stream registry and live subscriptions turn stored
+records into events in the session. Unchanged for handlers and aggregates.
 
 **Event Generator**
 State → Event. Planned for a later release. No public type until a host exists.
@@ -152,14 +154,14 @@ Public Event to State interface (`ProjectAsync`). Lightweight does not call
 it. Author `ProjectionBase<TView>`.
 
 **IRawEvent**  
-`IEvent` that already has a family token and payload bytes. LawnDart's type is
-`RawRecordedEvent`. Not a catalog type and not a typed-hydrate fallback. A
-process without the CLR type uses **Event log**.
+`IEvent` that already has an event name and payload bytes. LawnDart's type is
+`RawRecordedEvent`. Use **Event log** when this process does not have the
+.NET type.
 
 **InMemory**  
 Process-local log (`IEventLog`) plus typed session (`IEventStore`). Serializes
-on append; read hydrates a new instance. Not an object heap. Zero
-infrastructure. Default for Academy and tests.
+on append. A read returns a new instance. The store keeps records, not a
+live object heap. Zero infrastructure. Default for Academy and tests.
 
 ## L
 
@@ -200,8 +202,8 @@ See **Intentional verb differences**.
 
 **RawRecordedEvent**  
 LawnDart's `IRawEvent`: a `RecordedEvent` viewed as an `IEvent` so typed
-helpers can read the stored family token. Not a hydrate fallback and not a
-catalog type.
+helpers can read the stored event name. Use the event log when a typed read
+cannot decode the record. It is not a catalog type.
 
 **RecordedEvent**  
 `AppendEvent` fields plus store-assigned stream id, stream version, global
@@ -210,14 +212,14 @@ sequence, and commit timestamp. Tags as stored.
 ## S
 
 **SchemaVersion**  
-Integer on the log frame (`AppendEvent` / `RecordedEvent` / SQL column).
-Identifies which CLR type in a family to deserialize. The typed session
-stamps it from the current CLR type on
+Integer on the stored record (`AppendEvent` / `RecordedEvent` / SQL column).
+Identifies which .NET type for an event name to deserialize. The typed session
+stamps it from the current .NET type on
 append. `EventMetadata.SchemaVersion` is a compatibility mirror written
-by the session (append and hydrate). The frame is authority. A constructed
-frame with `0` becomes `1`. SQL columns have no default; an older table
-throws and names drop-and-recreate. The catalog resolves
-`(token, SchemaVersion)`; the token stays the family name.
+by the session when it appends and when it reads. The stored record is
+authority. A constructed record with `0` becomes `1`. SQL columns have no
+default. An older table throws and names drop-and-recreate. The catalog
+resolves `(token, SchemaVersion)`. The token stays the event name.
 See [Event schema versioning](EVENT_SCHEMA_VERSIONING.md)
 (including [deploy](EVENT_SCHEMA_VERSIONING.md#deploy)).
 

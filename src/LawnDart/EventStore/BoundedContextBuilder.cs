@@ -95,8 +95,8 @@ public static class BoundedContextExtensions
     /// Scans assemblies for concrete <see cref="IEvent"/> types and registers them
     /// as this context's event-type catalog. Types must declare
     /// <see cref="EventTypeNameAttribute"/>. Duplicate <c>(token, version)</c>,
-    /// two current types, a multi-type family with no <c>current: true</c>,
-    /// abstract types, and non-events fail closed.
+    /// two current types, a multi-type event name with no <c>current: true</c>,
+    /// abstract types, and non-events make <see cref="EventTypeCatalog.Materialize"/> throw.
     /// </summary>
     /// <exception cref="InvalidOperationException">
     /// The scan discovered no concrete <see cref="IEvent"/> types.

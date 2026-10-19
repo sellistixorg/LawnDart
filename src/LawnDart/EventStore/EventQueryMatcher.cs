@@ -4,7 +4,7 @@ namespace LawnDart.EventStore;
 /// Shared DCB <see cref="Query"/> matching for typed and log reads / subscriptions.
 /// Backends should reuse this helper (or equivalent) so subscription <see cref="EventSubscriptionFilter.ForQuery"/>
 /// stays aligned with <c>ReadByQuery*</c> semantics. Prefer <see cref="Matches(RecordedEvent, Query)"/>
-/// on the log so a filter does not hydrate a CLR type.
+/// on the log so a filter does not turn a record into a .NET object.
 /// </summary>
 public static class EventQueryMatcher
 {
@@ -28,7 +28,7 @@ public static class EventQueryMatcher
 
     /// <summary>
     /// Returns whether <paramref name="recordedEvent"/> matches <paramref name="query"/>
-    /// using the stored family token. Does not hydrate a CLR type.
+    /// using the stored event name. Does not turn the record into a .NET object.
     /// </summary>
     public static bool Matches(RecordedEvent recordedEvent, Query query)
     {
@@ -92,9 +92,9 @@ public static class EventQueryMatcher
     }
 
     /// <summary>
-    /// Prefer <see cref="IRawEvent.TypeName"/> (the stored family token).
+    /// Prefer <see cref="IRawEvent.TypeName"/> (the stored event name).
     /// <see cref="IEventTypeCatalog.GetName"/> would otherwise see the
-    /// wrapper CLR name and drop typed query / subscribe matches.
+    /// wrapper .NET name and drop typed query / subscribe matches.
     /// </summary>
     private static string ResolveTypeName(IEvent @event, IEventTypeCatalog catalog) =>
         @event is IRawEvent raw && !string.IsNullOrWhiteSpace(raw.TypeName)

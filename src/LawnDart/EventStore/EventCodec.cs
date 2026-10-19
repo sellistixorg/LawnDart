@@ -3,36 +3,36 @@ using System.Diagnostics.CodeAnalysis;
 namespace LawnDart.EventStore;
 
 /// <summary>
-/// Process-wide intern table from payload MIME (plugin identity on
-/// <c>IEventSerializer.ContentType</c>) to the <c>byte</c> stored on a log frame.
+/// Process-wide table from payload media type (plugin identity on
+/// <c>IEventSerializer.ContentType</c>) to the <c>byte</c> stored on a record.
 /// </summary>
 /// <remarks>
 /// Known ids are never reused: <see cref="Json"/>, <see cref="MemoryPack"/>,
-/// <see cref="Avro"/>, <see cref="Protobuf"/>. <c>1</c>–<c>63</c> are
-/// LawnDart-reserved. <c>64</c>–<c>254</c> are user-registered.
-/// <see cref="Opaque"/> (<c>255</c>) means unspecified bytes and never hydrates
-/// on the typed path. <c>0</c> is never valid on a durable frame.
+/// <see cref="Avro"/>, <see cref="Protobuf"/>. <c>1</c> to <c>63</c> are
+/// LawnDart-reserved. <c>64</c> to <c>254</c> are user-registered.
+/// <see cref="Opaque"/> (<c>255</c>) means unspecified bytes. A typed read
+/// does not decode them. <c>0</c> is never valid on a stored record.
 /// <para>
 /// This table holds no domain data and no per-context state. An unregistered
-/// MIME fails closed — it is never mapped to <see cref="Opaque"/> or to a
-/// reserved id. Call <see cref="Register"/> to add a user codec.
+/// media type throws. It is never mapped to <see cref="Opaque"/> or to a
+/// reserved id. Call <see cref="Register"/> to add a user payload format.
 /// </para>
 /// </remarks>
 public static class EventCodec
 {
-    /// <summary>UTF-8 JSON (STJ). MIME <see cref="JsonMime"/>.</summary>
+    /// <summary>UTF-8 JSON (System.Text.Json). Media type <see cref="JsonMime"/>.</summary>
     public const byte Json = 1;
 
-    /// <summary>MemoryPack. MIME <see cref="MemoryPackMime"/>.</summary>
+    /// <summary>MemoryPack. Media type <see cref="MemoryPackMime"/>.</summary>
     public const byte MemoryPack = 2;
 
-    /// <summary>Avro. MIME <see cref="AvroMime"/>.</summary>
+    /// <summary>Avro. Media type <see cref="AvroMime"/>.</summary>
     public const byte Avro = 3;
 
-    /// <summary>Protobuf. MIME <see cref="ProtobufMime"/>.</summary>
+    /// <summary>Protobuf. Media type <see cref="ProtobufMime"/>.</summary>
     public const byte Protobuf = 4;
 
-    /// <summary>Opaque / unspecified bytes. Never valid as a typed hydrate codec.</summary>
+    /// <summary>Unspecified bytes. A typed read will not decode this value.</summary>
     public const byte Opaque = 255;
 
     /// <summary>Inclusive start of the user-registered id range.</summary>
@@ -41,16 +41,16 @@ public static class EventCodec
     /// <summary>Inclusive end of the user-registered id range.</summary>
     public const byte UserRangeEnd = 254;
 
-    /// <summary>Plugin MIME for <see cref="Json"/>.</summary>
+    /// <summary>Plugin media type for <see cref="Json"/>.</summary>
     public const string JsonMime = "application/json";
 
-    /// <summary>Plugin MIME for <see cref="MemoryPack"/>.</summary>
+    /// <summary>Plugin media type for <see cref="MemoryPack"/>.</summary>
     public const string MemoryPackMime = "application/vnd.lawndart.memorypack";
 
-    /// <summary>Plugin MIME for <see cref="Avro"/>.</summary>
+    /// <summary>Plugin media type for <see cref="Avro"/>.</summary>
     public const string AvroMime = "application/avro";
 
-    /// <summary>Plugin MIME for <see cref="Protobuf"/>.</summary>
+    /// <summary>Plugin media type for <see cref="Protobuf"/>.</summary>
     public const string ProtobufMime = "application/protobuf";
 
     private static readonly object Gate = new();
@@ -87,11 +87,11 @@ public static class EventCodec
     }
 
     /// <summary>
-    /// Looks up the plugin MIME for <paramref name="id"/>.
+    /// Looks up the plugin media type for <paramref name="id"/>.
     /// </summary>
     /// <returns>
     /// <see langword="true"/> when <paramref name="id"/> is a built-in or
-    /// user-registered codec. <see cref="Opaque"/> and <c>0</c> return
+    /// user-registered payload format. <see cref="Opaque"/> and <c>0</c> return
     /// <see langword="false"/>.
     /// </returns>
     public static bool TryGetMime(byte id, [NotNullWhen(true)] out string? mime)
@@ -103,8 +103,8 @@ public static class EventCodec
     }
 
     /// <summary>
-    /// Registers a user codec. Accepts ids <see cref="UserRangeStart"/>–
-    /// <see cref="UserRangeEnd"/> only. Re-registering the same pair is
+    /// Registers a user payload format. Accepts ids <see cref="UserRangeStart"/>
+    /// through <see cref="UserRangeEnd"/> only. Re-registering the same pair is
     /// idempotent; a conflicting pair throws.
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">

@@ -11,7 +11,7 @@ public enum ProjectionWorkingSetMode
     EagerRestore = 0,
 
     /// <summary>
-    /// Skip bulk restore; hydrate each instance from durable storage on first event (or GET via SQL).
+    /// Skip bulk restore. Load each instance from storage on the first event (or GET via SQL).
     /// </summary>
     Lazy = 1
 }

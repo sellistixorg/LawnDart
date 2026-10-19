@@ -29,15 +29,16 @@ A failed publish clears the claim. Format `1` outbox tables gain
 `ClaimedUntil` when `InitializeSchemaAsync` runs. The in-memory writer
 uses the same option.
 
-The outbox row is a copy of the appended frame, written in the same
-transaction: family token, payload **bytes**, metadata as UTF-8 JSON
-text, plus first-class `SchemaVersion` and `CodecId` (`TINYINT`, no
-column default). The publisher selects the codec by id and hydrates
-through `EventSession` (token + schema version, then upcast) the same
-way typed store reads do. Register the family with `WithEventTypes`; an
-unknown token fails closed (no FullName alias). Drop and recreate an
-older outbox table: `SchemaVersion` and `CodecId` have no column defaults,
-and opening that table throws and names drop-and-recreate.
+The outbox row is a copy of the stored record, written in the same
+transaction: event name, payload **bytes**, metadata as UTF-8 JSON
+text, plus `SchemaVersion` and the payload-format column `CodecId`
+(`TINYINT`, no column default). The publisher picks the payload format
+from `CodecId` and reads the row through `EventSession` (event name plus
+schema version, then upcast) the same way typed store reads do. Register
+the event name with `WithEventTypes`. A name that is not registered makes
+the publisher throw. A .NET `FullName` is not accepted in its place. Drop
+and recreate an older outbox table: `SchemaVersion` and `CodecId` have no
+column defaults, and opening that table throws and names drop-and-recreate.
 
 ```csharp
 services.AddBoundedContext("default")

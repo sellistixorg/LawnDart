@@ -71,7 +71,7 @@ A view that spans stream types must also implement
 hook.
 
 Live poll, rebuild, and time-travel replay use the store's typed session.
-Historical rows arrive as the current CLR type after upcast.
+Historical rows arrive as the current .NET type after upcast.
 
 ## Checkpoints
 
@@ -86,7 +86,7 @@ that horizon for `ReadHorizonGracePeriod` (default 30 seconds). After
 that, the checkpoint can move past the open sequence. A later commit of
 that sequence logs an error.
 
-## Poison events
+## Handler failures
 
 When a compiled `Handle` method throws, the runner restores the in-memory
 view to its pre-apply snapshot and retries 3 times (initial plus 2

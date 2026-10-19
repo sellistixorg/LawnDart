@@ -10,6 +10,10 @@ changes to the public API.
 
 ## [Unreleased]
 
+### Changed
+
+- Guides and API comments call the catalog token an event name, and `CodecId` the payload-format number. A typed read that cannot decode a stored record says what it refuses, in plain language.
+
 ## [0.6.0-alpha.3] — 2026-10-18
 
 Upgrade SQL Server before the new process reads. The steps are in [Upgrading from 0.6.0-alpha.2](docs/packages/eventsourcing-sqlserver.md#upgrading-from-060-alpha2). Set `LawnDartOptions.ValidateNames` to false before `AddBoundedContext` to keep a bounded context name or tenant id that does not match `LawnDartNames.Pattern`.

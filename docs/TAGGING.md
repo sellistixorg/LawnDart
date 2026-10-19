@@ -146,7 +146,7 @@ you passed to `GetOrCreateEntityAsync`. Tags the provider adds do not
 change the load and do not change the fence.
 
 `AggregateRepository` also copies `[Tag]` values. When no tag starts
-with `{AggregateType}:`, it adds `{AggregateType}:{id}` from the CLR
+with `{AggregateType}:`, it adds `{AggregateType}:{id}` from the .NET
 type name (`Student:{id}`). That prefix check is ordinal. A provider
 tag `student:{id}` does not suppress `Student:{id}`, so the event can
 carry both. Query the provider's string. `[Tag]` is a fixed string and

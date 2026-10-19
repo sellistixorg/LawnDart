@@ -3,7 +3,7 @@ using System.Threading.Channels;
 namespace LawnDart.EventStore;
 
 /// <summary>
-/// Typed subscription handle: hydrates log frames. A fail-closed hydrate
+/// Typed subscription handle: reads log records into objects. A read that throws
 /// completes the channel with the error and does not advance
 /// <see cref="LastDeliveredSequence"/>.
 /// </summary>

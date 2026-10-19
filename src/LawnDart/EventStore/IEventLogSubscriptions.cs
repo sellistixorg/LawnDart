@@ -4,8 +4,9 @@ namespace LawnDart.EventStore;
 /// Portable push / continuous-read surface for an <see cref="IEventLog"/>.
 /// </summary>
 /// <remarks>
-/// Yields <see cref="RecordedEvent"/> frames. The typed session hydrates
-/// <see cref="IEventStoreSubscriptions"/> subscribers; do not hydrate inside the
+/// Yields <see cref="RecordedEvent"/> records. The typed session reads them
+/// into objects for <see cref="IEventStoreSubscriptions"/> subscribers. Do not
+/// turn records into .NET objects inside the
 /// log implementation.
 /// <para>
 /// Same portable rules as <see cref="IEventStoreSubscriptions"/>: inclusive
@@ -16,7 +17,7 @@ namespace LawnDart.EventStore;
 public interface IEventLogSubscriptions
 {
     /// <summary>
-    /// Subscribes to a continuous, globally ordered flow of recorded frames
+    /// Subscribes to a continuous, globally ordered flow of stored records
     /// starting at <paramref name="fromSequence"/> (inclusive).
     /// </summary>
     IEventLogSubscriptionHandle Subscribe(

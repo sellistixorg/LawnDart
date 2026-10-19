@@ -1,16 +1,16 @@
 namespace LawnDart.EventStore;
 
 /// <summary>
-/// Typed-session fail-closed read. Log and raw copy paths do not throw these.
+/// Thrown when a typed read cannot decode a record. Log and raw copy paths do not throw these.
 /// There is no runtime override to skip the event; deploy the missing type
-/// or upcaster. Subscriptions do not advance the typed cursor past the frame.
+/// or upcaster. Subscriptions do not advance the typed cursor past the record.
 /// </summary>
 public abstract class EventHydrationException : InvalidOperationException
 {
-    /// <summary>Family token on the recorded frame, when known.</summary>
+    /// <summary>Event name on the stored record, when known.</summary>
     public string? FamilyToken { get; }
 
-    /// <summary>Stored schema version on the recorded frame, when known.</summary>
+    /// <summary>Stored schema version on the stored record, when known.</summary>
     public int? SchemaVersion { get; }
 
     private protected EventHydrationException(
@@ -27,11 +27,11 @@ public abstract class EventHydrationException : InvalidOperationException
 
 /// <summary>
 /// The log contains a <c>SchemaVersion</c> newer than this process's current
-/// type for a known family.
+/// type for a known event name.
 /// </summary>
 public sealed class EventSchemaTooNewException : EventHydrationException
 {
-    /// <summary>This process's current schema version for the family.</summary>
+    /// <summary>This process's current schema version for the event name.</summary>
     public int ProcessCurrentVersion { get; }
 
     /// <summary>Creates the exception.</summary>
@@ -51,7 +51,7 @@ public sealed class EventSchemaTooNewException : EventHydrationException
 }
 
 /// <summary>
-/// Typed read of a family token that is not in this process's catalog.
+/// Typed read of an event name that is not in this process's catalog.
 /// </summary>
 public sealed class UnknownEventFamilyException : EventHydrationException
 {
@@ -67,8 +67,8 @@ public sealed class UnknownEventFamilyException : EventHydrationException
 }
 
 /// <summary>
-/// Known family, stored version is not newer than current, but that version's
-/// CLR type is not in the catalog.
+/// Known event name, stored version is not newer than current, but that version's
+/// .NET type is not in the catalog.
 /// </summary>
 public sealed class EventSchemaNotInCatalogException : EventHydrationException
 {
@@ -84,17 +84,17 @@ public sealed class EventSchemaNotInCatalogException : EventHydrationException
 }
 
 /// <summary>
-/// Stored payload codec id does not match this session's codec.
+/// The stored payload-format number is not this session's format.
 /// </summary>
 public sealed class EventContentTypeMismatchException : EventHydrationException
 {
-    /// <summary>Codec id on the recorded frame.</summary>
+    /// <summary>Payload-format number on the stored record.</summary>
     public byte StoredCodecId { get; }
 
-    /// <summary>Codec id of the session serializer.</summary>
+    /// <summary>Payload-format number of the session serializer.</summary>
     public byte SessionCodecId { get; }
 
-    /// <summary>Creates the exception. The message formats MIMEs through <see cref="EventCodec"/>.</summary>
+    /// <summary>Creates the exception. The message names the media types through <see cref="EventCodec"/>.</summary>
     public EventContentTypeMismatchException(byte storedCodecId, byte sessionCodecId)
         : base(
             $"Event stored with codec id {storedCodecId} ({EventCodec.Describe(storedCodecId)}) " +

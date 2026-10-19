@@ -4,8 +4,8 @@ using LawnDart.EventStore;
 namespace LawnDart.EventSourcing.EventStore;
 
 /// <summary>
-/// Log subscription handle for <see cref="InMemoryEventStore"/>. Yields frames;
-/// the typed adapter hydrates.
+/// Log subscription handle for <see cref="InMemoryEventStore"/>. Yields records.
+/// The typed adapter reads them into objects.
 /// </summary>
 internal sealed class InMemorySubscriptionHandle : IEventLogSubscriptionHandle
 {

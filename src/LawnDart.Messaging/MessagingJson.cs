@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 namespace LawnDart.Messaging;
 
 /// <summary>
-/// The JSON settings for message bodies and outbox hydration.
+/// The JSON settings for message bodies and for reading outbox rows into objects.
 /// </summary>
 /// <remarks>
 /// Property names are PascalCase, the same shape the event store writes.

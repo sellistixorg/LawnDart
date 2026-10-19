@@ -5,7 +5,7 @@ namespace LawnDart.EventSourcing.SqlServer.EventStore;
 
 /// <summary>
 /// Log subscription handle for <see cref="SqlServerEventStore"/> (poll-backed live).
-/// Yields frames; the typed adapter hydrates.
+/// Yields records. The typed adapter reads them into objects.
 /// </summary>
 internal sealed class SqlServerSubscriptionHandle : IEventLogSubscriptionHandle
 {

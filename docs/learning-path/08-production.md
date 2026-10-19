@@ -47,11 +47,12 @@ app.MapProjectionQueries("default");
 
 Additive JSON rolls freely: new named properties on the current type do
 not require a `SchemaVersion` bump. A breaking change (renamed meaning, a
-removed required field, or a remapped `[PropertyOrder]` number) is
-expand-contract. Ship readers that understand `SchemaVersion` N+1 before
-any process writes N+1. Old binaries fail closed on those newer rows
-(`EventSchemaTooNewException`) and may keep appending the version that
-was current for them. There is no remote downcaster and no skip override.
+removed required field, or a remapped `[PropertyOrder]` number) ships
+in two steps. Ship readers that understand `SchemaVersion` N+1 before
+any process writes N+1. Old binaries throw `EventSchemaTooNewException`
+on those newer rows and leave them unread. They may keep appending the
+version that was current for them. There is no remote downcaster and no
+skip override.
 
 See [Event schema versioning](../EVENT_SCHEMA_VERSIONING.md). Envelope
 fields: [Metadata](../METADATA.md).
@@ -70,4 +71,4 @@ Checklist:
 - [MESSAGE_TRANSPORTS.md](../MESSAGE_TRANSPORTS.md): in-process, RabbitMQ, Azure Service Bus
 - [AUTHORIZATION.md](../AUTHORIZATION.md): HTTP claims
 - [HTTP_COMMANDS.md](../HTTP_COMMANDS.md): POST mapping
-- [EVENT_SCHEMA_VERSIONING.md](../EVENT_SCHEMA_VERSIONING.md): family tokens, upcast, expand-contract
+- [EVENT_SCHEMA_VERSIONING.md](../EVENT_SCHEMA_VERSIONING.md): event names, upcast, ship readers first

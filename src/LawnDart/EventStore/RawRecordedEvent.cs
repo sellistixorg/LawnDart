@@ -4,16 +4,16 @@ using System.Text.Json;
 namespace LawnDart.EventStore;
 
 /// <summary>
-/// LawnDart's <see cref="IRawEvent"/>: a recorded log frame viewed as an
-/// <see cref="IEvent"/>. Not a typed-hydrate fallback.
+/// LawnDart's <see cref="IRawEvent"/>: a stored record viewed as an
+/// <see cref="IEvent"/>. Use the event log when a typed read cannot decode the record.
 /// </summary>
 /// <remarks>
-/// A process without the CLR event type appends and copies through
-/// <see cref="IEventLog"/>. <see cref="EventSession.Hydrate"/> still fails
-/// closed when the family token is unknown. This type exists so
+/// A process without the .NET event type appends and copies through
+/// <see cref="IEventLog"/>. <see cref="EventSession.Hydrate"/> still throws
+/// when the event name is not in the catalog. This type exists so
 /// <see cref="IRawEvent"/> has a production implementation and so typed
 /// helpers such as <see cref="EventQueryMatcher.Matches(SequencedEvent, Query, IEventTypeCatalog)"/>
-/// can read the stored family token instead of this CLR name.
+/// can read the stored event name instead of this .NET name.
 /// <para>
 /// <see cref="Id"/> and <see cref="Timestamp"/> come from the caller or from
 /// metadata JSON when present. This type never mints <c>Guid.NewGuid()</c> or
@@ -45,7 +45,7 @@ public sealed class RawRecordedEvent : IRawEvent
         return new RawRecordedEvent(recorded, id, timestamp);
     }
 
-    /// <summary>The wrapped log frame.</summary>
+    /// <summary>The wrapped stored record.</summary>
     public RecordedEvent Recorded { get; }
 
     /// <inheritdoc />

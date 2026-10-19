@@ -1,20 +1,21 @@
 namespace LawnDart.EventStore;
 
 /// <summary>
-/// Converts a stored historical event to a later schema in the same family.
+/// Converts a stored historical event to a later schema for the same event name.
 /// Register implementations with <c>WithUpcasters</c>. There is no downcast API.
 /// </summary>
-/// <typeparam name="TTo">The later CLR type in the family.</typeparam>
-/// <typeparam name="TFrom">The stored historical CLR type.</typeparam>
+/// <typeparam name="TTo">The later .NET type for the event name.</typeparam>
+/// <typeparam name="TFrom">The stored historical .NET type.</typeparam>
 /// <remarks>
 /// <para>
-/// One hop. A v1 → v3 family is either a direct upcaster or a chain
-/// (v1 → v2, v2 → v3). <see cref="EventUpcastPipeline.Materialize"/> fails
+/// One hop. An event name that moves from version 1 to version 3 is either a
+/// direct upcaster or a chain (version 1 to version 2, version 2 to version 3).
+/// <see cref="EventUpcastPipeline.Materialize"/> throws
 /// if any historical version cannot reach current.
 /// </para>
 /// <para>
-/// Warmup is the runtime authority for a complete chain. Typed hydrate
-/// applies the chain on read.
+/// Warmup is the runtime authority for a complete chain. A typed read
+/// applies the chain.
 /// </para>
 /// </remarks>
 public interface IEventUpcaster<out TTo, in TFrom>

@@ -79,7 +79,7 @@ public sealed class EventSubscriptionFilter
 
     /// <summary>
     /// Returns whether <paramref name="recordedEvent"/> matches this filter using
-    /// stored stream id / family token / tags. Does not hydrate a CLR type.
+    /// stored stream id, event name, and tags. Does not turn the record into a .NET object.
     /// </summary>
     public bool Matches(RecordedEvent recordedEvent)
     {

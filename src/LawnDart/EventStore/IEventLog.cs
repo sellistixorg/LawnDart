@@ -1,12 +1,12 @@
 namespace LawnDart.EventStore;
 
 /// <summary>
-/// Schema-dumb durable log. The public extension point for a third-party store.
+/// The log keeps records and does not know .NET types. The public extension point for a third-party store.
 /// </summary>
 /// <remarks>
-/// Append <see cref="AppendEvent"/>; read <see cref="RecordedEvent"/>. No CLR event
+/// Append <see cref="AppendEvent"/>; read <see cref="RecordedEvent"/>. No .NET event
 /// type and no <c>EventMetadata</c>. Query, concurrency, and subscriptions stay on
-/// family tokens, tags, and sequence.
+/// event names, tags, and sequence.
 /// <para>
 /// Application code keeps using <see cref="IEventStore"/> (typed session). LawnDart
 /// ships that adapter; backends implement this log. Do not add <c>AppendRaw</c> /
@@ -25,7 +25,7 @@ namespace LawnDart.EventStore;
 /// </remarks>
 public interface IEventLog : IStreamRegistry
 {
-    /// <summary>Reads recorded frames from a stream in version order.</summary>
+    /// <summary>Reads stored records from a stream in version order.</summary>
     Task<IReadOnlyList<RecordedEvent>> ReadStreamAsync(
         string streamId,
         long fromVersion = 0,
@@ -33,7 +33,7 @@ public interface IEventLog : IStreamRegistry
         DateTime? toCommitTimestamp = null,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Streams recorded frames from a stream in version order.</summary>
+    /// <summary>Streams stored records from a stream in version order.</summary>
     IAsyncEnumerable<RecordedEvent> ReadStreamEnumerableAsync(
         string streamId,
         long fromVersion = 0,
@@ -42,8 +42,8 @@ public interface IEventLog : IStreamRegistry
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Reads recorded frames matching a DCB <see cref="Query"/> (tokens / tags /
-    /// partition — not CLR types).
+    /// Reads stored records matching a dynamic consistency boundary <see cref="Query"/>
+    /// (event names, tags, or partition, not .NET types).
     /// </summary>
     Task<EventLogQueryResult> ReadByQueryAsync(
         Query query,
@@ -53,7 +53,7 @@ public interface IEventLog : IStreamRegistry
         DateTime? toCommitTimestamp = null,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Streams recorded frames matching a DCB <see cref="Query"/>.</summary>
+    /// <summary>Streams stored records matching a dynamic consistency boundary <see cref="Query"/>.</summary>
     IAsyncEnumerable<RecordedEvent> ReadByQueryStreamAsync(
         Query query,
         long? fromSequencePosition = null,
@@ -61,14 +61,14 @@ public interface IEventLog : IStreamRegistry
         DateTime? toCommitTimestamp = null,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Appends frames to a stream. Store assigns sequence, version, and commit time.</summary>
+    /// <summary>Appends records to a stream. Store assigns sequence, version, and commit time.</summary>
     Task<AppendResult> AppendAsync(
         string streamId,
         IEnumerable<AppendEvent> events,
         long? expectedVersion = null,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Appends frames under a DCB <see cref="AppendCondition"/>.</summary>
+    /// <summary>Appends records under a dynamic consistency boundary <see cref="AppendCondition"/>.</summary>
     Task<AppendResult> AppendAsync(
         IEnumerable<AppendEvent> events,
         AppendCondition condition,
