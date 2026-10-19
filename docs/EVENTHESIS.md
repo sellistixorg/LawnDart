@@ -24,9 +24,9 @@ Academy is a reference host, not generated output.
 | GWT | GWT | `LawnDart.Testing` spec |
 | Vertical slice | Vertical slice | `AddBoundedContext(name)` |
 
-A View widget maps to a read model. The widget itself has no required CLR type.
+A View widget maps to a read model. The widget itself has no required .NET type.
 
-Keep `ICommand` and `IEvent`. Hand-written events need a unique catalog token.
+Keep `ICommand` and `IEvent`. Hand-written events need a unique event name.
 Put correlation, causation, and trace on the envelope, not the payload.
 
 ## Host grammar
@@ -44,9 +44,9 @@ services.AddLawnDartHttpCommands(typeof(SomeCommand).Assembly);
 app.MapLawnDartCommands();
 ```
 
-Keep catalog tokens stable when you hand-write events. Additive JSON
-keeps the same `SchemaVersion`. A breaking shape change keeps the token
-and bumps the integer. See [Event schema versioning](EVENT_SCHEMA_VERSIONING.md).
+Keep event names stable when you hand-write events. Additive JSON
+keeps the same `SchemaVersion`. A breaking shape change keeps the event
+name and bumps the integer. See [Event schema versioning](EVENT_SCHEMA_VERSIONING.md).
 
 Academy (`demos/LawnDart.Demo.Academy`) is a reference InMemory host with
 optional SQL and HTTP commands via `MapLawnDartCommands`.

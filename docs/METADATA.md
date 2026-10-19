@@ -12,7 +12,7 @@ sees that envelope.
 |---|---|
 | `MessageContext` | Inbound transport (HTTP, messaging). Correlation, causation, tenant, user, and W3C headers. |
 | `CommandMetadata` | Capture at command time. Built by `IMetadataProvider.CaptureCommandMetadata`, or passed into `HandleCommandAsync`. |
-| `EventMetadata` | Enrich on append, then the typed session snapshots it onto the log frame. |
+| `EventMetadata` | Enrich on append, then the typed session copies it onto the stored record. |
 
 `CaptureCommandMetadata(object? context)` reads `context` as a
 `MessageContext`, or `AmbientMessageContext.Current` when `context` is
@@ -92,9 +92,9 @@ from the auth result (empty on success).
 ## Schema name and version
 
 The typed session (`EventSession`) stamps `SchemaVersion` from the current
-CLR type onto the log frame and onto a copy of `EventMetadata`.
-`SchemaName` is the catalog token. Hydrate copies `SchemaVersion` and
-`CommitTimestamp` from the frame. The frame is authority.
+.NET type onto the stored record and onto a copy of `EventMetadata`.
+`SchemaName` is the event name. A read copies `SchemaVersion` and
+`CommitTimestamp` from the stored record. The stored record is authority.
 
 See [Event schema versioning](EVENT_SCHEMA_VERSIONING.md).
 
@@ -140,8 +140,8 @@ Keep these apart. Definitions stay in the [glossary](GLOSSARY.md#event-clocks).
 - **Business time:** `IEvent.Timestamp` and `EventMetadata.Timestamp` after
   enrich. Time-travel (`toTimestamp`) uses this.
 - **Commit time:** `RecordedEvent.CommitTimestamp`, mirrored onto
-  `EventMetadata.CommitTimestamp` on hydrate. Default enrich leaves it
-  null.
+  `EventMetadata.CommitTimestamp` when the session reads the record. Default
+  enrich leaves it null.
 - **Trace:** `TraceId` / `SpanId` (W3C hex). Not a third `DateTime`.
 
 ## Related

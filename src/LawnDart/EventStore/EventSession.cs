@@ -7,18 +7,18 @@ using LawnDart.Serialization;
 namespace LawnDart.EventStore;
 
 /// <summary>
-/// Typed session mapping: <see cref="IEvent"/> ↔ log frames.
+/// Typed session mapping: <see cref="IEvent"/> to stored records.
 /// </summary>
 /// <remarks>
 /// Serialize on the way in; resolve <c>(token, SchemaVersion)</c>, deserialize
-/// the stored version's CLR type, then upcast to current. Payload codec is
-/// <see cref="IEventSerializer"/>; metadata is UTF-8 JSON bytes
-/// (<c>application/json</c>), not the payload codec.
+/// the stored version's .NET type, then upcast to current. The payload format is
+/// <see cref="IEventSerializer"/>. Metadata is UTF-8 JSON bytes
+/// (<c>application/json</c>), separate from the payload format.
 /// <para>
-/// On hydrate, <see cref="EventMetadata.CommitTimestamp"/> and
+/// When the session reads a record, <see cref="EventMetadata.CommitTimestamp"/> and
 /// <see cref="EventMetadata.SchemaVersion"/> are copied from the
-/// <see cref="RecordedEvent"/> frame (frame is authority). Backends must not
-/// resolve CLR types.
+/// <see cref="RecordedEvent"/>. The stored record is authority. Backends must not
+/// resolve .NET types.
 /// </para>
 /// </remarks>
 public sealed class EventSession
@@ -34,10 +34,10 @@ public sealed class EventSession
     private readonly IEventTypeCatalog _catalog;
     private readonly EventUpcastPipeline? _upcast;
 
-    /// <param name="serializer">Payload codec for this session (one codec per session).</param>
+    /// <param name="serializer">Payload format for this session (one format per session).</param>
     /// <param name="catalog">Scoped catalog from <c>WithEventTypes</c> / <see cref="EventTypeCatalog.Materialize"/>.</param>
     /// <param name="upcastPipeline">
-    /// Chain from historical types to current. Null still fail-closes when the
+    /// Chain from historical types to current. Null still throws when the
     /// stored type is not this process's current type.
     /// </param>
     public EventSession(
@@ -57,7 +57,7 @@ public sealed class EventSession
     /// Maps a typed event to an append envelope. Stamps frame
     /// <see cref="AppendEvent.SchemaVersion"/> from the current type and mirrors
     /// it onto <see cref="EventMetadata.SchemaVersion"/> (overwrites a caller
-    /// integer). Rejects a historical CLR type for a family this catalog
+    /// integer). Rejects a historical .NET type for an event name this catalog
     /// already knows. Does not mutate <paramref name="metadata"/>.
     /// </summary>
     public AppendEvent ToAppendEvent(
@@ -90,16 +90,16 @@ public sealed class EventSession
     }
 
     /// <summary>
-    /// Hydrates a recorded frame to a typed <see cref="SequencedEvent"/>.
-    /// Resolve is family token plus frame <see cref="RecordedEvent.SchemaVersion"/>;
-    /// deserialize that CLR type, then upcast to current.
-    /// Fail-closed cases throw <see cref="EventHydrationException"/>.
+    /// Reads a stored record into a typed <see cref="SequencedEvent"/>.
+    /// Resolve is the event name plus <see cref="RecordedEvent.SchemaVersion"/>;
+    /// deserialize that .NET type, then upcast to current.
+    /// Those failures throw <see cref="EventHydrationException"/>.
     /// Log and raw copy paths do not use this method.
     /// </summary>
-    /// <exception cref="EventContentTypeMismatchException">Stored codec id does not match this session's codec, or the frame is <see cref="EventCodec.Opaque"/>.</exception>
+    /// <exception cref="EventContentTypeMismatchException">The stored payload-format number is not this session's format, or the record is <see cref="EventCodec.Opaque"/>.</exception>
     /// <exception cref="EventSchemaTooNewException">Stored version is newer than this process's current type.</exception>
-    /// <exception cref="UnknownEventFamilyException">Family token is not in this process's catalog.</exception>
-    /// <exception cref="EventSchemaNotInCatalogException">Known family, but this version's CLR type is not registered.</exception>
+    /// <exception cref="UnknownEventFamilyException">The event name is not in this process's catalog.</exception>
+    /// <exception cref="EventSchemaNotInCatalogException">Known event name, but this version's .NET type is not registered.</exception>
     /// <exception cref="EventPayloadException">Payload bytes did not deserialize, or an upcaster threw.</exception>
     /// <exception cref="MissingEventUpcasterException">Historical type is in the catalog but no chain reaches current.</exception>
     public SequencedEvent Hydrate(RecordedEvent recorded)

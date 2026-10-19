@@ -16,20 +16,20 @@ namespace LawnDart.EventStore;
 public sealed class AppendEvent
 {
     /// <summary>
-    /// Family catalog token (for example <c>author-registered</c>). Stable across
-    /// schema versions. Not a CLR type name.
+    /// Event name (for example <c>author-registered</c>). Stable across
+    /// schema versions. Not a .NET type name.
     /// </summary>
     public string EventType { get; }
 
     /// <summary>
-    /// First-class schema version on the frame. Default <c>1</c>. Zero is treated as
+    /// First-class schema version on the stored record. Default <c>1</c>. Zero is treated as
     /// <c>1</c>. Not read from <see cref="Metadata"/>.
     /// </summary>
     public int SchemaVersion { get; }
 
     /// <summary>
-    /// Payload codec id stored with the frame. Default <see cref="EventCodec.Json"/>.
-    /// <c>0</c> is rejected. MIME lives on <c>IEventSerializer.ContentType</c> only.
+    /// Payload-format number (<see cref="CodecId"/>) stored with the record. Default <see cref="EventCodec.Json"/>.
+    /// <c>0</c> is rejected. The media type lives on <c>IEventSerializer.ContentType</c> only.
     /// </summary>
     public byte CodecId { get; }
 
@@ -45,11 +45,11 @@ public sealed class AppendEvent
     /// <summary>Tags supplied with this append.</summary>
     public IReadOnlyList<string> Tags { get; }
 
-    /// <param name="eventType">Family catalog token.</param>
+    /// <param name="eventType">Event name.</param>
     /// <param name="payload">Serialized payload. Copied on construct.</param>
     /// <param name="metadata">UTF-8 JSON metadata bytes. Copied on construct. Empty is valid.</param>
     /// <param name="schemaVersion">Frame schema version. Default <c>1</c>; <c>0</c> becomes <c>1</c>.</param>
-    /// <param name="codecId">Payload codec id. Default <see cref="EventCodec.Json"/>. <c>0</c> is rejected.</param>
+    /// <param name="codecId">Payload-format number. Default <see cref="EventCodec.Json"/>. <c>0</c> is rejected.</param>
     /// <param name="tags">Tags as supplied. Copied on construct.</param>
     public AppendEvent(
         string eventType,

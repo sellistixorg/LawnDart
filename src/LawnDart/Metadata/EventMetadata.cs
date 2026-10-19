@@ -4,16 +4,16 @@ namespace LawnDart.Metadata;
 /// Metadata for an event, including identity, network context, tracing, authorization, and schema information.
 /// </summary>
 /// <remarks>
-/// Three clocks, do not mix them:
+/// Three clocks. Keep them apart:
 /// <list type="bullet">
-/// <item><description><b>Business time</b> — <c>IEvent.Timestamp</c> and
+/// <item><description><b>Business time</b>: <c>IEvent.Timestamp</c> and
 /// <see cref="Timestamp"/> are the same after enrich. Time-travel
 /// (<c>toTimestamp</c>) uses this value.</description></item>
-/// <item><description><b>Commit time</b> — first-class on the recorded
+/// <item><description><b>Commit time</b>: first-class on the recorded
 /// event; <see cref="CommitTimestamp"/> is a session mirror. Used for lag,
 /// not domain queries.</description></item>
-/// <item><description><b>Trace</b> — <see cref="TraceId"/> / <see cref="SpanId"/>
-/// (W3C hex). The Activity clock is not stored as a third <see cref="DateTime"/>.</description></item>
+/// <item><description><b>Trace</b>: <see cref="TraceId"/> / <see cref="SpanId"/>
+/// (W3C trace context hex). The Activity clock is not stored as a third <see cref="DateTime"/>.</description></item>
 /// </list>
 /// </remarks>
 public class EventMetadata
@@ -84,7 +84,7 @@ public class EventMetadata
 
     // Timing
     /// <summary>
-    /// Business/domain time — when the event occurred.
+    /// Business time: when the event occurred.
     /// Copied from <c>IEvent.Timestamp</c> during enrich. Not overwritten with
     /// <see cref="DateTime.UtcNow"/>. Time-travel filters use this value.
     /// </summary>
@@ -93,16 +93,16 @@ public class EventMetadata
     /// <summary>
     /// When the event was committed (system/infrastructure time).
     /// Compatibility mirror of <c>RecordedEvent.CommitTimestamp</c> written by
-    /// the typed session on hydrate. The frame is authority. Used for lag, not
+    /// the typed session when it reads the record. The stored record is authority. Used for lag, not
     /// domain queries. Stored metadata JSON is not required to contain this.
     /// </summary>
     public DateTime? CommitTimestamp { get; set; }
 
     // Schema
     /// <summary>
-    /// Event schema version. Compatibility mirror of the log-frame
-    /// <c>SchemaVersion</c> written by the typed session on append and hydrate.
-    /// The frame / SQL column is authority. Missing or zero on old rows is 1.
+    /// Event schema version. Compatibility mirror of the stored
+    /// <c>SchemaVersion</c> written by the typed session on append and when it reads.
+    /// The stored record, and the SQL column, are authority. Missing or zero on old rows is 1.
     /// </summary>
     public int SchemaVersion { get; set; } = 1;
 

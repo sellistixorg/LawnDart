@@ -4,15 +4,15 @@ using LawnDart.Metadata;
 namespace LawnDart.EventStore;
 
 /// <summary>
-/// Typed <see cref="IEventStore"/> session over a schema-dumb <see cref="IEventLog"/>.
+/// Typed <see cref="IEventStore"/> session over an <see cref="IEventLog"/> that does not know .NET types.
 /// </summary>
 /// <remarks>
 /// Application code keeps using this adapter. Third-party stores implement
-/// <see cref="IEventLog"/>. Serialize on append; hydrate on read. Stream registry
+/// <see cref="IEventLog"/>. Serialize on append. Read records back into objects. Stream registry
 /// and <see cref="AppendResult.ConsistencyMarker"/> pass through from the log unchanged.
 /// <para>
-/// Subscriptions: the log pushes <see cref="RecordedEvent"/> frames;
-/// this adapter hydrates. A fail-closed hydrate does not advance the typed cursor.
+/// Subscriptions: the log pushes <see cref="RecordedEvent"/> records.
+/// This adapter reads them into objects. A typed read that throws does not advance the typed cursor.
 /// </para>
 /// </remarks>
 public sealed class EventStoreAdapter : IEventStore, IEventStoreSubscriptions
@@ -28,8 +28,8 @@ public sealed class EventStoreAdapter : IEventStore, IEventStoreSubscriptions
     private readonly IEventLogSubscriptions? _logSubscriptions;
     private readonly int _subscriptionChannelCapacity;
 
-    /// <param name="log">Schema-dumb log. Also used as <see cref="IStreamRegistry"/>.</param>
-    /// <param name="session">Typed serialize / hydrate session.</param>
+    /// <param name="log">Log that does not know .NET types. Also used as <see cref="IStreamRegistry"/>.</param>
+    /// <param name="session">Typed session that serializes on append and reads records back into objects.</param>
     /// <param name="logSubscriptions">
     /// Log-level push surface. Defaults to <paramref name="log"/> when it implements
     /// <see cref="IEventLogSubscriptions"/>.

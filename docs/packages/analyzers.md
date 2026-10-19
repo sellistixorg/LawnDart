@@ -9,7 +9,7 @@ without starting a host. It is optional. The runtime still requires
 
 ## What you get
 
-- `LDT001`: two `current: true` on one family token
+- `LDT001`: two `current: true` on one event name
 - `LDT002`: two or more types and no `current: true`
 - `LDT003`: a historical version has no upcaster path to current
 

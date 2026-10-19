@@ -34,8 +34,8 @@ public sealed class BddTestContext : IAsyncDisposable
     /// Creates a fresh InMemory-backed test context. Primary GWT host.
     /// </summary>
     /// <param name="eventTypes">
-    /// Event types to materialize into this spec's catalog. Required for typed
-    /// hydrate of Given events and emitted events.
+    /// Event types to materialize into this spec's catalog. Required so Given
+    /// events and emitted events can be read back into objects.
     /// </param>
     public static BddTestContext CreateInMemory(params Type[] eventTypes)
         => Create(new InMemoryEventStore(

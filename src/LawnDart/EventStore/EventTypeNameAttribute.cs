@@ -7,16 +7,16 @@ namespace LawnDart.EventStore;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The token is a <strong>family</strong> name. It does not change when the
+/// The token is the <strong>event name</strong>. It does not change when the
 /// payload shape versions. <see cref="EventTypeCatalog.GetName"/> returns that
-/// token, not <c>token.v2</c>.
+/// name, not <c>token.v2</c>.
 /// </para>
 /// <para>
 /// One-arg <c>[EventTypeName("token")]</c> is schema version 1 and is
-/// implicitly current when it is the only type for that family. A family with
-/// two or more types needs exactly one <c>current: true</c>. Do not infer
-/// current from the highest version. The current CLR type keeps the domain
-/// name (<c>AuthorRegistered</c>); historical types are
+/// implicitly current when it is the only type for that event name. An event
+/// name with two or more types needs exactly one <c>current: true</c>. Do not infer
+/// current from the highest version. The current .NET type keeps the domain
+/// name (<c>AuthorRegistered</c>). Historical types are
 /// <c>AuthorRegisteredV1</c>.
 /// </para>
 /// </remarks>
@@ -38,29 +38,29 @@ namespace LawnDart.EventStore;
 public sealed class EventTypeNameAttribute : Attribute
 {
     /// <summary>
-    /// The stable family token stored in the event log for this event type.
+    /// The stable event name stored in the event log for this event type.
     /// </summary>
     public string Name { get; }
 
     /// <summary>
-    /// Schema version for this CLR type. One-arg construction is version 1.
+    /// Schema version for this .NET type. One-arg construction is version 1.
     /// </summary>
     public int Version { get; }
 
     /// <summary>
-    /// Marks this type as the current CLR type for the family. Required once
-    /// a token has two or more types. Ignored when the family has one type
+    /// Marks this type as the current .NET type for the event name. Required once
+    /// a name has two or more types. Ignored when the event name has one type
     /// (that type is implicitly current). Defaults to <c>false</c> on the
     /// versioned constructor.
     /// </summary>
     public bool Current { get; }
 
     /// <summary>
-    /// Initializes the attribute with a family token. Schema version is 1.
-    /// Implicitly current when this is the only type for the token.
+    /// Initializes the attribute with an event name. Schema version is 1.
+    /// Implicitly current when this is the only type for the name.
     /// </summary>
     /// <param name="name">
-    /// The stable family token to store (e.g. <c>"order-placed"</c> or
+    /// The stable event name to store (e.g. <c>"order-placed"</c> or
     /// <c>"author-registered"</c>).
     /// </param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="name"/> is <c>null</c>.</exception>
@@ -70,12 +70,12 @@ public sealed class EventTypeNameAttribute : Attribute
     }
 
     /// <summary>
-    /// Initializes the attribute with a family token and schema version.
+    /// Initializes the attribute with an event name and schema version.
     /// </summary>
-    /// <param name="name">The stable family token to store.</param>
-    /// <param name="version">Schema version for this CLR type. Must be at least 1.</param>
+    /// <param name="name">The stable event name to store.</param>
+    /// <param name="version">Schema version for this .NET type. Must be at least 1.</param>
     /// <param name="current">
-    /// <c>true</c> when this is the current type for the family. Required
+    /// <c>true</c> when this is the current type for the event name. Required
     /// once a token has two or more types. Defaults to <c>false</c>.
     /// </param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="name"/> is <c>null</c>.</exception>

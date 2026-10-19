@@ -366,7 +366,7 @@ public static class LightweightProjectionsExtensions
                 readCache?.OfferFromDurable(reg.StorageKey, instanceId, viewJson, viewSequence);
             }
 
-            // 6. Optional freshness demand — fail closed; never return a stale 200 body.
+            // 6. Optional freshness demand. Refuse a stale 200 body.
             if (ProjectionFreshness.TryParseMinSequence(ctx.Request, out var minSequence)
                 && viewSequence < minSequence)
             {

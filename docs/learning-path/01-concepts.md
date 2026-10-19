@@ -24,7 +24,7 @@ are appended. State is rebuilt by replaying those events.
 in another (choreography).
 
 **Event Processing (Event → Event).** Transform or enrich events without
-a command. Same host family as reactions (step 6).
+a command. Same host as reactions (step 6).
 
 **Task Processing (State → Command).** A poller emits commands from
 read-model conditions (timeouts, SLAs).
@@ -37,20 +37,20 @@ See [DCB_PATTERNS.md](../DCB_PATTERNS.md).
 ```
 Command → Aggregate / DCB → Events → IEventStore (typed session)
                                     ↓
-                              IEventLog (recorded frames)
+                              IEventLog (stored records)
                                     ↓
                          Projector → View store → Query
 ```
 
-`IEventStore` is what handlers and aggregates use. The durable log
-(`IEventLog`) stores recorded events: family token, schema version,
-codec id, payload bytes. Those frames are not live CLR objects.
-InMemory serializes on append the same way SQL does. Third-party stores
-implement the log.
+`IEventStore` is what handlers and aggregates use. The log
+(`IEventLog`) stores recorded events: event name, schema version,
+payload-format number, payload bytes. Those records are not live .NET
+objects. InMemory serializes on append the same way SQL does. Third-party
+stores implement the log.
 
-When a payload shape changes, keep the family token and follow
-[event schema versioning](../EVENT_SCHEMA_VERSIONING.md) (expand-contract
-deploy is on [step 8](08-production.md)). Envelope fields:
+When a payload shape changes, keep the event name and follow
+[event schema versioning](../EVENT_SCHEMA_VERSIONING.md) (ship readers
+before writers on [step 8](08-production.md)). Envelope fields:
 [Metadata](../METADATA.md).
 
 [Glossary](../GLOSSARY.md) · [Overview](../OVERVIEW.md)

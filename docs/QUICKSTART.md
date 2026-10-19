@@ -31,10 +31,12 @@ HTTP hosts also call `WithCommandHandlers<TMarker>()` on that context, then
 `UseInMemory()` registers keyed `IEventStore`, `IAggregateRepository`, and
 `IDcbRepository` for `"default"`, plus unkeyed aliases so you can resolve
 them without a key. InMemory is a recorded-event log: append serializes
-to bytes, read hydrates a new instance. Application code still uses
-`IEventStore`. Third-party stores implement `IEventLog`. The session codec
-is `IEventSerializer` (`ReadOnlyMemory<byte>`, UTF-8 JSON by default).
-Frames store a `CodecId`, not a MIME string. `WithEventTypes` is required.
+to bytes, and a read returns a new instance. Application code still uses
+`IEventStore`. Third-party stores implement `IEventLog`. The session
+payload format is `IEventSerializer` (`ReadOnlyMemory<byte>`, UTF-8 JSON
+by default). Stored records keep a payload-format number (`CodecId`).
+The media type stays on `IEventSerializer.ContentType`. `WithEventTypes`
+is required.
 
 ## 3. Handle a command
 

@@ -19,7 +19,7 @@ Host grammar: [DI Grammar](../DI_GRAMMAR.md). Envelope fields:
 | Package | Take it when | Registration |
 |---|---|---|
 | [`LawnDart`](core.md) | Always. Contracts and host core. | `AddLawnDart` / `AddBoundedContext` |
-| [`LawnDart.EventSourcing`](eventsourcing.md) | You need a runtime and a zero-infra store. | `UseInMemory()` |
+| [`LawnDart.EventSourcing`](eventsourcing.md) | You need a runtime and an in-memory store. | `UseInMemory()` |
 | [`LawnDart.EventSourcing.SqlServer`](eventsourcing-sqlserver.md) | You need a durable store. | `UseSqlServer(...)` |
 | [`LawnDart.Projections.Lightweight`](projections-lightweight.md) | You need read models. | `WithProjections` / `MapProjectionQueries` |
 | [`LawnDart.Messaging`](messaging.md) | You need reactors or task processors. | `AddMessaging` / `AddReactor` |
@@ -64,7 +64,8 @@ and `InitializeSqlInboxStoreAsync`. The transport you registered stays.
 [Message transports](../MESSAGE_TRANSPORTS.md) and
 [BACKEND_SELECTION.md](../BACKEND_SELECTION.md).
 
-Log frames store a `CodecId` (`byte`), not a MIME string. SQL Server uses
+Log records store a payload-format number, `CodecId` (`byte`). The media
+type stays on `IEventSerializer.ContentType`. SQL Server uses
 one `EventData` (`VARBINARY`) column. `WithEventTypes` is required. Drop
 and recreate SQL event, outbox, and inbox tables on a pre-1.0 schema change.
 There is no in-place migration.

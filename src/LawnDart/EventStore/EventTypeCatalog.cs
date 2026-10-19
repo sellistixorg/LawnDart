@@ -4,13 +4,14 @@ using System.Reflection;
 namespace LawnDart.EventStore;
 
 /// <summary>
-/// Immutable event-type catalog: family token plus <c>SchemaVersion</c> to CLR type.
+/// Immutable event-type catalog: event name plus <c>SchemaVersion</c> to .NET type.
 /// </summary>
 /// <remarks>
 /// Call <see cref="Materialize"/> at context start and register that instance
 /// with <c>WithEventTypes</c>. The catalog is per bounded context. There is no
 /// process-wide resolver, no Shared instance, and no FullName / simple-name /
-/// AssemblyQualifiedName read alias. An unknown token fails closed.
+/// AssemblyQualifiedName read alias. An event name that is not in the catalog
+/// makes the typed read throw.
 /// </remarks>
 public sealed class EventTypeCatalog : IEventTypeCatalog
 {
@@ -26,15 +27,15 @@ public sealed class EventTypeCatalog : IEventTypeCatalog
     /// </summary>
     /// <remarks>
     /// One-arg <c>[EventTypeName("token")]</c> is version 1 and implicitly
-    /// current when it is the only type for that family. A family with two
+    /// current when it is the only type for that event name. An event name with two
     /// or more types needs exactly one <c>current: true</c>. Duplicate
-    /// <c>(token, version)</c> or two current types fail closed.
+    /// <c>(token, version)</c> or two current types make <see cref="Materialize"/> throw.
     /// </remarks>
     public static EventTypeCatalog Materialize(IEnumerable<Type> types)
         => new(CatalogMaps.Build(types));
 
     /// <summary>
-    /// Returns the declared family token when <paramref name="type"/> has
+    /// Returns the declared event name when <paramref name="type"/> has
     /// <see cref="EventTypeNameAttribute"/>; otherwise <c>null</c>.
     /// Does not throw and does not use a FullName fallback.
     /// </summary>

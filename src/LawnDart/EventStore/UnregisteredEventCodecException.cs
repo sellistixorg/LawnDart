@@ -1,12 +1,12 @@
 namespace LawnDart.EventStore;
 
 /// <summary>
-/// <see cref="EventCodec.IdFor"/> was called with a MIME that is not built-in
+/// <see cref="EventCodec.IdFor"/> was called with a media type that is not built-in
 /// and was not passed to <see cref="EventCodec.Register"/>.
 /// </summary>
 public sealed class UnregisteredEventCodecException : ArgumentException
 {
-    /// <summary>The MIME that was not in the intern table.</summary>
+    /// <summary>The media type that was not in the table.</summary>
     public string Mime { get; }
 
     /// <summary>Creates the exception. The message names <see cref="EventCodec.Register"/>.</summary>

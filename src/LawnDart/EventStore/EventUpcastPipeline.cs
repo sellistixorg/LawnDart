@@ -30,7 +30,7 @@ public sealed class EventUpcastPipeline
     /// <paramref name="catalog"/> or <paramref name="upcasterTypes"/> is null.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// An upcaster is invalid (downcast, cross-family, duplicate source,
+    /// An upcaster is invalid (downcast, a hop to a different event name, duplicate source,
     /// type not in the catalog) or a historical version has no path to current.
     /// </exception>
     public static EventUpcastPipeline Materialize(
@@ -59,7 +59,7 @@ public sealed class EventUpcastPipeline
 
     /// <summary>
     /// Applies the chain from <paramref name="stored"/> to this process's
-    /// current type for that family. Already-current instances are returned
+    /// current type for that event name. Already-current instances are returned
     /// unchanged.
     /// </summary>
     /// <exception cref="ArgumentNullException"><paramref name="stored"/> is null.</exception>

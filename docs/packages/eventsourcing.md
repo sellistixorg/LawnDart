@@ -5,8 +5,8 @@ Runtime plus the in-memory **implementation** of `IEventLog` / `IEventStore`.
 The `IEventStore` **interface** is in core `LawnDart`. This package provides
 `InMemoryEventStore`, `AggregateRepository`, `DcbRepository`, JSON
 serialization, and outbox processing. The InMemory → SQL `Category=Contract`
-suite includes the event-log thesis: append/read frames without registered
-CLR types.
+suite includes the event-log contract: append and read records without
+registered .NET types.
 
 Take it for local work, tests, and Academy. Swap the backend later without
 changing domain types.
@@ -25,9 +25,10 @@ Registers keyed `IEventStore`, `IAggregateRepository`, `IDcbRepository`,
 name. The `"default"` context also gets unkeyed aliases, so
 `GetRequiredService<IAggregateRepository>()` works without a key.
 
-Append stores the `[EventTypeName]` token, not CLR `FullName`.
-InMemory serializes on append and hydrates a new instance on read. It is not
-an object heap. The session codec is `IEventSerializer`
+Append stores the `[EventTypeName]` event name. The .NET type's `FullName`
+is not stored. InMemory serializes on append and returns a new instance on
+read. The store keeps records, not a live object heap. The session payload
+format is `IEventSerializer`
 (`ReadOnlyMemory<byte>`). Excerpt from
 `src/LawnDart.EventSourcing/Serialization/JsonEventSerializer.cs`:
 

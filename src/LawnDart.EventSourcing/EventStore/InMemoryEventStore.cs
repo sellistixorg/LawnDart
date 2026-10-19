@@ -42,8 +42,8 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
     /// <param name="logger">Optional logger.</param>
     /// <param name="options">Optional in-memory store options (subscription channel capacity).</param>
     /// <param name="session">
-    /// Typed session used to serialize on append and hydrate on read.
-    /// Defaults to STJ UTF-8 and a per-store write-through catalog (not a
+    /// Typed session used to serialize on append and read records back into objects.
+    /// Defaults to System.Text.Json UTF-8 and a per-store write-through catalog (not a
     /// process-wide resolver). Hosts must pass a materialized catalog via
     /// <c>WithEventTypes</c>.
     /// </param>

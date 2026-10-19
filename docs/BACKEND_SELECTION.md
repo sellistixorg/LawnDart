@@ -106,10 +106,12 @@ Use for production-shaped hosts, outbox, and Testcontainers integration tests
 tagged `Category=Integration`. The InMemory → SQL swap contract lives under
 `tests/LawnDart.Backends.Contract.Tests` (`Category=Contract`; the SQL leg is
 also `Category=Integration`). That project also runs the event-log contract:
-same payload on append/read, token and tag query without hydrate, and a host
-that has not registered event CLR types can still read, filter, and copy
-frames. Typed adapter tests sit on the same logs (unknown family and
-codec-id mismatch fail closed).
+same payload on append/read, event-name and tag query without turning
+records into .NET objects, and a host that has not registered event .NET
+types can still read, filter, and copy records. Typed adapter tests sit
+on the same logs. They check that a typed read throws when the event name
+is not registered, and when the stored payload format is not the session's
+format.
 
 Local unit runs use `--filter Category!=Integration`. CI runs unit tests and
 then `Category=Integration|Category=Contract` on the SQL Server, Lightweight,

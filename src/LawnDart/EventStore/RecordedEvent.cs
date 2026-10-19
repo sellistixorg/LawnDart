@@ -1,10 +1,10 @@
 namespace LawnDart.EventStore;
 
 /// <summary>
-/// A durable log frame: the append envelope plus store-assigned identity.
+/// A stored record: the append envelope plus store-assigned identity.
 /// </summary>
 /// <remarks>
-/// Schema-dumb. No CLR event type and no <c>EventMetadata</c>.
+/// The record does not know .NET types and does not carry <c>EventMetadata</c>.
 /// <see cref="SchemaVersion"/> and <see cref="CommitTimestamp"/> are first-class;
 /// the store must not parse <see cref="Metadata"/> to fill them.
 /// <para>
@@ -15,16 +15,16 @@ namespace LawnDart.EventStore;
 public sealed class RecordedEvent
 {
     /// <summary>
-    /// Family catalog token as stored. Stable across schema versions.
+    /// Event name as stored. Stable across schema versions.
     /// </summary>
     public string EventType { get; }
 
-    /// <summary>First-class schema version on the frame. Not read from <see cref="Metadata"/>.</summary>
+    /// <summary>First-class schema version on the stored record. Not read from <see cref="Metadata"/>.</summary>
     public int SchemaVersion { get; }
 
     /// <summary>
-    /// Payload codec id as stored. Default <see cref="EventCodec.Json"/>.
-    /// <c>0</c> is rejected. MIME is not stored on the frame.
+    /// Payload-format number (<see cref="CodecId"/>) as stored. Default <see cref="EventCodec.Json"/>.
+    /// <c>0</c> is rejected. The media type is not stored on the record.
     /// </summary>
     public byte CodecId { get; }
 
@@ -37,7 +37,7 @@ public sealed class RecordedEvent
     /// <summary>Tags as stored.</summary>
     public IReadOnlyList<string> Tags { get; }
 
-    /// <summary>Stream this frame belongs to.</summary>
+    /// <summary>Stream this record belongs to.</summary>
     public string StreamId { get; }
 
     /// <summary>Stream-local version. <c>0</c> when the write was a DCB append.</summary>
@@ -52,15 +52,15 @@ public sealed class RecordedEvent
     /// </summary>
     public DateTime CommitTimestamp { get; }
 
-    /// <param name="eventType">Family catalog token.</param>
+    /// <param name="eventType">Event name.</param>
     /// <param name="payload">Serialized payload. Copied on construct.</param>
     /// <param name="streamId">Stream identifier assigned or chosen by the store.</param>
     /// <param name="streamVersion">Stream-local version. <c>0</c> for DCB.</param>
     /// <param name="sequencePosition">Global sequence assigned by the store.</param>
     /// <param name="commitTimestamp">Store-assigned commit time.</param>
     /// <param name="metadata">UTF-8 JSON metadata bytes. Copied on construct.</param>
-    /// <param name="schemaVersion">Frame schema version. Default <c>1</c>; <c>0</c> becomes <c>1</c>.</param>
-    /// <param name="codecId">Payload codec id. Default <see cref="EventCodec.Json"/>. <c>0</c> is rejected.</param>
+    /// <param name="schemaVersion">Stored schema version. Default <c>1</c>; <c>0</c> becomes <c>1</c>.</param>
+    /// <param name="codecId">Payload-format number. Default <see cref="EventCodec.Json"/>. <c>0</c> is rejected.</param>
     /// <param name="tags">Tags as stored. Copied on construct.</param>
     public RecordedEvent(
         string eventType,

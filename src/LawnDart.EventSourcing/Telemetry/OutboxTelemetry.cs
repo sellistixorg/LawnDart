@@ -19,12 +19,12 @@ public static class OutboxTelemetry
         "outbox.deadlettered", "count", "Outbox messages parked after they used their attempts");
 
     /// <summary>Counts one failed publish attempt.</summary>
-    /// <param name="eventType">Family token stored on the outbox row.</param>
+    /// <param name="eventType">Event name stored on the outbox row.</param>
     public static void RecordPublishFailure(string? eventType)
         => PublishFailures.Add(1, new KeyValuePair<string, object?>("outbox.event_type", eventType));
 
     /// <summary>Counts one outbox row parked after its attempts were used.</summary>
-    /// <param name="eventType">Family token stored on the outbox row.</param>
+    /// <param name="eventType">Event name stored on the outbox row.</param>
     public static void RecordDeadLettered(string? eventType)
         => DeadLettered.Add(1, new KeyValuePair<string, object?>("outbox.event_type", eventType));
 }

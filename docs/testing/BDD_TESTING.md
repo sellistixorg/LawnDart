@@ -117,7 +117,7 @@ These specs match the Eventhesis GWT widget. See [EVENTHESIS.md](../EVENTHESIS.m
 ## Exception contract
 
 Use `ThenThrows<T>()` for a domain rule. Spec-internal failures (missing
-`When`, a `Then*` mismatch, an unexpected exception from `When`, or a
+`When`, a `Then*` that does not match, an unexpected exception from `When`, or a
 broken store probe) throw `BddSpecAssertionException`. That type does
 not derive from `InvalidOperationException`. Wrapping `RunAsync()` in
 `Assert.ThrowsAsync<InvalidOperationException>` would pass when a spec
@@ -130,7 +130,7 @@ assertion failed.
   from `T`. `DomainException` derives from `InvalidOperationException`,
   so `ThenThrows<InvalidOperationException>()` still matches. Assert the
   narrower type.
-- A mismatch throws `BddSpecAssertionException` and names both the
+- A failed `Then*` throws `BddSpecAssertionException` and names both the
   expected and actual types.
 
 A store that does not implement `GetCurrentSequenceAsync` or
