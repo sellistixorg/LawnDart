@@ -1,8 +1,8 @@
-using LawnDart.Projections.Checkpoints;
+using LawnDart.Projections.Lightweight.SqlServer;
 using LawnDart.Projections.Storage;
 using LawnDart.Sql;
 
-namespace LawnDart.Projections.Lightweight.Tests.Unit;
+namespace LawnDart.Projections.Lightweight.SqlServer.Tests;
 
 public class SqlIdentifierTests
 {

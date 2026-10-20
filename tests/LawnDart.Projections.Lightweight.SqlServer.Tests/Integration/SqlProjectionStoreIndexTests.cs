@@ -1,10 +1,10 @@
 using Microsoft.Data.SqlClient;
 using NSubstitute;
-using LawnDart.Projections.Checkpoints;
+using LawnDart.Projections.Lightweight.SqlServer;
 using LawnDart.Projections.Storage;
 using Testcontainers.MsSql;
 
-namespace LawnDart.Projections.Lightweight.Tests.Integration;
+namespace LawnDart.Projections.Lightweight.SqlServer.Tests.Integration;
 
 /// <summary>
 /// Verifies projection SQL store indexes match query patterns and that

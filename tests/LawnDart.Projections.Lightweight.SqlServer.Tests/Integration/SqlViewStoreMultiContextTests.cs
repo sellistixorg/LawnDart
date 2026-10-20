@@ -1,8 +1,8 @@
 using Microsoft.Data.SqlClient;
-using LawnDart.Projections.Storage;
+using LawnDart.Projections.Lightweight.SqlServer;
 using Testcontainers.MsSql;
 
-namespace LawnDart.Projections.Lightweight.Tests.Integration;
+namespace LawnDart.Projections.Lightweight.SqlServer.Tests.Integration;
 
 /// <summary>
 /// Verifies that <see cref="SqlViewStore"/> creates and uses schema-qualified tables,

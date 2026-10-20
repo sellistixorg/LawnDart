@@ -60,13 +60,13 @@ Read the stored envelope on `SequencedEvent.Metadata` after
 
 ## Tenant id
 
-A tenant id uses the same rule as a context name. `LawnDartNames` holds the pattern, the 63 character limit, `IsValid`, and `Validate`.
+A tenant id starts with a letter or digit. Then letters, digits, `.`, `_`, or `-`, up to 63 characters. `LawnDartNames` holds the pattern, the limit, `IsValid`, `Validate`, and `ValidateTenantId`.
+
+`default` in any casing is reserved. `ValidateTenantId` rejects `default`, `Default`, and `DEFAULT` when name validation is on. Set `LawnDartOptions.ValidateNames` to false to keep an existing tenant id of `default`. An empty string is rejected either way. A colon is rejected either way. A stream id is `{tenantId}:{type}:{id}` and is split on every colon.
 
 `FixedTenantContextProvider` checks the id in the constructor. Pass `validateNames: false` when `LawnDartOptions.ValidateNames` is false. `AmbientTenantContextProvider` reads that option when dependency injection constructs it, and `SetTenant` checks the id. An `X-Tenant-Id` header that fails the check returns 400. A missing header is left unset.
 
-`HandleCommandAsync` and a SQL Server append check the tenant id when `RequireTenantId` is true.
-
-`ValidateNames` defaults to true. Set it to false to keep an existing id that does not match the pattern. A colon is still rejected. A stream id is `{tenantId}:{type}:{id}` and is split on every colon.
+`HandleCommandAsync` and a SQL Server append check the tenant id when `RequireTenantId` is true. A missing tenant id throws. The in-memory save uses the same check.
 
 ## Extra fields
 

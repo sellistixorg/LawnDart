@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
 
-namespace LawnDart.Projections.Checkpoints;
+namespace LawnDart.Projections.Lightweight.SqlServer;
 
 internal static partial class SqlCheckpointStoreLog
 {

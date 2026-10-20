@@ -43,7 +43,7 @@ and optional projections. Not the same as multi-tenancy.
 
 The name starts with a letter or digit. Then letters, digits, `.`, `_`, or `-`, up to 63 characters. The spelling is kept. Uniqueness ignores case. The default context is `default`. `Default` is rejected. `LawnDartOptions.ValidateNames` (default true) turns the format check off. See [Stream IDs](STREAM_IDS.md).
 
-`AddSqlProjectionStores` uses the context name as the SQL Server schema when you omit the schema.
+`AddSqlProjectionStores` (package `LawnDart.Projections.Lightweight.SqlServer`) uses the context name as the SQL Server schema when you omit the schema.
 
 ## C
 
@@ -166,7 +166,7 @@ live object heap. Zero infrastructure. Default for Academy and tests.
 ## L
 
 **Lightweight projections**  
-In-process projection host (`LawnDart.Projections.Lightweight`).
+In-process projection host (`LawnDart.Projections.Lightweight`). SQL Server view and checkpoint stores are in `LawnDart.Projections.Lightweight.SqlServer`.
 
 ## M
 
@@ -247,6 +247,7 @@ State → Command. `ITaskProcessor` polls read models and emits commands.
 
 **Tenant context**  
 Optional `ITenantContextProvider` for metadata on events and stream IDs.
-A tenant id uses the same rule as a bounded context name (`LawnDartNames`).
-A colon is rejected even when `LawnDartOptions.ValidateNames` is false.
+A tenant id uses the character rule in `LawnDartNames`. `default` in any casing is reserved.
+An empty string is rejected. A colon is rejected even when `LawnDartOptions.ValidateNames` is false.
+Set `ValidateNames` to false to keep an existing tenant id of `default`.
 See [Metadata](METADATA.md).

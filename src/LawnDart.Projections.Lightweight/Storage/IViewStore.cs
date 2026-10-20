@@ -2,7 +2,8 @@ namespace LawnDart.Projections.Storage;
 
 /// <summary>
 /// Stores and retrieves projection views.
-/// LawnDart ships <see cref="InMemoryViewStore"/> and <see cref="SqlViewStore"/>.
+/// LawnDart ships <see cref="InMemoryViewStore"/>. The SQL Server store is
+/// <c>SqlViewStore</c> in <c>LawnDart.Projections.Lightweight.SqlServer</c>.
 /// </summary>
 public interface IViewStore
 {
@@ -28,8 +29,8 @@ public interface IViewStore
     /// Saves multiple projection views for the same <paramref name="projectionType"/> in one operation.
     /// </summary>
     /// <remarks>
-    /// The default implementation loops <see cref="SaveViewAsync"/>. Stores such as
-    /// <see cref="SqlViewStore"/> override this for a single round-trip bulk upsert.
+    /// The default implementation loops <see cref="SaveViewAsync"/>. A store may
+    /// override this for one round-trip bulk upsert.
     /// Empty <paramref name="views"/> is a no-op.
     /// </remarks>
     async Task SaveViewsAsync(
@@ -101,8 +102,8 @@ public interface IViewStore
     /// ensuring the store is clean before a cold restart replays from sequence 0.
     /// </summary>
     /// <remarks>
-    /// <see cref="SqlViewStore"/> runs one <c>DELETE</c> filtered by projection type.
-    /// <see cref="InMemoryViewStore"/> removes the matching entries.
+    /// <see cref="InMemoryViewStore"/> removes the matching entries. A durable
+    /// store deletes the rows for that projection type in one statement.
     /// </remarks>
     /// <param name="projectionType">The projection type whose views should be deleted.</param>
     /// <param name="cancellationToken">Cancellation token.</param>

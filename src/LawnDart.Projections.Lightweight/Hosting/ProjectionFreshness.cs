@@ -20,14 +20,11 @@ internal static class ProjectionFreshness
 
     /// <summary>
     /// Infers a coarse read-source label from the concrete <see cref="IViewStore"/> type.
+    /// <see cref="InMemoryViewStore"/> is <c>memory</c>. Every other store, including the
+    /// SQL Server view store, is <c>sql</c>.
     /// </summary>
     public static string InferReadSource(IViewStore viewStore) =>
-        viewStore switch
-        {
-            InMemoryViewStore => ReadSourceMemory,
-            SqlViewStore => ReadSourceSql,
-            _ => ReadSourceSql
-        };
+        viewStore is InMemoryViewStore ? ReadSourceMemory : ReadSourceSql;
 
     public static bool TryParseMinSequence(HttpRequest request, out long minSequence)
     {

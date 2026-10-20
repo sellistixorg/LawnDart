@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <PackageId>LawnDart.Projections.Lightweight.SqlServer</PackageId>
+    <Description>SQL Server view and checkpoint stores for LawnDart.Projections.Lightweight.</Description>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LawnDart.Projections.Lightweight\LawnDart.Projections.Lightweight.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Shared\SqlIdentifier.cs" Link="Internal\SqlIdentifier.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.SqlClient" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="LawnDart.Projections.Lightweight.SqlServer.Tests" />
+  </ItemGroup>
+
+</Project>

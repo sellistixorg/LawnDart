@@ -23,6 +23,7 @@ Use this skill first when wiring a new application on LawnDart packages.
 | `LawnDart.EventSourcing` | Runtime and `UseInMemory()`. |
 | `LawnDart.EventSourcing.SqlServer` | Durable store (`UseSqlServer`). |
 | `LawnDart.Projections.Lightweight` | Read models. |
+| `LawnDart.Projections.Lightweight.SqlServer` | SQL Server view and checkpoint stores (`AddSqlProjectionStores`). |
 | `LawnDart.Messaging` | Reactors or task processors. |
 | `LawnDart.Messaging.InMemory` | Choreography without a broker. |
 | `LawnDart.Messaging.RabbitMQ` | A RabbitMQ broker (`AddRabbitMqTransport`). |
@@ -42,7 +43,7 @@ Use this skill first when wiring a new application on LawnDart packages.
 4. **Domain types?** → `lawndart-domain-model`. DCB entity → the DCB section there.
 5. **GWT proof?** → `lawndart-testing`.
 6. **Process / reaction?** → `lawndart-reactions`.
-7. **Read models?** → `lawndart-lightweight-projections` after the store, then `lawndart-projection-authoring`. SQL views: `AddSqlProjectionStores` then `InitializeSqlProjectionStoresAsync`.
+7. **Read models?** → `lawndart-lightweight-projections` after the store, then `lawndart-projection-authoring`. SQL Server views: package `LawnDart.Projections.Lightweight.SqlServer`, `using LawnDart.Projections.Lightweight.SqlServer`, then `AddSqlProjectionStores` and `InitializeSqlProjectionStoresAsync`.
 8. **HTTP?** → `lawndart-aspnet-hosting`.
 
 Bounded context ≠ multi-tenancy. Multiple contexts = separate event stores.

@@ -1247,8 +1247,8 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
         {
             if (wave.Writes.Count > 0)
             {
-                // Bulk path: SqlViewStore uses one OPENJSON MERGE round-trip; other stores
-                // override or fall back to looping SaveViewAsync via the interface default.
+                // Bulk path: the SQL Server view store saves the wave with one OPENJSON MERGE.
+                // Other stores override SaveViewsAsync or use the interface default, which loops SaveViewAsync.
                 await _viewStore.SaveViewsAsync(StorageKey, wave.Writes, ct).ConfigureAwait(false);
             }
 

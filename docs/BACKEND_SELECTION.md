@@ -22,8 +22,10 @@ Leaving InMemory also means:
 
 - A connection string and `SqlServerEventStore.InitializeSchemaAsync` (SQL does
   not create tables on first append).
-- `AddInMemoryProjectionStores` → `AddSqlProjectionStores` plus
-  `InitializeSqlProjectionStoresAsync` if you materialise views.
+- `AddInMemoryProjectionStores` to `AddSqlProjectionStores` plus
+  `InitializeSqlProjectionStoresAsync` if you materialise views. Both SQL Server
+  methods are in `LawnDart.Projections.Lightweight.SqlServer`. Add
+  `using LawnDart.Projections.Lightweight.SqlServer`.
 - `AddSqlInboxStore` plus `InitializeSqlInboxStoreAsync` when reactor or
   processor deduplication must survive a restart. The in-memory inbox is
   per process.

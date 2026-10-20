@@ -82,6 +82,6 @@ caller left it unset. Default fill: [Metadata](METADATA.md).
 
 Commands with no auth attributes skip the permission check.
 
-A missing `X-Tenant-Id` header is left unset. A header that is empty, contains `:`, or fails `LawnDartNames.Pattern` returns 400 and the handler does not run. `LawnDartOptions.ValidateNames` set to false skips the pattern and still rejects a colon. See [Metadata](METADATA.md).
+A missing `X-Tenant-Id` header is left unset. A header that is empty, `default` in any casing, contains `:`, or fails `LawnDartNames.Pattern` returns 400 and the handler does not run. `LawnDartOptions.ValidateNames` set to false skips the pattern and allows a tenant id of `default` in any casing. A colon is still rejected. An empty header is still rejected. See [Metadata](METADATA.md).
 
 See Academy WebApi: `demos/LawnDart.Demo.Academy.WebApi`.

@@ -9,8 +9,10 @@ projection materialisation, and read-back. Outbox and subscriptions have
 their own tests. A green swap does not prove those paths.
 
 You also change projection stores (`AddInMemoryProjectionStores` to
-`AddSqlProjectionStores`) and run schema init (`InitializeSchemaAsync` /
-`InitializeSqlProjectionStoresAsync`). SQL snapshots are opt-in
+`AddSqlProjectionStores` in `LawnDart.Projections.Lightweight.SqlServer`) and
+run schema init (`InitializeSchemaAsync` /
+`InitializeSqlProjectionStoresAsync`). Add
+`using LawnDart.Projections.Lightweight.SqlServer`. SQL snapshots are opt-in
 (`WithSnapshots`). Academy's `SqlServer` launch profile is the local Windows
 path (`Trusted_Connection=True`); see [BACKEND_SELECTION.md](../BACKEND_SELECTION.md).
 

@@ -7,8 +7,8 @@ not the catalog (`BookCatalogView`). `BookState` has `Exists` / `OnLoan` /
 `BorrowedBy`. The view also has `Title` and `Isbn`, which the aggregate
 never needed to decide a borrow.
 
-You may hand-roll a projector or use the shipped host. LawnDart ships
-`LawnDart.Projections.Lightweight` only. Author `ProjectionBase<TView>` plus
+You may hand-roll a projector or use the shipped host in
+`LawnDart.Projections.Lightweight`. Author `ProjectionBase<TView>` plus
 scope attributes. A view that spans stream types implements
 `IMultiStreamEntityResolver` on the handler.
 

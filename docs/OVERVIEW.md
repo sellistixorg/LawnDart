@@ -38,7 +38,8 @@ app.MapLawnDartCommands();
 | `LawnDart.Messaging.AwsSqs` | Amazon SQS transport. SNS fans each topic out to one queue per subscription. |
 | `LawnDart.Messaging.SqlServer` | Durable inbox deduplication |
 | `LawnDart.Messaging.Testing` | Transport conformance tests |
-| `LawnDart.Projections.Lightweight` | Read-model host (InMemory / SQL) |
+| `LawnDart.Projections.Lightweight` | Read-model host (in-memory stores) |
+| `LawnDart.Projections.Lightweight.SqlServer` | SQL Server view and checkpoint stores |
 | `LawnDart.AspNetCore` | HTTP command mapping |
 | `LawnDart.Authorization.AspNetCore` | HTTP claims to `AuthorizationContext` |
 | `LawnDart.Testing` | Given / when / then harnesses |

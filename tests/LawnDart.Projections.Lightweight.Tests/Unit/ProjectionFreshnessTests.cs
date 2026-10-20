@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using LawnDart.Projections.Lightweight.Hosting;
+using LawnDart.Projections.Lightweight.SqlServer;
 using LawnDart.Projections.Storage;
 
 namespace LawnDart.Projections.Lightweight.Tests.Unit;
