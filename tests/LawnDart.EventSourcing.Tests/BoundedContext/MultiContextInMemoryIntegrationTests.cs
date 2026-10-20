@@ -62,10 +62,10 @@ public class MultiContextInMemoryIntegrationTests
         var catalog  = sp.GetRequiredKeyedService<IEventStore>("catalog");
 
         // Append 3 events to ordering, 1 to catalog
-        await ordering.AppendAsync("Order:1", [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);
-        await ordering.AppendAsync("Order:2", [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);
-        await ordering.AppendAsync("Order:3", [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);
-        await catalog.AppendAsync("Product:1", [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);
+        await ordering.AppendAsync("acme:Order:1", [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);
+        await ordering.AppendAsync("acme:Order:2", [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);
+        await ordering.AppendAsync("acme:Order:3", [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);
+        await catalog.AppendAsync("acme:Product:1", [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);
 
         Assert.Equal(3, await ordering.GetCurrentSequenceAsync());
         Assert.Equal(1, await catalog.GetCurrentSequenceAsync());
@@ -80,7 +80,7 @@ public class MultiContextInMemoryIntegrationTests
         var catalog    = sp.GetRequiredKeyedService<IEventStore>("catalog");
 
         await dispatcher.DispatchAsync(
-            new PlaceOrderCommand(Guid.NewGuid(), "order-stream"),
+            new PlaceOrderCommand(Guid.NewGuid(), "acme:Order:order-stream"),
             new MessageContext(),
             CancellationToken.None);
 
@@ -97,7 +97,7 @@ public class MultiContextInMemoryIntegrationTests
         var catalog    = sp.GetRequiredKeyedService<IEventStore>("catalog");
 
         await dispatcher.DispatchAsync(
-            new PublishCatalogItemCommand(Guid.NewGuid(), "product-stream"),
+            new PublishCatalogItemCommand(Guid.NewGuid(), "acme:Product:product-stream"),
             new MessageContext(),
             CancellationToken.None);
 

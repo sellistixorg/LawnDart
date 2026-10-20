@@ -10,10 +10,13 @@ public class LawnDartOptions
 {
     /// <summary>
     /// Require tenant ID in all framework operations.
-    /// When true, TenantId must be present in CommandMetadata.
+    /// When true, TenantId must be present in CommandMetadata, and an in-memory append checks the tenant id.
     /// When false, tenant is optional.
     /// Default: true
     /// </summary>
+    /// <remarks>
+    /// <c>UseInMemory</c> copies this value onto the in-memory store when it creates the store.
+    /// </remarks>
     public bool RequireTenantId { get; set; } = true;
 
     /// <summary>
@@ -27,6 +30,7 @@ public class LawnDartOptions
     /// because a stream id is split on every colon.
     /// <c>UseSqlServer</c> copies this value onto <c>SqlServerEventStoreOptions.ValidateNames</c>
     /// before the SQL callback runs.
+    /// <c>UseInMemory</c> copies this value onto the in-memory store when it creates the store.
     /// </remarks>
     public bool ValidateNames { get; set; } = true;
 

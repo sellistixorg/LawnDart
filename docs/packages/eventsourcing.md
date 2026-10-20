@@ -27,6 +27,9 @@ Registers keyed `IEventStore`, `IAggregateRepository`, `IDcbRepository`,
 name. The `"default"` context also gets unkeyed aliases, so
 `GetRequiredService<IAggregateRepository>()` works without a key.
 
+`UseInMemory` copies `RequireTenantId` and `ValidateNames` onto the store.
+With `RequireTenantId` on, an append rejects a missing tenant id, an empty tenant id, and `default`.
+
 Append stores the `[EventTypeName]` event name. The .NET type's `FullName`
 is not stored. InMemory serializes on append and returns a new instance on
 read. The store keeps records, not a live object heap. The session payload

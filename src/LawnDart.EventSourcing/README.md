@@ -29,3 +29,6 @@ dotnet add package LawnDart.EventSourcing --prerelease
 services.AddLawnDart(o => o.RequireTenantId = false);
 services.AddBoundedContext("default").UseInMemory();
 ```
+
+`UseInMemory` copies `RequireTenantId` and `ValidateNames` onto the store.
+An append checks the tenant id when `RequireTenantId` is true.

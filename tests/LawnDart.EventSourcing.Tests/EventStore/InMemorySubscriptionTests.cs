@@ -182,14 +182,14 @@ public class InMemorySubscriptionTests
         await using var orderingHandle = orderingSubs.Subscribe("o", fromSequence: 1);
         await using var catalogHandle = catalogSubs.Subscribe("c", fromSequence: 1);
 
-        await orderingStore.AppendAsync("Order:1", [Evt()]);
-        await catalogStore.AppendAsync("Product:1", [Evt()]);
+        await orderingStore.AppendAsync("acme:Order:1", [Evt()]);
+        await catalogStore.AppendAsync("acme:Product:1", [Evt()]);
 
         var o = await ReadExactlyAsync(orderingHandle, 1, TimeSpan.FromSeconds(5));
         var c = await ReadExactlyAsync(catalogHandle, 1, TimeSpan.FromSeconds(5));
 
-        Assert.Equal("Order:1", o[0].StreamId);
-        Assert.Equal("Product:1", c[0].StreamId);
+        Assert.Equal("acme:Order:1", o[0].StreamId);
+        Assert.Equal("acme:Product:1", c[0].StreamId);
         Assert.Equal(1, o[0].SequencePosition);
         Assert.Equal(1, c[0].SequencePosition);
     }

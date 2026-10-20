@@ -39,7 +39,10 @@ public class DcbRepositoryKeyedSnapshotStoreTests
         var repo = sp.GetRequiredKeyedService<IDcbRepository>("ordering");
 
         var entity = await repo.CreateEntityAsync<TestDcbEntity>(["product:sku-keyed"]);
-        await repo.HandleCommandAsync(entity, new TestCommand { Value = "one" }, new CommandMetadata { UserId = "u" });
+        await repo.HandleCommandAsync(
+            entity,
+            new TestCommand { Value = "one" },
+            new CommandMetadata { UserId = "u", TenantId = "test-tenant" });
 
         await recording.WaitForSaveAsync(TimeSpan.FromSeconds(2));
         await pump.StopAsync(CancellationToken.None);

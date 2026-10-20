@@ -20,6 +20,7 @@ changes to the public API.
 
 ### Changed
 
+- An in-memory append checks the tenant id the same way a SQL Server append does when `RequireTenantId` is true. `UseInMemory` copies `LawnDartOptions.RequireTenantId` and `ValidateNames` onto the store. A store constructed with `new InMemoryEventStore()` checks when `InMemoryEventStoreOptions.RequireTenantId` is true. Set `ValidateNames` to false to keep an existing tenant id of `default`. An empty tenant id is still rejected. When the check is on and no tenant id is given, the append throws. An append whose stream id and event metadata name two different tenant ids throws. That check runs when `RequireTenantId` is false.
 - Docs call Eventhesis a separate product that can output slice JSON you use as a spec for building with LawnDart. Putting `Id` and `Timestamp` first is a style tip. Declaration order is not a runtime rule.
 - The shared backend contract tests cover the event log, event store, dynamic consistency boundary, tags, stream registry, subscriptions, read horizon, snapshots, outbox, inbox, checkpoints, and views. In-memory and SQL Server both run the tests they can. A test that needs a hook the backend does not have is skipped with a reason.
 - `default` in any casing is a reserved tenant id. A caller-supplied tenant id of `default`, `Default`, or `DEFAULT` is rejected. Set `LawnDartOptions.ValidateNames` to false to keep an existing tenant id of `default`. An empty tenant id is still rejected. When `RequireTenantId` is true and no tenant id is given, the save throws.

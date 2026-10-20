@@ -52,6 +52,9 @@ public static class BoundedContextBuilderExtensions
     /// <c>"default"</c> context also gets unkeyed aliases (same instances, <c>TryAdd</c>)
     /// so single-context HTTP handlers can inject <see cref="IEventStore"/> without a
     /// hand-written bridge. Named contexts stay keyed-only.
+    /// The store copies <see cref="LawnDartOptions.RequireTenantId"/> and
+    /// <see cref="LawnDartOptions.ValidateNames"/> when it is created.
+    /// A direct append then uses the same tenant id check as a SQL Server append.
     /// </remarks>
     /// <returns>The builder for further chaining.</returns>
     public static BoundedContextBuilder UseInMemory(
@@ -80,8 +83,15 @@ public static class BoundedContextBuilderExtensions
             var catalog = sp.GetKeyedService<IEventTypeCatalog>(contextName)
                 ?? throw new InvalidOperationException(BoundedContextExtensions.MissingEventTypesMessage(contextName));
             var pipeline = sp.GetKeyedService<EventUpcastPipeline>(contextName);
+            var hostOptions = sp.GetService<IOptions<LawnDartOptions>>()?.Value;
+            var storeOptions = new InMemoryEventStoreOptions
+            {
+                RequireTenantId = hostOptions?.RequireTenantId ?? true,
+                ValidateNames = hostOptions?.ValidateNames ?? true
+            };
             return new InMemoryEventStore(
                 contextName: contextName,
+                options: storeOptions,
                 session: new EventSession(new JsonEventSerializer(), catalog, pipeline));
         });
         services.AddKeyedSingleton<IEventLog>(contextName,

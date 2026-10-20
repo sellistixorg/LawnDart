@@ -18,7 +18,6 @@ public sealed class InMemoryContractBackend : IContractBackend
     {
         EnforcesEventIdAcrossTenants = true,
         StreamIdsCaseInsensitive = false,
-        ChecksTenantIdOnAppend = false,
         AppendWritesOutboxRows = false,
         SecondInstanceSeesCommittedEvents = false,
         InboxMarksSurviveASecondInstance = false,
@@ -44,7 +43,9 @@ public sealed class InMemoryContractBackend : IContractBackend
         var storeOptions = new InMemoryEventStoreOptions
         {
             SubscriptionPollInterval = options.SubscriptionPollInterval ?? TimeSpan.FromMilliseconds(50),
-            SubscriptionChannelCapacity = options.SubscriptionChannelCapacity ?? 10_000
+            SubscriptionChannelCapacity = options.SubscriptionChannelCapacity ?? 10_000,
+            RequireTenantId = options.RequireTenantId,
+            ValidateNames = options.ValidateNames
         };
         var store = new InMemoryEventStore(
             enableRegistry: options.EnableRegistry,
@@ -90,7 +91,9 @@ public sealed class InMemoryContractBackend : IContractBackend
     {
         var store = new InMemoryEventStore(contextName: options.SchemaName, options: new InMemoryEventStoreOptions
         {
-            SubscriptionPollInterval = TimeSpan.FromMilliseconds(50)
+            SubscriptionPollInterval = TimeSpan.FromMilliseconds(50),
+            RequireTenantId = options.RequireTenantId,
+            ValidateNames = options.ValidateNames
         });
         var snapshots = new InMemorySnapshotStore();
         return Task.FromResult(new ContractSnapshots

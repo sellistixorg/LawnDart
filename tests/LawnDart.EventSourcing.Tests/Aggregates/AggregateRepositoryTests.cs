@@ -628,7 +628,7 @@ public class AggregateRepositoryTests
         var repository = new AggregateRepository(
             eventStore, new DefaultMetadataProvider(), new TestTenantContextProvider(), CreateOptions());
         const string streamId = "42:InboundShipment:abc:SHIP-1";
-        var cmd = new CommandMetadata { TenantId = "test-tenant", UserId = "user1" };
+        var cmd = new CommandMetadata { TenantId = "42", UserId = "user1" };
 
         var first = await repository.GetOrCreateAsync<TestAggregate>(streamId);
         first.ApplyTest(new TestEvent(Guid.NewGuid(), DateTime.UtcNow));

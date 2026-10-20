@@ -61,7 +61,7 @@ A tenant id uses the same character rule. `default` in any casing is reserved fo
 
 `FixedTenantContextProvider` takes `validateNames` for the same flag. `AmbientTenantContextProvider` reads `LawnDartOptions` when dependency injection constructs it. `SetTenant` checks the id. An invalid `X-Tenant-Id` header returns 400. See [HTTP commands](HTTP_COMMANDS.md).
 
-`HandleCommandAsync` and a SQL Server append check the tenant id when `RequireTenantId` is true. A missing tenant id throws. The in-memory save uses the same check. `UseSqlServer` copies `ValidateNames` onto `SqlServerEventStoreOptions.ValidateNames` before the SQL callback runs.
+`HandleCommandAsync`, a SQL Server append, and an in-memory append check the tenant id when `RequireTenantId` is true. A missing tenant id throws. `UseSqlServer` copies `ValidateNames` onto `SqlServerEventStoreOptions.ValidateNames` before the SQL callback runs. `UseInMemory` copies `RequireTenantId` and `ValidateNames` onto the in-memory store when it creates the store.
 
 ## Prefix match
 
