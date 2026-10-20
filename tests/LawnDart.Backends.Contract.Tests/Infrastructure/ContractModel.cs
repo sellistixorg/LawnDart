@@ -19,9 +19,6 @@ public sealed class ContractCapabilities
     /// <summary>Stream id <c>Order</c> and <c>order</c> are the same stream.</summary>
     public bool StreamIdsCaseInsensitive { get; init; }
 
-    /// <summary>Append rejects a reserved, empty, or missing tenant id when the option says so.</summary>
-    public bool ChecksTenantIdOnAppend { get; init; }
-
     /// <summary>An append writes outbox rows when that option is on.</summary>
     public bool AppendWritesOutboxRows { get; init; }
 

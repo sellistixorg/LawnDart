@@ -146,7 +146,11 @@ public class AggregateRepositoryTests
     [Fact]
     public async Task SaveAsync_ValidateNamesFalse_AllowsReservedTenantDefault()
     {
-        var eventStore = new InMemoryEventStore();
+        var eventStore = new InMemoryEventStore(options: new InMemoryEventStoreOptions
+        {
+            RequireTenantId = true,
+            ValidateNames = false
+        });
         var repository = CreateRepository(
             new LawnDartOptions { RequireTenantId = true, ValidateNames = false },
             eventStore,
@@ -187,7 +191,11 @@ public class AggregateRepositoryTests
     [Fact]
     public async Task SaveAsync_ValidateNamesFalse_AllowsExistingTenant_RejectsColon()
     {
-        var eventStore = new InMemoryEventStore();
+        var eventStore = new InMemoryEventStore(options: new InMemoryEventStoreOptions
+        {
+            RequireTenantId = true,
+            ValidateNames = false
+        });
         var options = Options.Create(new LawnDartOptions { RequireTenantId = true, ValidateNames = false });
         var repository = new AggregateRepository(
             eventStore,
@@ -628,7 +636,7 @@ public class AggregateRepositoryTests
         var repository = new AggregateRepository(
             eventStore, new DefaultMetadataProvider(), new TestTenantContextProvider(), CreateOptions());
         const string streamId = "42:InboundShipment:abc:SHIP-1";
-        var cmd = new CommandMetadata { TenantId = "test-tenant", UserId = "user1" };
+        var cmd = new CommandMetadata { TenantId = "42", UserId = "user1" };
 
         var first = await repository.GetOrCreateAsync<TestAggregate>(streamId);
         first.ApplyTest(new TestEvent(Guid.NewGuid(), DateTime.UtcNow));

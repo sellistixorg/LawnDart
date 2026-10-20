@@ -93,7 +93,7 @@ public class ProjectionTimelineServiceTests
     [Fact]
     public async Task GetTimelinePage_GlobalProjection_ReturnsAllEvents()
     {
-        var store = new InMemoryEventStore();
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
         await store.AppendAsync("s1", [new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, "a")], metadata: MakeMeta(), cancellationToken: cts.Token);
@@ -169,7 +169,7 @@ public class ProjectionTimelineServiceTests
     [Fact]
     public async Task BuildAtAppliedIndex_Zero_ListBackedProjection_ReturnsEmptyArray()
     {
-        var store = new InMemoryEventStore();
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
         await store.AppendAsync("global-tags", [new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, "featured")], metadata: MakeMeta(), cancellationToken: cts.Token);

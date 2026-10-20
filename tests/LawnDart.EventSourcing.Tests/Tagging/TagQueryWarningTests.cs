@@ -14,7 +14,7 @@ public class TagQueryWarningTests
     [Fact]
     public async Task Warning_FiresOnce_AndDoesNotChangeResults()
     {
-        var store = new InMemoryEventStore();
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         var logger = new ListLogger();
         var repo = Repository(store, logger, warn: true);
         var id = Guid.NewGuid();
@@ -37,7 +37,7 @@ public class TagQueryWarningTests
     [Fact]
     public async Task Warning_SameBadType_LogsOnceAcrossIds()
     {
-        var store = new InMemoryEventStore();
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         var logger = new ListLogger();
         var repo = Repository(store, logger, warn: true);
         var first = $"Student:{Guid.NewGuid():D}";
@@ -46,7 +46,7 @@ public class TagQueryWarningTests
         await repo.GetStateAsync<CountingState>([first]);
         await repo.GetStateAsync<CountingState>([second]);
 
-        var other = Repository(new InMemoryEventStore(), logger, warn: true);
+        var other = Repository(new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false }), logger, warn: true);
         await other.GetStateAsync<CountingState>([$"Student:{Guid.NewGuid():D}"]);
 
         Assert.Equal(1, logger.WarningsFor(first));
@@ -57,7 +57,7 @@ public class TagQueryWarningTests
     [Fact]
     public async Task Warning_Cap_SuppressesFurtherTypes()
     {
-        var store = new InMemoryEventStore();
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         var logger = new ListLogger();
         var repo = Repository(store, logger, warn: true, warnings: new UnknownTagWarningLog(maxTypes: 2));
 
@@ -77,7 +77,7 @@ public class TagQueryWarningTests
     [Fact]
     public async Task Warning_DoesNotFireWhenDisabled()
     {
-        var store = new InMemoryEventStore();
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         var logger = new ListLogger();
         var bad = $"Student:{Guid.NewGuid():D}";
         var quiet = Repository(store, logger, warn: false);
@@ -97,7 +97,7 @@ public class TagQueryWarningTests
     [Fact]
     public async Task Warning_SkipsTagsTheFormatWouldProduce()
     {
-        var store = new InMemoryEventStore();
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         var logger = new ListLogger();
         var repo = Repository(store, logger, warn: true);
         var format = LowercaseTagFormat.Instance;
@@ -114,7 +114,7 @@ public class TagQueryWarningTests
     [Fact]
     public async Task Warning_FiresForGuidFormatN_AndForFailIfMatches()
     {
-        var store = new InMemoryEventStore();
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         var logger = new ListLogger();
         var repo = Repository(store, logger, warn: true);
         var compact = $"student:{Guid.NewGuid():N}";
@@ -138,7 +138,7 @@ public class TagQueryWarningTests
     [Fact]
     public async Task Warning_WhenFormatThrows_DoesNotChangeTheQuery()
     {
-        var store = new InMemoryEventStore();
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         var logger = new ListLogger();
         var repo = Repository(store, logger, warn: true, format: new ThrowingFormat());
         var tag = $"student:{Guid.NewGuid():D}";
@@ -153,7 +153,7 @@ public class TagQueryWarningTests
     [Fact]
     public async Task ProjectorAndReactor_WarnOnce_AndKeepTheirResults()
     {
-        var store = new InMemoryEventStore();
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         var logger = new ListLogger();
         var projectionTag = $"Order:{Guid.NewGuid():D}";
         var reactionTag = $"Payment:{Guid.NewGuid():D}";
@@ -187,7 +187,7 @@ public class TagQueryWarningTests
         var projector = new NotedProjector(bad);
         projector.UseTagFormat(LowercaseTagFormat.Instance, logger, warnOnUnknownTag: false);
 
-        await projector.InitializeFromHistoryAsync(new InMemoryEventStore());
+        await projector.InitializeFromHistoryAsync(new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false }));
 
         Assert.Empty(logger.Warnings);
     }

@@ -181,7 +181,7 @@ public class SharedPipeJoinRaceTests
     /// </summary>
     private sealed class GatedEventStore : IEventStore, IEventStoreSubscriptions
     {
-        private readonly InMemoryEventStore _inner = new();
+        private readonly InMemoryEventStore _inner = new(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         private readonly object _gate = new();
         private long _sequence;
         private TaskCompletionSource? _entered;

@@ -66,7 +66,7 @@ A tenant id starts with a letter or digit. Then letters, digits, `.`, `_`, or `-
 
 `FixedTenantContextProvider` checks the id in the constructor. Pass `validateNames: false` when `LawnDartOptions.ValidateNames` is false. `AmbientTenantContextProvider` reads that option when dependency injection constructs it, and `SetTenant` checks the id. An `X-Tenant-Id` header that fails the check returns 400. A missing header is left unset.
 
-`HandleCommandAsync` and a SQL Server append check the tenant id when `RequireTenantId` is true. A missing tenant id throws. The in-memory save uses the same check.
+`HandleCommandAsync`, a SQL Server append, and an in-memory append check the tenant id when `RequireTenantId` is true. That option defaults to true on `LawnDartOptions`, `SqlServerEventStoreOptions`, and `InMemoryEventStoreOptions`, including a store constructed with `new InMemoryEventStore()`. A missing tenant id throws. `UseInMemory` copies `RequireTenantId` and `ValidateNames` onto the store when it creates the store. Set `RequireTenantId` to false to append without a tenant id. An append whose stream id and event metadata name two different tenant ids throws. That check also runs when `RequireTenantId` is false.
 
 ## Extra fields
 

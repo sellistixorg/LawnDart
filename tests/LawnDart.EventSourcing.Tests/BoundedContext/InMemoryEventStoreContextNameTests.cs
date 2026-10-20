@@ -36,8 +36,12 @@ public class InMemoryEventStoreContextNameTests
     [Fact]
     public async Task TwoStoresWithDifferentContextNames_HaveIndependentSequences()
     {
-        var storeA = new InMemoryEventStore(contextName: "ordering");
-        var storeB = new InMemoryEventStore(contextName: "catalog");
+        var storeA = new InMemoryEventStore(
+            contextName: "ordering",
+            options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var storeB = new InMemoryEventStore(
+            contextName: "catalog",
+            options: new InMemoryEventStoreOptions { RequireTenantId = false });
 
         await storeA.AppendAsync("Order:1", [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);
         await storeA.AppendAsync("Order:2", [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);

@@ -1,7 +1,7 @@
 namespace LawnDart.EventSourcing.EventStore;
 
 /// <summary>
-/// Options for <see cref="InMemoryEventStore"/> portable subscriptions.
+/// Options for <see cref="InMemoryEventStore"/>.
 /// </summary>
 public sealed class InMemoryEventStoreOptions
 {
@@ -22,4 +22,30 @@ public sealed class InMemoryEventStoreOptions
     /// <see cref="LawnDart.EventStore.ISignalsNewEvents"/>. Default: 1 second.
     /// </summary>
     public TimeSpan SubscriptionPollInterval { get; set; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// Require a tenant id on append.
+    /// When true, a stream id must include a tenant prefix, and a dynamic consistency boundary append must include <c>TenantId</c> in event metadata.
+    /// When false, a tenant id is optional.
+    /// </summary>
+    /// <remarks>
+    /// Default: true, the same as <see cref="LawnDart.LawnDartOptions.RequireTenantId"/> and the SQL Server store.
+    /// <c>UseInMemory</c> copies the host value onto this property when it creates the store.
+    /// Set this to false to append without a tenant id.
+    /// Set <see cref="ValidateNames"/> to false to keep an existing tenant id of <c>default</c>.
+    /// An empty tenant id is still rejected. A colon in a tenant id is still rejected.
+    /// </remarks>
+    public bool RequireTenantId { get; set; } = true;
+
+    /// <summary>
+    /// Check tenant ids on append against <see cref="LawnDart.LawnDartNames.Pattern"/> when
+    /// <see cref="RequireTenantId"/> is true.
+    /// </summary>
+    /// <remarks>
+    /// Default: true. <c>UseInMemory</c> copies <see cref="LawnDart.LawnDartOptions.ValidateNames"/>
+    /// onto this property when it creates the store.
+    /// When this is false, a tenant id of <c>default</c> in any casing is allowed.
+    /// An empty tenant id is still rejected. A colon in a tenant id is still rejected.
+    /// </remarks>
+    public bool ValidateNames { get; set; } = true;
 }

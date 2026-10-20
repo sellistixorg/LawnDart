@@ -12,6 +12,7 @@ changes to the public API.
 
 ### Breaking
 
+- An in-memory append checks the tenant id the same way a SQL Server append does. `InMemoryEventStoreOptions.RequireTenantId` defaults to true. `UseInMemory` copies `LawnDartOptions.RequireTenantId` and `ValidateNames` onto the store. A hosted in-memory app, and a store constructed with `new InMemoryEventStore()`, rejects a stream id with no tenant prefix and a dynamic consistency boundary append with no `TenantId`. An append whose stream id and event metadata name two different tenant ids throws. That check also runs when `RequireTenantId` is false. To upgrade, add a tenant prefix and `TenantId`, or set `RequireTenantId` to false. Set `ValidateNames` to false to keep an existing tenant id of `default`. An empty tenant id is still rejected.
 - SQL Server view and checkpoint stores are in the package `LawnDart.Projections.Lightweight.SqlServer`. Add that package. `SqlViewStore`, `SqlCheckpointStore`, `AddSqlProjectionStores`, and `InitializeSqlProjectionStoresAsync` are in the namespace `LawnDart.Projections.Lightweight.SqlServer`. Add `using LawnDart.Projections.Lightweight.SqlServer`. `LawnDart.Projections.Lightweight` no longer depends on `Microsoft.Data.SqlClient`.
 
 ### Added

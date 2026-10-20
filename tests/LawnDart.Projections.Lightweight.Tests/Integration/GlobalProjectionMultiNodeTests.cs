@@ -41,7 +41,8 @@ public class GlobalProjectionMultiNodeTests
     {
         var views = new InMemoryViewStore();
         var checkpoints = new InMemoryCheckpointStore(views);
-        var eventStore = new LawnDart.EventSourcing.EventStore.InMemoryEventStore();
+        var eventStore = new LawnDart.EventSourcing.EventStore.InMemoryEventStore(
+            options: new LawnDart.EventSourcing.EventStore.InMemoryEventStoreOptions { RequireTenantId = false });
         return (eventStore, views, checkpoints);
     }
 
