@@ -11,12 +11,17 @@ public sealed class PostgresContractBackend : IContractBackend
 {
     private readonly string _connectionString;
     private readonly string? _migrationConnectionString;
+    private readonly bool _pollOnly;
     private readonly ConcurrentDictionary<string, Task> _ready = new();
 
-    public PostgresContractBackend(string connectionString, string? migrationConnectionString = null)
+    public PostgresContractBackend(
+        string connectionString,
+        string? migrationConnectionString = null,
+        bool pollOnly = false)
     {
         _connectionString = connectionString;
         _migrationConnectionString = migrationConnectionString;
+        _pollOnly = pollOnly;
     }
 
     public string Name => "Postgres";
@@ -37,7 +42,8 @@ public sealed class PostgresContractBackend : IContractBackend
         HasReadHorizon = true,
         UnknownEventNameMarksQueryUnresolved = true,
         PreservesExactJsonText = false,
-        RunsLiveSubscriptionTests = false,
+        RunsLiveSubscriptionTests = true,
+        CanBreakLiveReads = true,
         HasOutboxStore = false,
         HasSnapshotStore = false,
         HasInboxStore = false,
@@ -64,7 +70,8 @@ public sealed class PostgresContractBackend : IContractBackend
             RequireTenantId = options.RequireTenantId,
             ValidateNames = options.ValidateNames,
             EnableStreamRegistry = options.EnableRegistry,
-            SubscriptionPollInterval = options.SubscriptionPollInterval ?? TimeSpan.FromMilliseconds(50),
+            BackupPollInterval = options.SubscriptionPollInterval ?? TimeSpan.FromMilliseconds(50),
+            PollOnlyInterval = options.SubscriptionPollInterval ?? TimeSpan.FromMilliseconds(50),
             SubscriptionBatchSize = options.SubscriptionBatchSize ?? 500,
             SubscriptionChannelCapacity = options.SubscriptionChannelCapacity ?? 10_000
         };
@@ -73,6 +80,7 @@ public sealed class PostgresContractBackend : IContractBackend
 
         var store = new PostgresEventStore(_connectionString, serializer: null, storeOptions, logger);
         store.PublishNewEventsSignal = options.PublishNewEventsSignal;
+        store.ForcePollOnly = _pollOnly;
         await _ready.GetOrAdd(
             _connectionString + "|" + options.SchemaName,
             _ => store.InitializeSchemaAsync(cancellationToken)).ConfigureAwait(false);
@@ -84,7 +92,7 @@ public sealed class PostgresContractBackend : IContractBackend
             Log = store,
             Subscriptions = store,
             Signals = store,
-            Hooks = new PostgresContractHooks(store, _connectionString),
+            Hooks = new PostgresContractHooks(store, _connectionString, _migrationConnectionString ?? _connectionString),
             Outbox = new InMemoryOutboxWriter(options.OutboxClaimLease),
             ReadLogEntries = () => logger.Entries,
             SetPublishNewEventsSignal = value => store.PublishNewEventsSignal = value
@@ -108,12 +116,14 @@ sealed class PostgresContractHooks : IContractHooks
 {
     private readonly PostgresEventStore _store;
     private readonly string _connectionString;
+    private readonly string _adminConnectionString;
     private int _commits;
 
-    public PostgresContractHooks(PostgresEventStore store, string connectionString)
+    public PostgresContractHooks(PostgresEventStore store, string connectionString, string adminConnectionString)
     {
         _store = store;
         _connectionString = connectionString;
+        _adminConnectionString = adminConnectionString;
     }
 
     public bool CanPauseBeforeCommit => true;
@@ -124,7 +134,7 @@ sealed class PostgresContractHooks : IContractHooks
 
     public bool CanKillConnection => true;
 
-    public bool CanBreakLiveReads => false;
+    public bool CanBreakLiveReads => true;
 
     public int CommitAttempts => Volatile.Read(ref _commits);
 
@@ -191,6 +201,30 @@ sealed class PostgresContractHooks : IContractHooks
         }
     }
 
-    public Task BreakLiveReadsAsync(CancellationToken cancellationToken = default)
-        => throw new InvalidOperationException("This backend cannot break a live read.");
+    public async Task BreakLiveReadsAsync(CancellationToken cancellationToken = default)
+    {
+        await using var connection = new NpgsqlConnection(_adminConnectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var rename = new NpgsqlCommand(
+            $"""
+            SET lock_timeout = '3s';
+            ALTER TABLE {_store.QualifiedEventsTable} RENAME COLUMN data TO data_broken;
+            """,
+            connection)
+        {
+            CommandTimeout = 15
+        };
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                await rename.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                return;
+            }
+            catch (PostgresException) when (attempt < 5)
+            {
+                await Task.Delay(200, cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
 }

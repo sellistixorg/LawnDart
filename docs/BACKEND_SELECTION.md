@@ -16,8 +16,9 @@ third-party store must construct repositories with `EventSourcingRepositories`
 and call `AddSnapshotWriteInfrastructure` (see [SNAPSHOTS.md](SNAPSHOTS.md));
 the public repository constructors omit the write queue.
 
-Outbox and subscriptions exist on both backends and have their own tests. A
-green swap contract does not prove those paths behave identically.
+Subscriptions run on in-memory, SQL Server, and Postgres. The outbox runs on
+in-memory and SQL Server. Those paths have their own tests. A green swap
+contract does not prove they behave identically.
 
 Leaving InMemory also means:
 
@@ -170,13 +171,17 @@ uses its own name as the schema. Set `SchemaName` to choose a different one.
 Tables do not go in `public`.
 
 This release is the event store: append, read, tags, the dynamic consistency
-boundary, the stream registry, and the read horizon. `EnableOutbox = true`
-is rejected when the store is built. Leave `EnableOutbox` false until the
-outbox release. Snapshot
-tables, the inbox, and projection views are a later release. A same-process
-reader wakes when a save in that process commits. A notification with the
-newest position is sent on the append. The listener that reads that
-notification from another process is a later release.
+boundary, the stream registry, the read horizon, and live subscriptions.
+`EnableOutbox = true` is rejected when the store is built. Leave
+`EnableOutbox` false until the outbox release. Snapshot tables, the inbox,
+and projection views are a later release.
+
+A committed append sends a wake-up whose message is the newest position.
+One listener per store reads it on `ListenConnectionString`, or on
+`ConnectionString` when that is the only connection. A same-process save
+also wakes subscribers through the in-process signal. If the listen
+connection cannot receive the wake-up, subscriptions poll. The package page
+has the intervals, the pooler warning, and the notification queue check.
 
 Postgres 15 or newer. Event ids are unique per tenant. Stream ids match
 exactly, including case. JSON payloads are stored as jsonb, so spacing and
@@ -184,9 +189,10 @@ key order can change. The decoded event is the same. A JSON payload that
 contains a null character is stored as bytes and comes back unchanged.
 
 The shared contract suite runs on Postgres in
-`tests/LawnDart.Backends.Contract.Tests`. One Postgres container serves the
-run. Tests that need the outbox, inbox, snapshots, projection stores, or the
-live subscription suite are skipped with a reason.
+`tests/LawnDart.Backends.Contract.Tests`, including live subscriptions in
+listener mode and poll-only mode. One Postgres container serves the run.
+Tests that need the outbox, inbox, snapshots, or projection stores are
+skipped with a reason.
 
 ## Switching
 

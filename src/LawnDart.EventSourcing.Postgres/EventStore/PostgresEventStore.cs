@@ -39,7 +39,9 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
     private readonly PostgresReadHorizon _horizon;
     private readonly NewEventsSignal _newEvents = new();
     private readonly ConcurrentDictionary<PostgresSubscriptionHandle, byte> _subscriptions = new();
+    private readonly PostgresNotificationListener _listener;
     private readonly bool _enableRegistry;
+    private long _signaledPosition = -1;
 
     /// <summary>Creates a store. Call <see cref="InitializeSchemaAsync"/> before the first append.</summary>
     public PostgresEventStore(
@@ -62,6 +64,7 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
             : Source(_options.MigrationConnectionString);
         _logger = logger;
         _horizon = new PostgresReadHorizon(_names, _options, logger);
+        _listener = new PostgresNotificationListener(this, _options, _names.NotifyChannel, _dataSource, logger);
         _enableRegistry = _options.EnableStreamRegistry;
         ContextName = string.IsNullOrWhiteSpace(_options.ContextName) ? "default" : _options.ContextName;
     }
@@ -74,6 +77,15 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
 
     /// <summary>Test seam. A committed save does not raise <see cref="NewEvents"/> when this is false.</summary>
     internal bool PublishNewEventsSignal { get; set; } = true;
+
+    /// <summary>Test seam. Subscriptions poll and the store does not open a listen connection.</summary>
+    internal bool ForcePollOnly { get; set; }
+
+    /// <summary>Wake-up listener for this store.</summary>
+    internal PostgresNotificationListener Listener => _listener;
+
+    /// <summary>Channel used by <c>pg_notify</c>. The payload is the newest position.</summary>
+    internal string NotifyChannel => _names.NotifyChannel;
 
     /// <summary>Test seam. Runs inside the append transaction after the rows are written and before commit.</summary>
     internal Func<CancellationToken, Task>? BeforeAppendCommit { get; set; }

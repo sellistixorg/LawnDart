@@ -458,8 +458,50 @@ public sealed partial class PostgresEventStore
 
     private void Signal(AppendResult result)
     {
-        if (PublishNewEventsSignal)
-            _newEvents.NotifyCommittedPositions(result.SequencePositions);
+        long newest = -1;
+        foreach (var position in result.SequencePositions)
+        {
+            if (position > newest)
+                newest = position;
+        }
+
+        if (newest >= 0)
+            PublishSignal(newest);
+    }
+
+    /// <summary>
+    /// Raises the in-process signal once per new position. A second call with
+    /// the same position, including the listen connection echoing this process,
+    /// does not raise it again.
+    /// </summary>
+    internal void PublishSignal(long position)
+    {
+        if (!PublishNewEventsSignal || position <= 0)
+            return;
+
+        long observed;
+        do
+        {
+            observed = Volatile.Read(ref _signaledPosition);
+            if (position <= observed)
+                return;
+        }
+        while (Interlocked.CompareExchange(ref _signaledPosition, position, observed) != observed);
+
+        _newEvents.Notify(position);
+    }
+
+    /// <summary>
+    /// Wakes subscribers after the listen connection is back. The signal carries
+    /// no events. Each subscriber reads from its own checkpoint.
+    /// </summary>
+    internal void WakeSubscribersForCatchUp()
+    {
+        if (!PublishNewEventsSignal)
+            return;
+
+        var position = Volatile.Read(ref _signaledPosition);
+        _newEvents.Notify(position > 0 ? position : 0);
     }
 
     private static async Task RollbackQuietlyAsync(NpgsqlTransaction transaction, CancellationToken cancellationToken)

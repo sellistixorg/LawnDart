@@ -33,4 +33,16 @@ internal static partial class PostgresEventStoreLog
         Level = LogLevel.Error,
         Message = "Postgres subscription {SubscriberId} failed.")]
     internal static partial void SubscriptionFailed(ILogger logger, Exception exception, string subscriberId);
+
+    [LoggerMessage(
+        EventId = 7,
+        Level = LogLevel.Warning,
+        Message = "Subscriptions are polling. {Reason} Appends are still saved. A missed wake-up only delays the next read.")]
+    internal static partial void ListenUnavailable(ILogger logger, string reason);
+
+    [LoggerMessage(
+        EventId = 8,
+        Level = LogLevel.Warning,
+        Message = "The Postgres listen connection dropped. Reconnecting, then reading events committed while it was down.")]
+    internal static partial void ListenDropped(ILogger logger, Exception exception);
 }

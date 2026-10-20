@@ -102,14 +102,63 @@ warning names the session and how long the write has been open. A row that
 commits below a head that already moved past it is logged as an error.
 `Timeout.InfiniteTimeSpan` waits until the write ends.
 
+## Subscriptions
+
+`Subscribe` returns one continuous read. Catch-up and later events are the
+same stream. The caller keeps the resume position.
+
+Each read asks for one page (`SubscriptionBatchSize`, default 500) and stops
+at the caught-up sequence. The scan cursor then moves to the highest position
+examined, including a position that did not match the filter. A failed read
+completes the subscription with `EventSubscriptionFailedException`. Cancel
+and dispose end it without an error.
+
+An append sends a Postgres NOTIFY wake-up in the same transaction when
+`NotifyOnAppend` is true (the default). NOTIFY is Postgres's wake-up message.
+The channel name is `ld_` plus the schema name. The message is the newest
+position. It carries no event. The events table is the record. A lost
+wake-up delays the next read.
+
+One listener per store reads that channel. It uses `ListenConnectionString`
+when that is set, and `ConnectionString` otherwise. The listener does not
+keep a transaction open. It reads a burst, then waits. If the connection
+drops, it waits with a growing pause, connects again, and subscribers read
+from their checkpoints.
+
+`BackupPollInterval` (default 1 second) is how long a subscription waits
+between reads while the listener is connected. A wake-up ends the wait
+early. `PollOnlyInterval` (default 100 milliseconds) is the wait when the
+listener is not used. A save in this process also ends the wait early, on
+either interval.
+
+At startup the listener sends a probe wake-up and waits for it to come back.
+If it does not, or the host name contains `pooler` or `pgbouncer`, or the
+port is 6543, the store logs one warning and polls. Set
+`ListenConnectionString` to a direct Postgres connection, or to a session
+pooler, when the app connection goes through a transaction pooler. PgBouncer
+in transaction mode cannot keep a listen session. On that app connection,
+set Npgsql's `No Reset On Close=true`.
+
+Set `NotifyOnAppend` to false to skip the wake-up. Subscriptions then use
+`PollOnlyInterval`. A save in this process still wakes them.
+
+`PostgresNotificationQueueHealthCheck` reads `pg_notification_queue_usage()`,
+the fraction of the notification queue in use. The result is healthy below
+0.5, degraded from 0.5, and unhealthy from 0.8. Pass other marks to the
+constructor.
+
+```csharp
+services.AddHealthChecks()
+    .AddCheck(
+        "lawndart-postgres-notifications",
+        new PostgresNotificationQueueHealthCheck(connectionString));
+```
+
+An append that sends a wake-up fails when that queue is full. A listener
+that has stopped reading is the usual cause.
+
 ## Later in the 0.7 line
 
 The outbox, inbox, snapshot tables, and projection views ship after this
 event store. `EnableOutbox = true` throws when the store is built. Leave it
 false until that release.
-
-An append sends a notification whose payload is the newest position. A
-same-process reader wakes from the in-process signal after the save commits.
-The listener that reads the notification from another process ships with
-live subscriptions. Until then, the live subscription suite is skipped on
-Postgres with a reason.

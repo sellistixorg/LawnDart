@@ -28,7 +28,10 @@ public class PostgresEventStoreOptions : EventSourcingOptions
     public string? ConnectionString { get; set; }
 
     /// <summary>
-    /// Optional direct connection for a later listener. Phase 1 does not open it.
+    /// Optional direct connection for the wake-up listener.
+    /// When null, the listener uses <see cref="ConnectionString"/>.
+    /// A transaction pooler cannot keep this session. Point this at Postgres
+    /// directly, or at a session pooler.
     /// </summary>
     public string? ListenConnectionString { get; set; }
 
@@ -94,11 +97,23 @@ public class PostgresEventStoreOptions : EventSourcingOptions
     public bool Partitioning { get; set; } = true;
 
     /// <summary>
-    /// Send a wake-up notification after a committed append. Default true.
-    /// The notification carries the newest position only. Delivery of that
-    /// signal to subscribers is a later release. Polling still sees the rows.
+    /// Send a wake-up after a committed append. Default true.
+    /// The wake-up carries the newest position only. Set false to skip it.
+    /// Subscriptions then poll, and a save in this process still wakes them.
     /// </summary>
     public bool NotifyOnAppend { get; set; } = true;
+
+    /// <summary>
+    /// How long an idle subscription waits between reads while the listener is connected.
+    /// A wake-up ends the wait early. Default 1 second.
+    /// </summary>
+    public TimeSpan BackupPollInterval { get; set; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// How long an idle subscription waits between reads when no listener is connected.
+    /// A save in this process still ends the wait early. Default 100 milliseconds.
+    /// </summary>
+    public TimeSpan PollOnlyInterval { get; set; } = TimeSpan.FromMilliseconds(100);
 
     /// <summary>
     /// Distinct tags on one append above this count take one store-wide lock
@@ -126,12 +141,6 @@ public class PostgresEventStoreOptions : EventSourcingOptions
     /// <summary>Per-handle channel capacity. When full, delivery waits. Default 10000.</summary>
     public int SubscriptionChannelCapacity { get; set; } = 10_000;
 
-    /// <summary>
-    /// How long an idle subscription waits before it reads again.
-    /// A save that commits in this process also wakes it. Default 75 ms.
-    /// </summary>
-    public TimeSpan SubscriptionPollInterval { get; set; } = TimeSpan.FromMilliseconds(75);
-
     /// <summary>Maximum events read per subscription page. Default 500.</summary>
     public int SubscriptionBatchSize { get; set; } = 500;
 
@@ -157,6 +166,22 @@ public class PostgresEventStoreOptions : EventSourcingOptions
                 nameof(AdvisoryLockTagThreshold),
                 AdvisoryLockTagThreshold,
                 "AdvisoryLockTagThreshold must be at least 1.");
+        }
+
+        if (BackupPollInterval < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(BackupPollInterval),
+                BackupPollInterval,
+                "BackupPollInterval cannot be negative.");
+        }
+
+        if (PollOnlyInterval < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(PollOnlyInterval),
+                PollOnlyInterval,
+                "PollOnlyInterval cannot be negative.");
         }
 
         if (EnableOutbox)

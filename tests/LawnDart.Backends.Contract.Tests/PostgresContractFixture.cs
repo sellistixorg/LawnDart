@@ -14,6 +14,9 @@ public sealed class PostgresContractFixture : IAsyncLifetime
 
     public IContractBackend Backend { get; private set; } = null!;
 
+    /// <summary>Same database. Subscriptions poll and do not open a listen connection.</summary>
+    public IContractBackend PollOnlyBackend { get; private set; } = null!;
+
     public async Task InitializeAsync()
     {
         _container = new PostgreSqlBuilder(PostgresTestImage.Current)
@@ -49,6 +52,7 @@ public sealed class PostgresContractFixture : IAsyncLifetime
         };
         ConnectionString = builder.ConnectionString;
         Backend = new PostgresContractBackend(ConnectionString, admin);
+        PollOnlyBackend = new PostgresContractBackend(ConnectionString, admin, pollOnly: true);
     }
 
     public async Task DisposeAsync()

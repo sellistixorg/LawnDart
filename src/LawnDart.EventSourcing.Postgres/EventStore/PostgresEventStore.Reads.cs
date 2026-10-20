@@ -152,16 +152,30 @@ public sealed partial class PostgresEventStore
             throw new InvalidOperationException("SubscriptionChannelCapacity must be at least 1.");
         if (_options.SubscriptionBatchSize < 1)
             throw new InvalidOperationException("SubscriptionBatchSize must be at least 1.");
+        if (_options.BackupPollInterval < TimeSpan.Zero)
+            throw new InvalidOperationException("BackupPollInterval cannot be negative.");
+        if (_options.PollOnlyInterval < TimeSpan.Zero)
+            throw new InvalidOperationException("PollOnlyInterval cannot be negative.");
 
         filter ??= EventSubscriptionFilter.All();
+        _listener.AddUser();
         var handle = new PostgresSubscriptionHandle(
             subscriberId,
             filter,
             _options.SubscriptionChannelCapacity,
             fromSequence,
             cancellationToken,
-            candidate => _subscriptions.TryRemove(candidate, out _));
-        _subscriptions.TryAdd(handle, 0);
+            candidate =>
+            {
+                _subscriptions.TryRemove(candidate, out _);
+                _listener.RemoveUser();
+            });
+        if (!_subscriptions.TryAdd(handle, 0))
+        {
+            _listener.RemoveUser();
+            throw new InvalidOperationException("Failed to register subscription handle.");
+        }
+
         _ = Task.Run(() => RunSubscriptionAsync(handle), CancellationToken.None);
         return handle;
     }
@@ -171,47 +185,61 @@ public sealed partial class PostgresEventStore
         var cancellation = handle.CancellationToken;
         long lastDelivered = handle.FromSequence - 1;
         var batch = _options.SubscriptionBatchSize;
-        var poll = _options.SubscriptionPollInterval;
         var query = handle.Filter.Kind == EventSubscriptionScope.Query
             ? handle.Filter.Query ?? Query.All()
             : Query.All();
 
         try
         {
+            await _listener.Ready.WaitAsync(cancellation).ConfigureAwait(false);
+            var poll = _listener.Mode == PostgresListenMode.Listening
+                ? _options.BackupPollInterval
+                : _options.PollOnlyInterval;
+
             while (!cancellation.IsCancellationRequested && !handle.IsDisposed)
             {
-                var ticket = _newEvents.TakeTicket();
-                var delivered = 0;
-                var head = await GetCurrentSequenceAsync(cancellation).ConfigureAwait(false);
-                var page = await ReadQueryCoreAsync(query, lastDelivered + 1, batch, head, toCommitTimestamp: null, cancellation).ConfigureAwait(false);
-                if (!page.TypesResolved)
+                try
                 {
-                    await WaitPollAsync(ticket, poll, cancellation).ConfigureAwait(false);
-                    continue;
-                }
-
-                foreach (var frame in page.Events)
-                {
-                    if (cancellation.IsCancellationRequested || handle.IsDisposed)
-                        break;
-                    if (frame.SequencePosition <= lastDelivered)
-                        continue;
-                    if (handle.Filter.Matches(frame))
+                    var ticket = _newEvents.TakeTicket();
+                    var delivered = 0;
+                    var head = await GetCurrentSequenceAsync(cancellation).ConfigureAwait(false);
+                    var page = await ReadQueryCoreAsync(query, lastDelivered + 1, batch, head, toCommitTimestamp: null, cancellation).ConfigureAwait(false);
+                    if (!page.TypesResolved)
                     {
-                        await handle.WriteAsync(frame, cancellation).ConfigureAwait(false);
-                        delivered++;
+                        await WaitPollAsync(ticket, poll, cancellation).ConfigureAwait(false);
+                        continue;
                     }
 
-                    lastDelivered = frame.SequencePosition;
-                    if (delivered >= batch)
-                        break;
-                }
+                    foreach (var frame in page.Events)
+                    {
+                        if (cancellation.IsCancellationRequested || handle.IsDisposed)
+                            break;
+                        if (frame.SequencePosition <= lastDelivered)
+                            continue;
+                        if (handle.Filter.Matches(frame))
+                        {
+                            await handle.WriteAsync(frame, cancellation).ConfigureAwait(false);
+                            delivered++;
+                        }
 
-                if (page.Events.Count < batch && head > lastDelivered)
-                    lastDelivered = head;
-                if (delivered > 0 || page.Events.Count >= batch)
-                    continue;
-                await WaitPollAsync(ticket, poll, cancellation).ConfigureAwait(false);
+                        lastDelivered = frame.SequencePosition;
+                        if (delivered >= batch)
+                            break;
+                    }
+
+                    if (page.Events.Count < batch && head > lastDelivered)
+                        lastDelivered = head;
+                    if (delivered > 0 || page.Events.Count >= batch)
+                        continue;
+                    await WaitPollAsync(ticket, poll, cancellation).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (IsTransientReadFailure(ex) && !cancellation.IsCancellationRequested)
+                {
+                    // The server dropped the connection. Wait for the listener, or a short pause, then read again.
+                    var ticket = _newEvents.TakeTicket();
+                    var retry = poll < TimeSpan.FromSeconds(1) ? poll : TimeSpan.FromSeconds(1);
+                    await WaitPollAsync(ticket, retry, cancellation).ConfigureAwait(false);
+                }
             }
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
@@ -230,6 +258,18 @@ public sealed partial class PostgresEventStore
         {
             await handle.DisposeAsync().ConfigureAwait(false);
         }
+    }
+
+    private static bool IsTransientReadFailure(Exception exception)
+    {
+        if (exception is PostgresException postgres)
+        {
+            return postgres.SqlState is "57P01" or "57P02" or "57P03"
+                or "08000" or "08001" or "08003" or "08004" or "08006"
+                or "40001" or "40P01";
+        }
+
+        return exception is NpgsqlException;
     }
 
     private async Task WaitPollAsync(NewEventsTicket ticket, TimeSpan poll, CancellationToken cancellationToken)
@@ -291,9 +331,6 @@ public sealed partial class PostgresEventStore
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         var head = await _horizon.ResolveAsync(connection, cancellationToken).ConfigureAwait(false);
         var to = Cap(toSequencePosition, head);
-        if (fromSequencePosition is > 0 && fromSequencePosition > head)
-            return new QueryRead([], true);
-
         var built = PostgresQuerySql.Build(
             _names, query, _eventTypes.FindId, fromSequencePosition, to, toCommitTimestamp, limit, PostgresQuerySql.Mode.Events);
         if (built.ShortCircuited)
