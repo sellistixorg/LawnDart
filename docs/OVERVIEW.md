@@ -7,9 +7,10 @@ session over that log (`IEvent` in, `SequencedEvent` out). Third-party stores
 implement the log, not the session.
 
 The shapes an event model compiles into are on the
-[CES matrix](CES_MATRIX.md). [Eventhesis](https://eventhesis.com) is one
-modelling tool that targets LawnDart. It emits slice JSON. It does not
-generate LawnDart types. See [Why LawnDart](WHY.md).
+[CES matrix](CES_MATRIX.md). [Eventhesis](https://eventhesis.com) is a
+separate, complementary product. It can output models (slice JSON) you
+can use as specs for building with LawnDart. It does not generate LawnDart
+code. See [Why LawnDart](WHY.md).
 
 ## Host grammar
 

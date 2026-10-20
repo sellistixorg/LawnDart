@@ -144,8 +144,9 @@ State → Event. Planned for a later release. No public type until a host exists
 Event → Event. Transform or enrich events without a command.
 
 **Eventhesis**  
-Separate event-modelling canvas that emits slice-based JSON. It does not
-generate LawnDart types. See [EVENTHESIS.md](EVENTHESIS.md).
+A separate, complementary product. It can output models (slice JSON) you
+can use as specs for building with LawnDart. It does not generate LawnDart
+code. See [EVENTHESIS.md](EVENTHESIS.md).
 
 ## I
 

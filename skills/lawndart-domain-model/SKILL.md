@@ -17,8 +17,8 @@ Stream IDs: `{tenant}:{type}:{id}`. Tags for DCB: `type:{id}` (Guids, not
 names). See `docs/STREAM_IDS.md` and `docs/TAGGING.md`.
 
 Every written `IEvent` needs `[EventTypeName]`. `Id` and `Timestamp` are
-required properties. Declaration order is an Eventhesis convention, not a
-runtime rule. See `docs/EVENTHESIS.md` and `docs/EVENT_SCHEMA_VERSIONING.md`.
+required properties. Putting them first keeps events easy to scan.
+Declaration order is not a runtime rule. See `docs/EVENT_SCHEMA_VERSIONING.md`.
 
 ## Aggregate
 

@@ -1,7 +1,8 @@
 # Eventhesis adapter
 
-[Eventhesis](https://eventhesis.com) is one modelling tool that targets
-LawnDart. It emits slice JSON. It does not generate LawnDart C# types.
+[Eventhesis](https://eventhesis.com) is a separate, complementary product.
+It can output models (slice JSON) you can use as specs for building with
+LawnDart. It does not generate LawnDart code.
 
 The build kit is written against a **generic slice spec** (command, event,
 entity, view, process, GWT, vertical slice). See
@@ -17,7 +18,7 @@ Academy is a reference host, not generated output.
 | Eventhesis | Generic spec | Typical LawnDart implementation |
 |---|---|---|
 | Command | Command | `ICommand` plus an aggregate or DCB handler. |
-| Event | Event | `IEvent` (`Id` and `Timestamp` first if you use the Eventhesis field-order convention) plus `[EventTypeName("kebab-token")]`. Correlation, causation, and W3C trace live on the envelope (`EventMetadata` / `CommandMetadata`), not the payload. |
+| Event | Event | `IEvent` (putting `Id` and `Timestamp` first keeps events easy to scan; declaration order is not a runtime rule) plus `[EventTypeName("kebab-token")]`. Correlation, causation, and W3C trace live on the envelope (`EventMetadata` / `CommandMetadata`), not the payload. |
 | Entity | Entity | `AggregateRoot<TState>` or `DcbEntity<TState>` declaring `Handle(TCommand)` |
 | View | View | A read model. Lightweight: `ProjectionBase<TView>` plus scope attributes. Multi-stream views implement `IMultiStreamEntityResolver`. You may also fold against `IEventStore`. |
 | Process / reaction | Process | `IReactor` / `IEventProcessor` / `ITaskProcessor` |
