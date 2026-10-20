@@ -37,7 +37,7 @@ app.MapProjectionQueries("default");
 
 A context name matches `LawnDartNames.Pattern`. It starts with a letter or digit. Then letters, digits, `.`, `_`, or `-`. At most 63 characters. The spelling is kept. A second registration that differs only by case is rejected. `default` is the default context. `Default` is rejected, because the unkeyed alias uses that exact lowercase spelling.
 
-`LawnDartOptions.ValidateNames` defaults to true. Set it to false before `AddBoundedContext` to keep a name that does not match. Call `AddLawnDart` first so the option is visible at registration. A colon in a tenant id is still rejected.
+`LawnDartOptions.ValidateNames` defaults to true. Set it to false before `AddBoundedContext` to keep a name that does not match, or to keep a tenant id of `default`. Call `AddLawnDart` first so the option is visible at registration. A colon in a tenant id is still rejected. An empty tenant id is still rejected.
 
 `AddSqlProjectionStores(contextName, connectionString)` uses `contextName` as the SQL Server schema when you pass no schema. Pass `schemaName: "dbo"` to keep the `dbo` schema. `AddInMemoryProjectionStores`, `AddTagProvider`, `AddTagFormat`, `MapProjectionQueries`, and `AddProjectionDebugServices` check the same name.
 

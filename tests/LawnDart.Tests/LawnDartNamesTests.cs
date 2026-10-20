@@ -82,6 +82,32 @@ public class LawnDartNamesTests
     }
 
     [Fact]
+    public void ValidateTenantId_RejectsReservedDefault()
+    {
+        var ex = Assert.Throws<ArgumentException>(() =>
+            LawnDartNames.ValidateTenantId("default", "tenantId"));
+        Assert.Contains("reserved", ex.Message);
+        Assert.Equal("tenantId", ex.ParamName);
+    }
+
+    [Fact]
+    public void ValidateTenantId_ValidateNamesFalse_AllowsReservedDefault()
+    {
+        LawnDartNames.ValidateTenantId("default", "tenantId", validateFormat: false);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void ValidateTenantId_RejectsEmpty_EvenWhenFormatCheckIsOff(string tenantId)
+    {
+        Assert.Throws<ArgumentException>(() =>
+            LawnDartNames.ValidateTenantId(tenantId, "tenantId"));
+        Assert.Throws<ArgumentException>(() =>
+            LawnDartNames.ValidateTenantId(tenantId, "tenantId", validateFormat: false));
+    }
+
+    [Fact]
     public void ValidateTenantId_RejectsColonEvenWhenFormatCheckIsOff()
     {
         var ex = Assert.Throws<ArgumentException>(() =>

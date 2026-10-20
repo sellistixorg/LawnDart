@@ -44,8 +44,9 @@ public sealed class FixedTenantContextProvider : ITenantContextProvider
     /// <param name="tenantId">The tenant id this provider returns.</param>
     /// <param name="validateNames">
     /// Matches <see cref="LawnDartOptions.ValidateNames"/>.
-    /// When <see langword="false"/>, the character rule is skipped.
-    /// A colon is still rejected.
+    /// When <see langword="false"/>, the character rule is skipped and a tenant id of
+    /// <c>default</c> is allowed.
+    /// An empty string is still rejected. A colon is still rejected.
     /// </param>
     public FixedTenantContextProvider(string tenantId, bool validateNames)
     {

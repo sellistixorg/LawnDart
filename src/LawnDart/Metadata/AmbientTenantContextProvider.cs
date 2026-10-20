@@ -44,7 +44,8 @@ public sealed class AmbientTenantContextProvider : ITenantContextProvider
     /// <summary>
     /// Creates a provider that follows <see cref="LawnDartOptions.ValidateNames"/>.
     /// Dependency injection uses this constructor when options are registered.
-    /// A colon in a tenant id is still rejected when the format check is off.
+    /// When the format check is off, a tenant id of <c>default</c> is allowed.
+    /// An empty string is still rejected. A colon in a tenant id is still rejected.
     /// </summary>
     /// <param name="options">Host options. <see cref="LawnDartOptions.ValidateNames"/> controls the format check.</param>
     public AmbientTenantContextProvider(IOptions<LawnDartOptions> options)
@@ -66,7 +67,7 @@ public sealed class AmbientTenantContextProvider : ITenantContextProvider
     /// </summary>
     /// <param name="tenantId">The tenant ID to set. Checked with <see cref="LawnDartNames.ValidateTenantId"/>.</param>
     /// <returns>A scope that restores the previous tenant ID on disposal.</returns>
-    /// <exception cref="ArgumentException">Thrown when <paramref name="tenantId"/> is empty, contains ':', or fails the format check.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="tenantId"/> is empty, is <c>default</c> while name validation is on, contains ':', or fails the format check.</exception>
     public IDisposable SetTenant(string tenantId)
     {
         LawnDartNames.ValidateTenantId(tenantId, nameof(tenantId), _validateNames);
