@@ -8,35 +8,41 @@ using LawnDart.Serialization;
 namespace LawnDart.Backends.Contract.Tests;
 
 /// <summary>
-/// Shared <see cref="IEventLog"/> assertions for InMemory and SQL Server.
-/// No CLR event type is required for the thesis / payload / query cases.
+/// Log checks that do not need a .NET event type, plus the typed adapter on top of that log.
 /// </summary>
-internal static class EventLogContract
+public abstract class EventLogContractTests : ContractSuite
 {
-    public const string ForeignFamily = "log-contract.foreign-family";
+    public const string OutsideEventName = "log-contract.outside-event";
 
-    public static async Task Thesis_HostWithoutClrTypes_CanReadFilterAndCopyAsync(IEventLog log)
+    protected EventLogContractTests(IContractBackend backend)
+        : base(backend)
     {
+    }
+
+    [Fact]
+    public async Task HostWithoutEventClasses_CanReadFilterAndCopy()
+    {
+        var log = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Log;
         var payload = Encoding.UTF8.GetBytes("""{"kind":"foreign","n":1}""");
         var metadata = Encoding.UTF8.GetBytes("""{"UserId":"log-only"}""");
-        var streamId = Unique("thesis");
-        var copyStreamId = Unique("thesis-copy");
+        var streamId = Unique("no-clr");
+        var copyStreamId = Unique("no-clr-copy");
 
         await log.AppendAsync(
             streamId,
-            [new AppendEvent(ForeignFamily, payload, metadata, schemaVersion: 1, tags: ["order:thesis"])]);
+            [new AppendEvent(OutsideEventName, payload, metadata, schemaVersion: 1, tags: ["order:outside"])]);
 
         var recorded = Assert.Single(await log.ReadStreamAsync(streamId));
-        Assert.Equal(ForeignFamily, recorded.EventType);
+        Assert.Equal(OutsideEventName, recorded.EventType);
         Assert.Equal(payload, recorded.Payload.ToArray());
         Assert.Equal(metadata, recorded.Metadata.ToArray());
         Assert.Equal(1, recorded.SchemaVersion);
-        Assert.Contains("order:thesis", recorded.Tags);
+        Assert.Contains("order:outside", recorded.Tags);
 
-        var byToken = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByType(ForeignFamily)));
+        var byToken = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByType(OutsideEventName)));
         Assert.Contains(byToken.Events, e => e.SequencePosition == recorded.SequencePosition);
 
-        var byTag = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags("order:thesis")));
+        var byTag = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags("order:outside")));
         Assert.Contains(byTag.Events, e => e.SequencePosition == recorded.SequencePosition);
 
         await log.AppendAsync(
@@ -56,32 +62,36 @@ internal static class EventLogContract
         Assert.Equal(recorded.Tags, copy.Tags);
     }
 
-    public static async Task AppendRead_SamePayloadWithoutHydrateAsync(IEventLog log)
+    [Fact]
+    public async Task AppendRead_SamePayloadWithoutHydrate()
     {
+        var log = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Log;
         var payload = Encoding.UTF8.GetBytes("""{"value":"round-trip"}""");
         var streamId = Unique("payload");
 
-        await log.AppendAsync(streamId, [new AppendEvent(ForeignFamily, payload)]);
+        await log.AppendAsync(streamId, [new AppendEvent(OutsideEventName, payload)]);
 
         var recorded = Assert.Single(await log.ReadStreamAsync(streamId));
         Assert.Equal(payload, recorded.Payload.ToArray());
-        Assert.Equal(ForeignFamily, recorded.EventType);
+        Assert.Equal(OutsideEventName, recorded.EventType);
     }
 
-    public static async Task Query_TokenAndTags_WithoutHydrateAsync(IEventLog log)
+    [Fact]
+    public async Task Query_TokenAndTags_WithoutHydrate()
     {
+        var log = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Log;
         var streamId = Unique("query");
         await log.AppendAsync(
             streamId,
             [
-                new AppendEvent(ForeignFamily, Encoding.UTF8.GetBytes("1"), tags: ["keep"]),
-                new AppendEvent("log-contract.other-family", Encoding.UTF8.GetBytes("2"), tags: ["drop"]),
-                new AppendEvent(ForeignFamily, Encoding.UTF8.GetBytes("3"), tags: ["keep"])
+                new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("1"), tags: ["keep"]),
+                new AppendEvent("log-contract.other-event", Encoding.UTF8.GetBytes("2"), tags: ["drop"]),
+                new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("3"), tags: ["keep"])
             ]);
 
-        var byToken = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByType(ForeignFamily)));
+        var byToken = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByType(OutsideEventName)));
         Assert.Equal(2, byToken.Events.Count(e => e.StreamId == streamId));
-        Assert.All(byToken.Events.Where(e => e.StreamId == streamId), e => Assert.Equal(ForeignFamily, e.EventType));
+        Assert.All(byToken.Events.Where(e => e.StreamId == streamId), e => Assert.Equal(OutsideEventName, e.EventType));
 
         var byTag = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags("keep")));
         Assert.Equal(2, byTag.Events.Count(e => e.StreamId == streamId));
@@ -91,8 +101,10 @@ internal static class EventLogContract
         Assert.Equal(byTag.Events.Max(e => e.SequencePosition), max);
     }
 
-    public static async Task TypedAdapter_RegisteredType_StillRoundTripsAsync(IEventLog log)
+    [Fact]
+    public async Task TypedAdapter_RegisteredType_StillRoundTrips()
     {
+        var log = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Log;
         var catalog = MapCatalog.For<ContractTick>("log-contract.tick");
         var adapter = new EventStoreAdapter(log, new EventSession(new JsonEventSerializer(), catalog));
         var streamId = Unique("typed");
@@ -106,23 +118,27 @@ internal static class EventLogContract
         Assert.False(ReferenceEquals(tick, read));
     }
 
-    public static async Task TypedAdapter_UnknownFamily_FailsClosedAsync(IEventLog log)
+    [Fact]
+    public async Task TypedAdapter_UnregisteredEventName_Throws()
     {
+        var log = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Log;
         var streamId = Unique("unknown");
-        await log.AppendAsync(streamId, [new AppendEvent(ForeignFamily, Encoding.UTF8.GetBytes("{}"))]);
+        await log.AppendAsync(streamId, [new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("{}"))]);
 
         var recorded = Assert.Single(await log.ReadStreamAsync(streamId));
-        Assert.Equal(ForeignFamily, recorded.EventType);
+        Assert.Equal(OutsideEventName, recorded.EventType);
 
         var adapter = new EventStoreAdapter(
             log,
             new EventSession(new JsonEventSerializer(), MapCatalog.For<ContractTick>("log-contract.tick")));
         var ex = await Assert.ThrowsAsync<UnknownEventFamilyException>(() => adapter.ReadStreamAsync(streamId));
-        Assert.Contains(ForeignFamily, ex.Message);
+        Assert.Contains(OutsideEventName, ex.Message);
     }
 
-    public static async Task TypedAdapter_ContentTypeMismatch_FailsClosedAsync(IEventLog log)
+    [Fact]
+    public async Task TypedAdapter_StoredPayloadFormatDiffers_Throws()
     {
+        var log = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Log;
         var streamId = Unique("ctype");
         await log.AppendAsync(
             streamId,
@@ -141,25 +157,29 @@ internal static class EventLogContract
         Assert.DoesNotContain("migration tool", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
-    public static async Task Append_CodecId2_ReadsCodecId2Async(IEventLog log)
+    [Fact]
+    public async Task Append_CodecId2_ReadsCodecId2()
     {
+        var log = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Log;
         var streamId = Unique("codec2");
         await log.AppendAsync(
             streamId,
-            [new AppendEvent(ForeignFamily, Encoding.UTF8.GetBytes("{}"), codecId: EventCodec.MemoryPack)]);
+            [new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("{}"), codecId: EventCodec.MemoryPack)]);
 
         var recorded = Assert.Single(await log.ReadStreamAsync(streamId));
         Assert.Equal(EventCodec.MemoryPack, recorded.CodecId);
     }
 
-    public static async Task TagQuery_IsOrdinalCaseSensitiveAsync(IEventLog log)
+    [Fact]
+    public async Task TagQuery_IsOrdinalCaseSensitive()
     {
+        var log = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Log;
         var streamId = Unique("tag-case");
         var upper = "Customer:ABC:" + Guid.NewGuid().ToString("N");
         var lower = upper.ToLowerInvariant();
         await log.AppendAsync(
             streamId,
-            [new AppendEvent(ForeignFamily, Encoding.UTF8.GetBytes("{}"), tags: [upper])]);
+            [new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("{}"), tags: [upper])]);
 
         var exact = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(upper)));
         Assert.Contains(exact.Events, e => e.StreamId == streamId);
@@ -171,26 +191,27 @@ internal static class EventLogContract
         var bothId = Unique("tag-both");
         await log.AppendAsync(
             bothId,
-            [new AppendEvent(ForeignFamily, Encoding.UTF8.GetBytes("{}"), tags: [upper, lower])]);
+            [new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("{}"), tags: [upper, lower])]);
         var byUpper = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(upper)));
         var byLower = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(lower)));
         Assert.Contains(byUpper.Events, e => e.StreamId == bothId);
         Assert.Contains(byLower.Events, e => e.StreamId == bothId);
     }
 
-    public static async Task Subscription_TagQuery_IsOrdinalCaseSensitiveAsync(IEventStore store)
+    [Fact]
+    public async Task Subscription_TagQuery_IsOrdinalCaseSensitive()
     {
-        if (store is not IEventLogSubscriptions subscriptions)
-            throw new InvalidOperationException("Store does not subscribe.");
-
+        var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
         var streamId = Unique("tag-sub");
         var upper = "Customer:ABC:" + Guid.NewGuid().ToString("N");
         var lower = upper.ToLowerInvariant();
-        var log = (IEventLog)store;
-        var appended = await log.AppendAsync(
+        var appended = await opened.Log.AppendAsync(
             streamId,
-            [new AppendEvent(ForeignFamily, Encoding.UTF8.GetBytes("{}"), tags: [upper])]);
+            [new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("{}"), tags: [upper])]);
         var sequence = appended.SequencePositions[0];
+
+        if (opened.Store is not IEventLogSubscriptions subscriptions)
+            throw new InvalidOperationException("Store does not subscribe.");
 
         var exact = Query.FromItems(QueryItem.ByTags(upper));
         await using (var handle = subscriptions.Subscribe(
@@ -198,7 +219,7 @@ internal static class EventLogContract
             sequence,
             EventSubscriptionFilter.ForQuery(exact)))
         {
-            var received = await ReadCountAsync(handle, 1, TimeSpan.FromSeconds(10));
+            var received = await ReadRecordedAsync(handle, 1, TimeSpan.FromSeconds(10));
             Assert.Equal(sequence, Assert.Single(received).SequencePosition);
         }
 
@@ -208,67 +229,53 @@ internal static class EventLogContract
             sequence,
             EventSubscriptionFilter.ForQuery(other)))
         {
-            var received = await DrainAsync(handle, TimeSpan.FromMilliseconds(400));
+            var received = await DrainRecordedAsync(handle, TimeSpan.FromMilliseconds(400));
             Assert.DoesNotContain(received, e => e.SequencePosition == sequence);
         }
     }
 
-    private static async Task<List<RecordedEvent>> ReadCountAsync(
-        IEventLogSubscriptionHandle handle,
-        int count,
-        TimeSpan timeout)
+    [Fact]
+    public async Task Append_SameEventId_FailsAsAlreadyWritten()
     {
-        var list = new List<RecordedEvent>(count);
-        using var cts = new CancellationTokenSource(timeout);
-        while (list.Count < count && await handle.Events.WaitToReadAsync(cts.Token).ConfigureAwait(false))
-        {
-            while (list.Count < count && handle.Events.TryRead(out var recorded))
-                list.Add(recorded);
-        }
-
-        if (list.Count < count)
-            throw new TimeoutException($"Expected {count} events, received {list.Count}.");
-        return list;
-    }
-
-    private static async Task<List<RecordedEvent>> DrainAsync(IEventLogSubscriptionHandle handle, TimeSpan wait)
-    {
-        var list = new List<RecordedEvent>();
-        using var cts = new CancellationTokenSource(wait);
-        try
-        {
-            while (await handle.Events.WaitToReadAsync(cts.Token).ConfigureAwait(false))
-            {
-                while (handle.Events.TryRead(out var recorded))
-                    list.Add(recorded);
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            // The wait ended.
-        }
-
-        return list;
-    }
-
-    public static async Task Append_SameEventId_FailsAsAlreadyWrittenAsync(IEventLog log)
-    {
+        var log = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Log;
         var eventId = Guid.NewGuid();
         var metadata = Encoding.UTF8.GetBytes($$"""{"EventId":"{{eventId}}"}""");
         var first = Unique("event-id");
-        await log.AppendAsync(first, [new AppendEvent(ForeignFamily, Encoding.UTF8.GetBytes("{}"), metadata)]);
+        await log.AppendAsync(first, [new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("{}"), metadata)]);
 
         var ex = await Assert.ThrowsAsync<EventAlreadyAppendedException>(() =>
-            log.AppendAsync(Unique("event-id-replay"), [new AppendEvent(ForeignFamily, Encoding.UTF8.GetBytes("{}"), metadata)]));
+            log.AppendAsync(Unique("event-id-replay"), [new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("{}"), metadata)]));
         Assert.Equal(eventId, ex.EventId);
 
         var stored = await log.ReadStreamAsync(first);
         Assert.Single(stored);
     }
 
-    private static string Unique(string suffix) => $"log-contract:{suffix}:{Guid.NewGuid():N}";
+    [ContractFact]
+    public async Task Append_SameEventId_OnAnotherTenant_FollowsTheBackend()
+    {
+        var log = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Log;
+        var eventId = Guid.NewGuid();
+        var metadata = Encoding.UTF8.GetBytes($$"""{"EventId":"{{eventId}}"}""");
+        var first = "alpha:Order:" + Guid.NewGuid().ToString("N");
+        var second = "beta:Order:" + Guid.NewGuid().ToString("N");
+        await log.AppendAsync(first, [new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("{}"), metadata)]);
 
-    private sealed record ContractTick(Guid Id, DateTime Timestamp, string Name) : IEvent;
+        if (Cap.EnforcesEventIdAcrossTenants)
+        {
+            var ex = await Assert.ThrowsAsync<EventAlreadyAppendedException>(() =>
+                log.AppendAsync(second, [new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("{}"), metadata)]));
+            Assert.Equal(eventId, ex.EventId);
+            Assert.Empty(await log.ReadStreamAsync(second));
+        }
+        else
+        {
+            await log.AppendAsync(second, [new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("{}"), metadata)]);
+            Assert.Single(await log.ReadStreamAsync(second));
+        }
+    }
+
+    private static string Unique(string suffix) => $"log-contract:{suffix}:{Guid.NewGuid():N}";
 
     private sealed class MapCatalog : IEventTypeCatalog
     {

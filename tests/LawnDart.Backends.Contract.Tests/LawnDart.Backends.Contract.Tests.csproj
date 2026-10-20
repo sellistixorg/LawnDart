@@ -11,7 +11,10 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
+    <PackageReference Include="Microsoft.Data.SqlClient" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <PackageReference Include="Microsoft.Extensions.Logging" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="Testcontainers.MsSql" />
     <PackageReference Include="xunit" />
@@ -32,6 +35,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\LawnDart.EventSourcing\LawnDart.EventSourcing.csproj" />
+    <ProjectReference Include="..\..\src\LawnDart.Messaging\LawnDart.Messaging.csproj" />
+    <ProjectReference Include="..\..\src\LawnDart.Messaging.InMemory\LawnDart.Messaging.InMemory.csproj" />
+    <ProjectReference Include="..\..\src\LawnDart.Messaging.SqlServer\LawnDart.Messaging.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\LawnDart.EventSourcing.SqlServer\LawnDart.EventSourcing.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\LawnDart.Projections.Lightweight\LawnDart.Projections.Lightweight.csproj" />
     <ProjectReference Include="..\..\src\LawnDart.Projections.Lightweight.SqlServer\LawnDart.Projections.Lightweight.SqlServer.csproj" />

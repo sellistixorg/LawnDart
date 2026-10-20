@@ -155,11 +155,10 @@ and `IEventStoreSubscriptions`.
 Optional `WithSnapshots` and outbox (`EnableOutbox`). Snapshot write
 durability is the same channel + hosted consumer as InMemory; see
 [SNAPSHOTS.md](../SNAPSHOTS.md). Integration tests use Testcontainers and
-are tagged `Category=Integration`. The InMemory → SQL swap contract
-(`Category=Contract`) covers dispatch, persist, reload, project, and
-read-back. Outbox and subscriptions have their own tests. The same project also covers the
-`IEventLog` contract (payload round-trip, event-name and tag query, and a
-read without registered .NET types). See
+are tagged `Category=Integration`. The shared contract
+(`Category=Contract`) runs the same store checks on SQL Server. Schema
+format, column layout, collation, identifier quoting, stream id length, and
+multi-context schema setup stay in the SQL Server test project. See
 [BACKEND_SELECTION.md](../BACKEND_SELECTION.md).
 
 InMemory remains the documented default for local work and Academy.
