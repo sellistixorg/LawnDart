@@ -47,7 +47,7 @@ var tenantId = _tenant.GetTenantId() ?? "default";
 var streamId = $"{tenantId}:Student:{command.StudentId}";
 ```
 
-Tenant prefix comes from `ITenantContextProvider`. That host sets `RequireTenantId` to false, so the append does not run the tenant id check. With `RequireTenantId` on, a tenant id of `default` is rejected. See [Metadata](METADATA.md).
+Tenant prefix comes from `ITenantContextProvider`. That host sets `RequireTenantId` to false, so the append does not run the tenant id check. With `RequireTenantId` on, `default` in any casing is rejected. See [Metadata](METADATA.md).
 
 ## Context names and tenant ids
 
@@ -55,9 +55,9 @@ A bounded context name starts with a letter or digit. Then letters, digits, `.`,
 
 The stored spelling is the spelling you registered. A second context whose name differs only by case is rejected. The default context is `default`. `Default` is rejected. Keyed services for the unkeyed alias use that lowercase spelling.
 
-A tenant id uses the same character rule. `default` is reserved for a tenant id. `ValidateTenantId` rejects that spelling when name validation is on. An empty string is rejected. A colon is rejected, because a stream id is `{tenantId}:{type}:{id}` and is split on every colon.
+A tenant id uses the same character rule. `default` in any casing is reserved for a tenant id. `ValidateTenantId` rejects it when name validation is on. An empty string is rejected. A colon is rejected, because a stream id is `{tenantId}:{type}:{id}` and is split on every colon.
 
-`LawnDartOptions.ValidateNames` defaults to true. Set it to false before `AddBoundedContext` when an existing name does not match. Call `AddLawnDart` first so registration sees the flag. The same flag keeps an existing tenant id of `default`. A colon in a tenant id is still rejected. An empty tenant id is still rejected.
+`LawnDartOptions.ValidateNames` defaults to true. Set it to false before `AddBoundedContext` when an existing name does not match. Call `AddLawnDart` first so registration sees the flag. The same flag keeps an existing tenant id of `default` in any casing. A colon in a tenant id is still rejected. An empty tenant id is still rejected.
 
 `FixedTenantContextProvider` takes `validateNames` for the same flag. `AmbientTenantContextProvider` reads `LawnDartOptions` when dependency injection constructs it. `SetTenant` checks the id. An invalid `X-Tenant-Id` header returns 400. See [HTTP commands](HTTP_COMMANDS.md).
 

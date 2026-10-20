@@ -81,19 +81,24 @@ public class LawnDartNamesTests
         Assert.Contains("'default'", ex.Message);
     }
 
-    [Fact]
-    public void ValidateTenantId_RejectsReservedDefault()
+    [Theory]
+    [InlineData("default")]
+    [InlineData("Default")]
+    [InlineData("DEFAULT")]
+    public void ValidateTenantId_RejectsReservedDefault_AnyCasing(string tenantId)
     {
         var ex = Assert.Throws<ArgumentException>(() =>
-            LawnDartNames.ValidateTenantId("default", "tenantId"));
-        Assert.Contains("reserved", ex.Message);
+            LawnDartNames.ValidateTenantId(tenantId, "tenantId"));
+        Assert.Contains("any casing", ex.Message);
         Assert.Equal("tenantId", ex.ParamName);
     }
 
-    [Fact]
-    public void ValidateTenantId_ValidateNamesFalse_AllowsReservedDefault()
+    [Theory]
+    [InlineData("default")]
+    [InlineData("Default")]
+    public void ValidateTenantId_ValidateNamesFalse_AllowsReservedDefault(string tenantId)
     {
-        LawnDartNames.ValidateTenantId("default", "tenantId", validateFormat: false);
+        LawnDartNames.ValidateTenantId(tenantId, "tenantId", validateFormat: false);
     }
 
     [Theory]

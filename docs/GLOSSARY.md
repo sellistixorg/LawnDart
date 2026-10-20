@@ -247,7 +247,7 @@ State → Command. `ITaskProcessor` polls read models and emits commands.
 
 **Tenant context**  
 Optional `ITenantContextProvider` for metadata on events and stream IDs.
-A tenant id uses the character rule in `LawnDartNames`. `default` is reserved.
+A tenant id uses the character rule in `LawnDartNames`. `default` in any casing is reserved.
 An empty string is rejected. A colon is rejected even when `LawnDartOptions.ValidateNames` is false.
 Set `ValidateNames` to false to keep an existing tenant id of `default`.
 See [Metadata](METADATA.md).

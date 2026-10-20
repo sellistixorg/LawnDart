@@ -12,7 +12,7 @@ changes to the public API.
 
 ### Changed
 
-- `default` is a reserved tenant id. A caller-supplied tenant id of `default` is rejected. Set `LawnDartOptions.ValidateNames` to false to keep an existing tenant id of `default`. An empty tenant id is still rejected. When `RequireTenantId` is true and no tenant id is given, the save throws.
+- `default` in any casing is a reserved tenant id. A caller-supplied tenant id of `default`, `Default`, or `DEFAULT` is rejected. Set `LawnDartOptions.ValidateNames` to false to keep an existing tenant id of `default`. An empty tenant id is still rejected. When `RequireTenantId` is true and no tenant id is given, the save throws.
 - Guides and API comments call the catalog token an event name, and `CodecId` the payload-format number. A typed read that cannot decode a stored record says what it refuses, in plain language.
 
 ## [0.6.0-alpha.3] — 2026-10-18

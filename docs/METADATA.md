@@ -62,7 +62,7 @@ Read the stored envelope on `SequencedEvent.Metadata` after
 
 A tenant id starts with a letter or digit. Then letters, digits, `.`, `_`, or `-`, up to 63 characters. `LawnDartNames` holds the pattern, the limit, `IsValid`, `Validate`, and `ValidateTenantId`.
 
-`default` is reserved. `ValidateTenantId` rejects that spelling when name validation is on. Set `LawnDartOptions.ValidateNames` to false to keep an existing tenant id of `default`. An empty string is rejected either way. A colon is rejected either way. A stream id is `{tenantId}:{type}:{id}` and is split on every colon.
+`default` in any casing is reserved. `ValidateTenantId` rejects `default`, `Default`, and `DEFAULT` when name validation is on. Set `LawnDartOptions.ValidateNames` to false to keep an existing tenant id of `default`. An empty string is rejected either way. A colon is rejected either way. A stream id is `{tenantId}:{type}:{id}` and is split on every colon.
 
 `FixedTenantContextProvider` checks the id in the constructor. Pass `validateNames: false` when `LawnDartOptions.ValidateNames` is false. `AmbientTenantContextProvider` reads that option when dependency injection constructs it, and `SetTenant` checks the id. An `X-Tenant-Id` header that fails the check returns 400. A missing header is left unset.
 
