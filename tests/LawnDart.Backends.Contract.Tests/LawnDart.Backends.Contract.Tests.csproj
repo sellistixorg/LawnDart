@@ -16,7 +16,9 @@
     <PackageReference Include="Microsoft.Extensions.Logging" />
     <PackageReference Include="Microsoft.Extensions.Options" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Npgsql" />
     <PackageReference Include="Testcontainers.MsSql" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio">
       <PrivateAssets>all</PrivateAssets>
@@ -39,6 +41,7 @@
     <ProjectReference Include="..\..\src\LawnDart.Messaging.InMemory\LawnDart.Messaging.InMemory.csproj" />
     <ProjectReference Include="..\..\src\LawnDart.Messaging.SqlServer\LawnDart.Messaging.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\LawnDart.EventSourcing.SqlServer\LawnDart.EventSourcing.SqlServer.csproj" />
+    <ProjectReference Include="..\..\src\LawnDart.EventSourcing.Postgres\LawnDart.EventSourcing.Postgres.csproj" />
     <ProjectReference Include="..\..\src\LawnDart.Projections.Lightweight\LawnDart.Projections.Lightweight.csproj" />
     <ProjectReference Include="..\..\src\LawnDart.Projections.Lightweight.SqlServer\LawnDart.Projections.Lightweight.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\LawnDart.Testing\LawnDart.Testing.csproj" />

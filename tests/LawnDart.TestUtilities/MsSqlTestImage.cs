@@ -14,3 +14,23 @@ public static class MsSqlTestImage
     /// </summary>
     public const string Server2025 = "mcr.microsoft.com/mssql/server:2025-CU9-GDR1-ubuntu-22.04";
 }
+
+/// <summary>
+/// Pinned Postgres images for Testcontainers. Do not use a floating tag.
+/// </summary>
+public static class PostgresTestImage
+{
+    /// <summary>Postgres 18. Used by every pull request.</summary>
+    public const string Version18 = "postgres:18.1";
+
+    /// <summary>Oldest supported Postgres. Runs when the path filter matches.</summary>
+    public const string Version15 = "postgres:15.15";
+
+    /// <summary>
+    /// Image for this process. <c>LAWNDART_POSTGRES_IMAGE</c> overrides the default.
+    /// </summary>
+    public static string Current =>
+        Environment.GetEnvironmentVariable("LAWNDART_POSTGRES_IMAGE") is { Length: > 0 } image
+            ? image
+            : Version18;
+}

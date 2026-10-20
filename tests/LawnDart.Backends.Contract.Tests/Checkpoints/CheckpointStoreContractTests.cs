@@ -9,9 +9,10 @@ public abstract class CheckpointStoreContractTests : ContractSuite
     {
     }
 
-    [Fact]
+    [ContractFact]
     public async Task SaveThenGet_ReturnsTheCheckpoint()
     {
+        SkipUnless(Cap.HasProjectionStores, "This backend does not have view and checkpoint stores yet.");
         var checkpoints = (await Backend.OpenProjectionStoresAsync(ContractStores.Isolated())).Checkpoints;
         var saved = new ProjectionCheckpoint
         {
@@ -28,9 +29,10 @@ public abstract class CheckpointStoreContractTests : ContractSuite
         Assert.Equal(12, loaded.TotalEventsProcessed);
     }
 
-    [Fact]
+    [ContractFact]
     public async Task Save_DoesNotMoveThePositionBackward()
     {
+        SkipUnless(Cap.HasProjectionStores, "This backend does not have view and checkpoint stores yet.");
         var checkpoints = (await Backend.OpenProjectionStoresAsync(ContractStores.Isolated())).Checkpoints;
         await checkpoints.SaveCheckpointAsync(new ProjectionCheckpoint
         {
@@ -52,9 +54,10 @@ public abstract class CheckpointStoreContractTests : ContractSuite
         Assert.Equal(20, loaded!.LastSequencePosition);
     }
 
-    [Fact]
+    [ContractFact]
     public async Task Delete_RemovesOneNodeAndLeavesTheOther()
     {
+        SkipUnless(Cap.HasProjectionStores, "This backend does not have view and checkpoint stores yet.");
         var checkpoints = (await Backend.OpenProjectionStoresAsync(ContractStores.Isolated())).Checkpoints;
         await checkpoints.SaveCheckpointAsync(Checkpoint("Cart:v1", 0, 3));
         await checkpoints.SaveCheckpointAsync(Checkpoint("Cart:v1", 1, 4));
@@ -63,9 +66,10 @@ public abstract class CheckpointStoreContractTests : ContractSuite
         Assert.Equal(4, (await checkpoints.GetCheckpointAsync("Cart:v1", 1))!.LastSequencePosition);
     }
 
-    [Fact]
+    [ContractFact]
     public async Task Delete_WithoutNode_RemovesEveryNode()
     {
+        SkipUnless(Cap.HasProjectionStores, "This backend does not have view and checkpoint stores yet.");
         var checkpoints = (await Backend.OpenProjectionStoresAsync(ContractStores.Isolated())).Checkpoints;
         await checkpoints.SaveCheckpointAsync(Checkpoint("Cart:v1", 0, 3));
         await checkpoints.SaveCheckpointAsync(Checkpoint("Cart:v1", 1, 4));
@@ -73,9 +77,10 @@ public abstract class CheckpointStoreContractTests : ContractSuite
         Assert.Empty(await checkpoints.GetCheckpointsForProjectionAsync("Cart:v1"));
     }
 
-    [Fact]
+    [ContractFact]
     public async Task GetAll_ReturnsEveryProjection()
     {
+        SkipUnless(Cap.HasProjectionStores, "This backend does not have view and checkpoint stores yet.");
         var checkpoints = (await Backend.OpenProjectionStoresAsync(ContractStores.Isolated())).Checkpoints;
         await checkpoints.SaveCheckpointAsync(Checkpoint("A:v1", 0, 1));
         await checkpoints.SaveCheckpointAsync(Checkpoint("B:v1", 0, 2));
@@ -84,9 +89,10 @@ public abstract class CheckpointStoreContractTests : ContractSuite
         Assert.Contains(all, c => c.ProjectionType == "B:v1" && c.LastSequencePosition == 2);
     }
 
-    [Fact]
+    [ContractFact]
     public async Task StreamCheckpoint_ReadsTheViewCheckpoint()
     {
+        SkipUnless(Cap.HasProjectionStores, "This backend does not have view and checkpoint stores yet.");
         var stores = await Backend.OpenProjectionStoresAsync(ContractStores.Isolated());
         await stores.Views.SaveViewAsync("PerStream:v1", "stream-1", "{}", checkpoint: 44);
         Assert.Equal(44, await stores.Checkpoints.GetStreamCheckpointAsync("PerStream:v1", "stream-1"));

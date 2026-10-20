@@ -63,6 +63,32 @@ public sealed class ContractCapabilities
     /// <c>TypesResolved</c> to false. A store with no event-name table leaves it true.
     /// </summary>
     public bool UnknownEventNameMarksQueryUnresolved { get; init; }
+
+    /// <summary>
+    /// JSON payload and metadata bytes round-trip unchanged.
+    /// A store that keeps JSON in jsonb compares the decoded value instead.
+    /// </summary>
+    public bool PreservesExactJsonText { get; init; } = true;
+
+    /// <summary>
+    /// A stream id prefix matches without regard to case.
+    /// </summary>
+    public bool StreamIdPrefixCaseInsensitive { get; init; } = true;
+
+    /// <summary>The live subscription contract tests run on this backend.</summary>
+    public bool RunsLiveSubscriptionTests { get; init; } = true;
+
+    /// <summary>The backend has an outbox store.</summary>
+    public bool HasOutboxStore { get; init; } = true;
+
+    /// <summary>The backend has snapshot tables.</summary>
+    public bool HasSnapshotStore { get; init; } = true;
+
+    /// <summary>The backend has an inbox store.</summary>
+    public bool HasInboxStore { get; init; } = true;
+
+    /// <summary>The backend has view and checkpoint stores.</summary>
+    public bool HasProjectionStores { get; init; } = true;
 }
 
 public sealed class ContractStoreOptions

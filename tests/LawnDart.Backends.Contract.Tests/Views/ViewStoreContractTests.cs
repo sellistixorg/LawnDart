@@ -7,9 +7,10 @@ public abstract class ViewStoreContractTests : ContractSuite
     {
     }
 
-    [Fact]
+    [ContractFact]
     public async Task SaveGetDelete_InOneSchema_DoesNotAffectOther()
     {
+        SkipUnless(Cap.HasProjectionStores, "This backend does not have view and checkpoint stores yet.");
         var ordering = await Backend.OpenProjectionStoresAsync(ContractStores.Isolated());
         var catalog = await Backend.OpenProjectionStoresAsync(ContractStores.Isolated());
         await ordering.Views.SaveViewAsync("OrderSummary:v1", "instance-1", "{\"n\":1}", checkpoint: 10);
@@ -19,9 +20,10 @@ public abstract class ViewStoreContractTests : ContractSuite
         Assert.Null(await ordering.Views.GetViewAsync("OrderSummary:v1", "instance-1"));
     }
 
-    [Fact]
+    [ContractFact]
     public async Task SaveViewsAsync_BulkUpsert_RoundTripsAndUpdates()
     {
+        SkipUnless(Cap.HasProjectionStores, "This backend does not have view and checkpoint stores yet.");
         var views = (await Backend.OpenProjectionStoresAsync(ContractStores.Isolated())).Views;
         var batch = Enumerable.Range(0, 12)
             .Select(i => ($"inst-{i}", $"{{\"n\":{i}}}", (long)(100 + i)))
@@ -49,17 +51,19 @@ public abstract class ViewStoreContractTests : ContractSuite
         Assert.Equal("{\"n\":5}", await views.GetViewAsync("BulkProj:v1", "inst-5"));
     }
 
-    [Fact]
+    [ContractFact]
     public async Task SaveViewsAsync_Empty_IsNoOp()
     {
+        SkipUnless(Cap.HasProjectionStores, "This backend does not have view and checkpoint stores yet.");
         var views = (await Backend.OpenProjectionStoresAsync(ContractStores.Isolated())).Views;
         await views.SaveViewsAsync("Empty:v1", []);
         Assert.Empty(await views.GetViewsByTypeAsync("Empty:v1"));
     }
 
-    [Fact]
+    [ContractFact]
     public async Task SaveViewsAsync_DuplicateInstanceId_LastWins()
     {
+        SkipUnless(Cap.HasProjectionStores, "This backend does not have view and checkpoint stores yet.");
         var views = (await Backend.OpenProjectionStoresAsync(ContractStores.Isolated())).Views;
         await views.SaveViewsAsync("Dup:v1",
         [
@@ -71,9 +75,10 @@ public abstract class ViewStoreContractTests : ContractSuite
         Assert.Equal(2, got.Value.Checkpoint);
     }
 
-    [Fact]
+    [ContractFact]
     public async Task DeleteAllViews_RemovesThatProjectionOnly()
     {
+        SkipUnless(Cap.HasProjectionStores, "This backend does not have view and checkpoint stores yet.");
         var views = (await Backend.OpenProjectionStoresAsync(ContractStores.Isolated())).Views;
         await views.SaveViewAsync("Keep:v1", "a", "{}", 1);
         await views.SaveViewAsync("Drop:v1", "a", "{}", 1);

@@ -1,11 +1,12 @@
 # Backend selection
 
-LawnDart v1 ships two event-store backends.
+LawnDart ships three event-store backends.
 
 | Backend | Best for | Infrastructure | Persistence |
 |---|---|---|---|
 | **InMemory** | Academy, unit tests, local spikes | None | Process lifetime |
 | **SQL Server** | Durable apps, transactional outbox | SQL Server | Durable |
+| **Postgres** | Durable apps on Postgres 15 or newer | Postgres | Durable |
 
 Both register through the same `AddBoundedContext` grammar. The verified swap is
 **command dispatch, event persistence, aggregate reload, projection materialisation,
@@ -149,6 +150,43 @@ startup. Both SQL profiles set `EnableOutbox` and register the in-memory
 outbox publisher. Academy WebApi also creates view and checkpoint tables and
 reads those views from SQL Server. Academy console keeps hand-written
 projectors, so that profile does not register Lightweight projection stores.
+
+## Postgres
+
+```csharp
+services.AddLawnDart(o => o.RequireTenantId = false);
+services.AddBoundedContext("default")
+    .UsePostgres(o =>
+    {
+        o.ConnectionString = connectionString;
+        o.RequireTenantId = false;
+    });
+```
+
+`UsePostgres` is in `LawnDart.EventSourcing.Postgres`. Call
+`PostgresEventStore.InitializeSchemaAsync` before the first append. The
+`default` context stores tables in schema `lawndart`. Any other context
+uses its own name as the schema. Set `SchemaName` to choose a different one.
+Tables do not go in `public`.
+
+This release is the event store: append, read, tags, the dynamic consistency
+boundary, the stream registry, and the read horizon. `EnableOutbox = true`
+is rejected when the store is built. Leave `EnableOutbox` false until the
+outbox release. Snapshot
+tables, the inbox, and projection views are a later release. A same-process
+reader wakes when a save in that process commits. A notification with the
+newest position is sent on the append. The listener that reads that
+notification from another process is a later release.
+
+Postgres 15 or newer. Event ids are unique per tenant. Stream ids match
+exactly, including case. JSON payloads are stored as jsonb, so spacing and
+key order can change. The decoded event is the same. A JSON payload that
+contains a null character is stored as bytes and comes back unchanged.
+
+The shared contract suite runs on Postgres in
+`tests/LawnDart.Backends.Contract.Tests`. One Postgres container serves the
+run. Tests that need the outbox, inbox, snapshots, projection stores, or the
+live subscription suite are skipped with a reason.
 
 ## Switching
 

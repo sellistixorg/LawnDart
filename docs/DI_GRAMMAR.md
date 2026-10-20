@@ -9,6 +9,7 @@ services.AddInMemoryProjectionStores("default"); // before WithProjections (dev/
 var ctx = services.AddBoundedContext("default")
     .UseInMemory()
     // or .UseSqlServer(o => { o.ConnectionString = cs; })
+    // or .UsePostgres(o => { o.ConnectionString = cs; })
     .WithCommandHandlers<MyHandler>()
     .WithEventTypes<MyEvent>()
     .WithUpcasters<MyUpcaster>() // when an event name has historical types
@@ -25,7 +26,7 @@ app.MapProjectionQueries("default");
 |---|---|
 | `AddLawnDart` | Core options, default metadata provider. Replace with `AddMetadataProvider<T>` ([Metadata](METADATA.md)). |
 | `AddBoundedContext(name)` | Starts a keyed context (`"default"` for single-store apps) |
-| `UseInMemory` / `UseSqlServer` | Event store + repositories for that name. `UseInMemory` also registers `ICommandDispatcher` (`ContextAwareCommandDispatcher`). |
+| `UseInMemory` / `UseSqlServer` / `UsePostgres` | Event store + repositories for that name. `UseInMemory` also registers `ICommandDispatcher` (`ContextAwareCommandDispatcher`). |
 | `WithCommandHandlers<TMarker>()` | The only handler registrar. Scans `ICommandHandler<T>` in the marker's assembly and registers `ICommandDispatcher`. The `"default"` context also gets an unkeyed handler alias built through `ContextServiceProvider`. |
 | `WithEventTypes<TMarker>()` | Event catalog for that assembly. A scan that finds no `IEvent` types fails at warmup. |
 | `WithUpcasters<TMarker>()` | Upcast hops for that assembly. Required when an event name has historical types. An incomplete chain throws at warmup. |
@@ -50,4 +51,4 @@ Academy is the copy-paste host: `demos/LawnDart.Demo.Academy` (console) and
 2. **Aggregates / DCB** declare closed `Handle(TCommand)`. `HandleCommandAsync` is persistence + authorization. The obsolete entity `HandleAsync<TCommand>` switch is not the authoring form.
 3. **Load** with `GetOrCreateAsync<T>(id)` when the stream is `{type}:{guid}` (or `{tenant}:{type}:{guid}`). Use `GetAsync` / `CreateAsync` / `GetOrCreateAsync` with `string streamId` otherwise.
 4. **Projections:** `ProjectionBase<TView>` plus attributes. Multi-stream views implement `IMultiStreamEntityResolver`.
-5. **Stores:** `AddBoundedContext(name).UseInMemory()` / `UseSqlServer(...)`.
+5. **Stores:** `AddBoundedContext(name).UseInMemory()` / `UseSqlServer(...)` / `UsePostgres(...)`.

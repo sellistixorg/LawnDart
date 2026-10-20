@@ -38,6 +38,7 @@ These live on `IAggregateRepository` in Core (not `Add*` extensions). Guid overl
 |---|---|---|
 | `UseInMemory` | `LawnDart.EventSourcing` | Process-local store, snapshot store, and outbox writer; registers `ICommandDispatcher` (interface lives in Core) |
 | `UseSqlServer` | `LawnDart.EventSourcing.SqlServer` | Durable SQL store |
+| `UsePostgres` | `LawnDart.EventSourcing.Postgres` | Durable Postgres store |
 | `WithSnapshots` | `LawnDart.EventSourcing.SqlServer` | Optional snapshot store |
 | `AddSnapshotWriteInfrastructure` | `LawnDart.EventSourcing` | Snapshot write channel + hosted consumer. `UseInMemory` / `UseSqlServer` already call it; third-party `Use*` methods must |
 | `EventSourcingRepositories.Create*` | `LawnDart.EventSourcing` | Build repositories with the write queue. Public constructors omit the queue. |

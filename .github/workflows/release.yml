@@ -41,7 +41,7 @@ jobs:
     - name: Test (unit)
       run: >
         dotnet test LawnDart.sln --no-build --configuration Release
-        --verbosity normal --filter "Category!=Integration"
+        --verbosity normal --filter "Category!=Integration&Category!=Benchmark"
 
     - name: Test (integration)
       run: |

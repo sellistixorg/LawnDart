@@ -99,6 +99,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LawnDart.Projections.Lightw
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LawnDart.Projections.Lightweight.SqlServer.Tests", "tests\LawnDart.Projections.Lightweight.SqlServer.Tests\LawnDart.Projections.Lightweight.SqlServer.Tests.csproj", "{EBCE8A6D-449C-4DF1-B264-C894AC1F58E1}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LawnDart.EventSourcing.Postgres", "src\LawnDart.EventSourcing.Postgres\LawnDart.EventSourcing.Postgres.csproj", "{0133804E-4475-4EA6-AA7A-188DDA2DE191}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -637,6 +639,18 @@ Global
 		{EBCE8A6D-449C-4DF1-B264-C894AC1F58E1}.Release|x64.Build.0 = Release|Any CPU
 		{EBCE8A6D-449C-4DF1-B264-C894AC1F58E1}.Release|x86.ActiveCfg = Release|Any CPU
 		{EBCE8A6D-449C-4DF1-B264-C894AC1F58E1}.Release|x86.Build.0 = Release|Any CPU
+		{0133804E-4475-4EA6-AA7A-188DDA2DE191}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0133804E-4475-4EA6-AA7A-188DDA2DE191}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0133804E-4475-4EA6-AA7A-188DDA2DE191}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{0133804E-4475-4EA6-AA7A-188DDA2DE191}.Debug|x64.Build.0 = Debug|Any CPU
+		{0133804E-4475-4EA6-AA7A-188DDA2DE191}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{0133804E-4475-4EA6-AA7A-188DDA2DE191}.Debug|x86.Build.0 = Debug|Any CPU
+		{0133804E-4475-4EA6-AA7A-188DDA2DE191}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0133804E-4475-4EA6-AA7A-188DDA2DE191}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0133804E-4475-4EA6-AA7A-188DDA2DE191}.Release|x64.ActiveCfg = Release|Any CPU
+		{0133804E-4475-4EA6-AA7A-188DDA2DE191}.Release|x64.Build.0 = Release|Any CPU
+		{0133804E-4475-4EA6-AA7A-188DDA2DE191}.Release|x86.ActiveCfg = Release|Any CPU
+		{0133804E-4475-4EA6-AA7A-188DDA2DE191}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -686,5 +700,6 @@ Global
 		{7B57623A-8576-4BF8-B81D-4F22C0675C19} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{5B0E8CA3-8D2E-45F7-ACC4-9C4AC328C9D7} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{EBCE8A6D-449C-4DF1-B264-C894AC1F58E1} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{0133804E-4475-4EA6-AA7A-188DDA2DE191} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal

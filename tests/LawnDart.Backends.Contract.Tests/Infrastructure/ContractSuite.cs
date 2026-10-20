@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using LawnDart.EventStore;
 
 namespace LawnDart.Backends.Contract.Tests;
@@ -86,6 +87,36 @@ public abstract class ContractSuite
         }
 
         return list;
+    }
+
+    protected void AssertStoredPayload(byte[] expected, ReadOnlyMemory<byte> actual, byte codecId)
+    {
+        var bytes = actual.ToArray();
+        if (Cap.PreservesExactJsonText || codecId != EventCodec.Json)
+        {
+            Assert.Equal(expected, bytes);
+            return;
+        }
+
+        Assert.True(JsonNode.DeepEquals(JsonNode.Parse(expected), JsonNode.Parse(bytes)));
+    }
+
+    protected void AssertStoredMetadata(byte[] expected, ReadOnlyMemory<byte> actual)
+    {
+        if (expected.Length == 0)
+        {
+            Assert.True(actual.IsEmpty);
+            return;
+        }
+
+        var bytes = actual.ToArray();
+        if (Cap.PreservesExactJsonText)
+        {
+            Assert.Equal(expected, bytes);
+            return;
+        }
+
+        Assert.True(JsonNode.DeepEquals(JsonNode.Parse(expected), JsonNode.Parse(bytes)));
     }
 
     protected static async Task WaitForWaitersAsync(NewEventsSignal signal, int count)

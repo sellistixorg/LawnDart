@@ -85,15 +85,24 @@ public abstract class StreamRegistryContractTests : ContractSuite
         await store.AppendAsync($"ACME_WEST{suffix}:Order:2", [ContractEvent.Tick()]);
 
         var underscore = await store.EnumerateStreamIdsAsync($"acme_west{suffix}:");
-        Assert.Equal(2, underscore.Count);
         Assert.Contains($"acme_west{suffix}:Order:1", underscore);
         Assert.DoesNotContain($"acmeXwest{suffix}:Order:1", underscore);
-        Assert.Contains($"ACME_WEST{suffix}:Order:2", underscore);
-        Assert.Equal(2L, await store.GetStreamCountAsync($"acme_west{suffix}:"));
+        if (Cap.StreamIdPrefixCaseInsensitive)
+        {
+            Assert.Equal(2, underscore.Count);
+            Assert.Contains($"ACME_WEST{suffix}:Order:2", underscore);
+            Assert.Equal(2L, await store.GetStreamCountAsync($"acme_west{suffix}:"));
+        }
+        else
+        {
+            Assert.Equal(1, underscore.Count);
+            Assert.DoesNotContain($"ACME_WEST{suffix}:Order:2", underscore);
+            Assert.Equal(1L, await store.GetStreamCountAsync($"acme_west{suffix}:"));
+        }
         Assert.Equal(1L, await store.GetStreamCountAsync($"acmeXwest{suffix}:"));
         Assert.Equal(1L, await store.GetStreamCountAsync($"acme%west{suffix}:"));
         Assert.Equal(1L, await store.GetStreamCountAsync($"acme[west{suffix}:"));
-        Assert.Equal(2L, await store.GetStreamCountAsync("acme_"));
+        Assert.Equal(Cap.StreamIdPrefixCaseInsensitive ? 2L : 1L, await store.GetStreamCountAsync("acme_"));
 
         Assert.Equal([$"acme%west{suffix}:Order:1"], await store.EnumerateStreamIdsAsync($"acme%west{suffix}:"));
         Assert.Equal([$"acme[west{suffix}:Order:1"], await store.EnumerateStreamIdsAsync($"acme[west{suffix}:"));

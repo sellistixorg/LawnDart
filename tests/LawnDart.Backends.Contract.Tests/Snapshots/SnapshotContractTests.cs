@@ -17,9 +17,10 @@ public abstract class SnapshotContractTests : ContractSuite
     {
     }
 
-    [Fact]
+    [ContractFact]
     public async Task SaveThenLoad_RoundTripsStreamState()
     {
+        SkipUnless(Cap.HasSnapshotStore, "This backend does not have snapshot tables yet.");
         var opened = await Backend.OpenSnapshotsAsync(ContractStores.Isolated());
         var streamId = "acct:Order:" + Guid.NewGuid().ToString("N");
         var state = new InventoryState { Units = 7 };
@@ -34,6 +35,7 @@ public abstract class SnapshotContractTests : ContractSuite
     [ContractFact]
     public async Task SaveThenLoad_RoundTripsStateAndPlaintextTags()
     {
+        SkipUnless(Cap.HasSnapshotStore, "This backend does not have snapshot tables yet.");
         var opened = await Backend.OpenSnapshotsAsync(ContractStores.Isolated());
         var tags = new[] { "product:sku-1", "warehouse:east" };
         var dcbId = DcbSnapshotId.FromLoadTags(tags);
@@ -54,6 +56,7 @@ public abstract class SnapshotContractTests : ContractSuite
     [ContractFact]
     public async Task CorruptSnapshot_FallsBackToFullReplay()
     {
+        SkipUnless(Cap.HasSnapshotStore, "This backend does not have snapshot tables yet.");
         SkipUnless(
             Cap.CanCorruptDcbSnapshot,
             "In-memory does not expose the stored snapshot bytes to replace.");
@@ -77,9 +80,10 @@ public abstract class SnapshotContractTests : ContractSuite
         Assert.Equal(12, (await repo.GetStateAsync<InventoryState>(tags)).Units);
     }
 
-    [Fact]
+    [ContractFact]
     public async Task HandleCommandAsync_EventCountStrategy1_WritesHashedSnapshot_ThenReloadUsesIt()
     {
+        SkipUnless(Cap.HasSnapshotStore, "This backend does not have snapshot tables yet.");
         var opened = await Backend.OpenSnapshotsAsync(ContractStores.Isolated());
         var resolver = new SnapshotStrategyResolver();
         resolver.RegisterForDcb<InventoryEntity>(new EventCountSnapshotStrategy(1));
@@ -112,9 +116,10 @@ public abstract class SnapshotContractTests : ContractSuite
         Assert.Equal(0, loaded.EventsSinceLastSnapshot);
     }
 
-    [Fact]
+    [ContractFact]
     public async Task GetStateAsync_SameHashedKey_RestoresSnapshotAndReplaysDelta()
     {
+        SkipUnless(Cap.HasSnapshotStore, "This backend does not have snapshot tables yet.");
         var opened = await Backend.OpenSnapshotsAsync(ContractStores.Isolated());
         var tags = new[] { "product:sku-delta" };
         var dcbId = DcbSnapshotId.FromLoadTags(tags);

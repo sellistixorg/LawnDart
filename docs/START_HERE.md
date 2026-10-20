@@ -27,7 +27,7 @@ Typical first path:
 
 - **Core contracts**: `LawnDart` (`AddLawnDart`)
 - **Event-sourcing runtime**: `LawnDart.EventSourcing`
-- **Storage**: `UseInMemory()` (zero infra) or `UseSqlServer(...)` (durable)
+- **Storage**: `UseInMemory()` (zero infra), `UseSqlServer(...)`, or `UsePostgres(...)` (durable)
 - **Projections**: `LawnDart.Projections.Lightweight` via `.WithProjections(...)`
 - **HTTP**: `LawnDart.AspNetCore` plus optional `LawnDart.Authorization.AspNetCore`
 - **Messaging**: `LawnDart.Messaging` plus `LawnDart.Messaging.InMemory`, `LawnDart.Messaging.RabbitMQ`, `LawnDart.Messaging.AzureServiceBus`, or `LawnDart.Messaging.AwsSqs`

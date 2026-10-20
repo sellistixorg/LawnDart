@@ -14,9 +14,10 @@ public abstract class OutboxContractTests : ContractSuite
     {
     }
 
-    [Fact]
+    [ContractFact]
     public async Task WriteAsync_AddsMessageToOutbox()
     {
+        SkipUnless(Cap.HasOutboxStore, "This backend does not have an outbox yet.");
         var writer = await Backend.OpenOutboxAsync(ContractStores.Isolated());
         var message = NewMessage("stream1", 1);
         await writer.WriteAsync(message);
@@ -24,18 +25,20 @@ public abstract class OutboxContractTests : ContractSuite
         Assert.Equal(message.Id, Assert.Single(unprocessed).Id);
     }
 
-    [Fact]
+    [ContractFact]
     public async Task WriteBatchAsync_AddsMultipleMessages()
     {
+        SkipUnless(Cap.HasOutboxStore, "This backend does not have an outbox yet.");
         var writer = await Backend.OpenOutboxAsync(ContractStores.Isolated());
         var messages = new[] { NewMessage("stream1", 1), NewMessage("stream1", 2) };
         await writer.WriteBatchAsync(messages);
         Assert.Equal(2, (await writer.GetUnprocessedAsync(10)).Count);
     }
 
-    [Fact]
+    [ContractFact]
     public async Task GetUnprocessedAsync_ReturnsOnlyUnprocessedMessages()
     {
+        SkipUnless(Cap.HasOutboxStore, "This backend does not have an outbox yet.");
         var writer = await Backend.OpenOutboxAsync(ContractStores.Isolated());
         var keep = NewMessage("s", 1);
         var done = NewMessage("s", 2);
@@ -45,9 +48,10 @@ public abstract class OutboxContractTests : ContractSuite
         Assert.Equal(keep.Id, Assert.Single(await writer.GetUnprocessedAsync(10)).Id);
     }
 
-    [Fact]
+    [ContractFact]
     public async Task GetUnprocessedAsync_RespectsOrderBySequencePosition()
     {
+        SkipUnless(Cap.HasOutboxStore, "This backend does not have an outbox yet.");
         var writer = await Backend.OpenOutboxAsync(ContractStores.Isolated());
         await writer.WriteAsync(NewMessage("s", 3));
         await writer.WriteAsync(NewMessage("s", 1));
@@ -59,18 +63,20 @@ public abstract class OutboxContractTests : ContractSuite
         Assert.Equal(3, rows[2].SequencePosition);
     }
 
-    [Fact]
+    [ContractFact]
     public async Task GetUnprocessedAsync_RespectsBatchSize()
     {
+        SkipUnless(Cap.HasOutboxStore, "This backend does not have an outbox yet.");
         var writer = await Backend.OpenOutboxAsync(ContractStores.Isolated());
         for (var i = 1; i <= 5; i++)
             await writer.WriteAsync(NewMessage("s", i));
         Assert.Equal(3, (await writer.GetUnprocessedAsync(3)).Count);
     }
 
-    [Fact]
+    [ContractFact]
     public async Task GetUnprocessedAsync_HonorsClaimLease()
     {
+        SkipUnless(Cap.HasOutboxStore, "This backend does not have an outbox yet.");
         var held = await Backend.OpenOutboxAsync(ContractStores.Isolated(outboxClaimLease: TimeSpan.FromHours(1)));
         var heldMessage = NewMessage("held", 1);
         await held.WriteAsync(heldMessage);
@@ -84,9 +90,10 @@ public abstract class OutboxContractTests : ContractSuite
         Assert.Equal(openMessage.Id, Assert.Single(await open.GetUnprocessedAsync(10)).Id);
     }
 
-    [Fact]
+    [ContractFact]
     public async Task MarkAsProcessedAsync_SetsProcessedAt()
     {
+        SkipUnless(Cap.HasOutboxStore, "This backend does not have an outbox yet.");
         var writer = await Backend.OpenOutboxAsync(ContractStores.Isolated());
         var message = NewMessage("s", 1);
         await writer.WriteAsync(message);
@@ -94,9 +101,10 @@ public abstract class OutboxContractTests : ContractSuite
         Assert.Empty(await writer.GetUnprocessedAsync(10));
     }
 
-    [Fact]
+    [ContractFact]
     public async Task RecordFailureAsync_IncrementsAttemptsAndSetsError()
     {
+        SkipUnless(Cap.HasOutboxStore, "This backend does not have an outbox yet.");
         var writer = await Backend.OpenOutboxAsync(ContractStores.Isolated(outboxClaimLease: TimeSpan.Zero));
         var message = NewMessage("s", 1);
         await writer.WriteAsync(message);
@@ -107,9 +115,10 @@ public abstract class OutboxContractTests : ContractSuite
         Assert.NotNull(row.LastAttemptAt);
     }
 
-    [Fact]
+    [ContractFact]
     public async Task RecordFailureAsync_MultipleFailures_IncrementsAttempts()
     {
+        SkipUnless(Cap.HasOutboxStore, "This backend does not have an outbox yet.");
         var writer = await Backend.OpenOutboxAsync(ContractStores.Isolated(outboxClaimLease: TimeSpan.Zero));
         var message = NewMessage("s", 1);
         await writer.WriteAsync(message);
@@ -121,9 +130,10 @@ public abstract class OutboxContractTests : ContractSuite
         Assert.Equal("three", row.LastError);
     }
 
-    [Fact]
+    [ContractFact]
     public async Task MarkAsDeadLetteredAsync_ExcludesFromUnprocessed_AndIsQueryable()
     {
+        SkipUnless(Cap.HasOutboxStore, "This backend does not have an outbox yet.");
         var writer = await Backend.OpenOutboxAsync(ContractStores.Isolated());
         var live = NewMessage("s", 1);
         var poison = NewMessage("s", 2);
@@ -138,9 +148,10 @@ public abstract class OutboxContractTests : ContractSuite
         Assert.Null(dead.ProcessedAt);
     }
 
-    [Fact]
+    [ContractFact]
     public async Task WriteAsync_PersistsSchemaVersionAndCodecId()
     {
+        SkipUnless(Cap.HasOutboxStore, "This backend does not have an outbox yet.");
         var writer = await Backend.OpenOutboxAsync(ContractStores.Isolated());
         var message = NewMessage("s", 1, schemaVersion: 2, codecId: 2);
         await writer.WriteAsync(message);
@@ -150,9 +161,10 @@ public abstract class OutboxContractTests : ContractSuite
         Assert.Equal(message.EventType, row.EventType);
     }
 
-    [Fact]
+    [ContractFact]
     public async Task ResetDeadLettered_ClearsDeadLetter_KeepsLastError_AndZeroesAttempts()
     {
+        SkipUnless(Cap.HasOutboxStore, "This backend does not have an outbox yet.");
         var writer = await Backend.OpenOutboxAsync(ContractStores.Isolated(outboxClaimLease: TimeSpan.Zero));
         var message = NewMessage("s", 1, attempts: 4);
         await writer.WriteAsync(message);
@@ -170,9 +182,10 @@ public abstract class OutboxContractTests : ContractSuite
         Assert.Empty(await writer.GetDeadLetteredAsync(10));
     }
 
-    [Fact]
+    [ContractFact]
     public async Task ResetDeadLettered_Unknown_NeverDeadLettered_AndProcessed_ReturnFalse()
     {
+        SkipUnless(Cap.HasOutboxStore, "This backend does not have an outbox yet.");
         var writer = await Backend.OpenOutboxAsync(ContractStores.Isolated(outboxClaimLease: TimeSpan.Zero));
         Assert.False(await writer.ResetDeadLetteredAsync(Guid.NewGuid()));
         var live = NewMessage("s", 1, attempts: 2);
@@ -195,9 +208,10 @@ public abstract class OutboxContractTests : ContractSuite
         Assert.False(await writer.ResetDeadLetteredAsync(live.Id));
     }
 
-    [Fact]
+    [ContractFact]
     public async Task ResetDeadLettered_SecondCall_ReturnsFalse()
     {
+        SkipUnless(Cap.HasOutboxStore, "This backend does not have an outbox yet.");
         var writer = await Backend.OpenOutboxAsync(ContractStores.Isolated());
         var message = NewMessage("s", 1);
         await writer.WriteAsync(message);
@@ -208,9 +222,10 @@ public abstract class OutboxContractTests : ContractSuite
         Assert.Equal(0, queued.Attempts);
     }
 
-    [Fact]
+    [ContractFact]
     public async Task ResetAll_ReturnsCount_AndSkipsLiveAndProcessedRows()
     {
+        SkipUnless(Cap.HasOutboxStore, "This backend does not have an outbox yet.");
         var writer = await Backend.OpenOutboxAsync(ContractStores.Isolated(outboxClaimLease: TimeSpan.Zero));
         var live = NewMessage("s", 1);
         await writer.WriteAsync(live);
@@ -236,9 +251,10 @@ public abstract class OutboxContractTests : ContractSuite
         Assert.Empty(await writer.GetDeadLetteredAsync(10));
     }
 
-    [Fact]
+    [ContractFact]
     public async Task Reset_ThenOutboxProcessor_PublishesAndMarksProcessed()
     {
+        SkipUnless(Cap.HasOutboxStore, "This backend does not have an outbox yet.");
         var writer = await Backend.OpenOutboxAsync(ContractStores.Isolated(outboxClaimLease: TimeSpan.Zero));
         var publisher = new RecordingPublisher { ShouldFail = true };
         var message = NewMessage("s", 1);
@@ -260,9 +276,10 @@ public abstract class OutboxContractTests : ContractSuite
         Assert.DoesNotContain(await writer.GetDeadLetteredAsync(10), m => m.Id == message.Id);
     }
 
-    [Fact]
+    [ContractFact]
     public async Task Write_ToOneContext_NotVisibleFromAnother()
     {
+        SkipUnless(Cap.HasOutboxStore, "This backend does not have an outbox yet.");
         var ordering = await Backend.OpenOutboxAsync(ContractStores.Isolated());
         var catalog = await Backend.OpenOutboxAsync(ContractStores.Isolated());
         var message = NewMessage("order", 1);
@@ -271,9 +288,10 @@ public abstract class OutboxContractTests : ContractSuite
         Assert.Equal(message.Id, Assert.Single(await ordering.GetUnprocessedAsync(10)).Id);
     }
 
-    [Fact]
+    [ContractFact]
     public async Task MarkAsProcessed_OnlyAffectsOwnContext()
     {
+        SkipUnless(Cap.HasOutboxStore, "This backend does not have an outbox yet.");
         var ordering = await Backend.OpenOutboxAsync(ContractStores.Isolated());
         var catalog = await Backend.OpenOutboxAsync(ContractStores.Isolated());
         var left = NewMessage("order", 1);
@@ -285,9 +303,10 @@ public abstract class OutboxContractTests : ContractSuite
         Assert.Equal(right.Id, Assert.Single(await catalog.GetUnprocessedAsync(10)).Id);
     }
 
-    [Fact]
+    [ContractFact]
     public async Task ResetDeadLettered_DoesNotTouchAnotherContext()
     {
+        SkipUnless(Cap.HasOutboxStore, "This backend does not have an outbox yet.");
         var ordering = await Backend.OpenOutboxAsync(ContractStores.Isolated());
         var catalog = await Backend.OpenOutboxAsync(ContractStores.Isolated());
         var left = NewMessage("order", 1, attempts: 4);
@@ -317,6 +336,7 @@ public abstract class OutboxContractTests : ContractSuite
     [ContractFact]
     public async Task AppendAsync_WithOutboxEnabled_WritesEventAndOutboxInSameTransaction()
     {
+        SkipUnless(Cap.HasOutboxStore, "This backend does not have an outbox yet.");
         SkipUnless(Cap.AppendWritesOutboxRows, "This backend does not write outbox rows when an event is appended.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(enableOutbox: true));
         var streamId = "test-tenant:TestAggregate:" + Guid.NewGuid().ToString("N");
@@ -329,6 +349,7 @@ public abstract class OutboxContractTests : ContractSuite
     [ContractFact]
     public async Task AppendAsync_WithOutboxEnabled_CopiesFrameBytesNotClrReserialize()
     {
+        SkipUnless(Cap.HasOutboxStore, "This backend does not have an outbox yet.");
         SkipUnless(Cap.AppendWritesOutboxRows, "This backend does not write outbox rows when an event is appended.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(enableOutbox: true));
         var streamId = "test-tenant:TestAggregate:" + Guid.NewGuid().ToString("N");
@@ -353,6 +374,7 @@ public abstract class OutboxContractTests : ContractSuite
     [ContractFact]
     public async Task AppendAsync_WithOutboxDisabled_DoesNotWriteToOutbox()
     {
+        SkipUnless(Cap.HasOutboxStore, "This backend does not have an outbox yet.");
         SkipUnless(Cap.AppendWritesOutboxRows, "This backend does not write outbox rows when an event is appended.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(includeOutboxReader: true));
         var streamId = "test-tenant:TestAggregate:" + Guid.NewGuid().ToString("N");
@@ -364,6 +386,7 @@ public abstract class OutboxContractTests : ContractSuite
     [ContractFact]
     public async Task AppendAsync_WithTransactionRollback_RollsBackBothEventAndOutbox()
     {
+        SkipUnless(Cap.HasOutboxStore, "This backend does not have an outbox yet.");
         SkipUnless(Cap.AppendWritesOutboxRows, "This backend does not write outbox rows when an event is appended.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(enableOutbox: true));
         var streamId = "test-tenant:TestAggregate:" + Guid.NewGuid().ToString("N");
@@ -381,6 +404,7 @@ public abstract class OutboxContractTests : ContractSuite
     [ContractFact]
     public async Task AppendAsync_WithMultipleEvents_WritesAllToOutbox()
     {
+        SkipUnless(Cap.HasOutboxStore, "This backend does not have an outbox yet.");
         SkipUnless(Cap.AppendWritesOutboxRows, "This backend does not write outbox rows when an event is appended.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(enableOutbox: true));
         var streamId = "test-tenant:TestAggregate:" + Guid.NewGuid().ToString("N");
@@ -398,6 +422,7 @@ public abstract class OutboxContractTests : ContractSuite
     [ContractFact]
     public async Task OutboxWriter_ProcessingFlow_MarksMessagesAsProcessed()
     {
+        SkipUnless(Cap.HasOutboxStore, "This backend does not have an outbox yet.");
         SkipUnless(Cap.AppendWritesOutboxRows, "This backend does not write outbox rows when an event is appended.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(enableOutbox: true, outboxClaimLease: TimeSpan.Zero));
         var streamId = "test-tenant:TestAggregate:" + Guid.NewGuid().ToString("N");
@@ -410,6 +435,7 @@ public abstract class OutboxContractTests : ContractSuite
     [ContractFact]
     public async Task OutboxWriter_FailureRecording_TracksFailedAttempts()
     {
+        SkipUnless(Cap.HasOutboxStore, "This backend does not have an outbox yet.");
         SkipUnless(Cap.AppendWritesOutboxRows, "This backend does not write outbox rows when an event is appended.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(enableOutbox: true, outboxClaimLease: TimeSpan.Zero));
         await opened.Store.AppendAsync(Stream(), [new ContractOutboxEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow, Value = "f" }]);
@@ -423,6 +449,7 @@ public abstract class OutboxContractTests : ContractSuite
     [ContractFact]
     public async Task AppendAsync_EnableOutbox_WithoutWriter_StillWritesRows()
     {
+        SkipUnless(Cap.HasOutboxStore, "This backend does not have an outbox yet.");
         SkipUnless(Cap.AppendWritesOutboxRows, "This backend does not write outbox rows when an event is appended.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(enableOutbox: true));
         var streamId = Stream();
@@ -442,6 +469,7 @@ public abstract class OutboxContractTests : ContractSuite
     [ContractFact]
     public async Task AppendAsync_LogEnvelope_CopiesSchemaVersionAndCodecIdToOutbox()
     {
+        SkipUnless(Cap.HasOutboxStore, "This backend does not have an outbox yet.");
         SkipUnless(Cap.AppendWritesOutboxRows, "This backend does not write outbox rows when an event is appended.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(enableOutbox: true));
         var streamId = Stream();

@@ -34,8 +34,8 @@ public abstract class EventLogContractTests : ContractSuite
 
         var recorded = Assert.Single(await log.ReadStreamAsync(streamId));
         Assert.Equal(OutsideEventName, recorded.EventType);
-        Assert.Equal(payload, recorded.Payload.ToArray());
-        Assert.Equal(metadata, recorded.Metadata.ToArray());
+        AssertStoredPayload(payload, recorded.Payload, recorded.CodecId);
+        AssertStoredMetadata(metadata, recorded.Metadata);
         Assert.Equal(1, recorded.SchemaVersion);
         Assert.Contains("order:outside", recorded.Tags);
 
@@ -57,8 +57,8 @@ public abstract class EventLogContractTests : ContractSuite
 
         var copy = Assert.Single(await log.ReadStreamAsync(copyStreamId));
         Assert.Equal(recorded.EventType, copy.EventType);
-        Assert.Equal(recorded.Payload.ToArray(), copy.Payload.ToArray());
-        Assert.Equal(recorded.Metadata.ToArray(), copy.Metadata.ToArray());
+        AssertStoredPayload(recorded.Payload.ToArray(), copy.Payload, copy.CodecId);
+        AssertStoredMetadata(recorded.Metadata.ToArray(), copy.Metadata);
         Assert.Equal(recorded.Tags, copy.Tags);
     }
 
@@ -72,7 +72,7 @@ public abstract class EventLogContractTests : ContractSuite
         await log.AppendAsync(streamId, [new AppendEvent(OutsideEventName, payload)]);
 
         var recorded = Assert.Single(await log.ReadStreamAsync(streamId));
-        Assert.Equal(payload, recorded.Payload.ToArray());
+        AssertStoredPayload(payload, recorded.Payload, recorded.CodecId);
         Assert.Equal(OutsideEventName, recorded.EventType);
     }
 
