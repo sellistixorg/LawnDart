@@ -9,7 +9,8 @@ LawnDart is pre-1.0 and the public API is still settling. To avoid wasted
 effort, please open an issue before starting on any of the following:
 
 - **A new event store backend.** InMemory and SQL Server are the two supported
-  stores. Others are not currently planned.
+  stores. PostgreSQL support is in progress for the 0.7 line. Open an issue
+  before starting any other store.
 - **A new message transport.** InMemory, RabbitMQ, Azure Service Bus, and
   Amazon SQS are the supported transports. Another transport needs an issue first.
 - **Changes that reshape public API surface** — new abstractions, renamed
@@ -125,10 +126,11 @@ generated diffs that the author cannot walk through will be closed.
 - File-scoped namespaces.
 - xUnit for all tests. Use `WaitForAsync` for eventual-consistency assertions.
 - Runtime dependencies are limited to `Microsoft.Extensions.*`,
-  `Microsoft.AspNetCore.*`, `Microsoft.Data.SqlClient`, and
-  `OpenTelemetry`. Open an issue before adding any new third-party runtime
-  dependency, and add the version to `Directory.Packages.props` rather than the
-  individual `.csproj`.
+  `Microsoft.AspNetCore.*`, `Microsoft.Data.SqlClient`, `Npgsql` (the .NET
+  driver for PostgreSQL, for the Postgres packages), and `OpenTelemetry`.
+  Open an issue before adding any new third-party runtime dependency, and
+  pin the version in `Directory.Packages.props` rather than the individual
+  `.csproj`.
 
 ## Project layout
 

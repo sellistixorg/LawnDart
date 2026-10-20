@@ -15,7 +15,7 @@ The body says why. Leave a blank line before `Signed-off-by`.
 
 ## Scope
 
-InMemory and SQL Server are the stores. Transports are `LawnDart.Messaging.InMemory`, `LawnDart.Messaging.RabbitMQ`, `LawnDart.Messaging.AzureServiceBus`, and `LawnDart.Messaging.AwsSqs`.
+InMemory and SQL Server are the stores. PostgreSQL support is in progress for the 0.7 line. Transports are `LawnDart.Messaging.InMemory`, `LawnDart.Messaging.RabbitMQ`, `LawnDart.Messaging.AzureServiceBus`, and `LawnDart.Messaging.AwsSqs`.
 Reshaping public API needs an issue first.
 Bug fixes, tests, docs, and work behind existing abstractions do not.
 
@@ -35,8 +35,8 @@ Do not add a version heading.
 
 ## Dependencies and versions
 
-Runtime dependencies stay limited to `Microsoft.Extensions.*`, `Microsoft.AspNetCore.*`, `Microsoft.Data.SqlClient`, `RabbitMQ.Client`, `Azure.Messaging.ServiceBus`, and `OpenTelemetry`.
-A new one needs an issue, and its version goes in `Directory.Packages.props`.
+Runtime dependencies stay limited to `Microsoft.Extensions.*`, `Microsoft.AspNetCore.*`, `Microsoft.Data.SqlClient`, `Npgsql` (the .NET driver for PostgreSQL, for the Postgres packages), `RabbitMQ.Client`, `Azure.Messaging.ServiceBus`, and `OpenTelemetry`.
+A new one needs an issue, and its version is pinned in `Directory.Packages.props`.
 Package versions come from MinVer tags. Do not set `<Version>` in a project file.
 Do not commit `bin/` or `obj/`.
 
