@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using LawnDart;
 using LawnDart.Projections.Lightweight;
+using LawnDart.Projections.Lightweight.SqlServer;
 
 namespace LawnDart.Projections.Lightweight.Tests.Unit;
 

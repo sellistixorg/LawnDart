@@ -39,7 +39,7 @@ A context name matches `LawnDartNames.Pattern`. It starts with a letter or digit
 
 `LawnDartOptions.ValidateNames` defaults to true. Set it to false before `AddBoundedContext` to keep a name that does not match, or to keep a tenant id of `default` in any casing. Call `AddLawnDart` first so the option is visible at registration. A colon in a tenant id is still rejected. An empty tenant id is still rejected.
 
-`AddSqlProjectionStores(contextName, connectionString)` uses `contextName` as the SQL Server schema when you pass no schema. Pass `schemaName: "dbo"` to keep the `dbo` schema. `AddInMemoryProjectionStores`, `AddTagProvider`, `AddTagFormat`, `MapProjectionQueries`, and `AddProjectionDebugServices` check the same name.
+`AddSqlProjectionStores(contextName, connectionString)` is in `LawnDart.Projections.Lightweight.SqlServer`. It uses `contextName` as the SQL Server schema when you pass no schema. Pass `schemaName: "dbo"` to keep the `dbo` schema. `AddInMemoryProjectionStores`, `AddTagProvider`, `AddTagFormat`, `MapProjectionQueries`, and `AddProjectionDebugServices` check the same name.
 
 Academy is the copy-paste host: `demos/LawnDart.Demo.Academy` (console) and
 `demos/LawnDart.Demo.Academy.WebApi`.

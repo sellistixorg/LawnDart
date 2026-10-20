@@ -35,9 +35,10 @@ public static class BoundedContextProjectionExtensions
     /// </param>
     /// <returns>The builder for further chaining.</returns>
     /// <remarks>
-    /// Call <c>AddInMemoryProjectionStores(contextName)</c> or
-    /// <c>AddSqlProjectionStores(contextName, connectionString)</c> before
-    /// calling <c>WithProjections()</c> to ensure the keyed stores are registered.
+    /// Call <c>AddInMemoryProjectionStores(contextName)</c> before
+    /// <c>WithProjections()</c> so the keyed stores are registered.
+    /// SQL Server stores use <c>AddSqlProjectionStores</c> in
+    /// <c>LawnDart.Projections.Lightweight.SqlServer</c>.
     /// </remarks>
     public static BoundedContextBuilder WithProjections(
         this BoundedContextBuilder builder,
@@ -174,99 +175,5 @@ public static class BoundedContextProjectionExtensions
                 sp.GetService<Microsoft.Extensions.Logging.ILogger<InMemoryCheckpointStore>>()));
 
         return services;
-    }
-
-    // -------------------------------------------------------------------------
-    // AddSqlProjectionStores (keyed variant)
-    // -------------------------------------------------------------------------
-
-    /// <summary>
-    /// Registers keyed SQL Server <see cref="IViewStore"/> and <see cref="ICheckpointStore"/>
-    /// for the specified bounded context, using schema-qualified tables.
-    /// </summary>
-    /// <remarks>
-    /// Call this <b>before</b> <c>WithProjections(contextName)</c>.
-    /// When <paramref name="schemaName"/> is null or whitespace, the SQL schema defaults to
-    /// <paramref name="contextName"/>. Pass <c>"dbo"</c> explicitly
-    /// to keep that schema while still using a non-dbo dependency injection key.
-    /// <paramref name="contextName"/> is checked with <see cref="LawnDartNames"/>.
-    /// <para>
-    /// After the host is built, call <see cref="InitializeSqlProjectionStoresAsync"/> once with
-    /// an elevated connection so tables and indexes exist before runners start.
-    /// </para>
-    /// </remarks>
-    /// <param name="services">The service collection.</param>
-    /// <param name="contextName">The bounded context name (DI key).</param>
-    /// <param name="connectionString">SQL Server connection string.</param>
-    /// <param name="schemaName">
-    /// Optional SQL schema. Defaults to <paramref name="contextName"/> when null/empty.
-    /// </param>
-    /// <returns>The service collection for chaining.</returns>
-    public static IServiceCollection AddSqlProjectionStores(
-        this IServiceCollection services,
-        string contextName,
-        string connectionString,
-        string? schemaName = null)
-    {
-        LawnDartNames.RequireContextName(services, contextName, nameof(contextName));
-        if (string.IsNullOrWhiteSpace(connectionString))
-            throw new ArgumentException("Connection string must not be null or whitespace.", nameof(connectionString));
-
-        var effectiveSchema = string.IsNullOrWhiteSpace(schemaName) ? contextName : schemaName;
-
-        services.AddKeyedSingleton<IViewStore>(contextName, (sp, _) =>
-            new SqlViewStore(
-                connectionString,
-                sp.GetService<ILogger<SqlViewStore>>(),
-                effectiveSchema));
-
-        services.AddKeyedSingleton<ICheckpointStore>(contextName, (sp, key) =>
-            new SqlCheckpointStore(
-                connectionString,
-                sp.GetRequiredKeyedService<IViewStore>(key!),
-                sp.GetService<ILogger<SqlCheckpointStore>>(),
-                effectiveSchema));
-
-        return services;
-    }
-
-    /// <summary>
-    /// Initializes schema for the keyed SQL <see cref="IViewStore"/> and
-    /// <see cref="ICheckpointStore"/> registered by <see cref="AddSqlProjectionStores"/>.
-    /// </summary>
-    /// <remarks>
-    /// Prefer running this from an elevated deploy/admin job rather than the long-lived app
-    /// process. After objects exist, re-runs are catalog no-ops (DDL branches skipped).
-    /// </remarks>
-    /// <param name="services">Built service provider.</param>
-    /// <param name="contextName">Bounded context DI key.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    public static async Task InitializeSqlProjectionStoresAsync(
-        this IServiceProvider services,
-        string contextName,
-        CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(contextName))
-            throw new ArgumentException("Context name must not be null or whitespace.", nameof(contextName));
-
-        var viewStore = services.GetRequiredKeyedService<IViewStore>(contextName);
-        var checkpointStore = services.GetRequiredKeyedService<ICheckpointStore>(contextName);
-
-        if (viewStore is not SqlViewStore sqlViewStore)
-        {
-            throw new InvalidOperationException(
-                $"Keyed IViewStore '{contextName}' is {viewStore.GetType().Name}, not SqlViewStore. " +
-                "Call AddSqlProjectionStores(contextName, connectionString) before InitializeSqlProjectionStoresAsync.");
-        }
-
-        if (checkpointStore is not SqlCheckpointStore sqlCheckpointStore)
-        {
-            throw new InvalidOperationException(
-                $"Keyed ICheckpointStore '{contextName}' is {checkpointStore.GetType().Name}, not SqlCheckpointStore. " +
-                "Call AddSqlProjectionStores(contextName, connectionString) before InitializeSqlProjectionStoresAsync.");
-        }
-
-        await sqlViewStore.InitializeSchemaAsync(cancellationToken).ConfigureAwait(false);
-        await sqlCheckpointStore.InitializeSchemaAsync(cancellationToken).ConfigureAwait(false);
     }
 }

@@ -11,6 +11,7 @@ using LawnDart.Messaging.Outbox;
 using LawnDart.Messaging.SqlServer;
 using LawnDart.Outbox;
 using LawnDart.Projections.Lightweight;
+using LawnDart.Projections.Lightweight.SqlServer;
 using Library.Domain;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;

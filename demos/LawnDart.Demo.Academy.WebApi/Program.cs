@@ -22,6 +22,7 @@ using LawnDart.Messaging.Outbox;
 using LawnDart.Metadata;
 using LawnDart.Outbox;
 using LawnDart.Projections.Lightweight;
+using LawnDart.Projections.Lightweight.SqlServer;
 using LawnDart.Projections.Lightweight.Security;
 using System.Text;
 

@@ -30,7 +30,9 @@ ctx.WithProjections(
 app.MapProjectionQueries("default");
 ```
 
-`AddSqlLibrary` calls `AddSqlProjectionStores("default", connectionString)`.
+`AddSqlLibrary` calls `AddSqlProjectionStores("default", connectionString)` from
+`LawnDart.Projections.Lightweight.SqlServer`. Add
+`using LawnDart.Projections.Lightweight.SqlServer`.
 `InitializeSqlLibraryAsync` creates the event-store, outbox, view, checkpoint,
 and inbox tables before runners start.
 

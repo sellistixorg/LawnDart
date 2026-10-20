@@ -1,9 +1,10 @@
 using System.Text.Json;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
+using LawnDart.Projections.Storage;
 using LawnDart.Sql;
 
-namespace LawnDart.Projections.Storage;
+namespace LawnDart.Projections.Lightweight.SqlServer;
 
 /// <summary>
 /// SQL Server-based view store for persistent storage and admin queries.

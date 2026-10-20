@@ -34,6 +34,7 @@
     <ProjectReference Include="..\..\src\LawnDart.EventSourcing\LawnDart.EventSourcing.csproj" />
     <ProjectReference Include="..\..\src\LawnDart.EventSourcing.SqlServer\LawnDart.EventSourcing.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\LawnDart.Projections.Lightweight\LawnDart.Projections.Lightweight.csproj" />
+    <ProjectReference Include="..\..\src\LawnDart.Projections.Lightweight.SqlServer\LawnDart.Projections.Lightweight.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\LawnDart.Testing\LawnDart.Testing.csproj" />
     <ProjectReference Include="..\LawnDart.TestUtilities\LawnDart.TestUtilities.csproj" />
     <ProjectReference Include="..\..\samples\Library.Host\Library.Host.csproj" />

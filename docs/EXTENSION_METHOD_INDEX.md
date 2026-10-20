@@ -50,7 +50,8 @@ These live on `IAggregateRepository` in Core (not `Add*` extensions). Guid overl
 | Method | Package | Purpose |
 |---|---|---|
 | `AddInMemoryProjectionStores` | `LawnDart.Projections.Lightweight` | Dev/test view + checkpoint stores |
-| `AddSqlProjectionStores` | `LawnDart.Projections.Lightweight` | Durable view + checkpoint stores |
+| `AddSqlProjectionStores` | `LawnDart.Projections.Lightweight.SqlServer` | Durable SQL Server view + checkpoint stores |
+| `InitializeSqlProjectionStoresAsync` | `LawnDart.Projections.Lightweight.SqlServer` | Create the view and checkpoint tables |
 | `WithProjections` | `LawnDart.Projections.Lightweight` | Scan projectors for a context |
 | `MapProjectionQueries` | `LawnDart.Projections.Lightweight` | HTTP GET views |
 

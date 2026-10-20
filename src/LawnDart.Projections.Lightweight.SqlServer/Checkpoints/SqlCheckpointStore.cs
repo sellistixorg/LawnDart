@@ -1,10 +1,11 @@
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
+using LawnDart.Projections.Checkpoints;
 using LawnDart.Projections.Storage;
 using LawnDart.Sql;
 
-namespace LawnDart.Projections.Checkpoints;
+namespace LawnDart.Projections.Lightweight.SqlServer;
 
 /// <summary>
 /// SQL Server implementation of checkpoint storage.
