@@ -133,6 +133,58 @@ public class AggregateRepositoryTests
     }
 
     [Fact]
+    public async Task SaveAsync_ReservedTenantDefault_Throws()
+    {
+        var repository = CreateRepository(new LawnDartOptions { RequireTenantId = true });
+        var aggregate = PendingAggregate("default");
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+            repository.SaveAsync(aggregate, new CommandMetadata { TenantId = "default" }));
+        Assert.Contains("reserved", ex.Message);
+    }
+
+    [Fact]
+    public async Task SaveAsync_ValidateNamesFalse_AllowsReservedTenantDefault()
+    {
+        var eventStore = new InMemoryEventStore();
+        var repository = CreateRepository(
+            new LawnDartOptions { RequireTenantId = true, ValidateNames = false },
+            eventStore,
+            tenantId: "default");
+        var aggregate = PendingAggregate("default");
+
+        await repository.SaveAsync(aggregate, new CommandMetadata { TenantId = "default" });
+
+        var events = await eventStore.ReadStreamAsync(aggregate.StreamId);
+        Assert.Single(events);
+    }
+
+    [Fact]
+    public async Task SaveAsync_EmptyTenantId_Throws()
+    {
+        var repository = CreateRepository(new LawnDartOptions
+        {
+            RequireTenantId = true,
+            ValidateNames = false
+        });
+        var aggregate = PendingAggregate("acme");
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            repository.SaveAsync(aggregate, new CommandMetadata { TenantId = "" }));
+    }
+
+    [Fact]
+    public async Task SaveAsync_MissingTenant_WhenRequired_Throws()
+    {
+        var repository = CreateRepository(new LawnDartOptions { RequireTenantId = true });
+        var aggregate = PendingAggregate("acme");
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+            repository.SaveAsync(aggregate, new CommandMetadata { TenantId = null }));
+        Assert.Contains("TenantId is required", ex.Message);
+    }
+
+    [Fact]
     public async Task SaveAsync_ValidateNamesFalse_AllowsExistingTenant_RejectsColon()
     {
         var eventStore = new InMemoryEventStore();
@@ -400,6 +452,24 @@ public class AggregateRepositoryTests
         Assert.NotNull(finalAggregate);
         Assert.Equal(2, finalAggregate!.Version);
         Assert.Equal(11, finalAggregate.State.Total); // Initial 1 + thread2's 10 = 11
+    }
+
+    private static AggregateRepository CreateRepository(
+        LawnDartOptions options,
+        InMemoryEventStore? eventStore = null,
+        string? tenantId = "acme")
+        => new(
+            eventStore ?? new InMemoryEventStore(),
+            new DefaultMetadataProvider(),
+            new TestTenantContextProvider(tenantId),
+            Options.Create(options));
+
+    private static TestAggregate PendingAggregate(string tenantId)
+    {
+        var aggregate = new TestAggregate();
+        aggregate.SetStreamId($"{tenantId}:TestAggregate:{Guid.NewGuid()}");
+        aggregate.ApplyTest(new TestEvent(Guid.NewGuid(), DateTime.UtcNow));
+        return aggregate;
     }
 
     private class TestState : IState

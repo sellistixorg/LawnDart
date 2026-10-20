@@ -98,15 +98,16 @@ public static class LawnDartNames
 
     /// <summary>
     /// Checks a tenant id.
-    /// Null or whitespace is rejected.
+    /// Null, empty, or whitespace is rejected.
     /// A colon is always rejected, because a stream id is split on every colon.
-    /// When <paramref name="validateFormat"/> is <see langword="true"/>, the id must match <see cref="Pattern"/>.
+    /// When <paramref name="validateFormat"/> is <see langword="true"/>, <c>default</c> in any casing
+    /// is reserved, and the id must match <see cref="Pattern"/>.
     /// </summary>
     /// <param name="tenantId">Tenant id.</param>
     /// <param name="paramName">Parameter name for the exception.</param>
     /// <param name="validateFormat">
-    /// When <see langword="false"/>, the character rule is skipped.
-    /// A colon is still rejected.
+    /// When <see langword="false"/>, the character rule is skipped and <c>default</c> in any casing is allowed.
+    /// An empty string is still rejected. A colon is still rejected.
     /// </param>
     public static void ValidateTenantId(string? tenantId, string paramName, bool validateFormat = true)
     {
@@ -117,6 +118,13 @@ public static class LawnDartNames
         {
             throw new ArgumentException(
                 $"Tenant id '{tenantId}' must not contain ':'. A stream id is '{{tenantId}}:{{type}}:{{id}}' and is split on every colon.",
+                paramName);
+        }
+
+        if (validateFormat && string.Equals(tenantId, DefaultContextName, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException(
+                $"Tenant id '{tenantId}' is reserved. '{DefaultContextName}' in any casing is reserved. Set ValidateNames to false to keep an existing tenant id.",
                 paramName);
         }
 

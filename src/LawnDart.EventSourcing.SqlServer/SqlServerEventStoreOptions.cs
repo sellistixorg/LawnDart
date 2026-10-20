@@ -86,7 +86,8 @@ public class SqlServerEventStoreOptions : EventSourcingOptions
     /// <remarks>
     /// Default: true. <c>UseSqlServer</c> copies <see cref="LawnDartOptions.ValidateNames"/>
     /// onto this property before the configure callback runs. The callback can change it.
-    /// A colon in a tenant id is still rejected when this is false.
+    /// When this is false, a tenant id of <c>default</c> in any casing is allowed.
+    /// An empty tenant id is still rejected. A colon in a tenant id is still rejected.
     /// </remarks>
     public bool ValidateNames { get; set; } = true;
 
