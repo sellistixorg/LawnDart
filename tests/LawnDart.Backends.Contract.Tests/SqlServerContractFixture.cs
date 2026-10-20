@@ -8,6 +8,8 @@ public sealed class SqlServerContractFixture : IAsyncLifetime
 
     public string ConnectionString { get; private set; } = string.Empty;
 
+    public IContractBackend Backend { get; private set; } = null!;
+
     public async Task InitializeAsync()
     {
         _container = await MsSqlContainerStartup.StartAsync(() =>
@@ -15,6 +17,7 @@ public sealed class SqlServerContractFixture : IAsyncLifetime
                 .WithPassword("Test123!")
                 .Build());
         ConnectionString = _container.GetConnectionString();
+        Backend = new SqlServerContractBackend(ConnectionString);
     }
 
     public async Task DisposeAsync()

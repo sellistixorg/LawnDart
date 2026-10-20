@@ -24,6 +24,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="LawnDart.Messaging.SqlServer.Tests" />
+    <InternalsVisibleTo Include="LawnDart.Backends.Contract.Tests" />
   </ItemGroup>
 
 </Project>

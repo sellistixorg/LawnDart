@@ -4,9 +4,11 @@ Runtime plus the in-memory **implementation** of `IEventLog` / `IEventStore`.
 
 The `IEventStore` **interface** is in core `LawnDart`. This package provides
 `InMemoryEventStore`, `AggregateRepository`, `DcbRepository`, JSON
-serialization, and outbox processing. The InMemory → SQL `Category=Contract`
-suite includes the event-log contract: append and read records without
-registered .NET types.
+serialization, and outbox processing. The shared `Category=Contract` suite
+runs this store through the same checks as SQL Server: the event log, appends,
+the dynamic consistency boundary, tags, the stream registry, subscriptions,
+snapshots, the outbox writer, the inbox, checkpoints, and views. A check that
+needs a SQL Server hook is skipped here with a reason.
 
 Take it for local work, tests, and Academy. Swap the backend later without
 changing domain types.

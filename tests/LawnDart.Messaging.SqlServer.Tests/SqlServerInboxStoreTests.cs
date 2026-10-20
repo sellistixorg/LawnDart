@@ -29,100 +29,11 @@ public class SqlServerInboxStoreTests
         Assert.False(await store.IsProcessedAsync("missing"));
     }
 
-    [Fact]
-    public async Task Unknown_id_is_not_processed()
-    {
-        var store = await CreateReadyStoreAsync();
-        Assert.False(await store.IsProcessedAsync("never-seen"));
-    }
 
-    [Fact]
-    public async Task Mark_then_lookup_is_true_and_a_second_mark_does_not_throw()
-    {
-        var store = await CreateReadyStoreAsync();
-        await store.MarkProcessedAsync("msg-1", DateTimeOffset.UtcNow);
-        Assert.True(await store.IsProcessedAsync("msg-1"));
 
-        var ex = await Record.ExceptionAsync(() => store.MarkProcessedAsync("msg-1", DateTimeOffset.UtcNow));
-        Assert.Null(ex);
-        Assert.Equal(1, await CountRowsAsync(store));
-    }
 
-    [Fact]
-    public async Task Expired_row_is_not_processed_and_purge_removes_only_expired_rows()
-    {
-        var store = await CreateReadyStoreAsync(TimeSpan.FromHours(1));
-        await store.MarkProcessedAsync("fresh", DateTimeOffset.UtcNow);
-        await store.MarkProcessedAsync("stale", DateTimeOffset.UtcNow - TimeSpan.FromHours(2));
 
-        Assert.True(await store.IsProcessedAsync("fresh"));
-        Assert.False(await store.IsProcessedAsync("stale"));
 
-        var purged = await store.PurgeExpiredAsync();
-        Assert.Equal(1, purged);
-        Assert.True(await store.IsProcessedAsync("fresh"));
-        Assert.False(await store.IsProcessedAsync("stale"));
-        Assert.Equal(1, await CountRowsAsync(store));
-    }
-
-    [Fact]
-    public async Task A_new_store_instance_sees_prior_marks()
-    {
-        var table = NewTable();
-        var first = CreateStore(table);
-        await first.InitializeSchemaAsync();
-        await first.MarkProcessedAsync("durable", DateTimeOffset.UtcNow);
-
-        var second = CreateStore(table);
-        Assert.True(await second.IsProcessedAsync("durable"));
-    }
-
-    [Fact]
-    public async Task Parallel_marks_of_one_id_leave_one_row()
-    {
-        var store = await CreateReadyStoreAsync();
-        var processedAt = DateTimeOffset.UtcNow;
-        var tasks = Enumerable.Range(0, 20)
-            .Select(_ => store.MarkProcessedAsync("same-id", processedAt));
-
-        var ex = await Record.ExceptionAsync(() => Task.WhenAll(tasks));
-        Assert.Null(ex);
-        Assert.Equal(1, await CountRowsAsync(store));
-        Assert.True(await store.IsProcessedAsync("same-id"));
-    }
-
-    [Fact]
-    public async Task Reactor_drops_a_duplicate_delivery()
-    {
-        var store = await CreateReadyStoreAsync();
-        var transport = new InMemoryMessageTransport(NullLogger<InMemoryMessageTransport>.Instance);
-        var reactor = new CountingReactor();
-        var service = new ReactorHostedService<CountingReactor, PingEvent>(
-            reactor,
-            transport,
-            store,
-            NullLogger<ReactorHostedService<CountingReactor, PingEvent>>.Instance);
-
-        using var cts = new CancellationTokenSource();
-        await service.StartAsync(cts.Token);
-        await WaitForSubscriberAsync(transport);
-
-        var context = new MessageContext { MessageId = "dup-1" };
-        var evt = new PingEvent(Guid.NewGuid(), DateTime.UtcNow);
-        await transport.PublishAsync(evt, context);
-        await transport.PublishAsync(evt, context);
-
-        Assert.Equal(1, reactor.CallCount);
-        Assert.Equal(1, await CountRowsAsync(store));
-
-        var storedKey = await ReadSingleKeyAsync(store);
-        Assert.Equal(InboxConsumerKey.ForReactor(typeof(CountingReactor), "dup-1"), storedKey);
-        Assert.EndsWith(":dup-1", storedKey, StringComparison.Ordinal);
-        Assert.NotEqual("dup-1", storedKey);
-
-        await cts.CancelAsync();
-        await service.StopAsync(CancellationToken.None);
-    }
 
     [Fact]
     public async Task Incompatible_table_shape_names_drop_and_recreate()
@@ -176,17 +87,6 @@ public class SqlServerInboxStoreTests
         Assert.True(await store.IsProcessedAsync("from-di"));
     }
 
-    [Fact]
-    public async Task Claim_lease_override_is_honored()
-    {
-        var held = await CreateReadyStoreAsync(claimLease: TimeSpan.FromHours(1));
-        Assert.True(await held.TryClaimAsync("held"));
-        Assert.False(await held.TryClaimAsync("held"));
-
-        var open = await CreateReadyStoreAsync(claimLease: TimeSpan.Zero);
-        Assert.True(await open.TryClaimAsync("open"));
-        Assert.True(await open.TryClaimAsync("open"));
-    }
 
     private async Task<SqlServerInboxStore> CreateReadyStoreAsync(TimeSpan? window = null, TimeSpan? claimLease = null)
     {

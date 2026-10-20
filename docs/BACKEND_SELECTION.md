@@ -105,18 +105,20 @@ services.AddBoundedContext("default")
 ```
 
 Use for production-shaped hosts, outbox, and Testcontainers integration tests
-tagged `Category=Integration`. The InMemory → SQL swap contract lives under
+tagged `Category=Integration`. The shared backend contract lives under
 `tests/LawnDart.Backends.Contract.Tests` (`Category=Contract`; the SQL leg is
-also `Category=Integration`). That project also runs the event-log contract:
-same payload on append/read, event-name and tag query without turning
-records into .NET objects, and a host that has not registered event .NET
-types can still read, filter, and copy records. Typed adapter tests sit
-on the same logs. They check that a typed read throws when the event name
-is not registered, and when the stored payload format is not the session's
-format.
+also `Category=Integration`). One container serves every SQL Server contract
+test in a run. Each test uses its own stream, tag, or schema. In-memory runs
+the same tests when it can. A test that needs a hook the backend does not
+have is skipped with a reason. The areas are the event log, event store reads
+and appends, dynamic consistency boundary, tags, stream registry,
+subscriptions, read horizon, snapshots, outbox, inbox, checkpoint store, and
+view store. The swap test still covers dispatch, persist, reload, project,
+and read-back.
 
-Local unit runs use `--filter Category!=Integration`. CI runs unit tests and
-then `Category=Integration|Category=Contract` on the SQL Server, Lightweight,
+Local unit runs use `--filter Category!=Integration`. That includes the
+in-memory contract tests. CI runs unit tests and then
+`Category=Integration|Category=Contract` on the SQL Server, Lightweight,
 and backend-contract test projects. SQL Server tests need Docker
 (Testcontainers). In-process projection harnesses under `tests/.../Integration`
 use the same trait so they stay out of the local unit job.
