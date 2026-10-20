@@ -40,9 +40,9 @@ is required.
 
 ## 3. Handle a command
 
-Define an `ICommand`, an `IEvent`, and an `AggregateRoot<TState>`. Keep `Id`
-and `Timestamp` first on events if you follow the Eventhesis field-order
-convention.
+Define an `ICommand`, an `IEvent`, and an `AggregateRoot<TState>`. Putting
+`Id` and `Timestamp` first keeps events easy to scan. Declaration order is
+not a runtime rule.
 
 ```csharp
 using Microsoft.Extensions.DependencyInjection;

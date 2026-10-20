@@ -12,7 +12,7 @@ in-memory messaging).
 that spans book and member. `Library.Dcb.Host` and `Library.Dcb.Domain.Tests`
 are its host and `DcbSpec` proofs.
 
-The Eventhesis-shaped inputs are
+The slice spec inputs are
 [`build-kit/library-slice.json`](../build-kit/library-slice.json) (aggregate)
 and [`build-kit/library-dcb-slice.json`](../build-kit/library-dcb-slice.json)
 (DCB).

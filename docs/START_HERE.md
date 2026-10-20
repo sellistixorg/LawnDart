@@ -2,9 +2,10 @@
 
 LawnDart is the .NET runtime that event-modeled systems compile into.
 
-[Eventhesis](https://eventhesis.com) is one modelling tool that targets
-LawnDart. It emits slice-based event-model JSON. It does not generate LawnDart
-types. A whiteboard or any canvas is enough. See [Why LawnDart](WHY.md).
+[Eventhesis](https://eventhesis.com) is a separate, complementary product.
+It can output models (slice JSON) you can use as specs for building with
+LawnDart. It does not generate LawnDart code. A whiteboard or any canvas
+is enough. See [Why LawnDart](WHY.md).
 
 ## Core mental model
 

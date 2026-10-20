@@ -178,5 +178,4 @@ does not advance its cursor past the failed record. The Lightweight runner
 logs the stuck sequence and waits five seconds before it reads again.
 
 See [Glossary](GLOSSARY.md) (catalog token, SchemaVersion, event log,
-event store). [Eventhesis](EVENTHESIS.md) keeps the token when you
-hand-write events.
+event store).

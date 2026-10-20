@@ -112,8 +112,6 @@ domain project. Use xUnit. Canonical proofs:
 `samples/Library.Dcb.Domain.Tests/LibraryBookLoanTests.cs` (DCB slice), and
 `tests/LawnDart.Testing.Tests/Bdd/InMemoryGwtTests.cs`.
 
-These specs match the Eventhesis GWT widget. See [EVENTHESIS.md](../EVENTHESIS.md).
-
 ## Exception contract
 
 Use `ThenThrows<T>()` for a domain rule. Spec-internal failures (missing

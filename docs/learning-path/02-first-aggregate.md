@@ -102,8 +102,8 @@ public sealed class Book : AggregateRoot<BookState>
 Rule violations throw `DomainException`. HTTP command endpoints map that
 type to `422 Unprocessable Entity`.
 
-Keep `Id` and `Timestamp` first on events if you follow the Eventhesis
-field-order convention. Every concrete `IEvent` needs `[EventTypeName]`.
+Putting `Id` and `Timestamp` first keeps events easy to scan. Declaration
+order is not a runtime rule. Every concrete `IEvent` needs `[EventTypeName]`.
 The token is the event name. Versioning is
 [Event schema versioning](../EVENT_SCHEMA_VERSIONING.md).
 `BookState` is decision state only: no title, no ISBN. Those live on
