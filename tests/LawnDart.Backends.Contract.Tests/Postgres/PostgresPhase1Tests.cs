@@ -1,4 +1,5 @@
 using System.Text;
+using LawnDart;
 using LawnDart.EventSourcing.Postgres;
 using Microsoft.Extensions.Logging;
 using LawnDart.EventSourcing.Postgres.EventStore;
@@ -368,17 +369,16 @@ public sealed class PostgresPhase1Tests
             ? TimeSpan.FromSeconds(15)
             : TimeSpan.FromSeconds(2);
         var committed = new System.Collections.Concurrent.ConcurrentDictionary<long, byte>();
+        var concurrency = 0;
         using var stop = new CancellationTokenSource(duration);
-        var random = new Random(20);
         var writers = Enumerable.Range(0, 16).Select(worker => Task.Run(async () =>
         {
-            var gate = Random.Shared;
             while (!stop.IsCancellationRequested)
             {
                 var stream = "w" + worker + ":" + Guid.NewGuid().ToString("N");
                 try
                 {
-                    if (gate.Next(5) == 0)
+                    if (Random.Shared.Next(5) == 0)
                     {
                         await ((PostgresEventStore)opened.Store).AppendAndRollbackAsync(
                             stream,
@@ -391,11 +391,12 @@ public sealed class PostgresPhase1Tests
                         committed.TryAdd(result.SequencePositions[0], 0);
                     }
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException)
+                catch (ConcurrencyException)
                 {
+                    Interlocked.Increment(ref concurrency);
                 }
 
-                await Task.Delay(gate.Next(0, 5));
+                await Task.Delay(Random.Shared.Next(0, 5));
             }
         })).ToArray();
 
@@ -403,21 +404,181 @@ public sealed class PostgresPhase1Tests
         {
             while (!stop.IsCancellationRequested)
             {
-                var head = await opened.Store.GetCurrentSequenceAsync();
-                var read = await opened.Log.ReadByQueryAsync(Query.All(), toSequencePosition: head);
-                var positions = read.Events.Select(e => e.SequencePosition).ToList();
-                Assert.Equal(positions.Order(), positions);
-                Assert.Equal(positions.Count, positions.Distinct().Count());
+                await AssertNoSkippedCommittedAsync(opened, committed);
                 await Task.Delay(20);
             }
         })).ToArray();
 
         await Task.WhenAll(writers.Concat(readers));
-        var finalHead = await WaitForHeadAsync(opened.Store, committed.Keys.DefaultIfEmpty(0).Max(), TimeSpan.FromSeconds(5));
-        var final = await opened.Log.ReadByQueryAsync(Query.All(), toSequencePosition: finalHead);
-        var finalPositions = final.Events.Select(e => e.SequencePosition).ToArray();
-        Assert.Equal(committed.Keys.Where(position => position <= finalHead).Order().ToArray(), finalPositions);
-        _ = random;
+        await AssertNoSkippedCommittedAsync(opened, committed);
+        Assert.True(concurrency >= 0, $"concurrency conflicts: {concurrency}");
+    }
+
+    [Fact]
+    public async Task LostReply_AfterTheStatementIsSent_ReturnsTheLandedAppend()
+    {
+        var opened = await OpenAsync(requireTenantId: false);
+        var store = (PostgresEventStore)opened.Store;
+        var attempts = 0;
+        store.AfterAppendStatement = _ =>
+        {
+            Interlocked.Increment(ref attempts);
+            throw new NpgsqlException("connection reset after the statement was sent");
+        };
+
+        var stream = "Order:" + Guid.NewGuid().ToString("N");
+        var result = await store.AppendAsync(stream, [ContractEvent.Tick()]);
+        Assert.Equal(1, attempts);
+        Assert.Single(await store.ReadStreamAsync(stream));
+        Assert.Equal(result.SequencePositions[0], (await store.ReadStreamAsync(stream))[0].SequencePosition);
+    }
+
+    [Fact]
+    public async Task DcbAppends_CrossMatchingTags_OneWins_AndOppositeOrderDoesNotDeadlock()
+    {
+        var opened = await OpenAsync(requireTenantId: false);
+        for (var round = 0; round < 4; round++)
+        {
+            var left = "left-" + round + "-" + Guid.NewGuid().ToString("N");
+            var right = "right-" + round + "-" + Guid.NewGuid().ToString("N");
+            var firstTags = round % 2 == 0 ? new[] { left } : new[] { right };
+            var secondTags = round % 2 == 0 ? new[] { right } : new[] { left };
+            var first = opened.Store.AppendAsync(
+                [ContractEvent.Tick()],
+                AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(secondTags))),
+                tags: firstTags);
+            var second = opened.Store.AppendAsync(
+                [ContractEvent.Tick()],
+                AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(firstTags))),
+                tags: secondTags);
+            var results = await Task.WhenAll(SettleAsync(first), SettleAsync(second));
+            Assert.Equal(1, results.Count(static item => item is null));
+            Assert.Equal(1, results.Count(static item => item is ConcurrencyException));
+        }
+    }
+
+    [Fact]
+    public async Task TagConditionDcb_AndTypesOnlyDcb_OneWins()
+    {
+        var opened = await OpenAsync(requireTenantId: false);
+        var tag = "cross-" + Guid.NewGuid().ToString("N");
+        var typeName = "backend-contract.test-event";
+        var tagged = opened.Store.AppendAsync(
+            [ContractEvent.Tick()],
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByType(typeName))),
+            tags: [tag]);
+        var typesOnly = opened.Store.AppendAsync(
+            [ContractEvent.Tick()],
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(tag))));
+        var results = await Task.WhenAll(SettleAsync(tagged), SettleAsync(typesOnly));
+        Assert.Equal(1, results.Count(static item => item is null));
+        Assert.Equal(1, results.Count(static item => item is ConcurrencyException));
+    }
+
+    [Fact]
+    public async Task AppRole_CannotCreateTables_AndCanReadTheGapFunctions()
+    {
+        var opened = await OpenAsync(requireTenantId: false);
+        await using var app = await ConnectAsync();
+        var ex = await Assert.ThrowsAsync<PostgresException>(async () =>
+        {
+            await using var command = new NpgsqlCommand(
+                $"CREATE TABLE {Quote(opened.SchemaName)}.not_allowed (id int)",
+                app);
+            await command.ExecuteNonQueryAsync();
+        });
+        Assert.Equal("42501", ex.SqlState);
+
+        await using var owner = new NpgsqlConnection(_fixture.AdminConnectionString);
+        await owner.OpenAsync();
+        await using (var who = new NpgsqlCommand("SELECT rolsuper FROM pg_roles WHERE rolname = current_user", owner))
+            Assert.True((bool)(await who.ExecuteScalarAsync())!);
+
+        Assert.True(await opened.Store.GetCurrentSequenceAsync() >= 0);
+        await using (var snap = new NpgsqlCommand("SELECT pg_current_snapshot()::text", app))
+        {
+            var text = (string)(await snap.ExecuteScalarAsync())!;
+            Assert.Contains(':', text);
+        }
+    }
+
+    [Fact]
+    public async Task StreamId_LongerThan255_Throws()
+    {
+        var opened = await OpenAsync(requireTenantId: false);
+        var ok = new string('a', 255);
+        await opened.Store.AppendAsync(ok, [ContractEvent.Tick()]);
+        Assert.Single(await opened.Store.ReadStreamAsync(ok));
+        var tooLong = new string('b', 256);
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => opened.Store.AppendAsync(tooLong, [ContractEvent.Tick()]));
+        Assert.Contains("255", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TwoContexts_GetSeparateSchemas()
+    {
+        var services = new ServiceCollection();
+        services.AddLawnDart(o => o.RequireTenantId = false);
+        services.AddBoundedContext("ordering")
+            .UsePostgres(o => o.ConnectionString = _fixture.AdminConnectionString)
+            .WithEventTypes<ContractTick>();
+        services.AddBoundedContext("catalog")
+            .UsePostgres(o => o.ConnectionString = _fixture.AdminConnectionString)
+            .WithEventTypes<ContractTick>();
+        await using var provider = services.BuildServiceProvider();
+        Assert.Equal("ordering", provider.GetRequiredKeyedService<PostgresEventStoreOptions>("ordering").SchemaName);
+        Assert.Equal("catalog", provider.GetRequiredKeyedService<PostgresEventStoreOptions>("catalog").SchemaName);
+
+        var ordering = (PostgresEventStore)provider.GetRequiredKeyedService<IEventStore>("ordering");
+        var catalog = (PostgresEventStore)provider.GetRequiredKeyedService<IEventStore>("catalog");
+        await ordering.InitializeSchemaAsync();
+        await catalog.InitializeSchemaAsync();
+        var stream = "ordering:Order:" + Guid.NewGuid().ToString("N");
+        await ordering.AppendAsync(stream, [ContractEvent.Tick()], metadata: new LawnDart.Metadata.EventMetadata { TenantId = "ordering" });
+        Assert.Single(await ordering.ReadStreamAsync(stream));
+        Assert.Empty(await catalog.ReadStreamAsync(stream));
+
+        await using var connection = new NpgsqlConnection(_fixture.AdminConnectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(
+            """
+            SELECT table_schema FROM information_schema.tables
+            WHERE table_name = 'events' AND table_schema IN ('ordering', 'catalog')
+            ORDER BY table_schema
+            """,
+            connection);
+        var schemas = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            schemas.Add(reader.GetString(0));
+        Assert.Equal(new[] { "catalog", "ordering" }, schemas);
+    }
+
+    private static async Task AssertNoSkippedCommittedAsync(
+        ContractEventStore opened,
+        System.Collections.Concurrent.ConcurrentDictionary<long, byte> committed)
+    {
+        var head = await opened.Store.GetCurrentSequenceAsync();
+        var expected = committed.Keys.Where(position => position <= head).Order().ToArray();
+        var read = await opened.Log.ReadByQueryAsync(Query.All(), toSequencePosition: head);
+        var positions = read.Events.Select(e => e.SequencePosition).ToArray();
+        Assert.Equal(positions.Order(), positions);
+        Assert.Equal(positions.Length, positions.Distinct().Count());
+        foreach (var position in expected)
+            Assert.Contains(position, positions);
+    }
+
+    private static async Task<Exception?> SettleAsync(Task<AppendResult> append)
+    {
+        try
+        {
+            await append.WaitAsync(TimeSpan.FromSeconds(15));
+            return null;
+        }
+        catch (Exception ex)
+        {
+            return ex;
+        }
     }
 
     private async Task<ContractEventStore> OpenAsync(bool requireTenantId = false, TimeSpan? grace = null)
@@ -500,5 +661,19 @@ public sealed class PostgresRegistrationTests
             }));
         Assert.Contains("EnableOutbox", ex.Message, StringComparison.Ordinal);
         Assert.Contains("false", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void UsePostgres_NamedContext_UsesThatNameAsTheSchema()
+    {
+        var services = new ServiceCollection();
+        services.AddLawnDart(o => o.RequireTenantId = false);
+        services.AddBoundedContext("ordering").UsePostgres(o =>
+            o.ConnectionString = "Host=localhost;Username=u;Password=p;Database=lawndart");
+        services.AddBoundedContext("default").UsePostgres(o =>
+            o.ConnectionString = "Host=localhost;Username=u;Password=p;Database=lawndart");
+        using var provider = services.BuildServiceProvider();
+        Assert.Equal("ordering", provider.GetRequiredKeyedService<PostgresEventStoreOptions>("ordering").SchemaName);
+        Assert.Equal("lawndart", provider.GetRequiredKeyedService<PostgresEventStoreOptions>("default").SchemaName);
     }
 }

@@ -43,6 +43,7 @@ internal static class PostgresSchema
         sql.Add(CreatePartitioned(names.Events, names.EventsShared, names.EventsHash, options, EventsColumns(names), EventsKeys()));
         sql.Add(CreatePartitioned(names.Streams, names.StreamsShared, names.StreamsHash, options, StreamsColumns(names), StreamsKeys()));
         sql.Add(CreatePartitioned(names.Tags, names.TagsShared, names.TagsHash, options, TagsColumns(names), TagsKeys()));
+        sql.Add(DropAppendFunction(names));
         sql.Add(PostgresAppendSql.CreateFunction(names, options));
         sql.Add(Stamp(names, options));
         return sql;
@@ -126,6 +127,22 @@ internal static class PostgresSchema
 
         return builder.ToString();
     }
+
+    private static string DropAppendFunction(PostgresNames names) => $"""
+        DO $drop$
+        DECLARE sig regprocedure;
+        BEGIN
+            FOR sig IN
+                SELECT p.oid::regprocedure
+                FROM pg_proc p
+                JOIN pg_namespace n ON n.oid = p.pronamespace
+                WHERE p.proname = 'append_to_stream' AND n.nspname = '{names.Schema.Replace("'", "''", StringComparison.Ordinal)}'
+            LOOP
+                EXECUTE 'DROP FUNCTION ' || sig::text;
+            END LOOP;
+        END
+        $drop$;
+        """;
 
     internal static string StreamIndexes(PostgresNames names) => $"""
         CREATE INDEX IF NOT EXISTS ix_streams_aggregate_type ON {names.Streams} (aggregate_type);

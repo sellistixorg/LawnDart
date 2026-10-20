@@ -40,6 +40,8 @@ public sealed partial class PostgresEventStore
             }
             catch (NpgsqlException ex) when (ex is not PostgresException && attempt < max && IsConnectionFailure(ex))
             {
+                // Only a failure before the statement is sent. A failure after
+                // ExecuteReader is AppendStatementSentException and is not retried.
                 await DelayRetryAsync(attempt, ex.SqlState ?? "08", ex.Message, cancellationToken).ConfigureAwait(false);
             }
         }
@@ -103,7 +105,7 @@ public sealed partial class PostgresEventStore
             }
         }
 
-        BuildLocks(envelopes, condition, out var lockTags, out var lockMode, out var lockStore);
+        BuildLocks(envelopes, condition, out var lockTags, out var lockModes, out var lockStore);
         BuildCondition(condition, out var check, out var all, out var after, out var itemCount, out var typeItems, out var typeCond, out var tagItems, out var tagCond, out var itemsWithTypes, out var itemsWithTags);
 
         var sql = $"""
@@ -112,7 +114,7 @@ public sealed partial class PostgresEventStore
                 @stream_id, @tenant_id, @expected, @is_dcb, @aggregate_type, @aggregate_id,
                 @event_ids, @type_ids, @schema_versions, @codec_ids, @data, @bdata, @metadata,
                 @tag_ords, @tag_values, @stream_tags, @partition_hash, @recorded_at, @notify, @notify_channel,
-                @lock_tags, @lock_mode, @lock_store, @store_lock_key,
+                @lock_tags, @lock_modes, @lock_store, @store_lock_key,
                 @check_condition, @condition_all, @condition_after, @item_count,
                 @type_items, @type_ids_cond, @tag_items, @tag_values_cond, @items_with_types, @items_with_tags)
             """;
@@ -139,7 +141,7 @@ public sealed partial class PostgresEventStore
         command.Parameters.Add(new NpgsqlParameter("notify", _options.NotifyOnAppend));
         command.Parameters.Add(new NpgsqlParameter("notify_channel", _names.NotifyChannel));
         command.Parameters.Add(new NpgsqlParameter("lock_tags", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = lockTags });
-        command.Parameters.Add(new NpgsqlParameter("lock_mode", lockMode));
+        command.Parameters.Add(new NpgsqlParameter("lock_modes", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = lockModes });
         command.Parameters.Add(new NpgsqlParameter("lock_store", lockStore));
         command.Parameters.Add(new NpgsqlParameter("store_lock_key", _names.Schema + ":store"));
         command.Parameters.Add(new NpgsqlParameter("check_condition", check));
@@ -158,22 +160,28 @@ public sealed partial class PostgresEventStore
             var positions = new List<long>(envelopes.Count);
             long lastVersion = -1;
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            if (AfterAppendStatement is { } afterStatement)
+                await afterStatement(cancellationToken).ConfigureAwait(false);
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
                 positions.Add(reader.GetInt64(0));
                 lastVersion = reader.GetInt64(1);
             }
 
-            if (!_enableRegistry)
-            {
-                // The function still maintains the stream row. The registry reads use that row.
-            }
-
             return new AppendWrite(positions, lastVersion);
+        }
+        catch (PostgresException ex) when (ex.SqlState is "40001" or "40P01")
+        {
+            throw;
         }
         catch (PostgresException ex)
         {
             throw MapAppendError(ex, expectedVersion, condition?.After);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The statement was submitted. An autocommit call may already be committed.
+            throw new AppendStatementSentException(ex);
         }
     }
 
@@ -192,10 +200,7 @@ public sealed partial class PostgresEventStore
 
         if (exception.Hint == "concurrency")
         {
-            long? actual = long.TryParse(exception.Detail, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
-                ? parsed
-                : null;
-            var expected = expectedVersion ?? actual;
+            var (expected, actual) = ParseVersionDetail(exception.Detail, expectedVersion);
             return new ConcurrencyException(
                 $"Expected version {expected} but current version is {actual}",
                 exception,
@@ -206,43 +211,69 @@ public sealed partial class PostgresEventStore
         return exception;
     }
 
+    private static (long? Expected, long? Actual) ParseVersionDetail(string? detail, long? expectedVersion)
+    {
+        if (string.IsNullOrEmpty(detail))
+            return (expectedVersion, null);
+
+        var colon = detail.IndexOf(':');
+        if (colon < 0)
+        {
+            long? only = long.TryParse(detail, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+                ? parsed
+                : null;
+            return (expectedVersion ?? only, only);
+        }
+
+        long? expected = long.TryParse(detail[..colon], NumberStyles.Integer, CultureInfo.InvariantCulture, out var left)
+            ? left
+            : expectedVersion;
+        long? actual = long.TryParse(detail[(colon + 1)..], NumberStyles.Integer, CultureInfo.InvariantCulture, out var right)
+            ? right
+            : null;
+        return (expected, actual);
+    }
+
     private void BuildLocks(
         IReadOnlyList<AppendEvent> envelopes,
         AppendCondition? condition,
         out string[] lockTags,
-        out string lockMode,
+        out string[] lockModes,
         out string lockStore)
     {
-        if (condition is null)
+        var exclusive = new HashSet<string>(StringComparer.Ordinal);
+        var shared = new HashSet<string>(StringComparer.Ordinal);
+        if (condition is not null)
         {
-            var tags = envelopes.SelectMany(e => e.Tags).Where(t => !string.IsNullOrEmpty(t)).Distinct(StringComparer.Ordinal).ToList();
-            tags.Sort(StringComparer.Ordinal);
-            if (tags.Count > _options.AdvisoryLockTagThreshold)
-            {
-                lockTags = [];
-                lockMode = "shared";
-                lockStore = "exclusive";
-                return;
-            }
-
-            lockTags = tags.ToArray();
-            lockMode = "shared";
-            lockStore = "shared";
-            return;
+            foreach (var tag in CollectFenceTags(condition))
+                exclusive.Add(tag);
         }
 
-        var fence = CollectFenceTags(condition);
-        if (fence.Count == 0 || fence.Count > _options.AdvisoryLockTagThreshold)
+        foreach (var tag in envelopes.SelectMany(envelope => envelope.Tags))
+        {
+            if (!string.IsNullOrEmpty(tag) && !exclusive.Contains(tag))
+                shared.Add(tag);
+        }
+
+        if (exclusive.Count + shared.Count > _options.AdvisoryLockTagThreshold)
         {
             lockTags = [];
-            lockMode = "exclusive";
+            lockModes = [];
             lockStore = "exclusive";
             return;
         }
 
-        lockTags = fence.ToArray();
-        lockMode = "exclusive";
-        lockStore = "none";
+        var ordered = new List<(string Tag, string Mode)>(exclusive.Count + shared.Count);
+        foreach (var tag in exclusive)
+            ordered.Add((tag, "exclusive"));
+        foreach (var tag in shared)
+            ordered.Add((tag, "shared"));
+        ordered.Sort(static (left, right) => string.CompareOrdinal(left.Tag, right.Tag));
+        lockTags = ordered.Select(static item => item.Tag).ToArray();
+        lockModes = ordered.Select(static item => item.Mode).ToArray();
+        // A condition with no tags locks the whole store. Every other append
+        // takes the shared store key, including a tag-condition append.
+        lockStore = condition is not null && exclusive.Count == 0 ? "exclusive" : "shared";
     }
 
     private static List<string> CollectFenceTags(AppendCondition condition)
@@ -638,5 +669,16 @@ public sealed partial class PostgresEventStore
         command.Parameters.Add(new NpgsqlParameter("name", qualifiedName));
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return result is string { Length: > 0 };
+    }
+
+    /// <summary>
+    /// The append statement was sent. Callers read the event ids back and do not retry.
+    /// </summary>
+    private sealed class AppendStatementSentException : Exception
+    {
+        public AppendStatementSentException(Exception inner)
+            : base(inner.Message, inner)
+        {
+        }
     }
 }

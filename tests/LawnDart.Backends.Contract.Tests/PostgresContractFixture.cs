@@ -9,6 +9,9 @@ public sealed class PostgresContractFixture : IAsyncLifetime
 
     public string ConnectionString { get; private set; } = string.Empty;
 
+    /// <summary>Owner connection. Used only to create schemas.</summary>
+    public string AdminConnectionString { get; private set; } = string.Empty;
+
     public IContractBackend Backend { get; private set; } = null!;
 
     public async Task InitializeAsync()
@@ -21,6 +24,7 @@ public sealed class PostgresContractFixture : IAsyncLifetime
         await _container.StartAsync();
 
         var admin = _container.GetConnectionString();
+        AdminConnectionString = admin;
         await using (var connection = new NpgsqlConnection(admin))
         {
             await connection.OpenAsync();
@@ -31,7 +35,8 @@ public sealed class PostgresContractFixture : IAsyncLifetime
                 EXCEPTION
                     WHEN duplicate_object THEN NULL;
                 END $$;
-                GRANT CONNECT, CREATE ON DATABASE lawndart TO lawndart_app;
+                GRANT CONNECT ON DATABASE lawndart TO lawndart_app;
+                REVOKE CREATE ON DATABASE lawndart FROM lawndart_app;
                 """,
                 connection);
             await command.ExecuteNonQueryAsync();
@@ -43,7 +48,7 @@ public sealed class PostgresContractFixture : IAsyncLifetime
             Password = "lawndart_app"
         };
         ConnectionString = builder.ConnectionString;
-        Backend = new PostgresContractBackend(ConnectionString);
+        Backend = new PostgresContractBackend(ConnectionString, admin);
     }
 
     public async Task DisposeAsync()

@@ -32,7 +32,7 @@ internal static class PostgresAppendSql
                 p_notify boolean,
                 p_notify_channel text,
                 p_lock_tags text[],
-                p_lock_mode text,
+                p_lock_modes text[],
                 p_lock_store text,
                 p_store_lock_key text,
                 p_check_condition boolean,
@@ -59,21 +59,26 @@ internal static class PostgresAppendSql
                 v_i int;
                 v_constraint text;
                 v_detail text;
+                v_baseline bigint;
             BEGIN
                 -- Assign a transaction id before any position is taken.
                 -- A reader that sees a later position can then prove which
                 -- writers might still fill a hole: they already had an id.
                 PERFORM pg_current_xact_id();
 
+                -- Store key first, then tags in the order the caller sorted.
+                -- Every append uses that same order, so opposite tag lists cannot deadlock.
+                -- A dynamic consistency boundary append holds exclusive locks on its
+                -- condition tags and shared locks on the tags it writes, plus the store key.
                 IF p_lock_store = 'exclusive' THEN
                     PERFORM pg_advisory_xact_lock(hashtextextended(p_store_lock_key, 0));
-                ELSIF p_lock_store = 'shared' THEN
+                ELSE
                     PERFORM pg_advisory_xact_lock_shared(hashtextextended(p_store_lock_key, 0));
                 END IF;
 
                 IF p_lock_tags IS NOT NULL THEN
                     FOR v_i IN 1 .. coalesce(array_length(p_lock_tags, 1), 0) LOOP
-                        IF p_lock_mode = 'exclusive' THEN
+                        IF p_lock_modes[v_i] = 'exclusive' THEN
                             PERFORM pg_advisory_xact_lock(hashtextextended(p_store_lock_key || chr(31) || p_lock_tags[v_i], 0));
                         ELSE
                             PERFORM pg_advisory_xact_lock_shared(hashtextextended(p_store_lock_key || chr(31) || p_lock_tags[v_i], 0));
@@ -123,6 +128,20 @@ internal static class PostgresAppendSql
                     END IF;
                 END IF;
 
+                -- Baseline is the caller's expected version, or the version visible
+                -- before this upsert. A second writer that saw the same baseline
+                -- waits on the row, then fails here, before any sequence number is taken.
+                IF p_expected IS NULL THEN
+                    SELECT current_version INTO v_baseline
+                    FROM {names.Streams}
+                    WHERE tenant_id = p_tenant_id AND stream_id = p_stream_id;
+                    IF NOT FOUND THEN
+                        v_baseline := -1;
+                    END IF;
+                ELSE
+                    v_baseline := p_expected;
+                END IF;
+
                 INSERT INTO {names.Streams} AS s (
                     tenant_id, stream_id, aggregate_type, aggregate_id,
                     current_version, last_global_position, created_at, last_event_at,
@@ -133,7 +152,7 @@ internal static class PostgresAppendSql
                     0, ARRAY[]::text[], 'Active')
                 ON CONFLICT (tenant_id, stream_id) DO UPDATE
                     SET current_version = s.current_version
-                    WHERE p_expected IS NULL OR s.current_version = p_expected
+                    WHERE s.current_version = v_baseline
                 RETURNING s.current_version, s.event_count
                 INTO v_current, v_count;
 
@@ -141,13 +160,18 @@ internal static class PostgresAppendSql
                     SELECT current_version INTO v_actual
                     FROM {names.Streams}
                     WHERE tenant_id = p_tenant_id AND stream_id = p_stream_id;
+                    IF NOT FOUND THEN
+                        v_actual := -1;
+                    END IF;
                     RAISE EXCEPTION 'concurrency'
-                        USING ERRCODE = 'P0001', HINT = 'concurrency', DETAIL = coalesce(v_actual, -1)::text;
+                        USING ERRCODE = 'P0001', HINT = 'concurrency',
+                              DETAIL = v_baseline::text || ':' || v_actual::text;
                 END IF;
 
                 IF v_count = 0 AND p_expected IS NOT NULL AND p_expected <> -1 THEN
                     RAISE EXCEPTION 'concurrency'
-                        USING ERRCODE = 'P0001', HINT = 'concurrency', DETAIL = '-1';
+                        USING ERRCODE = 'P0001', HINT = 'concurrency',
+                              DETAIL = p_expected::text || ':-1';
                 END IF;
 
                 v_n := coalesce(array_length(p_event_ids, 1), 0);
@@ -217,7 +241,8 @@ internal static class PostgresAppendSql
                             FROM {names.Streams}
                             WHERE tenant_id = p_tenant_id AND stream_id = p_stream_id;
                             RAISE EXCEPTION 'concurrency'
-                                USING ERRCODE = 'P0001', HINT = 'concurrency', DETAIL = coalesce(v_actual, v_current)::text;
+                                USING ERRCODE = 'P0001', HINT = 'concurrency',
+                                      DETAIL = (v_start - 1)::text || ':' || coalesce(v_actual, v_start)::text;
                         END IF;
                 END;
 

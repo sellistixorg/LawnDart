@@ -10,10 +10,14 @@ namespace LawnDart.Backends.Contract.Tests;
 public sealed class PostgresContractBackend : IContractBackend
 {
     private readonly string _connectionString;
+    private readonly string? _migrationConnectionString;
     private readonly ConcurrentDictionary<string, Task> _ready = new();
 
-    public PostgresContractBackend(string connectionString)
-        => _connectionString = connectionString;
+    public PostgresContractBackend(string connectionString, string? migrationConnectionString = null)
+    {
+        _connectionString = connectionString;
+        _migrationConnectionString = migrationConnectionString;
+    }
 
     public string Name => "Postgres";
 
@@ -25,7 +29,7 @@ public sealed class PostgresContractBackend : IContractBackend
         ChecksTenantIdOnAppend = true,
         AppendWritesOutboxRows = false,
         SecondInstanceSeesCommittedEvents = true,
-        ParallelAppendCanConflict = false,
+        ParallelAppendCanConflict = true,
         DuplicateStreamVersionIncludesDatabaseError = false,
         CanPauseBeforeCommit = true,
         CanDropCommitReply = true,
@@ -55,6 +59,7 @@ public sealed class PostgresContractBackend : IContractBackend
         var storeOptions = new PostgresEventStoreOptions
         {
             ConnectionString = _connectionString,
+            MigrationConnectionString = _migrationConnectionString,
             SchemaName = options.SchemaName,
             ContextName = options.SchemaName,
             RequireTenantId = options.RequireTenantId,

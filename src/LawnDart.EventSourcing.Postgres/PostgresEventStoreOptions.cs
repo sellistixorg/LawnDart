@@ -16,7 +16,9 @@ public class PostgresEventStoreOptions : EventSourcingOptions
 
     /// <summary>
     /// Postgres schema for this context's tables, sequence, and append function.
-    /// Defaults to <c>lawndart</c>. Never <c>public</c>.
+    /// <c>UsePostgres</c> sets this to <c>lawndart</c> for the <c>default</c> context
+    /// and to the context name for every other context. The callback can change it.
+    /// Never <c>public</c>.
     /// </summary>
     public string SchemaName { get; set; } = "lawndart";
 

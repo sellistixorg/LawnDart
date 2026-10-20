@@ -164,9 +164,10 @@ services.AddBoundedContext("default")
 ```
 
 `UsePostgres` is in `LawnDart.EventSourcing.Postgres`. Call
-`PostgresEventStore.InitializeSchemaAsync` before the first append. Tables
-go in schema `lawndart` unless you set `SchemaName`. They do not go in
-`public`.
+`PostgresEventStore.InitializeSchemaAsync` before the first append. The
+`default` context stores tables in schema `lawndart`. Any other context
+uses its own name as the schema. Set `SchemaName` to choose a different one.
+Tables do not go in `public`.
 
 This release is the event store: append, read, tags, the dynamic consistency
 boundary, the stream registry, and the read horizon. `EnableOutbox = true`

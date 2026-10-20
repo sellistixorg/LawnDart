@@ -80,6 +80,12 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
     /// <summary>Test seam. Replaces commit. The store does not retry after this runs.</summary>
     internal Func<NpgsqlTransaction, CancellationToken, Task>? CommitHook { get; set; }
 
+    /// <summary>
+    /// Test seam. Runs after the append statement is sent. A throw here is a lost
+    /// reply: the store reads the event ids back and does not send the statement again.
+    /// </summary>
+    internal Func<CancellationToken, Task>? AfterAppendStatement { get; set; }
+
     /// <summary>Quoted events table.</summary>
     internal string QualifiedEventsTable => _names.Events;
 
@@ -170,6 +176,7 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
         foreach (var statement in PostgresSchema.CreateStatements(_names, _options))
             await ExecuteAsync(connection, transaction, statement, cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(connection, transaction, PostgresSchema.StreamIndexes(_names), cancellationToken).ConfigureAwait(false);
+        await GrantAppRoleAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         await ReloadEventTypeCacheAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -235,6 +242,7 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
         IReadOnlyList<AppendEvent> events,
         CancellationToken cancellationToken = default)
     {
+        await EnsureEventTypeIdsAsync(events, cancellationToken).ConfigureAwait(false);
         var ids = EventIdResolver.ResolveBatch(events.Select(e => e.Metadata).ToList());
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
@@ -259,9 +267,18 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         if (!useTransaction)
         {
-            var written = await ExecuteAppendAsync(
-                connection, transaction: null, streamId, envelopes, eventIds, expectedVersion, condition, isDcb, cancellationToken)
-                .ConfigureAwait(false);
+            AppendWrite written;
+            try
+            {
+                written = await ExecuteAppendAsync(
+                    connection, transaction: null, streamId, envelopes, eventIds, expectedVersion, condition, isDcb, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (AppendStatementSentException ex)
+            {
+                return await RecoverSentAppendAsync(streamId, eventIds, isDcb, ex, cancellationToken).ConfigureAwait(false);
+            }
+
             var committed = new AppendResult(written.Positions, null, isDcb ? -1 : written.LastVersion);
             Signal(committed);
             return committed;
@@ -307,5 +324,48 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
         var result = new AppendResult(writtenRows.Positions, null, isDcb ? -1 : writtenRows.LastVersion);
         Signal(result);
         return result;
+    }
+
+    private async Task<AppendResult> RecoverSentAppendAsync(
+        string streamId,
+        IReadOnlyList<Guid> eventIds,
+        bool isDcb,
+        AppendStatementSentException exception,
+        CancellationToken cancellationToken)
+    {
+        _ = isDcb;
+        var landed = await TryReadCommittedAppendAsync(streamId, eventIds, cancellationToken).ConfigureAwait(false);
+        if (landed is not null)
+        {
+            Signal(landed);
+            return landed;
+        }
+
+        System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception.InnerException ?? exception).Throw();
+        throw exception;
+    }
+
+    private async Task GrantAppRoleAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        var app = new NpgsqlConnectionStringBuilder(_options.ConnectionString).Username;
+        var ownerSource = string.IsNullOrWhiteSpace(_options.MigrationConnectionString)
+            ? _options.ConnectionString
+            : _options.MigrationConnectionString;
+        var owner = new NpgsqlConnectionStringBuilder(ownerSource!).Username;
+        if (string.IsNullOrWhiteSpace(app) || string.Equals(app, owner, StringComparison.Ordinal))
+            return;
+
+        var role = PgIdentifier.Quote(app);
+        var schema = PgIdentifier.Quote(_names.Schema);
+        var sql = $"""
+            GRANT USAGE ON SCHEMA {schema} TO {role};
+            GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA {schema} TO {role};
+            GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA {schema} TO {role};
+            GRANT EXECUTE ON ALL ROUTINES IN SCHEMA {schema} TO {role};
+            """;
+        await ExecuteAsync(connection, transaction, sql, cancellationToken).ConfigureAwait(false);
     }
 }

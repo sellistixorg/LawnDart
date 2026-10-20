@@ -19,7 +19,9 @@ public static class LawnDartPostgresExtensions
 {
     /// <summary>
     /// Configures this bounded context to use the Postgres event store.
-    /// Tables live in <see cref="PostgresEventStoreOptions.SchemaName"/> (default <c>lawndart</c>), never in <c>public</c>.
+    /// Tables live in <see cref="PostgresEventStoreOptions.SchemaName"/>.
+    /// The <c>default</c> context uses <c>lawndart</c>. Any other context uses its own name.
+    /// The <c>public</c> schema is rejected.
     /// </summary>
     /// <remarks>
     /// Keyed services use <see cref="BoundedContextBuilder.ContextName"/>.
@@ -39,6 +41,9 @@ public static class LawnDartPostgresExtensions
         var options = new PostgresEventStoreOptions
         {
             ContextName = contextName,
+            SchemaName = string.Equals(contextName, LawnDart.LawnDartNames.DefaultContextName, StringComparison.Ordinal)
+                ? "lawndart"
+                : contextName,
             ValidateNames = LawnDart.LawnDartNames.IsFormatCheckEnabled(services)
         };
         configure(options);

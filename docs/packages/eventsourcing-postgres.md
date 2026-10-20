@@ -36,8 +36,9 @@ is rejected the same way.
 
 ## Schema
 
-Tables live in `SchemaName`. The default is `lawndart`. A context other than
-the default should use its own schema name. The name `public` is rejected.
+Tables live in `SchemaName`. `UsePostgres` sets that to `lawndart` for the
+`default` context and to the context name for every other context. The
+callback can change it. The name `public` is rejected.
 
 Events, streams, and tags are partitioned two ways. The top level is a list
 on `tenant_id` with one default partition. That partition is hashed into

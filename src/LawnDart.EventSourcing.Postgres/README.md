@@ -3,8 +3,8 @@
 Postgres event store for LawnDart. `UsePostgres(...)` registers the same
 keyed services as `UseSqlServer(...)`.
 
-Postgres 15 or newer. Tables live in a schema you name. The default is
-`lawndart`. The `public` schema is rejected.
+Postgres 15 or newer. The `default` context uses schema `lawndart`. Any
+other context uses its own name. The `public` schema is rejected.
 
 ```csharp
 services.AddLawnDart(o => o.RequireTenantId = false);
