@@ -90,7 +90,7 @@ public sealed class ProjectionRebuildSqlTests : IAsyncLifetime
         await viewStore.InitializeSchemaAsync(cts.Token);
         await checkpoints.InitializeSchemaAsync(cts.Token);
 
-        var eventStore = new InMemoryEventStore();
+        var eventStore = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         var streamId   = $"Counter:{Guid.NewGuid()}";
 
         // 1. Seed 5 events

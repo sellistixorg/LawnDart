@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
-using System.Text.Json;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using LawnDart.EventSourcing.Serialization;
@@ -29,6 +28,8 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
     private long _nextSequencePosition = 1;
     private readonly object _lock = new();
     private readonly bool _enableRegistry;
+    private readonly bool _requireTenantId;
+    private readonly bool _validateNames;
 
     /// <summary>
     /// The bounded context name this store belongs to.
@@ -59,7 +60,12 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
     /// When created via <c>AddBoundedContext().UseInMemory()</c> this is set automatically.
     /// </param>
     /// <param name="logger">Optional logger.</param>
-    /// <param name="options">Optional in-memory store options (subscription channel capacity).</param>
+    /// <param name="options">
+    /// Optional store options: subscription capacity, <see cref="InMemoryEventStoreOptions.RequireTenantId"/>,
+    /// and <see cref="InMemoryEventStoreOptions.ValidateNames"/>.
+    /// When omitted, <see cref="InMemoryEventStoreOptions.RequireTenantId"/> is true.
+    /// A stream id must include a tenant prefix. Set that option to false to append without one.
+    /// </param>
     /// <param name="session">
     /// Typed session used to serialize on append and read records back into objects.
     /// Defaults to System.Text.Json UTF-8 and a per-store write-through catalog (not a
@@ -79,12 +85,14 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         _session        = session ?? new EventSession(
             new JsonEventSerializer(),
             new WriteThroughEventTypeCatalog());
-        var capacity = options?.SubscriptionChannelCapacity
-            ?? InMemoryEventStoreOptions.DefaultSubscriptionChannelCapacity;
+        options ??= new InMemoryEventStoreOptions();
+        _requireTenantId = options.RequireTenantId;
+        _validateNames = options.ValidateNames;
+        var capacity = options.SubscriptionChannelCapacity;
         if (capacity < 1)
             throw new ArgumentOutOfRangeException(nameof(options), "SubscriptionChannelCapacity must be at least 1.");
         _subscriptionChannelCapacity = capacity;
-        var poll = options?.SubscriptionPollInterval ?? TimeSpan.FromSeconds(1);
+        var poll = options.SubscriptionPollInterval;
         if (poll < TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(options), "SubscriptionPollInterval cannot be negative.");
         _subscriptionPollInterval = poll;
@@ -154,6 +162,8 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         if (envelopes.Count == 0)
             throw new ArgumentException("At least one event is required", nameof(events));
 
+        AppendTenantRules.ValidateStreamAppend(streamId, envelopes, _requireTenantId, _validateNames);
+
         lock (_lock)
         {
             var result = AppendFramesToStream(streamId, envelopes, expectedVersion);
@@ -173,9 +183,12 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
 
         ArgumentNullException.ThrowIfNull(condition);
 
+        var tenantId = AppendTenantRules.TryReadTenantId(envelopes);
+        AppendTenantRules.ValidateDcbAppend(tenantId, _requireTenantId, _validateNames);
+
         lock (_lock)
         {
-            var result = AppendFramesDcb(envelopes, condition, TryReadTenantId(envelopes));
+            var result = AppendFramesDcb(envelopes, condition, tenantId);
             SignalCommitted(result);
             return Task.FromResult(result);
         }
@@ -777,31 +790,4 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
 
     private static string? ExtractTenantId(string streamId)
         => StreamIdParser.ExtractTenantId(streamId);
-
-    private static string? TryReadTenantId(IReadOnlyList<AppendEvent> envelopes)
-    {
-        foreach (var envelope in envelopes)
-        {
-            if (envelope.Metadata.IsEmpty)
-                continue;
-
-            try
-            {
-                using var doc = JsonDocument.Parse(envelope.Metadata);
-                if (doc.RootElement.TryGetProperty("TenantId", out var property)
-                    && property.ValueKind == JsonValueKind.String)
-                {
-                    var value = property.GetString();
-                    if (!string.IsNullOrWhiteSpace(value))
-                        return value;
-                }
-            }
-            catch (JsonException)
-            {
-                // Metadata is opaque JSON to the log; skip unreadable blobs.
-            }
-        }
-
-        return null;
-    }
 }

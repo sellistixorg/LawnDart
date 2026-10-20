@@ -7,6 +7,7 @@ using System.Text.Json.Serialization;
 using System.Threading.Channels;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
+using LawnDart.EventSourcing.EventStore;
 using LawnDart.EventStore;
 using LawnDart.Metadata;
 using LawnDart.Outbox;
@@ -1926,56 +1927,11 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         => StreamIdParser.ExtractTenantId(streamId);
 
     private void ValidateStreamTenant(string streamId, IReadOnlyList<AppendEvent> envelopes)
-    {
-        var tenantIdFromStream = ExtractTenantId(streamId);
-        if (_options.RequireTenantId && tenantIdFromStream == null)
-        {
-            throw new ArgumentException(
-                $"Stream ID '{streamId}' must include tenant ID in format '{{tenantId}}:{{aggregateType}}:{{aggregateId}}' " +
-                $"when RequireTenantId is true.",
-                nameof(streamId));
-        }
-
-        if (_options.RequireTenantId && tenantIdFromStream != null)
-            LawnDartNames.ValidateTenantId(tenantIdFromStream, nameof(streamId), _options.ValidateNames);
-
-        var tenantIdFromMetadata = TryReadTenantId(envelopes);
-        if (_options.RequireTenantId && tenantIdFromMetadata != null)
-            LawnDartNames.ValidateTenantId(tenantIdFromMetadata, "metadata", _options.ValidateNames);
-
-        if (tenantIdFromStream != null && tenantIdFromMetadata != null && tenantIdFromMetadata != tenantIdFromStream)
-        {
-            throw new ArgumentException(
-                $"Tenant ID mismatch: stream ID has '{tenantIdFromStream}' but metadata has '{tenantIdFromMetadata}'.");
-        }
-    }
-
-    private static string? TryReadTenantId(IReadOnlyList<AppendEvent> envelopes)
-    {
-        foreach (var envelope in envelopes)
-        {
-            if (envelope.Metadata.IsEmpty)
-                continue;
-
-            try
-            {
-                using var doc = JsonDocument.Parse(envelope.Metadata);
-                if (doc.RootElement.TryGetProperty("TenantId", out var property)
-                    && property.ValueKind == JsonValueKind.String)
-                {
-                    var value = property.GetString();
-                    if (!string.IsNullOrWhiteSpace(value))
-                        return value;
-                }
-            }
-            catch (JsonException)
-            {
-                // Metadata is opaque JSON to the log; skip unreadable blobs.
-            }
-        }
-
-        return null;
-    }
+        => AppendTenantRules.ValidateStreamAppend(
+            streamId,
+            envelopes,
+            _options.RequireTenantId,
+            _options.ValidateNames);
 
     private void LogConnectionOnce()
     {
@@ -2401,15 +2357,8 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
 
         return await AppendWithRetryAsync(async ct =>
         {
-            var tenantId = TryReadTenantId(envelopes);
-            if (_options.RequireTenantId && string.IsNullOrWhiteSpace(tenantId))
-            {
-                throw new ArgumentException(
-                    "TenantId is required in event metadata when RequireTenantId is true for DCB appends.");
-            }
-
-            if (_options.RequireTenantId && !string.IsNullOrWhiteSpace(tenantId))
-                LawnDartNames.ValidateTenantId(tenantId, "metadata", _options.ValidateNames);
+            var tenantId = AppendTenantRules.TryReadTenantId(envelopes);
+            AppendTenantRules.ValidateDcbAppend(tenantId, _options.RequireTenantId, _options.ValidateNames);
 
             var streamId = !string.IsNullOrWhiteSpace(tenantId)
                 ? $"{tenantId}:dcb:{Guid.NewGuid()}"

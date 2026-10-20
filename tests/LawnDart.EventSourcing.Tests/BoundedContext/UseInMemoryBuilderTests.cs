@@ -96,8 +96,8 @@ public class UseInMemoryBuilderTests
         var catalog  = sp.GetRequiredKeyedService<IEventStore>("catalog");
 
         // Append to ordering only
-        await ordering.AppendAsync("Order:1", [new StubEvent(Guid.NewGuid(), DateTime.UtcNow)]);
-        await ordering.AppendAsync("Order:2", [new StubEvent(Guid.NewGuid(), DateTime.UtcNow)]);
+        await ordering.AppendAsync("acme:Order:1", [new StubEvent(Guid.NewGuid(), DateTime.UtcNow)]);
+        await ordering.AppendAsync("acme:Order:2", [new StubEvent(Guid.NewGuid(), DateTime.UtcNow)]);
 
         var orderingSeq = await ordering.GetCurrentSequenceAsync();
         var catalogSeq  = await catalog.GetCurrentSequenceAsync();
@@ -160,6 +160,56 @@ public class UseInMemoryBuilderTests
         Assert.Null(sp.GetService<IEventStore>());
         Assert.Null(sp.GetService<IAggregateRepository>());
         Assert.Null(sp.GetService<IDcbRepository>());
+    }
+
+    [Fact]
+    public async Task UseInMemory_Append_RejectsTenantDefault()
+    {
+        var services = new ServiceCollection();
+        services.AddLawnDart();
+        services.AddBoundedContext("default").UseInMemory().WithEventTypes(typeof(StubEvent));
+        await using var sp = services.BuildServiceProvider();
+        var store = sp.GetRequiredService<IEventStore>();
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+            store.AppendAsync($"default:Order:{Guid.NewGuid()}", [new StubEvent(Guid.NewGuid(), DateTime.UtcNow)]));
+        Assert.Contains("reserved", ex.Message);
+    }
+
+    [Fact]
+    public async Task UseInMemory_ValidateNamesFalse_KeepsTenantDefault()
+    {
+        var services = new ServiceCollection();
+        services.AddLawnDart(o =>
+        {
+            o.RequireTenantId = true;
+            o.ValidateNames = false;
+        });
+        services.AddBoundedContext("default").UseInMemory().WithEventTypes(typeof(StubEvent));
+        await using var sp = services.BuildServiceProvider();
+        var store = sp.GetRequiredService<IEventStore>();
+        var streamId = $"default:Order:{Guid.NewGuid()}";
+
+        await store.AppendAsync(
+            streamId,
+            [new StubEvent(Guid.NewGuid(), DateTime.UtcNow)],
+            metadata: new EventMetadata { TenantId = "default" });
+
+        Assert.Single(await store.ReadStreamAsync(streamId));
+    }
+
+    [Fact]
+    public async Task UseInMemory_RequireTenantIdFalse_AllowsStreamWithoutTenant()
+    {
+        var services = new ServiceCollection();
+        services.AddLawnDart(o => o.RequireTenantId = false);
+        services.AddBoundedContext("default").UseInMemory().WithEventTypes(typeof(StubEvent));
+        await using var sp = services.BuildServiceProvider();
+        var store = sp.GetRequiredService<IEventStore>();
+
+        await store.AppendAsync("Order:1", [new StubEvent(Guid.NewGuid(), DateTime.UtcNow)]);
+
+        Assert.Single(await store.ReadStreamAsync("Order:1"));
     }
 
     // ── Stubs ──────────────────────────────────────────────────────────────────

@@ -11,7 +11,8 @@ public class NewEventsSignalSubscriptionTests
     {
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions
         {
-            SubscriptionPollInterval = TimeSpan.FromSeconds(30)
+            SubscriptionPollInterval = TimeSpan.FromSeconds(30),
+            RequireTenantId = false
         });
 
         await using var handle = store.Subscribe("sub-wake", fromSequence: 1);
@@ -31,7 +32,7 @@ public class NewEventsSignalSubscriptionTests
     [Fact]
     public async Task FailedAppend_DoesNotSignal()
     {
-        var store = new InMemoryEventStore();
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         await store.AppendAsync("s1", [Evt()]);
         Assert.Equal(1, store.NewEvents.Generation);
         Assert.Equal(1, store.NewEvents.Position);
@@ -47,7 +48,7 @@ public class NewEventsSignalSubscriptionTests
     [Fact]
     public async Task CommittedSave_SignalsOnce_WithTheNewestPosition()
     {
-        var store = new InMemoryEventStore();
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         await store.AppendAsync("s1", [Evt(), Evt(), Evt()]);
 
         Assert.Equal(1, store.NewEvents.Generation);
@@ -63,7 +64,8 @@ public class NewEventsSignalSubscriptionTests
     {
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions
         {
-            SubscriptionPollInterval = TimeSpan.FromSeconds(30)
+            SubscriptionPollInterval = TimeSpan.FromSeconds(30),
+            RequireTenantId = false
         });
         store.BeforeIdleWait = () =>
         {
@@ -85,7 +87,8 @@ public class NewEventsSignalSubscriptionTests
     {
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions
         {
-            SubscriptionPollInterval = TimeSpan.FromMilliseconds(50)
+            SubscriptionPollInterval = TimeSpan.FromMilliseconds(50),
+            RequireTenantId = false
         });
         store.PublishNewEventsSignal = false;
 

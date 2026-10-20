@@ -12,7 +12,7 @@ public class InMemorySubscriptionTests
     [Fact]
     public async Task Global_CatchUp_Then_Live_Is_Continuous()
     {
-        var store = new InMemoryEventStore();
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         await store.AppendAsync("s1", [Evt()]);
         await store.AppendAsync("s1", [Evt()]);
 
@@ -39,7 +39,7 @@ public class InMemorySubscriptionTests
     [Fact]
     public async Task Stream_Scope_Isolates_Other_Streams()
     {
-        var store = new InMemoryEventStore();
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         await store.AppendAsync("a", [Evt()]);
         await store.AppendAsync("b", [Evt()]);
         await store.AppendAsync("a", [Evt()]);
@@ -57,7 +57,7 @@ public class InMemorySubscriptionTests
     [Fact]
     public async Task Query_Scope_Matches_ReadByQuery()
     {
-        var store = new InMemoryEventStore();
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         await store.AppendAsync("s1", [Evt()], tags: ["order:1"]);
         await store.AppendAsync("s1", [Evt()], tags: ["other"]);
         await store.AppendAsync("s1", [Evt()], tags: ["order:1"]);
@@ -79,7 +79,7 @@ public class InMemorySubscriptionTests
     [Fact]
     public async Task FromSequence_Is_Inclusive()
     {
-        var store = new InMemoryEventStore();
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         await store.AppendAsync("s1", [Evt(), Evt(), Evt()]);
 
         await using var handle = store.Subscribe("sub-inclusive", fromSequence: 2);
@@ -91,7 +91,7 @@ public class InMemorySubscriptionTests
     public async Task Dispose_Stops_Delivery_And_Unregisters()
     {
         var store = new InMemoryEventStore(
-            options: new InMemoryEventStoreOptions { SubscriptionChannelCapacity = 8 });
+            options: new InMemoryEventStoreOptions { SubscriptionChannelCapacity = 8, RequireTenantId = false });
         await store.AppendAsync("s1", [Evt()]);
 
         var handle = store.Subscribe("sub-dispose", fromSequence: 1);
@@ -109,7 +109,7 @@ public class InMemorySubscriptionTests
     public async Task Slow_Consumer_Blocks_Without_Silent_Loss()
     {
         var store = new InMemoryEventStore(
-            options: new InMemoryEventStoreOptions { SubscriptionChannelCapacity = 1 });
+            options: new InMemoryEventStoreOptions { SubscriptionChannelCapacity = 1, RequireTenantId = false });
 
         await using var handle = store.Subscribe("sub-slow", fromSequence: 1);
 
@@ -127,7 +127,7 @@ public class InMemorySubscriptionTests
     [Fact]
     public async Task Multiple_Independent_Subscribers()
     {
-        var store = new InMemoryEventStore();
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         await store.AppendAsync("s1", [Evt()]);
 
         await using var a = store.Subscribe("a", fromSequence: 1);
@@ -144,7 +144,7 @@ public class InMemorySubscriptionTests
     [Fact]
     public async Task Concurrent_Append_During_CatchUp_Is_Gap_Free()
     {
-        var store = new InMemoryEventStore();
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         for (var i = 0; i < 50; i++)
             await store.AppendAsync("s1", [Evt()]);
 
@@ -182,14 +182,14 @@ public class InMemorySubscriptionTests
         await using var orderingHandle = orderingSubs.Subscribe("o", fromSequence: 1);
         await using var catalogHandle = catalogSubs.Subscribe("c", fromSequence: 1);
 
-        await orderingStore.AppendAsync("Order:1", [Evt()]);
-        await catalogStore.AppendAsync("Product:1", [Evt()]);
+        await orderingStore.AppendAsync("acme:Order:1", [Evt()]);
+        await catalogStore.AppendAsync("acme:Product:1", [Evt()]);
 
         var o = await ReadExactlyAsync(orderingHandle, 1, TimeSpan.FromSeconds(5));
         var c = await ReadExactlyAsync(catalogHandle, 1, TimeSpan.FromSeconds(5));
 
-        Assert.Equal("Order:1", o[0].StreamId);
-        Assert.Equal("Product:1", c[0].StreamId);
+        Assert.Equal("acme:Order:1", o[0].StreamId);
+        Assert.Equal("acme:Product:1", c[0].StreamId);
         Assert.Equal(1, o[0].SequencePosition);
         Assert.Equal(1, c[0].SequencePosition);
     }

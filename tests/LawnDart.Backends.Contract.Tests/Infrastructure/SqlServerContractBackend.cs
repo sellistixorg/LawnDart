@@ -26,7 +26,6 @@ public sealed class SqlServerContractBackend : IContractBackend
     {
         EnforcesEventIdAcrossTenants = true,
         StreamIdsCaseInsensitive = true,
-        ChecksTenantIdOnAppend = true,
         AppendWritesOutboxRows = true,
         SecondInstanceSeesCommittedEvents = true,
         InboxMarksSurviveASecondInstance = true,

@@ -383,10 +383,9 @@ public abstract class EventStoreContractTests : ContractSuite
             Assert.Empty(read);
     }
 
-    [ContractFact]
+    [Fact]
     public async Task AppendAsync_ReservedTenantDefault_Throws()
     {
-        SkipUnless(Cap.ChecksTenantIdOnAppend, "In-memory append does not check tenant ids.");
         var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(requireTenantId: true))).Store;
         var streamId = $"default:Order:{Guid.NewGuid()}";
         var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
@@ -394,10 +393,9 @@ public abstract class EventStoreContractTests : ContractSuite
         Assert.Contains("reserved", ex.Message);
     }
 
-    [ContractFact]
+    [Fact]
     public async Task AppendAsync_ValidateNamesFalse_AllowsReservedTenantDefault()
     {
-        SkipUnless(Cap.ChecksTenantIdOnAppend, "In-memory append does not check tenant ids.");
         var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(requireTenantId: true, validateNames: false))).Store;
         var streamId = $"default:Order:{Guid.NewGuid()}";
         await store.AppendAsync(streamId, [ContractEvent.Tick()], metadata: new EventMetadata { TenantId = "default" });
@@ -407,19 +405,17 @@ public abstract class EventStoreContractTests : ContractSuite
         Assert.Equal("default", stream!.TenantId);
     }
 
-    [ContractFact]
+    [Fact]
     public async Task AppendAsync_EmptyTenantId_Throws()
     {
-        SkipUnless(Cap.ChecksTenantIdOnAppend, "In-memory append does not check tenant ids.");
         var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(requireTenantId: true, validateNames: false))).Store;
         var streamId = $":Order:{Guid.NewGuid()}";
         await Assert.ThrowsAsync<ArgumentException>(() => store.AppendAsync(streamId, [ContractEvent.Tick()]));
     }
 
-    [ContractFact]
+    [Fact]
     public async Task AppendAsync_MissingTenant_WhenRequired_Throws()
     {
-        SkipUnless(Cap.ChecksTenantIdOnAppend, "In-memory append does not check tenant ids.");
         var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(requireTenantId: true))).Store;
         var streamId = $"Order:{Guid.NewGuid()}";
         var ex = await Assert.ThrowsAsync<ArgumentException>(() => store.AppendAsync(streamId, [ContractEvent.Tick()]));

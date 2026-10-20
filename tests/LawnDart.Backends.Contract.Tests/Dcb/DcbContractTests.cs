@@ -161,6 +161,40 @@ public abstract class DcbContractTests : ContractSuite
     }
 
     [Fact]
+    public async Task AppendAsync_Dcb_ReservedTenantDefault_Throws()
+    {
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(requireTenantId: true))).Store;
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => store.AppendAsync(
+            [ContractEvent.Tick()],
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags("order:absent"))),
+            metadata: new EventMetadata { TenantId = "default" }));
+        Assert.Contains("reserved", ex.Message);
+    }
+
+    [Fact]
+    public async Task AppendAsync_Dcb_ValidateNamesFalse_AllowsReservedTenantDefault()
+    {
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(requireTenantId: true, validateNames: false))).Store;
+        var append = await store.AppendAsync(
+            [ContractEvent.Tick()],
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags("order:absent"))),
+            metadata: new EventMetadata { TenantId = "default" });
+        var read = await store.ReadByQueryAsync(Query.All(), fromSequencePosition: append.SequencePositions[0], limit: 1);
+        var evt = Assert.Single(read.Events);
+        Assert.StartsWith("default:dcb:", evt.StreamId);
+    }
+
+    [Fact]
+    public async Task AppendAsync_Dcb_MissingTenant_WhenRequired_Throws()
+    {
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(requireTenantId: true))).Store;
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => store.AppendAsync(
+            [ContractEvent.Tick()],
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags("order:absent")))));
+        Assert.Contains("TenantId is required in event metadata", ex.Message);
+    }
+
+    [Fact]
     public async Task DcbAppends_ConcurrentSameTag_ExactlyOneWins()
     {
         var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;

@@ -23,7 +23,7 @@ public class DcbRepositoryTests
 
     public DcbRepositoryTests()
     {
-        _eventStore = new InMemoryEventStore(enableRegistry: true, logger: NullLogger<InMemoryEventStore>.Instance);
+        _eventStore = new InMemoryEventStore(enableRegistry: true, logger: NullLogger<InMemoryEventStore>.Instance, options: new InMemoryEventStoreOptions { RequireTenantId = false });
         _metadataProvider = new TestMetadataProvider();
         _tenantProvider = new TestTenantContextProvider("tenant1");
 
