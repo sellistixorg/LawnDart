@@ -369,7 +369,6 @@ public sealed class PostgresPhase1Tests
             ? TimeSpan.FromSeconds(15)
             : TimeSpan.FromSeconds(2);
         var committed = new System.Collections.Concurrent.ConcurrentDictionary<long, byte>();
-        var concurrency = 0;
         using var stop = new CancellationTokenSource(duration);
         var writers = Enumerable.Range(0, 16).Select(worker => Task.Run(async () =>
         {
@@ -393,7 +392,7 @@ public sealed class PostgresPhase1Tests
                 }
                 catch (ConcurrencyException)
                 {
-                    Interlocked.Increment(ref concurrency);
+                    // Two writers can overlap on one stream. Any other error fails the test.
                 }
 
                 await Task.Delay(Random.Shared.Next(0, 5));
@@ -411,7 +410,6 @@ public sealed class PostgresPhase1Tests
 
         await Task.WhenAll(writers.Concat(readers));
         await AssertNoSkippedCommittedAsync(opened, committed);
-        Assert.True(concurrency >= 0, $"concurrency conflicts: {concurrency}");
     }
 
     [Fact]
@@ -437,42 +435,110 @@ public sealed class PostgresPhase1Tests
     public async Task DcbAppends_CrossMatchingTags_OneWins_AndOppositeOrderDoesNotDeadlock()
     {
         var opened = await OpenAsync(requireTenantId: false);
-        for (var round = 0; round < 4; round++)
-        {
-            var left = "left-" + round + "-" + Guid.NewGuid().ToString("N");
-            var right = "right-" + round + "-" + Guid.NewGuid().ToString("N");
-            var firstTags = round % 2 == 0 ? new[] { left } : new[] { right };
-            var secondTags = round % 2 == 0 ? new[] { right } : new[] { left };
-            var first = opened.Store.AppendAsync(
-                [ContractEvent.Tick()],
-                AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(secondTags))),
-                tags: firstTags);
-            var second = opened.Store.AppendAsync(
-                [ContractEvent.Tick()],
-                AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(firstTags))),
-                tags: secondTags);
-            var results = await Task.WhenAll(SettleAsync(first), SettleAsync(second));
-            Assert.Equal(1, results.Count(static item => item is null));
-            Assert.Equal(1, results.Count(static item => item is ConcurrencyException));
-        }
+        await HoldCrossTagsAsync(
+            opened,
+            writeTag: "left-" + Guid.NewGuid().ToString("N"),
+            checkTag: "right-" + Guid.NewGuid().ToString("N"));
+        await HoldCrossTagsAsync(
+            opened,
+            writeTag: "right-" + Guid.NewGuid().ToString("N"),
+            checkTag: "left-" + Guid.NewGuid().ToString("N"));
     }
 
     [Fact]
     public async Task TagConditionDcb_AndTypesOnlyDcb_OneWins()
     {
         var opened = await OpenAsync(requireTenantId: false);
-        var tag = "cross-" + Guid.NewGuid().ToString("N");
         var typeName = "backend-contract.test-event";
-        var tagged = opened.Store.AppendAsync(
-            [ContractEvent.Tick()],
-            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByType(typeName))),
-            tags: [tag]);
+        var writtenByTypesOnly = "types-" + Guid.NewGuid().ToString("N");
+        var checkedByTagCondition = "tag-" + Guid.NewGuid().ToString("N");
+
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        opened.Hooks.PauseNextAppendBeforeCommit(entered, release);
         var typesOnly = opened.Store.AppendAsync(
             [ContractEvent.Tick()],
-            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(tag))));
-        var results = await Task.WhenAll(SettleAsync(tagged), SettleAsync(typesOnly));
-        Assert.Equal(1, results.Count(static item => item is null));
-        Assert.Equal(1, results.Count(static item => item is ConcurrencyException));
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByType(typeName))),
+            tags: [writtenByTypesOnly]);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
+        var tagged = opened.Store.AppendAsync(
+            [ContractEvent.Tick()],
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(writtenByTypesOnly))));
+        await Task.Delay(200);
+        Assert.False(tagged.IsCompleted);
+        release.TrySetResult();
+        await typesOnly.WaitAsync(TimeSpan.FromSeconds(15));
+        await Assert.ThrowsAsync<ConcurrencyException>(() => tagged.WaitAsync(TimeSpan.FromSeconds(15)));
+
+        entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        opened.Hooks.PauseNextAppendBeforeCommit(entered, release);
+        tagged = opened.Store.AppendAsync(
+            [ContractEvent.Tick()],
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(checkedByTagCondition))));
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
+        typesOnly = opened.Store.AppendAsync(
+            [ContractEvent.Tick()],
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByType(typeName))));
+        await Task.Delay(200);
+        Assert.False(typesOnly.IsCompleted);
+        release.TrySetResult();
+        await tagged.WaitAsync(TimeSpan.FromSeconds(15));
+        await Assert.ThrowsAsync<ConcurrencyException>(() => typesOnly.WaitAsync(TimeSpan.FromSeconds(15)));
+    }
+
+    [Fact]
+    public async Task MixedCondition_TypeItemPlusTag_WaitsForAnOpenAppend()
+    {
+        var opened = await OpenAsync(requireTenantId: false);
+        var tag = "mix-" + Guid.NewGuid().ToString("N");
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        opened.Hooks.PauseNextAppendBeforeCommit(entered, release);
+        var normal = opened.Store.AppendAsync("held", [ContractEvent.Tick()]);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
+        var dcb = opened.Store.AppendAsync(
+            [ContractEvent.Tick()],
+            AppendCondition.FailIfMatches(Query.FromItems(
+                QueryItem.ByType("backend-contract.test-event"),
+                QueryItem.ByTags(tag))),
+            tags: [tag]);
+        await Task.Delay(200);
+        Assert.False(dcb.IsCompleted);
+        release.TrySetResult();
+        await normal.WaitAsync(TimeSpan.FromSeconds(15));
+        await Assert.ThrowsAsync<ConcurrencyException>(() => dcb.WaitAsync(TimeSpan.FromSeconds(15)));
+    }
+
+    [Fact]
+    public async Task LostReply_WhenReadBackFails_ThrowsUnknown_AndDoesNotRetry()
+    {
+        var opened = await OpenAsync(requireTenantId: false);
+        var store = (PostgresEventStore)opened.Store;
+        var attempts = 0;
+        store.FailAppendReadBack = true;
+        store.AfterAppendStatement = _ =>
+        {
+            Interlocked.Increment(ref attempts);
+            throw new NpgsqlException("connection reset after the statement was sent");
+        };
+
+        var ex = await Assert.ThrowsAsync<AppendOutcomeUnknownException>(() =>
+            store.AppendAsync("Order:" + Guid.NewGuid().ToString("N"), [ContractEvent.Tick()]));
+        Assert.Equal(1, attempts);
+        Assert.Contains("could not tell whether it was saved", ex.Message, StringComparison.Ordinal);
+
+        var calls = 0;
+        store.AfterAppendStatement = null;
+        store.CommitHook = (_, _) =>
+        {
+            Interlocked.Increment(ref calls);
+            throw new NpgsqlException("commit connection reset");
+        };
+        var ex2 = await Assert.ThrowsAsync<AppendOutcomeUnknownException>(() =>
+            store.AppendAsync("Order:" + Guid.NewGuid().ToString("N"), [ContractEvent.Tick()]));
+        Assert.Equal(1, calls);
+        Assert.Contains("could not tell whether it was saved", ex2.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -568,17 +634,25 @@ public sealed class PostgresPhase1Tests
             Assert.Contains(position, positions);
     }
 
-    private static async Task<Exception?> SettleAsync(Task<AppendResult> append)
+    private static async Task HoldCrossTagsAsync(ContractEventStore opened, string writeTag, string checkTag)
     {
-        try
-        {
-            await append.WaitAsync(TimeSpan.FromSeconds(15));
-            return null;
-        }
-        catch (Exception ex)
-        {
-            return ex;
-        }
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        opened.Hooks.PauseNextAppendBeforeCommit(entered, release);
+        var held = opened.Store.AppendAsync(
+            [ContractEvent.Tick()],
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(checkTag))),
+            tags: [writeTag]);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
+        var waiter = opened.Store.AppendAsync(
+            [ContractEvent.Tick()],
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(writeTag))),
+            tags: [checkTag]);
+        await Task.Delay(200);
+        Assert.False(waiter.IsCompleted);
+        release.TrySetResult();
+        await held.WaitAsync(TimeSpan.FromSeconds(15));
+        await Assert.ThrowsAsync<ConcurrencyException>(() => waiter.WaitAsync(TimeSpan.FromSeconds(15)));
     }
 
     private async Task<ContractEventStore> OpenAsync(bool requireTenantId = false, TimeSpan? grace = null)

@@ -271,9 +271,23 @@ public sealed partial class PostgresEventStore
         ordered.Sort(static (left, right) => string.CompareOrdinal(left.Tag, right.Tag));
         lockTags = ordered.Select(static item => item.Tag).ToArray();
         lockModes = ordered.Select(static item => item.Mode).ToArray();
-        // A condition with no tags locks the whole store. Every other append
-        // takes the shared store key, including a tag-condition append.
-        lockStore = condition is not null && exclusive.Count == 0 ? "exclusive" : "shared";
+        // Any condition item with no tags can match events the tag locks do not cover.
+        // That append takes the exclusive store lock, even when another item has tags.
+        lockStore = condition is not null && ConditionNeedsStoreExclusive(condition) ? "exclusive" : "shared";
+    }
+
+    private static bool ConditionNeedsStoreExclusive(AppendCondition condition)
+    {
+        if (condition.FailIfEventsMatch.Items.Count == 0)
+            return true;
+
+        foreach (var item in condition.FailIfEventsMatch.Items)
+        {
+            if (item.Tags is not { Count: > 0 } || item.Tags.All(string.IsNullOrEmpty))
+                return true;
+        }
+
+        return false;
     }
 
     private static List<string> CollectFenceTags(AppendCondition condition)
@@ -452,6 +466,9 @@ public sealed partial class PostgresEventStore
         IReadOnlyList<Guid> eventIds,
         CancellationToken cancellationToken)
     {
+        if (FailAppendReadBack)
+            throw new NpgsqlException("read-back failed");
+
         if (eventIds.Count == 0)
             return null;
 
@@ -461,36 +478,29 @@ public sealed partial class PostgresEventStore
             FROM {_names.Events}
             WHERE tenant_id = @tenant AND event_id = ANY(@ids)
             """;
-        try
-        {
-            await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-            await using var command = new NpgsqlCommand(sql, connection);
-            command.Parameters.Add(new NpgsqlParameter("tenant", tenant));
-            command.Parameters.Add(new NpgsqlParameter("ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid) { Value = eventIds.ToArray() });
-            var rows = new Dictionary<Guid, (long Position, long Version)>();
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-                rows[reader.GetGuid(0)] = (reader.GetInt64(1), reader.GetInt64(2));
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.Add(new NpgsqlParameter("tenant", tenant));
+        command.Parameters.Add(new NpgsqlParameter("ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid) { Value = eventIds.ToArray() });
+        var rows = new Dictionary<Guid, (long Position, long Version)>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            rows[reader.GetGuid(0)] = (reader.GetInt64(1), reader.GetInt64(2));
 
-            if (rows.Count != eventIds.Count)
-                return null;
-
-            var positions = new List<long>(eventIds.Count);
-            long version = -1;
-            foreach (var id in eventIds)
-            {
-                if (!rows.TryGetValue(id, out var row))
-                    return null;
-                positions.Add(row.Position);
-                version = Math.Max(version, row.Version);
-            }
-
-            return new AppendResult(positions, null, version);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
+        if (rows.Count != eventIds.Count)
             return null;
+
+        var positions = new List<long>(eventIds.Count);
+        long version = -1;
+        foreach (var id in eventIds)
+        {
+            if (!rows.TryGetValue(id, out var row))
+                return null;
+            positions.Add(row.Position);
+            version = Math.Max(version, row.Version);
         }
+
+        return new AppendResult(positions, null, version);
     }
 
     private static void EnsureStreamLength(string streamId, string paramName)

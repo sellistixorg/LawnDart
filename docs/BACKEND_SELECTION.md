@@ -171,7 +171,8 @@ Tables do not go in `public`.
 
 This release is the event store: append, read, tags, the dynamic consistency
 boundary, the stream registry, and the read horizon. `EnableOutbox = true`
-is rejected at startup. Say so in the host and leave it false. Snapshot
+is rejected when the store is built. Leave `EnableOutbox` false until the
+outbox release. Snapshot
 tables, the inbox, and projection views are a later release. A same-process
 reader wakes when a save in that process commits. A notification with the
 newest position is sent on the append. The listener that reads that

@@ -15,11 +15,7 @@ namespace LawnDart.Backends.Contract.Tests;
 /// <remarks>
 /// Testcontainers turns Postgres durability off (<c>fsync=off</c>,
 /// <c>synchronous_commit=off</c>, <c>full_page_writes=off</c>). This benchmark
-/// turns those three back on so the comparison with SQL Server is durable
-/// on both sides. Each window is 30 seconds after a warmup.
-/// The earlier run on this machine, with durability off and 4 second windows, was:
-/// single event Postgres 786 and SQL Server 360 appends per second;
-/// 10-event batch Postgres 655 and SQL Server 180 appends per second.
+/// turns those three back on. Each window is 30 seconds after a warmup.
 /// </remarks>
 [Trait("Category", "Benchmark")]
 public sealed class PostgresBenchmarkTests
@@ -78,9 +74,6 @@ public sealed class PostgresBenchmarkTests
                 single-event SQL Server {singleSql:F0} appends/s
                 10-event Postgres {batchPg:F0} appends/s
                 10-event SQL Server {batchSql:F0} appends/s
-                previous run with Testcontainers durability off and 4 second windows:
-                single-event Postgres 786 appends/s, SQL Server 360 appends/s
-                10-event Postgres 655 appends/s, SQL Server 180 appends/s
                 """;
             Directory.CreateDirectory("/tmp/lawndart-bench");
             await File.WriteAllTextAsync("/tmp/lawndart-bench/result.txt", text);

@@ -78,14 +78,19 @@ Metadata is jsonb. Snapshot bytes and outbox bytes are not in this release.
 One function call writes the stream row, the events, and the tags. The
 version check runs before any sequence number is taken. A new stream's first
 event is version 1. A dynamic consistency boundary stream starts at version
-0. Pass `expectedVersion: -1` to require a new stream.
+0. Pass `expectedVersion: -1` to require a new stream. After that statement
+is sent, the store does not send it again. If a later read cannot tell
+whether the rows were saved, the call throws `AppendOutcomeUnknownException`.
+Read the stream before sending the append again.
 
 A normal append takes a shared lock per tag, plus one shared lock for the
 store. A dynamic consistency boundary append takes an exclusive lock on each
-tag in its condition. A condition with no tags takes the store lock
-exclusively, so other appends wait. More than 64 distinct tags on one append
-uses the store lock instead of one lock per tag. Two different tags that
-hash to the same key only wait. They do not write the wrong row.
+tag in its condition, and the same shared locks on the tags it writes.
+If any condition item has no tags, that append takes the exclusive store
+lock as well, so a type check is covered even when another item names a tag.
+More than 64 distinct tags on one append uses the exclusive store lock
+instead of one lock per tag. Two different tags that hash to the same key
+only wait. They do not write the wrong row.
 
 The caught-up sequence stays behind an unfinished append. `GetCurrentSequenceAsync`
 does not move past that hole while the writer is still open.

@@ -86,6 +86,12 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
     /// </summary>
     internal Func<CancellationToken, Task>? AfterAppendStatement { get; set; }
 
+    /// <summary>
+    /// Test seam. The follow-up read of event ids throws, so the caller sees
+    /// <see cref="AppendOutcomeUnknownException"/> and the statement is not sent again.
+    /// </summary>
+    internal bool FailAppendReadBack { get; set; }
+
     /// <summary>Quoted events table.</summary>
     internal string QualifiedEventsTable => _names.Events;
 
@@ -276,7 +282,7 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
             }
             catch (AppendStatementSentException ex)
             {
-                return await RecoverSentAppendAsync(streamId, eventIds, isDcb, ex, cancellationToken).ConfigureAwait(false);
+                return await RecoverSentAppendAsync(streamId, eventIds, ex, cancellationToken).ConfigureAwait(false);
             }
 
             var committed = new AppendResult(written.Positions, null, isDcb ? -1 : written.LastVersion);
@@ -291,6 +297,11 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
             writtenRows = await ExecuteAppendAsync(
                 connection, transaction, streamId, envelopes, eventIds, expectedVersion, condition, isDcb, cancellationToken)
                 .ConfigureAwait(false);
+        }
+        catch (AppendStatementSentException ex)
+        {
+            await RollbackQuietlyAsync(transaction, cancellationToken).ConfigureAwait(false);
+            return await RecoverSentAppendAsync(streamId, eventIds, ex, cancellationToken).ConfigureAwait(false);
         }
         catch
         {
@@ -310,7 +321,7 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            var landed = await TryReadCommittedAppendAsync(streamId, eventIds, cancellationToken).ConfigureAwait(false);
+            var landed = await ReadBackOrUnknownAsync(streamId, eventIds, cancellationToken).ConfigureAwait(false);
             if (landed is not null)
             {
                 Signal(landed);
@@ -318,6 +329,8 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
             }
 
             await RollbackQuietlyAsync(transaction, cancellationToken).ConfigureAwait(false);
+            if (ex is NpgsqlException)
+                throw UnknownOutcome(ex);
             throw;
         }
 
@@ -329,21 +342,39 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
     private async Task<AppendResult> RecoverSentAppendAsync(
         string streamId,
         IReadOnlyList<Guid> eventIds,
-        bool isDcb,
         AppendStatementSentException exception,
         CancellationToken cancellationToken)
     {
-        _ = isDcb;
-        var landed = await TryReadCommittedAppendAsync(streamId, eventIds, cancellationToken).ConfigureAwait(false);
+        var landed = await ReadBackOrUnknownAsync(streamId, eventIds, cancellationToken).ConfigureAwait(false);
         if (landed is not null)
         {
             Signal(landed);
             return landed;
         }
 
-        System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception.InnerException ?? exception).Throw();
-        throw exception;
+        throw UnknownOutcome(exception.InnerException ?? exception);
     }
+
+    private async Task<AppendResult?> ReadBackOrUnknownAsync(
+        string streamId,
+        IReadOnlyList<Guid> eventIds,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await TryReadCommittedAppendAsync(streamId, eventIds, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw UnknownOutcome(ex);
+        }
+    }
+
+    private static AppendOutcomeUnknownException UnknownOutcome(Exception inner)
+        => new(
+            "The append was sent and the store could not tell whether it was saved. " +
+            "Read the stream before sending it again.",
+            inner);
 
     private async Task GrantAppRoleAsync(
         NpgsqlConnection connection,
