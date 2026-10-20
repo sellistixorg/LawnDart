@@ -1,14 +1,30 @@
 namespace LawnDart.EventStore;
 
 /// <summary>
+/// A point on a <see cref="NewEventsSignal"/> taken before a read.
+/// Pass it to <see cref="NewEventsSignal.WaitAsync"/> so a save that commits
+/// after <see cref="NewEventsSignal.TakeTicket"/> wakes the reader at once.
+/// </summary>
+public readonly struct NewEventsTicket
+{
+    private readonly Task? _pulse;
+
+    internal NewEventsTicket(Task pulse) => _pulse = pulse;
+
+    internal Task? Pulse => _pulse;
+}
+
+/// <summary>
 /// In-process wake-up shared by readers of one event store.
 /// </summary>
 /// <remarks>
 /// The store calls <see cref="Notify"/> after a save commits, with the newest
 /// global position. A listener outside the store can call <see cref="Notify"/>
 /// on the same instance. The signal carries no events. Readers still read
-/// from their own checkpoint. A missed or extra call only changes when the
-/// next read runs. The poll timer still delivers every committed event.
+/// from their own checkpoint. Call <see cref="TakeTicket"/> before the read,
+/// then <see cref="WaitAsync"/>. A save that commits after the ticket wakes
+/// the reader at once. A missed or extra call only changes when the next read
+/// runs. The poll timer still delivers every committed event.
 /// </remarks>
 public sealed class NewEventsSignal
 {
@@ -83,28 +99,49 @@ public sealed class NewEventsSignal
     }
 
     /// <summary>
-    /// Returns when <see cref="Notify"/> runs, or when <paramref name="timeout"/> elapses,
-    /// whichever comes first.
+    /// Takes a ticket before a read. Any <see cref="Notify"/> after this call completes the ticket,
+    /// including a save that commits while the read is still running.
     /// </summary>
+    public NewEventsTicket TakeTicket() => new(Volatile.Read(ref _pulse).Task);
+
+    /// <summary>
+    /// Returns when <see cref="Notify"/> has run since <paramref name="since"/>,
+    /// or when <paramref name="timeout"/> elapses, whichever comes first.
+    /// </summary>
+    /// <param name="since">
+    /// Ticket from <see cref="TakeTicket"/> on this signal, taken before the read.
+    /// A default ticket throws.
+    /// </param>
     /// <param name="timeout">
-    /// How long to wait for a signal. <see cref="TimeSpan.Zero"/> returns at once.
+    /// How long to wait when the ticket is still open. <see cref="TimeSpan.Zero"/> returns at once.
     /// <see cref="Timeout.InfiniteTimeSpan"/> waits until a signal or cancellation.
+    /// The timer starts here, so the time spent reading is not counted.
     /// </param>
     /// <param name="cancellationToken">
     /// Cancels the wait. The call throws <see cref="OperationCanceledException"/> when this
     /// token is cancelled. A timeout returns without throwing.
     /// </param>
-    public async Task WaitAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
+    public Task WaitAsync(
+        NewEventsTicket since,
+        TimeSpan timeout,
+        CancellationToken cancellationToken = default)
     {
         if (timeout < TimeSpan.Zero && timeout != Timeout.InfiniteTimeSpan)
             throw new ArgumentOutOfRangeException(nameof(timeout), "Timeout cannot be negative.");
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        var pulse = Volatile.Read(ref _pulse).Task;
-        if (pulse.IsCompleted || timeout == TimeSpan.Zero)
-            return;
+        var pulse = since.Pulse ?? throw new ArgumentException(
+            "Call TakeTicket before waiting.", nameof(since));
 
+        if (pulse.IsCompleted || timeout == TimeSpan.Zero)
+            return Task.CompletedTask;
+
+        return WaitForPulseAsync(pulse, timeout, cancellationToken);
+    }
+
+    private async Task WaitForPulseAsync(Task pulse, TimeSpan timeout, CancellationToken cancellationToken)
+    {
         Interlocked.Increment(ref _waiting);
         try
         {

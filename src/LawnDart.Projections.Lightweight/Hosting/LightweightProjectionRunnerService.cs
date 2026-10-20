@@ -437,6 +437,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
                 //   • a partial batch transitions to the sequence-check / idle-wait path
                 long toPosition = lastPosition + _options.BatchSize;
                 var pollSw = Stopwatch.StartNew();
+                var newEventsTicket = _newEvents?.TakeTicket();
                 long? headBeforeRead = null;
                 if (_supportsSequenceCheck)
                 {
@@ -539,7 +540,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
                     ProjectionTelemetry.RecordCheckpointLag(StorageKey, headSeq - lastPosition);
                     if (!typesResolved)
                     {
-                        await WaitForNewEventsAsync(stoppingToken).ConfigureAwait(false);
+                        await WaitForNewEventsAsync(newEventsTicket, stoppingToken).ConfigureAwait(false);
                         continue;
                     }
                     if (!IsFarBehind(lastPosition, headSeq))
@@ -579,7 +580,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
                             else
                             {
                                 // Tail band: head is close but nothing visible yet — poll again.
-                                await WaitForNewEventsAsync(stoppingToken).ConfigureAwait(false);
+                                await WaitForNewEventsAsync(newEventsTicket, stoppingToken).ConfigureAwait(false);
                                 continue;
                             }
                         }
@@ -611,7 +612,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
                     }
 
                     // Genuinely caught up: nothing new in the store.
-                    await WaitForNewEventsAsync(stoppingToken).ConfigureAwait(false);
+                    await WaitForNewEventsAsync(newEventsTicket, stoppingToken).ConfigureAwait(false);
                 }
                 else
                 {
@@ -620,7 +621,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
                     // partial batch there may be more just below the batch ceiling, so loop
                     // immediately; otherwise wait the full poll interval.
                     if (batchCount == 0)
-                        await WaitForNewEventsAsync(stoppingToken).ConfigureAwait(false);
+                        await WaitForNewEventsAsync(newEventsTicket, stoppingToken).ConfigureAwait(false);
                     // else: partial batch > 0 → loop immediately
                 }
             }
@@ -1699,14 +1700,14 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
     }
 
     /// <summary>
-    /// Waits for a committed save in this process, or for
+    /// Waits for a committed save since <paramref name="ticket"/>, or for
     /// <see cref="LightweightProjectionOptions.PollInterval"/>, whichever comes first.
     /// A store without <see cref="ISignalsNewEvents"/> waits for the poll interval only.
     /// </summary>
-    private Task WaitForNewEventsAsync(CancellationToken stoppingToken)
+    private Task WaitForNewEventsAsync(NewEventsTicket? ticket, CancellationToken stoppingToken)
     {
-        if (_newEvents is { } signal)
-            return signal.WaitAsync(_options.PollInterval, stoppingToken);
+        if (_newEvents is { } signal && ticket is { } since)
+            return signal.WaitAsync(since, _options.PollInterval, stoppingToken);
         return Task.Delay(_options.PollInterval, stoppingToken);
     }
 

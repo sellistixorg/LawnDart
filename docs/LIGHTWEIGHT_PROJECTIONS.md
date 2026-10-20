@@ -73,9 +73,10 @@ hook.
 Live poll, rebuild, and time-travel replay use the store's typed session.
 Historical rows arrive as the current .NET type after upcast.
 
-When the store implements `ISignalsNewEvents`, an idle runner waits on that
-signal or `PollInterval`, whichever comes first. It then reads from its
-checkpoint. A save in this process wakes the live view. The poll interval
+When the store implements `ISignalsNewEvents`, the runner takes a ticket
+before it reads. An idle runner waits on that ticket or `PollInterval`,
+whichever comes first. It then reads from its checkpoint. A save that
+commits after the ticket wakes the live view at once. The poll interval
 still runs when no signal arrives.
 
 ## Checkpoints

@@ -59,6 +59,7 @@ public class OutboxProcessor : BackgroundService
         
         while (!stoppingToken.IsCancellationRequested)
         {
+            var ticket = _newEvents?.TakeTicket();
             try
             {
                 await ProcessBatchAsync(stoppingToken).ConfigureAwait(false);
@@ -67,9 +68,9 @@ public class OutboxProcessor : BackgroundService
             {
                 _logger.LogError(ex, "Error processing outbox batch");
             }
-            
-            if (_newEvents is { } signal)
-                await signal.WaitAsync(_pollingInterval, stoppingToken).ConfigureAwait(false);
+
+            if (_newEvents is { } signal && ticket is { } since)
+                await signal.WaitAsync(since, _pollingInterval, stoppingToken).ConfigureAwait(false);
             else
                 await Task.Delay(_pollingInterval, stoppingToken).ConfigureAwait(false);
         }

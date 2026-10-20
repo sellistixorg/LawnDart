@@ -59,6 +59,28 @@ public class NewEventsSignalSubscriptionTests
     }
 
     [Fact]
+    public async Task NotifyBetweenReadAndWait_WakesBeforeThePollInterval()
+    {
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions
+        {
+            SubscriptionPollInterval = TimeSpan.FromSeconds(30)
+        });
+        store.BeforeIdleWait = () =>
+        {
+            store.BeforeIdleWait = null;
+            store.AppendAsync("s1", [Evt()]).GetAwaiter().GetResult();
+        };
+
+        await using var handle = store.Subscribe("sub-gap", fromSequence: 1);
+        var started = Stopwatch.StartNew();
+        var received = await ReadExactlyAsync(handle, 1, TimeSpan.FromSeconds(5));
+
+        Assert.True(started.Elapsed < TimeSpan.FromSeconds(2), $"woke after {started.Elapsed}");
+        Assert.Equal(1, received[0].SequencePosition);
+        Assert.Equal(1, store.NewEvents.Generation);
+    }
+
+    [Fact]
     public async Task SignalNeverFired_PollStillDelivers()
     {
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions

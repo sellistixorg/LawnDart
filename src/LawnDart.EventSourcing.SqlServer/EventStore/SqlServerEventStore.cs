@@ -2112,6 +2112,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         {
             while (!ct.IsCancellationRequested && !handle.IsDisposed)
             {
+                var ticket = _newEvents.TakeTicket();
                 var delivered = 0;
                 var from = lastDelivered + 1;
                 var head = await GetCurrentSequenceAsync(ct).ConfigureAwait(false);
@@ -2127,7 +2128,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                 {
                     try
                     {
-                        await _newEvents.WaitAsync(pollInterval, ct).ConfigureAwait(false);
+                        await _newEvents.WaitAsync(ticket, pollInterval, ct).ConfigureAwait(false);
                     }
                     catch (OperationCanceledException) when (ct.IsCancellationRequested)
                     {
@@ -2165,7 +2166,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                 // Idle until a same-process commit signals, or until the poll interval elapses.
                 try
                 {
-                    await _newEvents.WaitAsync(pollInterval, ct).ConfigureAwait(false);
+                    await _newEvents.WaitAsync(ticket, pollInterval, ct).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
                 {

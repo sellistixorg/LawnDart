@@ -48,6 +48,11 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
     /// </summary>
     internal bool PublishNewEventsSignal { get; set; } = true;
 
+    /// <summary>
+    /// Test seam. Runs after an idle subscription read and before the wait.
+    /// </summary>
+    internal Action? BeforeIdleWait { get; set; }
+
     /// <param name="enableRegistry">Whether stream metadata registry tracking is enabled.</param>
     /// <param name="contextName">
     /// The bounded context name.  Defaults to <c>"default"</c>.
@@ -300,6 +305,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         {
             while (!ct.IsCancellationRequested && !handle.IsDisposed)
             {
+                var ticket = _newEvents.TakeTicket();
                 List<RecordedEvent> batch;
                 lock (_lock)
                 {
@@ -313,9 +319,10 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
 
                 if (batch.Count == 0)
                 {
+                    BeforeIdleWait?.Invoke();
                     try
                     {
-                        await _newEvents.WaitAsync(_subscriptionPollInterval, ct).ConfigureAwait(false);
+                        await _newEvents.WaitAsync(ticket, _subscriptionPollInterval, ct).ConfigureAwait(false);
                     }
                     catch (OperationCanceledException) when (ct.IsCancellationRequested)
                     {
