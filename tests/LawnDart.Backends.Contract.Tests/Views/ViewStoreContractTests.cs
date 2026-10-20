@@ -35,11 +35,18 @@ public abstract class ViewStoreContractTests : ContractSuite
             Assert.Equal(100 + i, got.Value.Checkpoint);
         }
 
-        await views.SaveViewsAsync("BulkProj:v1", [("inst-0", "{\"n\":999}", 999)]);
-        var updated = await views.GetViewWithCheckpointAsync("BulkProj:v1", "inst-0");
-        Assert.Equal("{\"n\":999}", updated!.Value.ViewData);
-        Assert.Equal(999, updated.Value.Checkpoint);
-        Assert.Equal(12, (await views.GetViewsByTypeAsync("BulkProj:v1")).Count());
+        await views.SaveViewsAsync("BulkProj:v1",
+        [
+            ("inst-0", "{\"n\":999}", 999),
+            ("inst-11", "{\"n\":1111}", 1111)
+        ]);
+        var u0 = await views.GetViewWithCheckpointAsync("BulkProj:v1", "inst-0");
+        var u11 = await views.GetViewWithCheckpointAsync("BulkProj:v1", "inst-11");
+        Assert.Equal("{\"n\":999}", u0!.Value.ViewData);
+        Assert.Equal(999, u0.Value.Checkpoint);
+        Assert.Equal("{\"n\":1111}", u11!.Value.ViewData);
+        Assert.Equal(1111, u11.Value.Checkpoint);
+        Assert.Equal("{\"n\":5}", await views.GetViewAsync("BulkProj:v1", "inst-5"));
     }
 
     [Fact]

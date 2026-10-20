@@ -53,7 +53,10 @@ public abstract class OutboxContractTests : ContractSuite
         await writer.WriteAsync(NewMessage("s", 1));
         await writer.WriteAsync(NewMessage("s", 2));
         var rows = await writer.GetUnprocessedAsync(10);
-        Assert.Equal([1L, 2L, 3L], rows.Select(m => m.SequencePosition));
+        Assert.Equal(3, rows.Count);
+        Assert.Equal(1, rows[0].SequencePosition);
+        Assert.Equal(2, rows[1].SequencePosition);
+        Assert.Equal(3, rows[2].SequencePosition);
     }
 
     [Fact]
@@ -122,13 +125,17 @@ public abstract class OutboxContractTests : ContractSuite
     public async Task MarkAsDeadLetteredAsync_ExcludesFromUnprocessed_AndIsQueryable()
     {
         var writer = await Backend.OpenOutboxAsync(ContractStores.Isolated());
-        var message = NewMessage("s", 1);
-        await writer.WriteAsync(message);
-        await writer.MarkAsDeadLetteredAsync(message.Id);
-        Assert.Empty(await writer.GetUnprocessedAsync(10));
+        var live = NewMessage("s", 1);
+        var poison = NewMessage("s", 2);
+        await writer.WriteAsync(live);
+        await writer.WriteAsync(poison);
+        await writer.MarkAsDeadLetteredAsync(poison.Id);
+        var unprocessed = await writer.GetUnprocessedAsync(10);
+        Assert.Equal(live.Id, Assert.Single(unprocessed).Id);
         var dead = Assert.Single(await writer.GetDeadLetteredAsync(10));
-        Assert.Equal(message.Id, dead.Id);
+        Assert.Equal(poison.Id, dead.Id);
         Assert.NotNull(dead.DeadLetteredAt);
+        Assert.Null(dead.ProcessedAt);
     }
 
     [Fact]
@@ -147,15 +154,19 @@ public abstract class OutboxContractTests : ContractSuite
     public async Task ResetDeadLettered_ClearsDeadLetter_KeepsLastError_AndZeroesAttempts()
     {
         var writer = await Backend.OpenOutboxAsync(ContractStores.Isolated(outboxClaimLease: TimeSpan.Zero));
-        var message = NewMessage("s", 1);
+        var message = NewMessage("s", 1, attempts: 4);
         await writer.WriteAsync(message);
-        await writer.RecordFailureAsync(message.Id, "kept");
+        await writer.RecordFailureAsync(message.Id, "broker down");
         await writer.MarkAsDeadLetteredAsync(message.Id);
+        var before = Assert.Single(await writer.GetDeadLetteredAsync(10));
         Assert.True(await writer.ResetDeadLetteredAsync(message.Id));
         var row = Assert.Single(await writer.GetUnprocessedAsync(10));
+        Assert.Equal(message.Id, row.Id);
         Assert.Equal(0, row.Attempts);
-        Assert.Equal("kept", row.LastError);
         Assert.Null(row.DeadLetteredAt);
+        Assert.Null(row.ProcessedAt);
+        Assert.Equal("broker down", row.LastError);
+        Assert.Equal(before.LastAttemptAt, row.LastAttemptAt);
         Assert.Empty(await writer.GetDeadLetteredAsync(10));
     }
 
@@ -164,15 +175,24 @@ public abstract class OutboxContractTests : ContractSuite
     {
         var writer = await Backend.OpenOutboxAsync(ContractStores.Isolated(outboxClaimLease: TimeSpan.Zero));
         Assert.False(await writer.ResetDeadLetteredAsync(Guid.NewGuid()));
-        var live = NewMessage("s", 1);
+        var live = NewMessage("s", 1, attempts: 2);
         await writer.WriteAsync(live);
-        await writer.RecordFailureAsync(live.Id, "still live");
+        await writer.RecordFailureAsync(live.Id, "once");
         Assert.False(await writer.ResetDeadLetteredAsync(live.Id));
-        var processed = NewMessage("s", 2);
+        var stillLive = Assert.Single(await writer.GetUnprocessedAsync(10));
+        Assert.Equal(3, stillLive.Attempts);
+        Assert.Equal("once", stillLive.LastError);
+        var processed = NewMessage("s", 2, attempts: 6);
         await writer.WriteAsync(processed);
         await writer.MarkAsDeadLetteredAsync(processed.Id);
         await writer.MarkAsProcessedAsync(processed.Id);
         Assert.False(await writer.ResetDeadLetteredAsync(processed.Id));
+        Assert.DoesNotContain(await writer.GetUnprocessedAsync(10), m => m.Id == processed.Id);
+        var stillDead = (await writer.GetDeadLetteredAsync(10)).Single(m => m.Id == processed.Id);
+        Assert.Equal(6, stillDead.Attempts);
+        Assert.NotNull(stillDead.ProcessedAt);
+        Assert.NotNull(stillDead.DeadLetteredAt);
+        Assert.False(await writer.ResetDeadLetteredAsync(live.Id));
     }
 
     [Fact]
@@ -184,6 +204,8 @@ public abstract class OutboxContractTests : ContractSuite
         await writer.MarkAsDeadLetteredAsync(message.Id);
         Assert.True(await writer.ResetDeadLetteredAsync(message.Id));
         Assert.False(await writer.ResetDeadLetteredAsync(message.Id));
+        var queued = Assert.Single(await writer.GetUnprocessedAsync(10));
+        Assert.Equal(0, queued.Attempts);
     }
 
     [Fact]
@@ -205,8 +227,10 @@ public abstract class OutboxContractTests : ContractSuite
         }
 
         Assert.Equal(3, await writer.ResetAllDeadLetteredAsync());
+        Assert.Equal(0, await writer.ResetAllDeadLetteredAsync());
         var queued = await writer.GetUnprocessedAsync(10);
         Assert.Equal(4, queued.Count);
+        Assert.All(queued.Where(m => m.Id != live.Id), m => Assert.Equal(0, m.Attempts));
         Assert.Equal(2, queued.Single(m => m.Id == live.Id).Attempts);
         Assert.DoesNotContain(queued, m => m.Id == processed.Id);
         Assert.Empty(await writer.GetDeadLetteredAsync(10));
@@ -266,15 +290,28 @@ public abstract class OutboxContractTests : ContractSuite
     {
         var ordering = await Backend.OpenOutboxAsync(ContractStores.Isolated());
         var catalog = await Backend.OpenOutboxAsync(ContractStores.Isolated());
-        var left = NewMessage("order", 1);
-        var right = NewMessage("product", 1);
+        var left = NewMessage("order", 1, attempts: 4);
+        var right = NewMessage("product", 1, attempts: 4);
         await ordering.WriteAsync(left);
         await catalog.WriteAsync(right);
         await ordering.MarkAsDeadLetteredAsync(left.Id);
         await catalog.MarkAsDeadLetteredAsync(right.Id);
         Assert.True(await ordering.ResetDeadLetteredAsync(left.Id));
-        Assert.Contains(await catalog.GetDeadLetteredAsync(10), m => m.Id == right.Id);
+        var requeued = Assert.Single(await ordering.GetUnprocessedAsync(10));
+        Assert.Equal(left.Id, requeued.Id);
+        Assert.Equal(0, requeued.Attempts);
+        Assert.Null(requeued.DeadLetteredAt);
+        var otherDead = Assert.Single(await catalog.GetDeadLetteredAsync(10));
+        Assert.Equal(right.Id, otherDead.Id);
+        Assert.NotNull(otherDead.DeadLetteredAt);
+        Assert.Empty(await catalog.GetUnprocessedAsync(10));
+        await ordering.MarkAsDeadLetteredAsync(left.Id);
+        var extra = NewMessage("order", 2, attempts: 4);
+        await ordering.WriteAsync(extra);
+        await ordering.MarkAsDeadLetteredAsync(extra.Id);
+        Assert.Equal(2, await ordering.ResetAllDeadLetteredAsync());
         Assert.Empty(await ordering.GetDeadLetteredAsync(10));
+        Assert.Equal(right.Id, Assert.Single(await catalog.GetDeadLetteredAsync(10)).Id);
     }
 
     [ContractFact]
@@ -308,6 +345,7 @@ public abstract class OutboxContractTests : ContractSuite
         Assert.Equal(recorded.CodecId, outbox.CodecId);
         Assert.Equal(recorded.Payload.ToArray(), outbox.Payload.ToArray());
         Assert.Equal(Encoding.UTF8.GetString(recorded.Metadata.Span), outbox.Metadata);
+        Assert.Equal("backend-contract.outbox-event", outbox.EventType);
         Assert.Contains("frame-copy", Encoding.UTF8.GetString(outbox.Payload.Span), StringComparison.Ordinal);
         Assert.Contains("outbox-user", outbox.Metadata, StringComparison.Ordinal);
     }
@@ -329,12 +367,14 @@ public abstract class OutboxContractTests : ContractSuite
         SkipUnless(Cap.AppendWritesOutboxRows, "This backend does not write outbox rows when an event is appended.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(enableOutbox: true));
         var streamId = "test-tenant:TestAggregate:" + Guid.NewGuid().ToString("N");
-        await opened.Store.AppendAsync(streamId, [new ContractOutboxEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow, Value = "one" }]);
+        var event1 = new ContractOutboxEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow, Value = "one" };
+        await opened.Store.AppendAsync(streamId, [event1]);
         await Assert.ThrowsAsync<ConcurrencyException>(() => opened.Store.AppendAsync(
             streamId,
             [new ContractOutboxEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow, Value = "two" }],
             expectedVersion: 5));
-        Assert.Single(await opened.Store.ReadStreamAsync(streamId));
+        var stored = Assert.Single(await opened.Store.ReadStreamAsync(streamId));
+        Assert.Equal(event1.Id, stored.Event.Id);
         Assert.Single(await opened.Outbox.GetUnprocessedAsync(10));
     }
 
@@ -349,7 +389,10 @@ public abstract class OutboxContractTests : ContractSuite
             new ContractOutboxEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow, Value = "b" },
             new ContractOutboxEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow, Value = "c" }
         ]);
-        Assert.Equal(3, (await opened.Outbox.GetUnprocessedAsync(10)).Count);
+        Assert.Equal(3, (await opened.Store.ReadStreamAsync(streamId)).Count);
+        var outboxMessages = await opened.Outbox.GetUnprocessedAsync(10);
+        Assert.Equal(3, outboxMessages.Count);
+        Assert.All(outboxMessages, message => Assert.Equal(streamId, message.StreamId));
     }
 
     [ContractFact]
@@ -384,13 +427,16 @@ public abstract class OutboxContractTests : ContractSuite
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(enableOutbox: true));
         var streamId = Stream();
         await opened.Store.AppendAsync(streamId, [new ContractOutboxEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow, Value = "solo" }]);
+        var recorded = Assert.Single(await opened.Log.ReadStreamAsync(streamId));
         var reader = await Backend.OpenOutboxAsync(new ContractStoreOptions
         {
             SchemaName = opened.SchemaName,
             RequireTenantId = false,
             OutboxClaimLease = TimeSpan.Zero
         });
-        Assert.Single(await reader.GetUnprocessedAsync(10));
+        var outbox = Assert.Single(await reader.GetUnprocessedAsync(10));
+        Assert.Equal(recorded.CodecId, outbox.CodecId);
+        Assert.Equal(recorded.Payload.ToArray(), outbox.Payload.ToArray());
     }
 
     [ContractFact]
@@ -399,21 +445,23 @@ public abstract class OutboxContractTests : ContractSuite
         SkipUnless(Cap.AppendWritesOutboxRows, "This backend does not write outbox rows when an event is appended.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(enableOutbox: true));
         var streamId = Stream();
+        var payload = Encoding.UTF8.GetBytes("""{"Kind":"v2"}""");
         await opened.Log.AppendAsync(streamId, [new AppendEvent(
             "contract.outbox.envelope",
-            """{"n":1}"""u8.ToArray(),
+            payload,
             schemaVersion: 2,
-            codecId: 1,
+            codecId: EventCodec.Json,
             tags: ["env"])]);
         var row = Assert.Single(await opened.Outbox.GetUnprocessedAsync(10));
         Assert.Equal("contract.outbox.envelope", row.EventType);
         Assert.Equal(2, row.SchemaVersion);
-        Assert.Equal(1, row.CodecId);
+        Assert.Equal(EventCodec.Json, row.CodecId);
+        Assert.Equal(payload, row.Payload.ToArray());
     }
 
     private static string Stream() => "test-tenant:TestAggregate:" + Guid.NewGuid().ToString("N");
 
-    private static OutboxMessage NewMessage(string stream, long sequence, int schemaVersion = 1, byte codecId = 1)
+    private static OutboxMessage NewMessage(string stream, long sequence, int schemaVersion = 1, byte codecId = 1, int attempts = 0)
         => new()
         {
             Id = Guid.NewGuid(),
@@ -423,6 +471,7 @@ public abstract class OutboxContractTests : ContractSuite
             Payload = "{}"u8.ToArray(),
             Metadata = "{}",
             CreatedAt = DateTime.UtcNow,
+            Attempts = attempts,
             StreamId = stream,
             SequencePosition = sequence
         };

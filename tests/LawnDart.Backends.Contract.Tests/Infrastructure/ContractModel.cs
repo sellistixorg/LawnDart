@@ -31,6 +31,9 @@ public sealed class ContractCapabilities
     /// <summary>A second inbox object on the same schema sees marks from the first.</summary>
     public bool InboxMarksSurviveASecondInstance { get; init; }
 
+    /// <summary>The test can read the one stored inbox key back.</summary>
+    public bool ExposesStoredInboxKey { get; init; }
+
     /// <summary>The inbox can delete expired rows in one call.</summary>
     public bool CanPurgeExpiredInboxRows { get; init; }
 
@@ -169,7 +172,7 @@ public sealed class ContractSnapshots
 
     public required IDcbSnapshotStore DcbSnapshots { get; init; }
 
-    public Func<string, CancellationToken, Task>? CorruptDcbSnapshotAsync { get; init; }
+    public Func<string, CancellationToken, Task<int>>? CorruptDcbSnapshotAsync { get; init; }
 
     public Func<string, CancellationToken, Task<IReadOnlyList<string>?>>? ReadDcbLoadTagsAsync { get; init; }
 }

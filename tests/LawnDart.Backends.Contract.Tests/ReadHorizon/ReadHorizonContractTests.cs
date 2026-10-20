@@ -89,6 +89,8 @@ public abstract class ReadHorizonContractTests : ContractSuite
 
         var warning = opened.ReadLogEntries().Single(e => e.Level == LogLevel.Warning && e.Message.Contains("Read horizon advanced", StringComparison.Ordinal));
         Assert.Matches(new Regex(@"held for \d+ms by session \d+ \(transaction \d+\)", RegexOptions.CultureInvariant), warning.Message);
+        var held = long.Parse(Regex.Match(warning.Message, @"held for (\d+)ms").Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+        Assert.True(held > 250, warning.Message);
 
         release.TrySetResult();
         var slowResult = await slow.WaitAsync(TimeSpan.FromSeconds(15));

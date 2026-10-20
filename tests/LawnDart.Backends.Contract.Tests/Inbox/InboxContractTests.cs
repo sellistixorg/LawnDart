@@ -101,6 +101,8 @@ public abstract class InboxContractTests : ContractSuite
         await transport.PublishAsync(evt, context);
         await transport.PublishAsync(evt, context);
         Assert.Equal(1, reactor.CallCount);
+        if (Cap.ExposesStoredInboxKey)
+            Assert.Equal(1, await inbox.CountRowsAsync!(CancellationToken.None));
         await cts.CancelAsync();
         await service.StopAsync(CancellationToken.None);
     }
@@ -109,7 +111,7 @@ public abstract class InboxContractTests : ContractSuite
     public async Task Reactor_stores_the_scoped_consumer_key()
     {
         SkipUnless(
-            Cap.InboxMarksSurviveASecondInstance,
+            Cap.ExposesStoredInboxKey,
             "In-memory does not expose the stored inbox key.");
         var inbox = await Backend.OpenInboxAsync(ContractStores.Isolated());
         var transport = new InMemoryMessageTransport(NullLogger<InMemoryMessageTransport>.Instance);
@@ -126,6 +128,8 @@ public abstract class InboxContractTests : ContractSuite
         await WaitUntilAsync(async () => await inbox.CountRowsAsync!(CancellationToken.None) == 1);
         var storedKey = await inbox.ReadSingleKeyAsync!(CancellationToken.None);
         Assert.Equal(InboxConsumerKey.ForReactor(typeof(CountingReactor), "dup-1"), storedKey);
+        Assert.EndsWith(":dup-1", storedKey, StringComparison.Ordinal);
+        Assert.NotEqual("dup-1", storedKey);
         await cts.CancelAsync();
         await service.StopAsync(CancellationToken.None);
     }

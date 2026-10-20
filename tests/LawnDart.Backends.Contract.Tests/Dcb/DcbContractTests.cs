@@ -257,6 +257,7 @@ public abstract class DcbContractTests : ContractSuite
         });
         Assert.Equal(1, exceptions.Count(e => e is null));
         Assert.Equal(1, exceptions.Count(e => e is ConcurrencyException));
+        Assert.All(exceptions, e => Assert.True(e is null || e is ConcurrencyException));
     }
 
     [Fact]
@@ -268,11 +269,12 @@ public abstract class DcbContractTests : ContractSuite
             .Select(i => (IEvent)new ContractDcbEvent(Guid.NewGuid(), DateTime.UtcNow, i))
             .ToArray();
         await store.AppendAsync(Stream(), seed, tags: [tag]);
-        await Assert.ThrowsAsync<ConcurrencyException>(() => store.AppendAsync(
+        var ex = await Assert.ThrowsAsync<ConcurrencyException>(() => store.AppendAsync(
             [new ContractDcbEvent(Guid.NewGuid(), DateTime.UtcNow, 99)],
             AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(tag))),
             new EventMetadata { Timestamp = DateTime.UtcNow },
             tags: [tag]));
+        Assert.NotNull(ex);
     }
 
     [Fact]

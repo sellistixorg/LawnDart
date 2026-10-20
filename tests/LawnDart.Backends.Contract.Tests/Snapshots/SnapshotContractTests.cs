@@ -70,7 +70,7 @@ public abstract class SnapshotContractTests : ContractSuite
         var good = await repo.GetStateAsync<InventoryState>(tags);
         Assert.Equal(12, good.Units);
         await opened.DcbSnapshots.SaveDcbSnapshotAsync(dcbId, 2, good, loadTags: tags);
-        await opened.CorruptDcbSnapshotAsync!(dcbId, CancellationToken.None);
+        Assert.Equal(1, await opened.CorruptDcbSnapshotAsync!(dcbId, CancellationToken.None));
         var (corrupt, info) = await opened.DcbSnapshots.LoadDcbSnapshotAsync<InventoryState>(dcbId);
         Assert.Null(info);
         Assert.Null(corrupt);

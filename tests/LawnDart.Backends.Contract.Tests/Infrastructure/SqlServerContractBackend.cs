@@ -30,6 +30,7 @@ public sealed class SqlServerContractBackend : IContractBackend
         AppendWritesOutboxRows = true,
         SecondInstanceSeesCommittedEvents = true,
         InboxMarksSurviveASecondInstance = true,
+        ExposesStoredInboxKey = true,
         CanPurgeExpiredInboxRows = true,
         StoresDcbSnapshotLoadTags = true,
         ParallelAppendCanConflict = true,
@@ -237,7 +238,7 @@ public sealed class SqlServerContractBackend : IContractBackend
         return value is null or DBNull ? null : (string)value;
     }
 
-    private static async Task CorruptAsync(
+    private static async Task<int> CorruptAsync(
         string qualifiedTable,
         string connectionString,
         string dcbId,
@@ -250,9 +251,7 @@ public sealed class SqlServerContractBackend : IContractBackend
             connection);
         var parameter = command.Parameters.Add("@Id", System.Data.SqlDbType.Char, 64);
         parameter.Value = dcbId;
-        var rows = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        if (rows != 1)
-            throw new InvalidOperationException($"Expected to replace one snapshot row, replaced {rows}.");
+        return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 }
 

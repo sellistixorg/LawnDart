@@ -39,6 +39,7 @@ public abstract class StreamRegistryContractTests : ContractSuite
         var orders = await store.GetStreamsByAggregateTypeAsync("Order");
         Assert.Equal(2, orders.Count);
         Assert.All(orders, s => Assert.Equal("Order", s.AggregateType));
+        Assert.All(orders, s => Assert.Equal("test-tenant", s.TenantId));
     }
 
     [Fact]
@@ -54,6 +55,7 @@ public abstract class StreamRegistryContractTests : ContractSuite
         var found = await store.GetStreamsByTagAsync(high);
         Assert.Single(found);
         Assert.Contains(high, found[0].Tags);
+        Assert.Equal("test-tenant", found[0].TenantId);
     }
 
     [Fact]
@@ -83,6 +85,7 @@ public abstract class StreamRegistryContractTests : ContractSuite
         await store.AppendAsync($"ACME_WEST{suffix}:Order:2", [ContractEvent.Tick()]);
 
         var underscore = await store.EnumerateStreamIdsAsync($"acme_west{suffix}:");
+        Assert.Equal(2, underscore.Count);
         Assert.Contains($"acme_west{suffix}:Order:1", underscore);
         Assert.DoesNotContain($"acmeXwest{suffix}:Order:1", underscore);
         Assert.Contains($"ACME_WEST{suffix}:Order:2", underscore);
@@ -90,6 +93,7 @@ public abstract class StreamRegistryContractTests : ContractSuite
         Assert.Equal(1L, await store.GetStreamCountAsync($"acmeXwest{suffix}:"));
         Assert.Equal(1L, await store.GetStreamCountAsync($"acme%west{suffix}:"));
         Assert.Equal(1L, await store.GetStreamCountAsync($"acme[west{suffix}:"));
+        Assert.Equal(2L, await store.GetStreamCountAsync("acme_"));
 
         Assert.Equal([$"acme%west{suffix}:Order:1"], await store.EnumerateStreamIdsAsync($"acme%west{suffix}:"));
         Assert.Equal([$"acme[west{suffix}:Order:1"], await store.EnumerateStreamIdsAsync($"acme[west{suffix}:"));

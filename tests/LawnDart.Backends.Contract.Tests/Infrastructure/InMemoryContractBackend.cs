@@ -22,6 +22,7 @@ public sealed class InMemoryContractBackend : IContractBackend
         AppendWritesOutboxRows = false,
         SecondInstanceSeesCommittedEvents = false,
         InboxMarksSurviveASecondInstance = false,
+        ExposesStoredInboxKey = false,
         CanPurgeExpiredInboxRows = false,
         StoresDcbSnapshotLoadTags = false,
         ParallelAppendCanConflict = false,
