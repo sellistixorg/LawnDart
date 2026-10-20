@@ -20,29 +20,29 @@ public abstract class EventLogContractTests : ContractSuite
     }
 
     [Fact]
-    public async Task Thesis_HostWithoutClrTypes_CanReadFilterAndCopy()
+    public async Task HostWithoutEventClasses_CanReadFilterAndCopy()
     {
         var log = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Log;
         var payload = Encoding.UTF8.GetBytes("""{"kind":"foreign","n":1}""");
         var metadata = Encoding.UTF8.GetBytes("""{"UserId":"log-only"}""");
-        var streamId = Unique("thesis");
-        var copyStreamId = Unique("thesis-copy");
+        var streamId = Unique("no-clr");
+        var copyStreamId = Unique("no-clr-copy");
 
         await log.AppendAsync(
             streamId,
-            [new AppendEvent(OutsideEventName, payload, metadata, schemaVersion: 1, tags: ["order:thesis"])]);
+            [new AppendEvent(OutsideEventName, payload, metadata, schemaVersion: 1, tags: ["order:outside"])]);
 
         var recorded = Assert.Single(await log.ReadStreamAsync(streamId));
         Assert.Equal(OutsideEventName, recorded.EventType);
         Assert.Equal(payload, recorded.Payload.ToArray());
         Assert.Equal(metadata, recorded.Metadata.ToArray());
         Assert.Equal(1, recorded.SchemaVersion);
-        Assert.Contains("order:thesis", recorded.Tags);
+        Assert.Contains("order:outside", recorded.Tags);
 
         var byToken = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByType(OutsideEventName)));
         Assert.Contains(byToken.Events, e => e.SequencePosition == recorded.SequencePosition);
 
-        var byTag = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags("order:thesis")));
+        var byTag = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags("order:outside")));
         Assert.Contains(byTag.Events, e => e.SequencePosition == recorded.SequencePosition);
 
         await log.AppendAsync(
