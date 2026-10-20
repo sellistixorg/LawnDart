@@ -26,7 +26,6 @@ public sealed class PostgresContractBackend : IContractBackend
         EnforcesEventIdAcrossTenants = false,
         StreamIdsCaseInsensitive = false,
         StreamIdPrefixCaseInsensitive = false,
-        ChecksTenantIdOnAppend = true,
         AppendWritesOutboxRows = false,
         SecondInstanceSeesCommittedEvents = true,
         ParallelAppendCanConflict = true,

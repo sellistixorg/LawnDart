@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
+using LawnDart.EventSourcing.EventStore;
 using LawnDart.EventSourcing.Serialization;
 using LawnDart.EventStore;
 using LawnDart.Serialization;
@@ -201,7 +202,8 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
         if (envelopes.Count == 0)
             throw new ArgumentException("At least one event is required", nameof(events));
 
-        ValidateStreamTenant(streamId, envelopes);
+        AppendTenantRules.ValidateStreamAppend(
+            streamId, envelopes, _options.RequireTenantId, _options.ValidateNames);
         var eventIds = EventIdResolver.ResolveBatch(envelopes.Select(e => e.Metadata).ToList());
         return await AppendWithRetry(
             ct => AppendCoreAsync(streamId, envelopes, eventIds, expectedVersion, condition: null, isDcb: false, ct),
@@ -219,15 +221,8 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
             throw new ArgumentException("At least one event is required", nameof(events));
         ArgumentNullException.ThrowIfNull(condition);
 
-        var tenantId = TryReadTenantId(envelopes);
-        if (_options.RequireTenantId && string.IsNullOrWhiteSpace(tenantId))
-        {
-            throw new ArgumentException(
-                "TenantId is required in event metadata when RequireTenantId is true for DCB appends.");
-        }
-
-        if (_options.RequireTenantId && !string.IsNullOrWhiteSpace(tenantId))
-            LawnDart.LawnDartNames.ValidateTenantId(tenantId, "metadata", _options.ValidateNames);
+        var tenantId = AppendTenantRules.TryReadTenantId(envelopes);
+        AppendTenantRules.ValidateDcbAppend(tenantId, _options.RequireTenantId, _options.ValidateNames);
 
         var streamId = !string.IsNullOrWhiteSpace(tenantId)
             ? $"{tenantId}:dcb:{Guid.NewGuid()}"
@@ -300,7 +295,7 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
         }
         catch (AppendStatementSentException ex)
         {
-            await RollbackQuietlyAsync(transaction, cancellationToken).ConfigureAwait(false);
+            await RollbackQuietlyAsync(transaction, CancellationToken.None).ConfigureAwait(false);
             return await RecoverSentAppendAsync(streamId, eventIds, ex, cancellationToken).ConfigureAwait(false);
         }
         catch
@@ -310,7 +305,16 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
         }
 
         if (BeforeAppendCommit is { } pause)
-            await pause(cancellationToken).ConfigureAwait(false);
+        {
+            try
+            {
+                await pause(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException ex)
+            {
+                return await FinishSentAppendAsync(transaction, streamId, eventIds, ex).ConfigureAwait(false);
+            }
+        }
 
         try
         {
@@ -319,8 +323,11 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
             else
                 await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex)
         {
+            if (ex is OperationCanceledException or NpgsqlException)
+                return await FinishSentAppendAsync(transaction, streamId, eventIds, ex).ConfigureAwait(false);
+
             var landed = await ReadBackOrUnknownAsync(streamId, eventIds, cancellationToken).ConfigureAwait(false);
             if (landed is not null)
             {
@@ -329,8 +336,6 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
             }
 
             await RollbackQuietlyAsync(transaction, cancellationToken).ConfigureAwait(false);
-            if (ex is NpgsqlException)
-                throw UnknownOutcome(ex);
             throw;
         }
 
@@ -345,7 +350,7 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
         AppendStatementSentException exception,
         CancellationToken cancellationToken)
     {
-        var landed = await ReadBackOrUnknownAsync(streamId, eventIds, cancellationToken).ConfigureAwait(false);
+        var landed = await ReadBackOrUnknownAsync(streamId, eventIds, ReadBackToken(cancellationToken)).ConfigureAwait(false);
         if (landed is not null)
         {
             Signal(landed);
@@ -354,6 +359,26 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
 
         throw UnknownOutcome(exception.InnerException ?? exception);
     }
+
+    private async Task<AppendResult> FinishSentAppendAsync(
+        NpgsqlTransaction transaction,
+        string streamId,
+        IReadOnlyList<Guid> eventIds,
+        Exception exception)
+    {
+        var landed = await ReadBackOrUnknownAsync(streamId, eventIds, CancellationToken.None).ConfigureAwait(false);
+        if (landed is not null)
+        {
+            Signal(landed);
+            return landed;
+        }
+
+        await RollbackQuietlyAsync(transaction, CancellationToken.None).ConfigureAwait(false);
+        throw UnknownOutcome(exception);
+    }
+
+    private static CancellationToken ReadBackToken(CancellationToken cancellationToken)
+        => cancellationToken.IsCancellationRequested ? CancellationToken.None : cancellationToken;
 
     private async Task<AppendResult?> ReadBackOrUnknownAsync(
         string streamId,
@@ -364,7 +389,7 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
         {
             return await TryReadCommittedAppendAsync(streamId, eventIds, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex)
         {
             throw UnknownOutcome(ex);
         }

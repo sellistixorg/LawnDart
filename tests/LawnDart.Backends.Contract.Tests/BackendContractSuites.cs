@@ -38,6 +38,14 @@ public sealed class SqlServerRepositoryTenantContractTests : RepositoryTenantCon
     public SqlServerRepositoryTenantContractTests(SqlServerContractFixture fixture) : base(fixture.Backend) { }
 }
 
+[Collection("PostgresContract")]
+[Trait("Category", "Integration")]
+[Trait("Category", "Contract")]
+public sealed class PostgresRepositoryTenantContractTests : RepositoryTenantContractTests
+{
+    public PostgresRepositoryTenantContractTests(PostgresContractFixture fixture) : base(fixture.Backend) { }
+}
+
 [Collection(InMemoryContractCollection.Name)]
 [Trait("Category", "Contract")]
 public sealed class InMemoryDcbContractTests : DcbContractTests

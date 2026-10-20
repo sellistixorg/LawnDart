@@ -5,7 +5,7 @@ using LawnDart.EventStore;
 namespace LawnDart.EventSourcing.EventStore;
 
 /// <summary>
-/// Tenant checks shared by the in-memory store and the SQL Server store.
+/// Tenant checks shared by the in-memory store, the SQL Server store, and the Postgres store.
 /// </summary>
 internal static class AppendTenantRules
 {

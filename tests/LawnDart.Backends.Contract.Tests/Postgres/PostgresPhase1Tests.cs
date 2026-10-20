@@ -375,26 +375,18 @@ public sealed class PostgresPhase1Tests
             while (!stop.IsCancellationRequested)
             {
                 var stream = "w" + worker + ":" + Guid.NewGuid().ToString("N");
-                try
+                if (Random.Shared.Next(5) == 0)
                 {
-                    if (Random.Shared.Next(5) == 0)
-                    {
-                        await ((PostgresEventStore)opened.Store).AppendAndRollbackAsync(
-                            stream,
-                            [new AppendEvent("stress.rollback", "{}"u8.ToArray())],
-                            CancellationToken.None);
-                    }
-                    else
-                    {
-                        var result = await opened.Store.AppendAsync(stream, [ContractEvent.Tick()], cancellationToken: CancellationToken.None);
-                        committed.TryAdd(result.SequencePositions[0], 0);
-                    }
+                    await ((PostgresEventStore)opened.Store).AppendAndRollbackAsync(
+                        stream,
+                        [new AppendEvent("stress.rollback", "{}"u8.ToArray())],
+                        CancellationToken.None);
                 }
-                catch (ConcurrencyException)
+                else
                 {
-                    // Two writers can overlap on one stream. Any other error fails the test.
+                    var result = await opened.Store.AppendAsync(stream, [ContractEvent.Tick()], cancellationToken: CancellationToken.None);
+                    committed.TryAdd(result.SequencePositions[0], 0);
                 }
-
                 await Task.Delay(Random.Shared.Next(0, 5));
             }
         })).ToArray();
@@ -432,7 +424,7 @@ public sealed class PostgresPhase1Tests
     }
 
     [Fact]
-    public async Task DcbAppends_CrossMatchingTags_OneWins_AndOppositeOrderDoesNotDeadlock()
+    public async Task DcbAppends_CrossMatchingTags_OneWins()
     {
         var opened = await OpenAsync(requireTenantId: false);
         await HoldCrossTagsAsync(
@@ -508,6 +500,24 @@ public sealed class PostgresPhase1Tests
         release.TrySetResult();
         await normal.WaitAsync(TimeSpan.FromSeconds(15));
         await Assert.ThrowsAsync<ConcurrencyException>(() => dcb.WaitAsync(TimeSpan.FromSeconds(15)));
+    }
+
+    [Fact]
+    public async Task LostReply_WhenCancelledAfterSend_DoesNotSurfaceCancellation()
+    {
+        var opened = await OpenAsync(requireTenantId: false);
+        var store = (PostgresEventStore)opened.Store;
+        store.AfterAppendStatement = _ =>
+            throw new OperationCanceledException("cancelled after the statement was sent");
+
+        var stream = "Order:" + Guid.NewGuid().ToString("N");
+        var result = await store.AppendAsync(stream, [ContractEvent.Tick()]);
+        Assert.Equal(result.SequencePositions[0], (await store.ReadStreamAsync(stream))[0].SequencePosition);
+
+        store.FailAppendReadBack = true;
+        var ex = await Assert.ThrowsAsync<AppendOutcomeUnknownException>(() =>
+            store.AppendAsync("Order:" + Guid.NewGuid().ToString("N"), [ContractEvent.Tick()]));
+        Assert.Contains("could not tell whether it was saved", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -53,7 +53,8 @@ stream without a tenant prefix does not report `default`.
 `RequireTenantId` true (the default) rejects a missing tenant before that
 key is chosen. An empty tenant id is rejected. The table also rejects an
 empty tenant id. `default` in any casing is reserved unless `ValidateNames`
-is false.
+is false. The in-memory store uses this same check. A new in-memory store
+requires a tenant id unless `RequireTenantId` is false.
 
 Stream ids and tags use the `C` collation. `acme:Order:1` and `acme:order:1`
 are different streams. Tags compare the same way.
@@ -79,7 +80,8 @@ One function call writes the stream row, the events, and the tags. The
 version check runs before any sequence number is taken. A new stream's first
 event is version 1. A dynamic consistency boundary stream starts at version
 0. Pass `expectedVersion: -1` to require a new stream. After that statement
-is sent, the store does not send it again. If a later read cannot tell
+is sent, the store does not send it again. A cancellation after that
+statement is sent is handled the same way. If a later read cannot tell
 whether the rows were saved, the call throws `AppendOutcomeUnknownException`.
 Read the stream before sending the append again.
 

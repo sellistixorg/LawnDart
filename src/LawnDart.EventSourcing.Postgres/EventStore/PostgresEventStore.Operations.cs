@@ -157,18 +157,26 @@ public sealed partial class PostgresEventStore
 
         try
         {
-            var positions = new List<long>(envelopes.Count);
-            long lastVersion = -1;
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            if (AfterAppendStatement is { } afterStatement)
-                await afterStatement(cancellationToken).ConfigureAwait(false);
-            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            try
             {
-                positions.Add(reader.GetInt64(0));
-                lastVersion = reader.GetInt64(1);
-            }
+                var positions = new List<long>(envelopes.Count);
+                long lastVersion = -1;
+                if (AfterAppendStatement is { } afterStatement)
+                    await afterStatement(cancellationToken).ConfigureAwait(false);
+                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    positions.Add(reader.GetInt64(0));
+                    lastVersion = reader.GetInt64(1);
+                }
 
-            return new AppendWrite(positions, lastVersion);
+                return new AppendWrite(positions, lastVersion);
+            }
+            catch (OperationCanceledException ex)
+            {
+                // ExecuteReader already returned, so the statement was sent.
+                throw new AppendStatementSentException(ex);
+            }
         }
         catch (PostgresException ex) when (ex.SqlState is "40001" or "40P01")
         {
@@ -177,6 +185,10 @@ public sealed partial class PostgresEventStore
         catch (PostgresException ex)
         {
             throw MapAppendError(ex, expectedVersion, condition?.After);
+        }
+        catch (AppendStatementSentException)
+        {
+            throw;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -511,55 +523,6 @@ public sealed partial class PostgresEventStore
         throw new ArgumentException(
             $"Stream id is {streamId.Length} characters. The store keeps stream ids to {StreamIdMaxLength} characters so a stream can move between backends. Shorten the id.",
             paramName);
-    }
-
-    private void ValidateStreamTenant(string streamId, IReadOnlyList<AppendEvent> envelopes)
-    {
-        var tenantIdFromStream = StreamIdParser.ExtractTenantId(streamId);
-        if (_options.RequireTenantId && tenantIdFromStream is null)
-        {
-            throw new ArgumentException(
-                $"Stream ID '{streamId}' must include tenant ID in format '{{tenantId}}:{{aggregateType}}:{{aggregateId}}' when RequireTenantId is true.",
-                nameof(streamId));
-        }
-
-        if (_options.RequireTenantId && tenantIdFromStream is not null)
-            LawnDart.LawnDartNames.ValidateTenantId(tenantIdFromStream, nameof(streamId), _options.ValidateNames);
-
-        var tenantIdFromMetadata = TryReadTenantId(envelopes);
-        if (_options.RequireTenantId && tenantIdFromMetadata is not null)
-            LawnDart.LawnDartNames.ValidateTenantId(tenantIdFromMetadata, "metadata", _options.ValidateNames);
-
-        if (tenantIdFromStream is not null && tenantIdFromMetadata is not null && tenantIdFromMetadata != tenantIdFromStream)
-        {
-            throw new ArgumentException(
-                $"Tenant ID mismatch: stream ID has '{tenantIdFromStream}' but metadata has '{tenantIdFromMetadata}'.");
-        }
-    }
-
-    private static string? TryReadTenantId(IReadOnlyList<AppendEvent> envelopes)
-    {
-        foreach (var envelope in envelopes)
-        {
-            if (envelope.Metadata.IsEmpty)
-                continue;
-            try
-            {
-                using var document = JsonDocument.Parse(envelope.Metadata);
-                if (document.RootElement.TryGetProperty("TenantId", out var property)
-                    && property.ValueKind == JsonValueKind.String)
-                {
-                    var value = property.GetString();
-                    if (!string.IsNullOrWhiteSpace(value))
-                        return value;
-                }
-            }
-            catch (JsonException)
-            {
-            }
-        }
-
-        return null;
     }
 
     private async Task EnsureEventTypeIdsAsync(IReadOnlyList<AppendEvent> envelopes, CancellationToken cancellationToken)
