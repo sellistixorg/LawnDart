@@ -68,7 +68,7 @@ public sealed class ProjectionAdminTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(90));
 
         var reg        = CounterReg();
-        var eventStore = new InMemoryEventStore();
+        var eventStore = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         var views      = new InMemoryViewStore();
         var checkpoints = new InMemoryCheckpointStore(views);
         var streamId   = $"Counter:{Guid.NewGuid()}";
@@ -129,7 +129,7 @@ public sealed class ProjectionAdminTests
         var globalReg  = GlobalTagReg();
         var regs       = new[] { counterReg, globalReg };
 
-        var eventStore  = new InMemoryEventStore();
+        var eventStore  = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         var views       = new InMemoryViewStore();
         var checkpoints = new InMemoryCheckpointStore(views);
 
@@ -200,11 +200,11 @@ public sealed class ProjectionAdminTests
         var streamId    = $"Counter:{Guid.NewGuid()}";
 
         // Context A and context B each have independent stores
-        var esA         = new InMemoryEventStore();
+        var esA         = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         var viewsA      = new InMemoryViewStore();
         var checkpointsA = new InMemoryCheckpointStore(viewsA);
 
-        var esB         = new InMemoryEventStore();
+        var esB         = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         var viewsB      = new InMemoryViewStore();
         var checkpointsB = new InMemoryCheckpointStore(viewsB);
 
@@ -269,7 +269,7 @@ public sealed class ProjectionAdminTests
 
         var reg        = CounterReg();
         var streamId   = $"Counter:{Guid.NewGuid()}";
-        var eventStore = new InMemoryEventStore();
+        var eventStore = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         var views      = new InMemoryViewStore();
         var checkpoints = new InMemoryCheckpointStore(views);
 
@@ -324,7 +324,7 @@ public sealed class ProjectionAdminTests
 
         var reg        = CounterReg();
         var streamId   = $"Counter:{Guid.NewGuid()}";
-        var eventStore = new InMemoryEventStore();
+        var eventStore = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         var views      = new InMemoryViewStore();
         var checkpoints = new InMemoryCheckpointStore(views);
 
