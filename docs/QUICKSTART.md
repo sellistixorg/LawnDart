@@ -38,6 +38,24 @@ by default). Stored records keep a payload-format number (`CodecId`).
 The media type stays on `IEventSerializer.ContentType`. `WithEventTypes`
 is required.
 
+A durable store keeps the same context name and swaps the registration.
+Postgres 15 or newer:
+
+```csharp
+services.AddLawnDart(o => o.RequireTenantId = false);
+var ctx = services.AddBoundedContext("default");
+ctx.UsePostgres(o =>
+{
+    o.ConnectionString = connectionString;
+    o.RequireTenantId = false;
+});
+ctx.WithEventTypes<CounterCreated>();
+```
+
+`UsePostgres` is in `LawnDart.EventSourcing.Postgres`. Call
+`InitializeSchemaAsync` before the first append. See
+[Backend selection](BACKEND_SELECTION.md).
+
 ## 3. Handle a command
 
 Define an `ICommand`, an `IEvent`, and an `AggregateRoot<TState>`. Putting

@@ -1,6 +1,6 @@
 # Package map
 
-Sixteen packages. Take `LawnDart` + `LawnDart.EventSourcing` first; add the
+Seventeen packages. Take `LawnDart` + `LawnDart.EventSourcing` first; add the
 others when you need a durable store, read models, HTTP, tests, or
 compile-time schema checks.
 
@@ -20,7 +20,8 @@ Host grammar: [DI Grammar](../DI_GRAMMAR.md). Envelope fields:
 |---|---|---|
 | [`LawnDart`](core.md) | Always. Contracts and host core. | `AddLawnDart` / `AddBoundedContext` |
 | [`LawnDart.EventSourcing`](eventsourcing.md) | You need a runtime and an in-memory store. | `UseInMemory()` |
-| [`LawnDart.EventSourcing.SqlServer`](eventsourcing-sqlserver.md) | You need a durable store. | `UseSqlServer(...)` |
+| [`LawnDart.EventSourcing.SqlServer`](eventsourcing-sqlserver.md) | You need a durable SQL Server store. | `UseSqlServer(...)` |
+| [`LawnDart.EventSourcing.Postgres`](eventsourcing-postgres.md) | You need a durable Postgres store. | `UsePostgres(...)` |
 | [`LawnDart.Projections.Lightweight`](projections-lightweight.md) | You need read models. | `WithProjections` / `MapProjectionQueries` |
 | [`LawnDart.Projections.Lightweight.SqlServer`](projections-lightweight-sqlserver.md) | Read models must survive a restart on SQL Server. | `AddSqlProjectionStores` |
 | [`LawnDart.Messaging`](messaging.md) | You need reactors or task processors. | `AddMessaging` / `AddReactor` |

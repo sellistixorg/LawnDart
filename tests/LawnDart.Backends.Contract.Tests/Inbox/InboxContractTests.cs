@@ -15,16 +15,18 @@ public abstract class InboxContractTests : ContractSuite
     {
     }
 
-    [Fact]
+    [ContractFact]
     public async Task Unknown_id_is_not_processed()
     {
+        SkipUnless(Cap.HasInboxStore, "This backend does not have an inbox yet.");
         var inbox = await Backend.OpenInboxAsync(ContractStores.Isolated());
         Assert.False(await inbox.Store.IsProcessedAsync("never-seen"));
     }
 
-    [Fact]
+    [ContractFact]
     public async Task Mark_then_lookup_is_true_and_a_second_mark_does_not_throw()
     {
+        SkipUnless(Cap.HasInboxStore, "This backend does not have an inbox yet.");
         var inbox = await Backend.OpenInboxAsync(ContractStores.Isolated());
         await inbox.Store.MarkProcessedAsync("msg-1", DateTimeOffset.UtcNow);
         Assert.True(await inbox.Store.IsProcessedAsync("msg-1"));
@@ -34,9 +36,10 @@ public abstract class InboxContractTests : ContractSuite
             Assert.Equal(1, await inbox.CountRowsAsync(CancellationToken.None));
     }
 
-    [Fact]
+    [ContractFact]
     public async Task Expired_row_is_not_processed()
     {
+        SkipUnless(Cap.HasInboxStore, "This backend does not have an inbox yet.");
         var inbox = await Backend.OpenInboxAsync(ContractStores.Isolated(inboxDeduplicationWindow: TimeSpan.FromHours(1)));
         await inbox.Store.MarkProcessedAsync("fresh", DateTimeOffset.UtcNow);
         await inbox.Store.MarkProcessedAsync("stale", DateTimeOffset.UtcNow - TimeSpan.FromHours(2));
@@ -47,6 +50,7 @@ public abstract class InboxContractTests : ContractSuite
     [ContractFact]
     public async Task PurgeExpired_RemovesOnlyExpiredRows()
     {
+        SkipUnless(Cap.HasInboxStore, "This backend does not have an inbox yet.");
         SkipUnless(Cap.CanPurgeExpiredInboxRows, "In-memory drops an expired mark on read and has no purge call.");
         var inbox = await Backend.OpenInboxAsync(ContractStores.Isolated(inboxDeduplicationWindow: TimeSpan.FromHours(1)));
         await inbox.Store.MarkProcessedAsync("fresh", DateTimeOffset.UtcNow);
@@ -60,6 +64,7 @@ public abstract class InboxContractTests : ContractSuite
     [ContractFact]
     public async Task A_new_store_instance_sees_prior_marks()
     {
+        SkipUnless(Cap.HasInboxStore, "This backend does not have an inbox yet.");
         SkipUnless(
             Cap.InboxMarksSurviveASecondInstance,
             "A second in-memory inbox does not see marks from the first.");
@@ -69,9 +74,10 @@ public abstract class InboxContractTests : ContractSuite
         Assert.True(await second.IsProcessedAsync("durable"));
     }
 
-    [Fact]
+    [ContractFact]
     public async Task Parallel_marks_of_one_id_leave_one_processed_id()
     {
+        SkipUnless(Cap.HasInboxStore, "This backend does not have an inbox yet.");
         var inbox = await Backend.OpenInboxAsync(ContractStores.Isolated());
         var processedAt = DateTimeOffset.UtcNow;
         var tasks = Enumerable.Range(0, 20).Select(_ => inbox.Store.MarkProcessedAsync("same-id", processedAt));
@@ -82,9 +88,10 @@ public abstract class InboxContractTests : ContractSuite
             Assert.Equal(1, await inbox.CountRowsAsync(CancellationToken.None));
     }
 
-    [Fact]
+    [ContractFact]
     public async Task Reactor_drops_a_duplicate_delivery()
     {
+        SkipUnless(Cap.HasInboxStore, "This backend does not have an inbox yet.");
         var inbox = await Backend.OpenInboxAsync(ContractStores.Isolated());
         var transport = new InMemoryMessageTransport(NullLogger<InMemoryMessageTransport>.Instance);
         var reactor = new CountingReactor();
@@ -110,6 +117,7 @@ public abstract class InboxContractTests : ContractSuite
     [ContractFact]
     public async Task Reactor_stores_the_scoped_consumer_key()
     {
+        SkipUnless(Cap.HasInboxStore, "This backend does not have an inbox yet.");
         SkipUnless(
             Cap.ExposesStoredInboxKey,
             "In-memory does not expose the stored inbox key.");
@@ -134,9 +142,10 @@ public abstract class InboxContractTests : ContractSuite
         await service.StopAsync(CancellationToken.None);
     }
 
-    [Fact]
+    [ContractFact]
     public async Task Claim_lease_override_is_honored()
     {
+        SkipUnless(Cap.HasInboxStore, "This backend does not have an inbox yet.");
         var held = await Backend.OpenInboxAsync(ContractStores.Isolated(inboxClaimLease: TimeSpan.FromHours(1)));
         Assert.True(await held.Store.TryClaimAsync("held"));
         Assert.False(await held.Store.TryClaimAsync("held"));
@@ -146,9 +155,10 @@ public abstract class InboxContractTests : ContractSuite
         Assert.True(await open.Store.TryClaimAsync("open"));
     }
 
-    [Fact]
+    [ContractFact]
     public async Task TryClaim_SecondCallerLoses_UntilRelease()
     {
+        SkipUnless(Cap.HasInboxStore, "This backend does not have an inbox yet.");
         var inbox = await Backend.OpenInboxAsync(ContractStores.Isolated(inboxClaimLease: TimeSpan.FromHours(1)));
         Assert.True(await inbox.Store.TryClaimAsync("key"));
         Assert.False(await inbox.Store.TryClaimAsync("key"));

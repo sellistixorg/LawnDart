@@ -15,7 +15,7 @@ The body says why. Leave a blank line before `Signed-off-by`.
 
 ## Scope
 
-InMemory and SQL Server are the stores. PostgreSQL support is in progress for the 0.7 line. Transports are `LawnDart.Messaging.InMemory`, `LawnDart.Messaging.RabbitMQ`, `LawnDart.Messaging.AzureServiceBus`, and `LawnDart.Messaging.AwsSqs`.
+InMemory, SQL Server, and Postgres are the stores. The Postgres package is `LawnDart.EventSourcing.Postgres` (the event store). Postgres projections, the outbox, and the inbox are still in progress for the 0.7 line. Transports are `LawnDart.Messaging.InMemory`, `LawnDart.Messaging.RabbitMQ`, `LawnDart.Messaging.AzureServiceBus`, and `LawnDart.Messaging.AwsSqs`.
 Reshaping public API needs an issue first.
 Bug fixes, tests, docs, and work behind existing abstractions do not.
 

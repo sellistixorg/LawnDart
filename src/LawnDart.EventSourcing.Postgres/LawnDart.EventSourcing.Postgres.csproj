@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <PackageId>LawnDart.EventSourcing.Postgres</PackageId>
+    <Description>PostgreSQL event store for LawnDart.</Description>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LawnDart.EventSourcing\LawnDart.EventSourcing.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Npgsql" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="LawnDart.EventSourcing.Postgres.Tests" />
+    <InternalsVisibleTo Include="LawnDart.Backends.Contract.Tests" />
+  </ItemGroup>
+
+</Project>

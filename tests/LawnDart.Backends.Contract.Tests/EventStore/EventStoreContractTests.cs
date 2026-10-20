@@ -59,7 +59,7 @@ public abstract class EventStoreContractTests : ContractSuite
     {
         SkipUnless(
             Cap.ParallelAppendCanConflict,
-            "In-memory appends run one at a time, so a parallel append does not hit a duplicate version.");
+            "This backend runs one append to a stream at a time, so a parallel append does not hit a duplicate version.");
 
         var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
         var streamId = Stream();
@@ -321,8 +321,8 @@ public abstract class EventStoreContractTests : ContractSuite
         Assert.Equal(token, recorded.EventType);
         Assert.Equal(1, recorded.SchemaVersion);
         Assert.Equal(EventCodec.Json, recorded.CodecId);
-        Assert.Equal(payload, recorded.Payload.ToArray());
-        Assert.Equal(metadata, recorded.Metadata.ToArray());
+        AssertStoredPayload(payload, recorded.Payload, recorded.CodecId);
+        AssertStoredMetadata(metadata, recorded.Metadata);
         var ex = await Assert.ThrowsAsync<UnknownEventFamilyException>(() => opened.Store.ReadStreamAsync(streamId));
         Assert.Contains(token, ex.Message);
     }

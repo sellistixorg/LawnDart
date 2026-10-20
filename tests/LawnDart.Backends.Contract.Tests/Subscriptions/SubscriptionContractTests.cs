@@ -10,9 +10,10 @@ public abstract class SubscriptionContractTests : ContractSuite
     {
     }
 
-    [Fact]
+    [ContractFact]
     public async Task Global_CatchUp_Then_Live()
     {
+        SkipUnless(Cap.RunsLiveSubscriptionTests, "This backend does not run the live subscription suite yet.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
         await opened.Store.AppendAsync("s1", [ContractEvent.Tick()]);
         await opened.Store.AppendAsync("s1", [ContractEvent.Tick()]);
@@ -23,9 +24,10 @@ public abstract class SubscriptionContractTests : ContractSuite
         Assert.Equal(new long[] { 1, 2, 3 }, received.Select(e => e.SequencePosition));
     }
 
-    [Fact]
+    [ContractFact]
     public async Task Stream_Scope_Isolates_Other_Streams()
     {
+        SkipUnless(Cap.RunsLiveSubscriptionTests, "This backend does not run the live subscription suite yet.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
         await opened.Store.AppendAsync("a", [ContractEvent.Tick()]);
         await opened.Store.AppendAsync("b", [ContractEvent.Tick()]);
@@ -39,9 +41,10 @@ public abstract class SubscriptionContractTests : ContractSuite
         Assert.Equal(new long[] { 1, 3 }, received.Select(e => e.SequencePosition));
     }
 
-    [Fact]
+    [ContractFact]
     public async Task Query_Scope_Matches_ReadByQuery()
     {
+        SkipUnless(Cap.RunsLiveSubscriptionTests, "This backend does not run the live subscription suite yet.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
         await opened.Store.AppendAsync("s1", [ContractEvent.Tick()], tags: ["order:1"]);
         await opened.Store.AppendAsync("s1", [ContractEvent.Tick()], tags: ["other"]);
@@ -56,9 +59,10 @@ public abstract class SubscriptionContractTests : ContractSuite
         Assert.Equal(expected, received.Select(e => e.SequencePosition));
     }
 
-    [Fact]
+    [ContractFact]
     public async Task FromSequence_Is_Inclusive()
     {
+        SkipUnless(Cap.RunsLiveSubscriptionTests, "This backend does not run the live subscription suite yet.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
         await opened.Store.AppendAsync("s1", [ContractEvent.Tick(), ContractEvent.Tick(), ContractEvent.Tick()]);
         await using var handle = opened.Subscriptions.Subscribe("sub-inclusive", fromSequence: 2);
@@ -66,9 +70,10 @@ public abstract class SubscriptionContractTests : ContractSuite
         Assert.Equal(new long[] { 2, 3 }, received.Select(e => e.SequencePosition));
     }
 
-    [Fact]
+    [ContractFact]
     public async Task Idle_Then_Append_Delivers()
     {
+        SkipUnless(Cap.RunsLiveSubscriptionTests, "This backend does not run the live subscription suite yet.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
         await using var handle = opened.Subscriptions.Subscribe("sub-idle", fromSequence: 1);
         await Task.Delay(80);
@@ -78,9 +83,10 @@ public abstract class SubscriptionContractTests : ContractSuite
         Assert.Equal(1, received[0].SequencePosition);
     }
 
-    [Fact]
+    [ContractFact]
     public async Task Client_Reconnect_With_LastSequence_Plus_One()
     {
+        SkipUnless(Cap.RunsLiveSubscriptionTests, "This backend does not run the live subscription suite yet.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
         await opened.Store.AppendAsync("s1", [ContractEvent.Tick(), ContractEvent.Tick(), ContractEvent.Tick()]);
         await using (var first = opened.Subscriptions.Subscribe("sub-reconnect", fromSequence: 1))
@@ -94,9 +100,10 @@ public abstract class SubscriptionContractTests : ContractSuite
         Assert.Equal(3, rest[0].SequencePosition);
     }
 
-    [Fact]
+    [ContractFact]
     public async Task Dispose_Stops_Delivery()
     {
+        SkipUnless(Cap.RunsLiveSubscriptionTests, "This backend does not run the live subscription suite yet.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
         await opened.Store.AppendAsync("s1", [ContractEvent.Tick()]);
         var handle = opened.Subscriptions.Subscribe("sub-dispose", fromSequence: 1);
@@ -108,9 +115,10 @@ public abstract class SubscriptionContractTests : ContractSuite
         Assert.False(await handle.Events.WaitToReadAsync());
     }
 
-    [Fact]
+    [ContractFact]
     public async Task Slow_Consumer_No_Silent_Loss()
     {
+        SkipUnless(Cap.RunsLiveSubscriptionTests, "This backend does not run the live subscription suite yet.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(subscriptionChannelCapacity: 1));
         await using var handle = opened.Subscriptions.Subscribe("sub-slow", fromSequence: 1);
         for (var i = 0; i < 5; i++)
@@ -119,9 +127,10 @@ public abstract class SubscriptionContractTests : ContractSuite
         Assert.Equal(new long[] { 1, 2, 3, 4, 5 }, received.Select(e => e.SequencePosition));
     }
 
-    [Fact]
+    [ContractFact]
     public async Task MultiContext_Subscriptions_Are_Isolated()
     {
+        SkipUnless(Cap.RunsLiveSubscriptionTests, "This backend does not run the live subscription suite yet.");
         var ordering = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
         var catalog = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
         await using var oh = ordering.Subscriptions.Subscribe("o", fromSequence: 1);
@@ -134,9 +143,10 @@ public abstract class SubscriptionContractTests : ContractSuite
         Assert.Equal("Product:1", c[0].StreamId);
     }
 
-    [Fact]
+    [ContractFact]
     public async Task Load_Smoke_Sustained_Append_With_Global_Subscriber()
     {
+        SkipUnless(Cap.RunsLiveSubscriptionTests, "This backend does not run the live subscription suite yet.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
         await using var handle = opened.Subscriptions.Subscribe("sub-load", fromSequence: 1);
         var readTask = ReadExactlyAsync(handle, 40, TimeSpan.FromSeconds(60));
@@ -147,9 +157,10 @@ public abstract class SubscriptionContractTests : ContractSuite
         Assert.Equal(Enumerable.Range(1, 40).Select(i => (long)i), received.Select(e => e.SequencePosition));
     }
 
-    [Fact]
+    [ContractFact]
     public async Task SameProcessSubscriber_WakesBeforeThePollInterval()
     {
+        SkipUnless(Cap.RunsLiveSubscriptionTests, "This backend does not run the live subscription suite yet.");
         var opened = await Backend.OpenEventStoreAsync(
             ContractStores.Isolated(subscriptionPollInterval: TimeSpan.FromSeconds(30)));
         await using var handle = opened.Subscriptions.Subscribe("sub-wake", fromSequence: 1);
@@ -164,9 +175,10 @@ public abstract class SubscriptionContractTests : ContractSuite
         Assert.Equal(1, opened.Signals.NewEvents.Generation);
     }
 
-    [Fact]
+    [ContractFact]
     public async Task FailedAppend_DoesNotSignal()
     {
+        SkipUnless(Cap.RunsLiveSubscriptionTests, "This backend does not run the live subscription suite yet.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
         await opened.Store.AppendAsync("s1", [ContractEvent.Tick()]);
         var generation = opened.Signals.NewEvents.Generation;
@@ -181,6 +193,7 @@ public abstract class SubscriptionContractTests : ContractSuite
     [ContractFact]
     public async Task Signal_IsRaisedOnlyAfterCommit()
     {
+        SkipUnless(Cap.RunsLiveSubscriptionTests, "This backend does not run the live subscription suite yet.");
         SkipUnless(
             Cap.CanPauseBeforeCommit,
             "In-memory append commits before AppendAsync returns, so there is no moment to pause before commit.");
@@ -198,9 +211,10 @@ public abstract class SubscriptionContractTests : ContractSuite
         Assert.Equal(result.SequencePositions[^1], opened.Signals.NewEvents.Position);
     }
 
-    [Fact]
+    [ContractFact]
     public async Task SignalNeverFired_PollStillDelivers()
     {
+        SkipUnless(Cap.RunsLiveSubscriptionTests, "This backend does not run the live subscription suite yet.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(publishNewEventsSignal: false));
         await using var handle = opened.Subscriptions.Subscribe("sub-poll", fromSequence: 1);
         var read = ReadExactlyAsync(handle, 2, TimeSpan.FromSeconds(5));
@@ -214,6 +228,7 @@ public abstract class SubscriptionContractTests : ContractSuite
     [ContractFact]
     public async Task PagedSubscription_DeliversEveryEvent()
     {
+        SkipUnless(Cap.RunsLiveSubscriptionTests, "This backend does not run the live subscription suite yet.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(subscriptionBatchSize: 2));
         for (var i = 0; i < 5; i++)
             await opened.Store.AppendAsync("s1", [ContractEvent.Tick()]);
@@ -225,6 +240,7 @@ public abstract class SubscriptionContractTests : ContractSuite
     [ContractFact]
     public async Task FailedSubscription_CompletesWithSubscriptionFailedException()
     {
+        SkipUnless(Cap.RunsLiveSubscriptionTests, "This backend does not run the live subscription suite yet.");
         SkipUnless(
             Cap.CanBreakLiveReads,
             "In-memory has no table to rename while a subscription is reading.");
