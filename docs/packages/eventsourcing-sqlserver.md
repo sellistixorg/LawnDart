@@ -42,6 +42,13 @@ examined, including positions that did not match the filter. A failed
 read completes the subscription with `EventSubscriptionFailedException`.
 Cancel and dispose still end it without an error.
 
+After a save in this process commits, the store signals the newest global
+position (`ISignalsNewEvents`). An idle subscription waits on that signal or
+`SqlSubscriptionPollInterval`, whichever comes first, then reads from its
+checkpoint. The signal carries no events. A save from another process is
+still picked up on the poll interval. A listener outside the store can raise
+the same signal.
+
 A type filter reloads `EventTypes` when the token is missing from the
 process cache. If the token is still absent, the read returns no rows and
 `TypesResolved` is false. Do not checkpoint past that range. A projection

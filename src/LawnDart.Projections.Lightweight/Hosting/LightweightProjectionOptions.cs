@@ -17,9 +17,10 @@ public sealed class LightweightProjectionOptions
     /// </summary>
     public string? ContextName { get; set; }
     /// <summary>
-    /// Gets or sets how frequently the runner polls the event store for new events
-    /// when there are no pending events to process.
-    /// <para>Default: 200 ms.</para>
+    /// How long an idle runner waits before it reads the event store again.
+    /// When the store implements <see cref="LawnDart.EventStore.ISignalsNewEvents"/>,
+    /// a committed save in this process also ends the wait. The runner then reads
+    /// from its checkpoint. Default: 200 ms.
     /// </summary>
     public TimeSpan PollInterval { get; set; } = TimeSpan.FromMilliseconds(200);
 

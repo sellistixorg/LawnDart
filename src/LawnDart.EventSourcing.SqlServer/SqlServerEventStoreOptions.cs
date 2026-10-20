@@ -135,8 +135,10 @@ public class SqlServerEventStoreOptions : EventSourcingOptions
     public int SubscriptionChannelCapacity { get; set; } = 10_000;
 
     /// <summary>
-    /// Idle poll interval for live subscription delivery when no new matching events are found.
-    /// Poll-backed live is intentional for SQL v1 (not CDC). Default: 75 ms.
+    /// How long an idle subscription waits before it reads again.
+    /// A save that commits in this process also wakes the subscription through
+    /// <see cref="LawnDart.EventStore.ISignalsNewEvents"/>. Saves from another process
+    /// are still picked up on this timer. Default: 75 ms.
     /// </summary>
     public TimeSpan SqlSubscriptionPollInterval { get; set; } = TimeSpan.FromMilliseconds(75);
 

@@ -21,7 +21,7 @@ namespace LawnDart.EventSourcing.SqlServer.EventStore;
 /// SQL Server <see cref="IEventLog"/>. Typed <see cref="IEventStore"/> methods
 /// forward to <see cref="EventStoreAdapter"/>.
 /// </summary>
-public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEventLog, IEventLogSubscriptions
+public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEventLog, IEventLogSubscriptions, ISignalsNewEvents
 {
     internal const string StreamEventColumns =
         "StreamId, Version, SequencePosition, EventTypeId, EventData, SchemaVersion, CodecId, Tags, Metadata, Timestamp";
@@ -63,10 +63,24 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
     private readonly ReadHorizonGate _readHorizon;
     private readonly JsonSerializerOptions _jsonOptions;
     private readonly ConcurrentDictionary<SqlServerSubscriptionHandle, byte> _subscriptions = new();
+    private readonly NewEventsSignal _newEvents = new();
     private bool _hasLoggedConnection = false;
 
     /// <summary>The bounded context name this store belongs to.</summary>
     public string ContextName { get; }
+
+    /// <summary>
+    /// In-process wake-up for this store. Raised after a save commits.
+    /// Call <see cref="NewEventsSignal.Notify"/> on this same object when events
+    /// were committed outside this store. Saves from another process are still
+    /// picked up on <see cref="SqlServerEventStoreOptions.SqlSubscriptionPollInterval"/>.
+    /// </summary>
+    public NewEventsSignal NewEvents => _newEvents;
+
+    /// <summary>
+    /// Test seam. A committed save does not raise <see cref="NewEvents"/> when this is false.
+    /// </summary>
+    internal bool PublishNewEventsSignal { get; set; } = true;
 
     // Schema-qualification helpers — pre-computed once in the constructor.
     private readonly string _schemaName;
@@ -687,15 +701,25 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                 await hook(transaction, cancellationToken).ConfigureAwait(false);
             else
                 await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            SignalCommitted(result);
             return result;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             var landed = await TryReadCommittedAppendAsync(eventIds, cancellationToken).ConfigureAwait(false);
             if (landed is not null)
+            {
+                SignalCommitted(landed);
                 return landed;
+            }
             throw new CommitUncertainException(ex);
         }
+    }
+
+    private void SignalCommitted(AppendResult result)
+    {
+        if (PublishNewEventsSignal)
+            _newEvents.NotifyCommittedPositions(result.SequencePositions);
     }
 
     private static async Task RollbackQuietlyAsync(SqlTransaction transaction, CancellationToken cancellationToken)
@@ -2103,7 +2127,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                 {
                     try
                     {
-                        await Task.Delay(pollInterval, ct).ConfigureAwait(false);
+                        await _newEvents.WaitAsync(pollInterval, ct).ConfigureAwait(false);
                     }
                     catch (OperationCanceledException) when (ct.IsCancellationRequested)
                     {
@@ -2138,10 +2162,10 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                 if (delivered > 0 || page.Events.Count >= batchSize)
                     continue; // More pages may remain. Keep catching up without an idle delay.
 
-                // Idle live wait (poll-backed).
+                // Idle until a same-process commit signals, or until the poll interval elapses.
                 try
                 {
-                    await Task.Delay(pollInterval, ct).ConfigureAwait(false);
+                    await _newEvents.WaitAsync(pollInterval, ct).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
                 {

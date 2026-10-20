@@ -10,6 +10,10 @@ changes to the public API.
 
 ## [Unreleased]
 
+### Added
+
+- A save that commits in this process wakes same-process subscriptions, live projection views, and the outbox processor. They wait on that signal or their existing poll interval, whichever comes first, then read from their own checkpoint. The signal is the newest global position and carries no events. A missed signal still delivers on the poll timer. On the in-memory store that timer is `SubscriptionPollInterval` (default 1 second). Saves from another process are still picked up on the poll timer. Code outside the store can raise the same signal.
+
 ### Changed
 
 - Guides and API comments call the catalog token an event name, and `CodecId` the payload-format number. A typed read that cannot decode a stored record says what it refuses, in plain language.

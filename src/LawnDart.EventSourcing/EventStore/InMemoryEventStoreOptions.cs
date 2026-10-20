@@ -15,4 +15,11 @@ public sealed class InMemoryEventStoreOptions
     /// Per-handle bounded channel capacity. Must be at least 1.
     /// </summary>
     public int SubscriptionChannelCapacity { get; set; } = DefaultSubscriptionChannelCapacity;
+
+    /// <summary>
+    /// How long a live subscription waits before it reads again when no signal arrives.
+    /// A save that commits in this process also wakes the subscription through
+    /// <see cref="LawnDart.EventStore.ISignalsNewEvents"/>. Default: 1 second.
+    /// </summary>
+    public TimeSpan SubscriptionPollInterval { get; set; } = TimeSpan.FromSeconds(1);
 }

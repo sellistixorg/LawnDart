@@ -73,6 +73,11 @@ hook.
 Live poll, rebuild, and time-travel replay use the store's typed session.
 Historical rows arrive as the current .NET type after upcast.
 
+When the store implements `ISignalsNewEvents`, an idle runner waits on that
+signal or `PollInterval`, whichever comes first. It then reads from its
+checkpoint. A save in this process wakes the live view. The poll interval
+still runs when no signal arrives.
+
 ## Checkpoints
 
 InMemory checkpoints reset when the process exits. SQL checkpoints resume
