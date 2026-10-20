@@ -146,7 +146,11 @@ public class AggregateRepositoryTests
     [Fact]
     public async Task SaveAsync_ValidateNamesFalse_AllowsReservedTenantDefault()
     {
-        var eventStore = new InMemoryEventStore();
+        var eventStore = new InMemoryEventStore(options: new InMemoryEventStoreOptions
+        {
+            RequireTenantId = true,
+            ValidateNames = false
+        });
         var repository = CreateRepository(
             new LawnDartOptions { RequireTenantId = true, ValidateNames = false },
             eventStore,
@@ -187,7 +191,11 @@ public class AggregateRepositoryTests
     [Fact]
     public async Task SaveAsync_ValidateNamesFalse_AllowsExistingTenant_RejectsColon()
     {
-        var eventStore = new InMemoryEventStore();
+        var eventStore = new InMemoryEventStore(options: new InMemoryEventStoreOptions
+        {
+            RequireTenantId = true,
+            ValidateNames = false
+        });
         var options = Options.Create(new LawnDartOptions { RequireTenantId = true, ValidateNames = false });
         var repository = new AggregateRepository(
             eventStore,

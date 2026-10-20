@@ -10,7 +10,7 @@ public class InMemoryEventStoreRegistryTests
     public async Task GetStreamAsync_AfterAppend_ReturnsMetadata()
     {
         // Arrange
-        var eventStore = new InMemoryEventStore(enableRegistry: true);
+        var eventStore = new InMemoryEventStore(enableRegistry: true, options: new InMemoryEventStoreOptions { RequireTenantId = false });
         var streamId = "Order:12345";
         var events = new IEvent[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) };
 
@@ -31,7 +31,7 @@ public class InMemoryEventStoreRegistryTests
     public async Task GetStreamsByAggregateTypeAsync_ReturnsMatchingStreams()
     {
         // Arrange
-        var eventStore = new InMemoryEventStore(enableRegistry: true);
+        var eventStore = new InMemoryEventStore(enableRegistry: true, options: new InMemoryEventStoreOptions { RequireTenantId = false });
         await eventStore.AppendAsync("Order:12345", new IEvent[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) });
         await eventStore.AppendAsync("Order:67890", new IEvent[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) });
         await eventStore.AppendAsync("Customer:11111", new IEvent[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) });
@@ -48,7 +48,7 @@ public class InMemoryEventStoreRegistryTests
     public async Task GetStreamsByTagAsync_ReturnsMatchingStreams()
     {
         // Arrange
-        var eventStore = new InMemoryEventStore(enableRegistry: true);
+        var eventStore = new InMemoryEventStore(enableRegistry: true, options: new InMemoryEventStoreOptions { RequireTenantId = false });
         await eventStore.AppendAsync("Order:12345", new IEvent[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) }, tags: new[] { "high-priority" });
         await eventStore.AppendAsync("Order:67890", new IEvent[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) }, tags: new[] { "low-priority" });
 
@@ -64,7 +64,7 @@ public class InMemoryEventStoreRegistryTests
     public async Task EnumerateStreamIdsAsync_ReturnsAllStreamIds()
     {
         // Arrange
-        var eventStore = new InMemoryEventStore(enableRegistry: true);
+        var eventStore = new InMemoryEventStore(enableRegistry: true, options: new InMemoryEventStoreOptions { RequireTenantId = false });
         await eventStore.AppendAsync("Order:12345", new IEvent[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) });
         await eventStore.AppendAsync("Order:67890", new IEvent[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) });
 
@@ -81,7 +81,7 @@ public class InMemoryEventStoreRegistryTests
     public async Task EnumerateStreamIdsAsync_WithPrefix_FiltersResults()
     {
         // Arrange
-        var eventStore = new InMemoryEventStore(enableRegistry: true);
+        var eventStore = new InMemoryEventStore(enableRegistry: true, options: new InMemoryEventStoreOptions { RequireTenantId = false });
         await eventStore.AppendAsync("Order:12345", new IEvent[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) });
         await eventStore.AppendAsync("Customer:67890", new IEvent[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) });
 
@@ -97,7 +97,7 @@ public class InMemoryEventStoreRegistryTests
     public async Task GetStreamsUpdatedAfterAsync_ReturnsUpdatedStreams()
     {
         // Arrange
-        var eventStore = new InMemoryEventStore(enableRegistry: true);
+        var eventStore = new InMemoryEventStore(enableRegistry: true, options: new InMemoryEventStoreOptions { RequireTenantId = false });
         await eventStore.AppendAsync("Order:12345", new IEvent[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) });
         var firstPosition = (await eventStore.GetStreamAsync("Order:12345"))!.LastSequencePosition;
         
@@ -115,7 +115,7 @@ public class InMemoryEventStoreRegistryTests
     public async Task Registry_Disabled_ThrowsOnRegistryMethods()
     {
         // Arrange
-        var eventStore = new InMemoryEventStore(enableRegistry: false);
+        var eventStore = new InMemoryEventStore(enableRegistry: false, options: new InMemoryEventStoreOptions { RequireTenantId = false });
 
         // Act & Assert
         await Assert.ThrowsAsync<InvalidOperationException>(

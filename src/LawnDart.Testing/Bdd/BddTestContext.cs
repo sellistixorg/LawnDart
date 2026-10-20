@@ -39,6 +39,7 @@ public sealed class BddTestContext : IAsyncDisposable
     /// </param>
     public static BddTestContext CreateInMemory(params Type[] eventTypes)
         => Create(new InMemoryEventStore(
+            options: new InMemoryEventStoreOptions { RequireTenantId = false },
             session: new EventSession(
                 new LawnDart.EventSourcing.Serialization.JsonEventSerializer(),
                 EventTypeCatalog.Materialize(eventTypes))));

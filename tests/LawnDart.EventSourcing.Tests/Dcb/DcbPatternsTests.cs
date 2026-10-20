@@ -42,7 +42,7 @@ public class DcbProjectorTests
     public async Task InitializeFromHistoryAsync_ReplaysAllEvents()
     {
         // Arrange
-        var eventStore = new InMemoryEventStore(enableRegistry: true, logger: NullLogger<InMemoryEventStore>.Instance);
+        var eventStore = new InMemoryEventStore(enableRegistry: true, logger: NullLogger<InMemoryEventStore>.Instance, options: new InMemoryEventStoreOptions { RequireTenantId = false });
         var projector = new TestProjector();
 
         // Add events with matching tags
@@ -70,7 +70,7 @@ public class DcbProjectorTests
     public async Task InitializeFromHistoryAsync_OrdersBySequencePosition()
     {
         // Arrange
-        var eventStore = new InMemoryEventStore(enableRegistry: true, logger: NullLogger<InMemoryEventStore>.Instance);
+        var eventStore = new InMemoryEventStore(enableRegistry: true, logger: NullLogger<InMemoryEventStore>.Instance, options: new InMemoryEventStoreOptions { RequireTenantId = false });
         var projector = new TestProjector();
 
         // Add events in specific order

@@ -63,7 +63,8 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
     /// <param name="options">
     /// Optional store options: subscription capacity, <see cref="InMemoryEventStoreOptions.RequireTenantId"/>,
     /// and <see cref="InMemoryEventStoreOptions.ValidateNames"/>.
-    /// When omitted, a tenant id is optional.
+    /// When omitted, <see cref="InMemoryEventStoreOptions.RequireTenantId"/> is true.
+    /// A stream id must include a tenant prefix. Set that option to false to append without one.
     /// </param>
     /// <param name="session">
     /// Typed session used to serialize on append and read records back into objects.

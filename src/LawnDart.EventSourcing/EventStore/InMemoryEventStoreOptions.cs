@@ -29,13 +29,13 @@ public sealed class InMemoryEventStoreOptions
     /// When false, a tenant id is optional.
     /// </summary>
     /// <remarks>
-    /// Default: false. <c>UseInMemory</c> copies <see cref="LawnDart.LawnDartOptions.RequireTenantId"/>
-    /// onto this property when it creates the store. That host option defaults to true,
-    /// so a hosted in-memory store checks tenant ids the same way a SQL Server append does.
+    /// Default: true, the same as <see cref="LawnDart.LawnDartOptions.RequireTenantId"/> and the SQL Server store.
+    /// <c>UseInMemory</c> copies the host value onto this property when it creates the store.
+    /// Set this to false to append without a tenant id.
     /// Set <see cref="ValidateNames"/> to false to keep an existing tenant id of <c>default</c>.
     /// An empty tenant id is still rejected. A colon in a tenant id is still rejected.
     /// </remarks>
-    public bool RequireTenantId { get; set; } = false;
+    public bool RequireTenantId { get; set; } = true;
 
     /// <summary>
     /// Check tenant ids on append against <see cref="LawnDart.LawnDartNames.Pattern"/> when
