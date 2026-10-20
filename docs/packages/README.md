@@ -1,6 +1,6 @@
 # Package map
 
-Fifteen packages. Take `LawnDart` + `LawnDart.EventSourcing` first; add the
+Sixteen packages. Take `LawnDart` + `LawnDart.EventSourcing` first; add the
 others when you need a durable store, read models, HTTP, tests, or
 compile-time schema checks.
 
@@ -22,6 +22,7 @@ Host grammar: [DI Grammar](../DI_GRAMMAR.md). Envelope fields:
 | [`LawnDart.EventSourcing`](eventsourcing.md) | You need a runtime and an in-memory store. | `UseInMemory()` |
 | [`LawnDart.EventSourcing.SqlServer`](eventsourcing-sqlserver.md) | You need a durable store. | `UseSqlServer(...)` |
 | [`LawnDart.Projections.Lightweight`](projections-lightweight.md) | You need read models. | `WithProjections` / `MapProjectionQueries` |
+| [`LawnDart.Projections.Lightweight.SqlServer`](projections-lightweight-sqlserver.md) | Read models must survive a restart on SQL Server. | `AddSqlProjectionStores` |
 | [`LawnDart.Messaging`](messaging.md) | You need reactors or task processors. | `AddMessaging` / `AddReactor` |
 | [`LawnDart.Messaging.InMemory`](messaging-inmemory.md) | You want choreography without a broker. | `AddInMemoryMessaging()` |
 | [`LawnDart.Messaging.RabbitMQ`](messaging-rabbitmq.md) | You want a RabbitMQ broker. | `AddRabbitMqTransport` |
@@ -53,7 +54,8 @@ app.MapProjectionQueries("default");
 
 Swap `.UseInMemory()` for `.UseSqlServer(...)` and
 `AddInMemoryProjectionStores` for `AddSqlProjectionStores` when you leave
-dev. The bounded-context name stays the same. That swap is verified for
+dev. `AddSqlProjectionStores` is in `LawnDart.Projections.Lightweight.SqlServer`.
+The bounded-context name stays the same. That swap is verified for
 command dispatch, persist, reload, project, and read-back. Outbox and
 subscriptions have their own tests. Inbox dedup swaps with `AddSqlInboxStore`
 and `InitializeSqlInboxStoreAsync`. The transport you registered stays.

@@ -20,7 +20,8 @@ services.AddBoundedContext("default")
 app.MapProjectionQueries("default");
 ```
 
-Production-shaped stores:
+Production-shaped stores are in `LawnDart.Projections.Lightweight.SqlServer`.
+Add `using LawnDart.Projections.Lightweight.SqlServer`.
 
 ```csharp
 services.AddSqlProjectionStores("default", connectionString);

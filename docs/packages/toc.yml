@@ -22,6 +22,8 @@
   href: messaging-testing.md
 - name: Projections.Lightweight
   href: projections-lightweight.md
+- name: Projections.Lightweight.SqlServer
+  href: projections-lightweight-sqlserver.md
 - name: AspNetCore
   href: aspnetcore.md
 - name: Authorization.AspNetCore

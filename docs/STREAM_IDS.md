@@ -73,4 +73,4 @@ The in-memory store compares with ordinal ignore-case. SQL Server uses the `Stre
 
 SQL Server stores a stream id in `NVARCHAR(255)` on `Events`, `Streams`, and `EventSnapshots`. A longer id throws `ArgumentException` before the write.
 
-`AddSqlProjectionStores` uses the context name as the SQL Server schema when you omit the schema. The name rule fits a schema identifier. Pass `schemaName: "dbo"` to keep the `dbo` schema.
+`AddSqlProjectionStores` (package `LawnDart.Projections.Lightweight.SqlServer`) uses the context name as the SQL Server schema when you omit the schema. The name rule fits a schema identifier. Pass `schemaName: "dbo"` to keep the `dbo` schema.

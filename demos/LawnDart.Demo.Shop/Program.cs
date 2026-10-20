@@ -26,6 +26,7 @@ using LawnDart.Messaging.SqlServer;
 using LawnDart.Metadata;
 using LawnDart.Outbox;
 using LawnDart.Projections.Lightweight;
+using LawnDart.Projections.Lightweight.SqlServer;
 using LawnDart.Snapshots;
 
 // DEMO ONLY: cookie users below have no passwords. Do not copy them into a real app.

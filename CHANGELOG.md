@@ -10,6 +10,10 @@ changes to the public API.
 
 ## [Unreleased]
 
+### Breaking
+
+- SQL Server view and checkpoint stores are in the package `LawnDart.Projections.Lightweight.SqlServer`. Add that package. `SqlViewStore`, `SqlCheckpointStore`, `AddSqlProjectionStores`, and `InitializeSqlProjectionStoresAsync` are in the namespace `LawnDart.Projections.Lightweight.SqlServer`. Add `using LawnDart.Projections.Lightweight.SqlServer`. `LawnDart.Projections.Lightweight` no longer depends on `Microsoft.Data.SqlClient`.
+
 ### Changed
 
 - Guides and API comments call the catalog token an event name, and `CodecId` the payload-format number. A typed read that cannot decode a stored record says what it refuses, in plain language.

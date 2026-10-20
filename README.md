@@ -136,6 +136,7 @@ Backend choice: [docs/BACKEND_SELECTION.md](docs/BACKEND_SELECTION.md).
 | `LawnDart.EventSourcing` | Runtime and InMemory event store |
 | `LawnDart.EventSourcing.SqlServer` | Durable SQL Server store |
 | `LawnDart.Projections.Lightweight` | Read-model host |
+| `LawnDart.Projections.Lightweight.SqlServer` | SQL Server view and checkpoint stores |
 | `LawnDart.Messaging` / `LawnDart.Messaging.InMemory` | Reactors and in-process transport |
 | `LawnDart.Messaging.RabbitMQ` | RabbitMQ transport |
 | `LawnDart.Messaging.AzureServiceBus` | Azure Service Bus transport |

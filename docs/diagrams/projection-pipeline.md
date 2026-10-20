@@ -9,5 +9,6 @@ flowchart LR
     View --> GET["MapProjectionQueries"]
 ```
 
-The runner applies `ProjectionBase<TView>` handlers. Stores are InMemory
-(`AddInMemoryProjectionStores`) or SQL (`AddSqlProjectionStores`).
+The runner applies `ProjectionBase<TView>` handlers. Stores are in-memory
+(`AddInMemoryProjectionStores`) or SQL Server (`AddSqlProjectionStores` in
+`LawnDart.Projections.Lightweight.SqlServer`).

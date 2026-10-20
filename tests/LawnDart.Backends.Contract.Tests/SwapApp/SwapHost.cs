@@ -8,6 +8,7 @@ using LawnDart.EventSourcing.SqlServer.EventStore;
 using LawnDart.EventStore;
 using LawnDart.Metadata;
 using LawnDart.Projections.Lightweight;
+using LawnDart.Projections.Lightweight.SqlServer;
 using LawnDart.Snapshots;
 using LawnDart.TestUtilities;
 

@@ -19,6 +19,7 @@ using LawnDart.Projections.Lightweight.Hosting;
 using LawnDart.Projections.Lightweight.Registration;
 using LawnDart.Projections.Lightweight.Tests.Helpers;
 using LawnDart.Projections.Partitioning;
+using LawnDart.Projections.Lightweight.SqlServer;
 using LawnDart.Projections.Storage;
 
 namespace LawnDart.Projections.Lightweight.Tests.Integration;

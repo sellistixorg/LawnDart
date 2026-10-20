@@ -39,6 +39,7 @@ services.AddInMemoryMessaging();
 services.AddSqlInboxStore(connectionString);
 services.AddMessageTransportOutboxPublisher();
 services.AddReactor<LoanNoticeReactor, BookBorrowed>();
+// using LawnDart.Projections.Lightweight.SqlServer;
 services.AddSqlProjectionStores("default", connectionString);
 var ctx = services.AddBoundedContext("default");
 ctx.UseSqlServer(o =>

@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using LawnDart.Projections.Checkpoints;
 using LawnDart.Projections.Lightweight;
 using LawnDart.Projections.Lightweight.Hosting;
+using LawnDart.Projections.Lightweight.SqlServer;
 using LawnDart.Projections.Storage;
 
 namespace LawnDart.Projections.Lightweight.Tests.BoundedContext;
