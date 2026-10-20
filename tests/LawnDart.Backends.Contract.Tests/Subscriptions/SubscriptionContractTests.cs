@@ -172,7 +172,7 @@ public abstract class SubscriptionContractTests : ContractSuite
         Assert.True(started.Elapsed < TimeSpan.FromSeconds(2), $"woke after {started.Elapsed}");
         Assert.Equal(1, received[0].SequencePosition);
         Assert.True(opened.Signals.NewEvents.Position >= 1);
-        Assert.Equal(1, opened.Signals.NewEvents.Generation);
+        AssertCommitSignalCount(opened.Signals.NewEvents.Generation);
     }
 
     [ContractFact]
@@ -207,7 +207,7 @@ public abstract class SubscriptionContractTests : ContractSuite
         Assert.False(append.IsCompleted);
         release.TrySetResult();
         var result = await append.WaitAsync(TimeSpan.FromSeconds(15));
-        Assert.Equal(1, opened.Signals.NewEvents.Generation);
+        AssertCommitSignalCount(opened.Signals.NewEvents.Generation);
         Assert.Equal(result.SequencePositions[^1], opened.Signals.NewEvents.Position);
     }
 
@@ -215,7 +215,9 @@ public abstract class SubscriptionContractTests : ContractSuite
     public async Task SignalNeverFired_PollStillDelivers()
     {
         SkipUnless(Cap.RunsLiveSubscriptionTests, "This backend does not run the live subscription suite yet.");
-        var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(publishNewEventsSignal: false));
+        var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(
+            publishNewEventsSignal: false,
+            subscriptionPollInterval: TimeSpan.FromMilliseconds(50)));
         await using var handle = opened.Subscriptions.Subscribe("sub-poll", fromSequence: 1);
         var read = ReadExactlyAsync(handle, 2, TimeSpan.FromSeconds(5));
         await WaitForWaitersAsync(opened.Signals.NewEvents, 1);
@@ -253,5 +255,13 @@ public abstract class SubscriptionContractTests : ContractSuite
         Assert.Same(handle.Events.Completion, completed);
         var ex = await Assert.ThrowsAsync<EventSubscriptionFailedException>(() => handle.Events.Completion);
         Assert.Equal("failsub", ex.SubscriberId);
+    }
+
+    private void AssertCommitSignalCount(long generation)
+    {
+        if (Cap.CommittedAppendMayEchoSignal)
+            Assert.InRange(generation, 1, 2);
+        else
+            Assert.Equal(1, generation);
     }
 }

@@ -470,23 +470,25 @@ public sealed partial class PostgresEventStore
     }
 
     /// <summary>
-    /// Raises the in-process signal once per new position. A second call with
-    /// the same position, including the listen connection echoing this process,
-    /// does not raise it again.
+    /// Wakes subscribers after a commit or a drained batch of wake-ups.
+    /// A lower position still wakes them. The events table is the record.
     /// </summary>
     internal void PublishSignal(long position)
     {
-        if (!PublishNewEventsSignal || position <= 0)
+        if (!PublishNewEventsSignal || position < 0)
             return;
 
-        long observed;
-        do
+        if (position > 0)
         {
-            observed = Volatile.Read(ref _signaledPosition);
-            if (position <= observed)
-                return;
+            long observed;
+            do
+            {
+                observed = Volatile.Read(ref _signaledPosition);
+                if (position <= observed)
+                    break;
+            }
+            while (Interlocked.CompareExchange(ref _signaledPosition, position, observed) != observed);
         }
-        while (Interlocked.CompareExchange(ref _signaledPosition, position, observed) != observed);
 
         _newEvents.Notify(position);
     }

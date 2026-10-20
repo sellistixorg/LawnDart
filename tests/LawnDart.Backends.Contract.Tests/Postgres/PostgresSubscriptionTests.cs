@@ -20,27 +20,36 @@ public sealed class PostgresSubscriptionTests
     [Fact]
     public async Task WakeUp_WithLongBackupPoll_Delivers()
     {
-        var store = await OpenStoreAsync(NewSchema(), configure: options =>
+        var schema = NewSchema();
+        var store = await OpenStoreAsync(schema, configure: options =>
+        {
+            options.BackupPollInterval = TimeSpan.FromSeconds(30);
+            options.PollOnlyInterval = TimeSpan.FromSeconds(30);
+        });
+        var other = await OpenStoreAsync(schema, initialize: false, configure: options =>
         {
             options.BackupPollInterval = TimeSpan.FromSeconds(30);
             options.PollOnlyInterval = TimeSpan.FromSeconds(30);
         });
         var stream = Stream();
+        await store.AppendAsync(stream, [ContractEvent.Tick()]);
         await using var handle = store.Subscribe("wake", fromSequence: 1);
+        var primed = await ReadExactlyAsync(handle, 1, TimeSpan.FromSeconds(15));
+        Assert.Equal(1, primed[0].SequencePosition);
         await WaitUntilAsync(() => store.Listener.Mode == PostgresListenMode.Listening && store.Listener.IsWaitingForNotification);
         await WaitForWaitersAsync(store.NewEvents, 1);
         var mark = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
-        store.BeforeAppendCommit = _ =>
+        other.BeforeAppendCommit = _ =>
         {
             mark.TrySetResult(Stopwatch.GetTimestamp());
             return Task.CompletedTask;
         };
         var read = ReadExactlyAsync(handle, 1, TimeSpan.FromSeconds(2));
-        await store.AppendAsync(stream, [ContractEvent.Tick()]);
+        await other.AppendAsync(stream, [ContractEvent.Tick()]);
         var received = await read;
         var elapsed = Stopwatch.GetElapsedTime(await mark.Task);
         Assert.True(elapsed < TimeSpan.FromMilliseconds(100), $"delivered after {elapsed}");
-        Assert.Equal(1, received[0].SequencePosition);
+        Assert.Equal(2, received[0].SequencePosition);
         Assert.Equal(PostgresListenMode.Listening, store.Listener.Mode);
     }
 
@@ -227,6 +236,7 @@ public sealed class PostgresSubscriptionTests
             options.BackupPollInterval = TimeSpan.FromSeconds(30);
             options.PollOnlyInterval = TimeSpan.FromSeconds(30);
         });
+        store.Listener.KeepAliveSeconds = 1;
         await using var handle = store.Subscribe("burst-notify", fromSequence: 1);
         _ = handle;
         await WaitUntilAsync(() => store.Listener.IsWaitingForNotification);
@@ -242,9 +252,9 @@ public sealed class PostgresSubscriptionTests
         await WaitUntilAsync(() => store.Listener.NotificationCount >= before + 10000, TimeSpan.FromSeconds(20));
         await WaitUntilAsync(() => store.Listener.IsWaitingForNotification);
         var wakes = store.Listener.WakeCount;
-        Assert.InRange(wakes, 1, 200);
-        await WaitUntilAsync(() => store.Listener.IsWaitingForNotification && store.Listener.WakeCount == wakes);
-        Assert.Equal(wakes, store.Listener.WakeCount);
+        var perWake = PostgresNotificationListener.NotificationsPerWake;
+        Assert.InRange(wakes, 10_000 / perWake, (10_000 / perWake) + 80);
+        await AssertIdleAsync(store.Listener);
     }
 
     [Fact(Timeout = 240000)]
@@ -256,11 +266,15 @@ public sealed class PostgresSubscriptionTests
             options.SubscriptionChannelCapacity = 20_000;
             options.SubscriptionBatchSize = 1000;
         });
+        store.Listener.KeepAliveSeconds = 1;
+        var hold = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        store.Listener.HoldBeforeWait = hold.Task;
         var stream = Stream();
         await using var handle = store.Subscribe("burst-append", fromSequence: 1);
-        await WaitUntilAsync(() => store.Listener.Mode == PostgresListenMode.Listening);
+        await WaitUntilAsync(() => store.Listener.IsHeldBeforeWait);
         for (var i = 0; i < 10_000; i++)
             await store.AppendAsync(stream, [ContractEvent.Tick()]);
+        hold.TrySetResult();
 
         var received = await ReadExactlyAsync(handle, 10_000, TimeSpan.FromMinutes(2));
         Assert.Equal(10_000, received.Count);
@@ -268,9 +282,9 @@ public sealed class PostgresSubscriptionTests
         Assert.Equal(10_000, received[^1].SequencePosition);
         await WaitUntilAsync(() => store.Listener.IsWaitingForNotification);
         var wakes = store.Listener.WakeCount;
-        Assert.InRange(wakes, 1, 10_000);
-        await WaitUntilAsync(() => store.Listener.IsWaitingForNotification && store.Listener.WakeCount == wakes);
-        Assert.Equal(wakes, store.Listener.WakeCount);
+        var perWake = PostgresNotificationListener.NotificationsPerWake;
+        Assert.InRange(wakes, 1, (10_000 / perWake) + 80);
+        await AssertIdleAsync(store.Listener);
     }
 
     [Fact]
@@ -359,6 +373,154 @@ public sealed class PostgresSubscriptionTests
         var direct = Convert.ToDouble(await command.ExecuteScalarAsync());
         Assert.Equal(direct, reported);
         Assert.InRange(reported, 0d, 1d);
+    }
+
+    [Fact]
+    public async Task LongSchema_Appends_AndTheListenerUsesThatChannel()
+    {
+        var schema = new string('a', 61);
+        var channel = PostgresNames.NotifyChannelFor(schema);
+        Assert.True(System.Text.Encoding.UTF8.GetByteCount(channel) <= 63);
+        var store = await OpenStoreAsync(schema, configure: options =>
+        {
+            options.BackupPollInterval = TimeSpan.FromSeconds(30);
+            options.PollOnlyInterval = TimeSpan.FromSeconds(30);
+        });
+        Assert.Equal(channel, store.NotifyChannel);
+        var other = await OpenStoreAsync(schema, initialize: false);
+        var stream = Stream();
+        await store.AppendAsync(stream, [ContractEvent.Tick()]);
+        await using var handle = store.Subscribe("long-schema", fromSequence: 1);
+        var primed = await ReadExactlyAsync(handle, 1, TimeSpan.FromSeconds(15));
+        Assert.Equal(1, primed[0].SequencePosition);
+        await WaitUntilAsync(() => store.Listener.Mode == PostgresListenMode.Listening && store.Listener.IsWaitingForNotification);
+        await other.AppendAsync(stream, [ContractEvent.Tick()]);
+        var received = await ReadExactlyAsync(handle, 1, TimeSpan.FromSeconds(5));
+        Assert.Equal(2, received[0].SequencePosition);
+    }
+
+    [Fact]
+    public async Task OutOfOrderCommit_WakesTheSubscriber()
+    {
+        var schema = NewSchema();
+        var store = await OpenStoreAsync(schema, configure: options =>
+        {
+            options.BackupPollInterval = TimeSpan.FromSeconds(30);
+            options.PollOnlyInterval = TimeSpan.FromSeconds(30);
+        });
+        var firstStream = Stream();
+        var secondStream = Stream();
+        await using var handle = store.Subscribe("reorder", fromSequence: 1);
+        await WaitUntilAsync(() => store.Listener.IsWaitingForNotification);
+        await WaitForWaitersAsync(store.NewEvents, 1);
+
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var gates = 0;
+        store.BeforeAppendCommit = async ct =>
+        {
+            if (Interlocked.Increment(ref gates) != 1)
+                return;
+            entered.TrySetResult();
+            await release.Task.WaitAsync(ct);
+        };
+
+        var first = store.AppendAsync(firstStream, [ContractEvent.Tick()]);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
+        await store.AppendAsync(secondStream, [ContractEvent.Tick()]);
+        release.TrySetResult();
+        await first.WaitAsync(TimeSpan.FromSeconds(15));
+        var received = await ReadExactlyAsync(handle, 2, TimeSpan.FromSeconds(5));
+        Assert.Equal(new long[] { 1, 2 }, received.Select(e => e.SequencePosition).Order());
+    }
+
+    [Fact]
+    public async Task BadHost_EndsTheSubscription()
+    {
+        var options = new PostgresEventStoreOptions
+        {
+            ConnectionString = "Host=no-such-lawndart-host.invalid;Port=1;Username=u;Password=p;Database=lawndart;Timeout=2",
+            SchemaName = "badhost",
+            RequireTenantId = false,
+            BackupPollInterval = TimeSpan.FromSeconds(30),
+            PollOnlyInterval = TimeSpan.FromMilliseconds(50),
+            NotifyOnAppend = false
+        };
+        var store = new PostgresEventStore(options.ConnectionString, options: options);
+        await using var handle = store.Subscribe("bad-host", fromSequence: 1);
+        var completed = await Task.WhenAny(handle.Events.Completion, Task.Delay(TimeSpan.FromSeconds(10)));
+        Assert.Same(handle.Events.Completion, completed);
+        var ex = await Assert.ThrowsAsync<EventSubscriptionFailedException>(() => handle.Events.Completion);
+        Assert.Equal("bad-host", ex.SubscriberId);
+    }
+
+    [Fact]
+    public async Task Listener_RetriesUntilTheDatabaseAcceptsConnections()
+    {
+        var port = FreeTcpPort();
+        var image = PostgresTestImage.Current;
+        await using var container = new PostgreSqlBuilder(image)
+            .WithDatabase("lawndart")
+            .WithUsername("postgres")
+            .WithPassword("postgres")
+            .WithPortBinding(port, 5432)
+            .Build();
+        await container.StartAsync();
+        var connectionString = new NpgsqlConnectionStringBuilder
+        {
+            Host = "127.0.0.1",
+            Port = port,
+            Username = "postgres",
+            Password = "postgres",
+            Database = "lawndart",
+            Timeout = 2
+        }.ConnectionString;
+        var logger = new ListLogger<PostgresEventStore>();
+        var store = new PostgresEventStore(
+            connectionString,
+            options: new PostgresEventStoreOptions
+            {
+                ConnectionString = connectionString,
+                SchemaName = "returns",
+                RequireTenantId = false,
+                BackupPollInterval = TimeSpan.FromSeconds(30),
+                PollOnlyInterval = TimeSpan.FromMilliseconds(50)
+            },
+            logger: logger);
+        store.Listener.ReconnectDelayOverride = TimeSpan.FromMilliseconds(50);
+        await store.InitializeSchemaAsync();
+        await container.StopAsync();
+
+        store.Listener.AddUser();
+        try
+        {
+            await WaitUntilAsync(() => store.Listener.Mode == PostgresListenMode.Reconnecting, TimeSpan.FromSeconds(15));
+            Assert.Contains(logger.Entries, entry => entry.Message.Contains("could not be opened", StringComparison.Ordinal));
+            Assert.DoesNotContain(logger.Entries, entry => entry.Message.Contains("probe", StringComparison.OrdinalIgnoreCase));
+
+            await container.StartAsync();
+            await WaitUntilAsync(() => store.Listener.Mode == PostgresListenMode.Listening, TimeSpan.FromSeconds(30));
+            var stream = Stream();
+            await using var handle = store.Subscribe("returns", fromSequence: 1);
+            await store.AppendAsync(stream, [ContractEvent.Tick()]);
+            var received = await ReadExactlyAsync(handle, 1, TimeSpan.FromSeconds(10));
+            Assert.Equal(1, received[0].SequencePosition);
+        }
+        finally
+        {
+            store.Listener.RemoveUser();
+        }
+
+        Assert.Contains(logger.Entries, entry => entry.Message.Contains("listen connection is open", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static async Task AssertIdleAsync(PostgresNotificationListener listener)
+    {
+        await WaitUntilAsync(() => listener.IsWaitingForNotification);
+        var wakes = listener.WakeCount;
+        var idle = listener.IdleWaits;
+        await WaitUntilAsync(() => listener.IdleWaits > idle, TimeSpan.FromSeconds(15));
+        Assert.Equal(wakes, listener.WakeCount);
     }
 
     private async Task<PostgresEventStore> OpenStoreAsync(

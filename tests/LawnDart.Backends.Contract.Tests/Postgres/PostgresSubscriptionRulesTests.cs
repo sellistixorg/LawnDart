@@ -7,6 +7,24 @@ namespace LawnDart.Backends.Contract.Tests;
 public sealed class PostgresSubscriptionRulesTests
 {
     [Fact]
+    public void NotifyChannel_StaysWithin63Bytes_AndKeepsSchemasApart()
+    {
+        var shortName = new string('a', 60);
+        Assert.Equal("ld_" + shortName, PostgresNames.NotifyChannelFor(shortName));
+        Assert.Equal(63, System.Text.Encoding.UTF8.GetByteCount(PostgresNames.NotifyChannelFor(shortName)));
+
+        var left = new string('b', 61);
+        var right = new string('b', 60) + "c";
+        var leftChannel = PostgresNames.NotifyChannelFor(left);
+        var rightChannel = PostgresNames.NotifyChannelFor(right);
+        Assert.True(System.Text.Encoding.UTF8.GetByteCount(leftChannel) <= 63);
+        Assert.True(System.Text.Encoding.UTF8.GetByteCount(rightChannel) <= 63);
+        Assert.NotEqual(leftChannel, rightChannel);
+        Assert.NotEqual("ld_" + left, leftChannel);
+        Assert.Equal(leftChannel, PostgresNames.NotifyChannelFor(left));
+    }
+
+    [Fact]
     public void PoolerHost_MatchesPoolerName_Pgbouncer_AndPort6543()
     {
         Assert.True(PostgresPoolerHost.LooksLikeTransactionPooler(

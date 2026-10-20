@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -36,6 +37,9 @@ internal sealed class PostgresNotificationListener
     internal const string ProbeReason =
         "A probe wake-up did not come back on the listen connection. Set ListenConnectionString to a direct Postgres connection, or to a session pooler.";
 
+    /// <summary>How many wake-ups to read before subscribers are woken again during a burst.</summary>
+    internal const int NotificationsPerWake = 64;
+
     private readonly PostgresEventStore _store;
     private readonly PostgresEventStoreOptions _options;
     private readonly string _channel;
@@ -47,19 +51,22 @@ internal sealed class PostgresNotificationListener
     private TaskCompletionSource _ready = CreateReady();
     private Task? _loop;
     private int _users;
+    private int _generation;
     private int _mode;
     private int _warned;
     private int _loggedDrop;
+    private int _connectLogged;
     private int _backendPid;
     private int _waiting;
     private int _held;
     private int _delayingStart;
     private long _wakeCount;
     private long _notificationCount;
+    private long _idleWaits;
     private long _highest;
+    private long _batchPosition;
     private string? _probePayload;
     private TaskCompletionSource? _probeSeen;
-    private bool _listeningEstablished;
 
     internal PostgresNotificationListener(
         PostgresEventStore store,
@@ -91,6 +98,8 @@ internal sealed class PostgresNotificationListener
     internal long WakeCount => Interlocked.Read(ref _wakeCount);
 
     internal long NotificationCount => Interlocked.Read(ref _notificationCount);
+
+    internal long IdleWaits => Interlocked.Read(ref _idleWaits);
 
     internal bool IsWaitingForNotification => Volatile.Read(ref _waiting) == 1;
 
@@ -152,11 +161,12 @@ internal sealed class PostgresNotificationListener
 
     private void StartLocked()
     {
+        var generation = Interlocked.Increment(ref _generation);
         var cts = new CancellationTokenSource();
+        var ready = CreateReady();
         _cts = cts;
-        _ready = CreateReady();
-        _listeningEstablished = false;
-        _loop = Task.Run(() => RunAsync(cts));
+        _ready = ready;
+        _loop = Task.Run(() => RunAsync(cts, ready, generation));
     }
 
     private void StopLocked()
@@ -172,27 +182,22 @@ internal sealed class PostgresNotificationListener
         _ready.TrySetCanceled();
     }
 
-    private async Task RunAsync(CancellationTokenSource cts)
+    private async Task RunAsync(CancellationTokenSource cts, TaskCompletionSource ready, int generation)
     {
         try
         {
-            await ListenAsync(cts.Token).ConfigureAwait(false);
+            await ListenAsync(cts.Token, ready, generation).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested)
         {
         }
         catch (Exception ex)
         {
-            if (!_listeningEstablished && Mode != PostgresListenMode.PollOnly)
-            {
-                WarnOnce(ProbeReason);
-                SetMode(PostgresListenMode.PollOnly);
-                _ready.TrySetResult();
-            }
-            else if (_logger is not null)
-            {
-                PostgresEventStoreLog.ListenDropped(_logger, ex);
-            }
+            if (!IsCurrent(generation))
+                return;
+
+            NoteConnectFailed(generation, ex);
+            ready.TrySetResult();
         }
         finally
         {
@@ -200,12 +205,14 @@ internal sealed class PostgresNotificationListener
         }
     }
 
-    private async Task ListenAsync(CancellationToken cancellationToken)
+    private bool IsCurrent(int generation) => Volatile.Read(ref _generation) == generation;
+
+    private async Task ListenAsync(CancellationToken cancellationToken, TaskCompletionSource ready, int generation)
     {
         if (_store.ForcePollOnly || !_options.NotifyOnAppend)
         {
-            SetMode(PostgresListenMode.PollOnly);
-            _ready.TrySetResult();
+            SetMode(generation, PostgresListenMode.PollOnly);
+            ready.TrySetResult();
             return;
         }
 
@@ -216,8 +223,8 @@ internal sealed class PostgresNotificationListener
         if (PostgresPoolerHost.LooksLikeTransactionPooler(connectionString))
         {
             WarnOnce(PoolerReason);
-            SetMode(PostgresListenMode.PollOnly);
-            _ready.TrySetResult();
+            SetMode(generation, PostgresListenMode.PollOnly);
+            ready.TrySetResult();
             return;
         }
 
@@ -236,37 +243,44 @@ internal sealed class PostgresNotificationListener
         }
 
         var attempt = 0;
-        while (!cancellationToken.IsCancellationRequested)
+        var established = false;
+        while (!cancellationToken.IsCancellationRequested && IsCurrent(generation))
         {
             var connection = OpenDedicated(connectionString);
+            var pid = 0;
             try
             {
                 await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-                Volatile.Write(ref _backendPid, connection.ProcessID);
+                pid = connection.ProcessID;
+                if (IsCurrent(generation))
+                    Volatile.Write(ref _backendPid, pid);
                 connection.Notification += OnNotification;
                 await ExecuteListenAsync(connection, cancellationToken).ConfigureAwait(false);
 
-                if (!_listeningEstablished)
+                if (!established)
                 {
-                    SetMode(PostgresListenMode.Probing);
+                    SetMode(generation, PostgresListenMode.Probing);
                     if (!await ProbeAsync(connection, cancellationToken).ConfigureAwait(false))
                     {
                         WarnOnce(ProbeReason);
-                        SetMode(PostgresListenMode.PollOnly);
-                        _ready.TrySetResult();
+                        SetMode(generation, PostgresListenMode.PollOnly);
+                        ready.TrySetResult();
                         return;
                     }
 
-                    _listeningEstablished = true;
+                    established = true;
+                    NoteConnected(generation);
                     Interlocked.Exchange(ref _loggedDrop, 0);
-                    SetMode(PostgresListenMode.Listening);
-                    _ready.TrySetResult();
+                    SetMode(generation, PostgresListenMode.Listening);
+                    ready.TrySetResult();
                 }
                 else
                 {
+                    NoteConnected(generation);
                     Interlocked.Exchange(ref _loggedDrop, 0);
-                    SetMode(PostgresListenMode.Listening);
-                    _store.WakeSubscribersForCatchUp();
+                    SetMode(generation, PostgresListenMode.Listening);
+                    if (IsCurrent(generation))
+                        _store.WakeSubscribersForCatchUp();
                 }
 
                 attempt = 0;
@@ -275,17 +289,20 @@ internal sealed class PostgresNotificationListener
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
             {
-                if (!_listeningEstablished)
-                {
-                    WarnOnce(ProbeReason);
-                    SetMode(PostgresListenMode.PollOnly);
-                    _ready.TrySetResult();
+                if (!IsCurrent(generation))
                     return;
-                }
 
-                SetMode(PostgresListenMode.Reconnecting);
-                if (Interlocked.Exchange(ref _loggedDrop, 1) == 0 && _logger is not null)
-                    PostgresEventStoreLog.ListenDropped(_logger, ex);
+                if (!established)
+                {
+                    NoteConnectFailed(generation, ex);
+                    ready.TrySetResult();
+                }
+                else
+                {
+                    SetMode(generation, PostgresListenMode.Reconnecting);
+                    if (Interlocked.Exchange(ref _loggedDrop, 1) == 0 && _logger is not null)
+                        PostgresEventStoreLog.ListenDropped(_logger, ex);
+                }
 
                 var hold = DelayReconnect;
                 if (hold is { IsCompleted: false })
@@ -298,11 +315,31 @@ internal sealed class PostgresNotificationListener
             }
             finally
             {
-                Volatile.Write(ref _backendPid, 0);
+                if (IsCurrent(generation) && Volatile.Read(ref _backendPid) == pid)
+                    Volatile.Write(ref _backendPid, 0);
                 connection.Notification -= OnNotification;
                 await connection.DisposeAsync().ConfigureAwait(false);
             }
         }
+    }
+
+    private void NoteConnectFailed(int generation, Exception exception)
+    {
+        SetMode(generation, PostgresListenMode.Reconnecting);
+        if (!IsCurrent(generation) || _logger is null)
+            return;
+        if (Interlocked.Exchange(ref _connectLogged, 1) != 0)
+            return;
+        PostgresEventStoreLog.ListenConnectFailed(_logger, exception);
+    }
+
+    private void NoteConnected(int generation)
+    {
+        if (!IsCurrent(generation) || _logger is null)
+            return;
+        if (Interlocked.Exchange(ref _connectLogged, 0) != 1)
+            return;
+        PostgresEventStoreLog.ListenConnected(_logger);
     }
 
     private async Task<bool> ProbeAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
@@ -358,6 +395,7 @@ internal sealed class PostgresNotificationListener
             }
 
             var seen = Volatile.Read(ref _notificationCount);
+            Interlocked.Increment(ref _idleWaits);
             Volatile.Write(ref _waiting, 1);
             bool got;
             try
@@ -380,22 +418,37 @@ internal sealed class PostgresNotificationListener
                 continue;
             }
 
-            // Drain wake-ups already buffered. A 1 millisecond pause ends the burst.
-            // The next loop blocks again, so an idle listener does not spin.
+            // Wake subscribers during the burst so a constant stream does not
+            // hold the signal until the stream ends. Then block again.
+            var publishedThrough = seen;
+            var window = Stopwatch.GetTimestamp();
             while (await connection.WaitAsync(1, cancellationToken).ConfigureAwait(false))
             {
+                var count = Volatile.Read(ref _notificationCount);
+                if (count == publishedThrough)
+                    continue;
+                if (count - publishedThrough >= NotificationsPerWake
+                    || Stopwatch.GetElapsedTime(window) >= TimeSpan.FromMilliseconds(5))
+                {
+                    PublishBatch();
+                    publishedThrough = count;
+                    window = Stopwatch.GetTimestamp();
+                }
             }
 
-            if (Volatile.Read(ref _notificationCount) == seen)
-                continue;
-
-            Interlocked.Increment(ref _wakeCount);
-            var highest = Interlocked.Read(ref _highest);
-            if (highest > 0)
-                _store.PublishSignal(highest);
-            else
-                _store.WakeSubscribersForCatchUp();
+            if (Volatile.Read(ref _notificationCount) != publishedThrough)
+                PublishBatch();
         }
+    }
+
+    private void PublishBatch()
+    {
+        Interlocked.Increment(ref _wakeCount);
+        var position = Interlocked.Read(ref _batchPosition);
+        if (position > 0)
+            _store.PublishSignal(position);
+        else
+            _store.WakeSubscribersForCatchUp();
     }
 
     private void OnNotification(object? sender, NpgsqlNotificationEventArgs args)
@@ -414,6 +467,7 @@ internal sealed class PostgresNotificationListener
         if (!long.TryParse(args.Payload, NumberStyles.Integer, CultureInfo.InvariantCulture, out var position) || position <= 0)
             return;
 
+        Volatile.Write(ref _batchPosition, position);
         long observed;
         do
         {
@@ -438,7 +492,12 @@ internal sealed class PostgresNotificationListener
             PostgresEventStoreLog.ListenUnavailable(_logger, reason);
     }
 
-    private void SetMode(PostgresListenMode mode) => Volatile.Write(ref _mode, (int)mode);
+    private void SetMode(int generation, PostgresListenMode mode)
+    {
+        if (!IsCurrent(generation))
+            return;
+        Volatile.Write(ref _mode, (int)mode);
+    }
 
     private NpgsqlConnection OpenDedicated(string connectionString)
     {

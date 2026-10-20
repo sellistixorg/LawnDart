@@ -22,33 +22,35 @@ public sealed class PostgresContractBackend : IContractBackend
         _connectionString = connectionString;
         _migrationConnectionString = migrationConnectionString;
         _pollOnly = pollOnly;
+        Capabilities = new ContractCapabilities
+        {
+            EnforcesEventIdAcrossTenants = false,
+            StreamIdsCaseInsensitive = false,
+            StreamIdPrefixCaseInsensitive = false,
+            AppendWritesOutboxRows = false,
+            SecondInstanceSeesCommittedEvents = true,
+            ParallelAppendCanConflict = true,
+            DuplicateStreamVersionIncludesDatabaseError = false,
+            CanPauseBeforeCommit = true,
+            CanDropCommitReply = true,
+            CanFailCommit = true,
+            CanKillConnection = true,
+            HasReadHorizon = true,
+            UnknownEventNameMarksQueryUnresolved = true,
+            PreservesExactJsonText = false,
+            RunsLiveSubscriptionTests = true,
+            CanBreakLiveReads = true,
+            CommittedAppendMayEchoSignal = !pollOnly,
+            HasOutboxStore = false,
+            HasSnapshotStore = false,
+            HasInboxStore = false,
+            HasProjectionStores = false
+        };
     }
 
     public string Name => "Postgres";
 
-    public ContractCapabilities Capabilities { get; } = new()
-    {
-        EnforcesEventIdAcrossTenants = false,
-        StreamIdsCaseInsensitive = false,
-        StreamIdPrefixCaseInsensitive = false,
-        AppendWritesOutboxRows = false,
-        SecondInstanceSeesCommittedEvents = true,
-        ParallelAppendCanConflict = true,
-        DuplicateStreamVersionIncludesDatabaseError = false,
-        CanPauseBeforeCommit = true,
-        CanDropCommitReply = true,
-        CanFailCommit = true,
-        CanKillConnection = true,
-        HasReadHorizon = true,
-        UnknownEventNameMarksQueryUnresolved = true,
-        PreservesExactJsonText = false,
-        RunsLiveSubscriptionTests = true,
-        CanBreakLiveReads = true,
-        HasOutboxStore = false,
-        HasSnapshotStore = false,
-        HasInboxStore = false,
-        HasProjectionStores = false
-    };
+    public ContractCapabilities Capabilities { get; }
 
     public async Task<ContractEventStore> OpenEventStoreAsync(
         ContractStoreOptions options,
@@ -70,7 +72,8 @@ public sealed class PostgresContractBackend : IContractBackend
             RequireTenantId = options.RequireTenantId,
             ValidateNames = options.ValidateNames,
             EnableStreamRegistry = options.EnableRegistry,
-            BackupPollInterval = options.SubscriptionPollInterval ?? TimeSpan.FromMilliseconds(50),
+            BackupPollInterval = options.SubscriptionPollInterval
+                ?? (_pollOnly ? TimeSpan.FromMilliseconds(50) : TimeSpan.FromSeconds(30)),
             PollOnlyInterval = options.SubscriptionPollInterval ?? TimeSpan.FromMilliseconds(50),
             SubscriptionBatchSize = options.SubscriptionBatchSize ?? 500,
             SubscriptionChannelCapacity = options.SubscriptionChannelCapacity ?? 10_000

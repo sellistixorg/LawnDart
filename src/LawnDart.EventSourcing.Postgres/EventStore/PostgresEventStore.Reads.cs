@@ -1,4 +1,6 @@
+using System.Net.Sockets;
 using System.Runtime.CompilerServices;
+using System.Security.Authentication;
 using System.Threading.Channels;
 using LawnDart.EventStore;
 using Npgsql;
@@ -192,9 +194,8 @@ public sealed partial class PostgresEventStore
         try
         {
             await _listener.Ready.WaitAsync(cancellation).ConfigureAwait(false);
-            var poll = _listener.Mode == PostgresListenMode.Listening
-                ? _options.BackupPollInterval
-                : _options.PollOnlyInterval;
+            var hadSuccessfulRead = false;
+            var lossAttempts = 0;
 
             while (!cancellation.IsCancellationRequested && !handle.IsDisposed)
             {
@@ -204,9 +205,17 @@ public sealed partial class PostgresEventStore
                     var delivered = 0;
                     var head = await GetCurrentSequenceAsync(cancellation).ConfigureAwait(false);
                     var page = await ReadQueryCoreAsync(query, lastDelivered + 1, batch, head, toCommitTimestamp: null, cancellation).ConfigureAwait(false);
+                    if (lossAttempts > 0)
+                    {
+                        if (_logger is not null)
+                            PostgresEventStoreLog.SubscriptionConnectionRestored(_logger, handle.SubscriberId);
+                        lossAttempts = 0;
+                    }
+
+                    hadSuccessfulRead = true;
                     if (!page.TypesResolved)
                     {
-                        await WaitPollAsync(ticket, poll, cancellation).ConfigureAwait(false);
+                        await WaitPollAsync(ticket, CurrentPoll(), cancellation).ConfigureAwait(false);
                         continue;
                     }
 
@@ -231,14 +240,25 @@ public sealed partial class PostgresEventStore
                         lastDelivered = head;
                     if (delivered > 0 || page.Events.Count >= batch)
                         continue;
-                    await WaitPollAsync(ticket, poll, cancellation).ConfigureAwait(false);
+                    await WaitPollAsync(ticket, CurrentPoll(), cancellation).ConfigureAwait(false);
                 }
-                catch (Exception ex) when (IsTransientReadFailure(ex) && !cancellation.IsCancellationRequested)
+                catch (Exception ex) when (IsRetryableReadFailure(ex, hadSuccessfulRead) && !cancellation.IsCancellationRequested)
                 {
-                    // The server dropped the connection. Wait for the listener, or a short pause, then read again.
-                    var ticket = _newEvents.TakeTicket();
-                    var retry = poll < TimeSpan.FromSeconds(1) ? poll : TimeSpan.FromSeconds(1);
-                    await WaitPollAsync(ticket, retry, cancellation).ConfigureAwait(false);
+                    lossAttempts++;
+                    if (lossAttempts == 1 && _logger is not null)
+                        PostgresEventStoreLog.SubscriptionConnectionLost(_logger, ex, handle.SubscriberId);
+                    if (lossAttempts > MaxConnectionLossAttempts)
+                        throw;
+
+                    var delay = PostgresNotificationListener.BackoffDelay(lossAttempts - 1);
+                    try
+                    {
+                        await Task.Delay(delay, cancellation).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+                    {
+                        break;
+                    }
                 }
             }
         }
@@ -260,16 +280,82 @@ public sealed partial class PostgresEventStore
         }
     }
 
-    private static bool IsTransientReadFailure(Exception exception)
+    private const int MaxConnectionLossAttempts = 8;
+
+    private TimeSpan CurrentPoll() =>
+        _listener.Mode == PostgresListenMode.Listening
+            ? _options.BackupPollInterval
+            : _options.PollOnlyInterval;
+
+    private static bool IsRetryableReadFailure(Exception exception, bool hadSuccessfulRead)
     {
-        if (exception is PostgresException postgres)
+        if (IsConfigurationFailure(exception))
+            return false;
+        if (IsConnectionLoss(exception))
+            return true;
+        return hadSuccessfulRead && IsRefusedOrTimeout(exception);
+    }
+
+    private static bool IsConfigurationFailure(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
         {
-            return postgres.SqlState is "57P01" or "57P02" or "57P03"
-                or "08000" or "08001" or "08003" or "08004" or "08006"
-                or "40001" or "40P01";
+            if (current is AuthenticationException)
+                return true;
+            if (current is PostgresException postgres
+                && postgres.SqlState is "28P01" or "28000" or "3D000")
+                return true;
+            if (current is SocketException socket
+                && socket.SocketErrorCode is SocketError.HostNotFound
+                    or SocketError.NoData
+                    or SocketError.HostUnreachable
+                    or SocketError.AddressNotAvailable)
+                return true;
+            if (current.Message.Contains("pool has been exhausted", StringComparison.OrdinalIgnoreCase)
+                || current.Message.Contains("SSL", StringComparison.Ordinal)
+                || current.Message.Contains("certificate", StringComparison.OrdinalIgnoreCase))
+                return true;
         }
 
-        return exception is NpgsqlException;
+        return false;
+    }
+
+    private static bool IsConnectionLoss(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is PostgresException postgres
+                && postgres.SqlState is "57P01" or "57P02" or "57P03" or "08003" or "08006")
+                return true;
+            if (current is SocketException socket
+                && socket.SocketErrorCode is SocketError.ConnectionReset
+                    or SocketError.ConnectionAborted
+                    or SocketError.Shutdown
+                    or SocketError.NetworkDown
+                    or SocketError.NetworkReset)
+                return true;
+            if (current is IOException && current is not SocketException
+                && (current.Message.Contains("forcibly closed", StringComparison.OrdinalIgnoreCase)
+                    || current.Message.Contains("broken pipe", StringComparison.OrdinalIgnoreCase)
+                    || current.Message.Contains("transport connection", StringComparison.OrdinalIgnoreCase)))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsRefusedOrTimeout(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is TimeoutException)
+                return true;
+            if (current is SocketException socket
+                && socket.SocketErrorCode is SocketError.ConnectionRefused or SocketError.TimedOut)
+                return true;
+        }
+
+        return false;
     }
 
     private async Task WaitPollAsync(NewEventsTicket ticket, TimeSpan poll, CancellationToken cancellationToken)

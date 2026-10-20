@@ -78,6 +78,12 @@ public sealed class ContractCapabilities
     /// <summary>The live subscription contract tests run on this backend.</summary>
     public bool RunsLiveSubscriptionTests { get; init; } = true;
 
+    /// <summary>
+    /// A committed append in this process can raise the new-events signal twice:
+    /// once from the save, and once when this process's listener reads the wake-up.
+    /// </summary>
+    public bool CommittedAppendMayEchoSignal { get; init; }
+
     /// <summary>The backend has an outbox store.</summary>
     public bool HasOutboxStore { get; init; } = true;
 

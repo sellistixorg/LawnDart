@@ -45,4 +45,28 @@ internal static partial class PostgresEventStoreLog
         Level = LogLevel.Warning,
         Message = "The Postgres listen connection dropped. Reconnecting, then reading events committed while it was down.")]
     internal static partial void ListenDropped(ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 9,
+        Level = LogLevel.Warning,
+        Message = "The Postgres listen connection could not be opened. Subscriptions are polling, and the listener will try again.")]
+    internal static partial void ListenConnectFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 10,
+        Level = LogLevel.Information,
+        Message = "The Postgres listen connection is open.")]
+    internal static partial void ListenConnected(ILogger logger);
+
+    [LoggerMessage(
+        EventId = 11,
+        Level = LogLevel.Warning,
+        Message = "Postgres subscription {SubscriberId} lost its connection. The read will be tried again.")]
+    internal static partial void SubscriptionConnectionLost(ILogger logger, Exception exception, string subscriberId);
+
+    [LoggerMessage(
+        EventId = 12,
+        Level = LogLevel.Information,
+        Message = "Postgres subscription {SubscriberId} read the log again after a lost connection.")]
+    internal static partial void SubscriptionConnectionRestored(ILogger logger, string subscriberId);
 }
