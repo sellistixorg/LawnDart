@@ -13,7 +13,7 @@ namespace LawnDart.EventSourcing.EventStore;
 /// In-memory <see cref="IEventLog"/>. Typed <see cref="IEventStore"/> methods
 /// forward to <see cref="EventStoreAdapter"/>.
 /// </summary>
-public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventLog, IEventLogSubscriptions
+public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventLog, IEventLogSubscriptions, ISignalsNewEvents
 {
     private readonly ILogger<InMemoryEventStore>? _logger;
     private readonly EventSession _session;
@@ -24,6 +24,8 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
     private readonly Dictionary<string, StreamMetadata> _streamRegistry = new();
     private readonly ConcurrentDictionary<InMemorySubscriptionHandle, byte> _subscriptions = new();
     private readonly int _subscriptionChannelCapacity;
+    private readonly NewEventsSignal _newEvents = new();
+    private readonly TimeSpan _subscriptionPollInterval;
     private long _nextSequencePosition = 1;
     private readonly object _lock = new();
     private readonly bool _enableRegistry;
@@ -33,6 +35,23 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
     /// Defaults to <c>"default"</c> when not part of a named bounded context.
     /// </summary>
     public string ContextName { get; }
+
+    /// <summary>
+    /// In-process wake-up for this store. Raised after a save commits.
+    /// Call <see cref="NewEventsSignal.Notify"/> on this same object when events
+    /// were committed outside this store.
+    /// </summary>
+    public NewEventsSignal NewEvents => _newEvents;
+
+    /// <summary>
+    /// Test seam. A committed save does not raise <see cref="NewEvents"/> when this is false.
+    /// </summary>
+    internal bool PublishNewEventsSignal { get; set; } = true;
+
+    /// <summary>
+    /// Test seam. Runs after an idle subscription read and before the wait.
+    /// </summary>
+    internal Action? BeforeIdleWait { get; set; }
 
     /// <param name="enableRegistry">Whether stream metadata registry tracking is enabled.</param>
     /// <param name="contextName">
@@ -65,6 +84,10 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         if (capacity < 1)
             throw new ArgumentOutOfRangeException(nameof(options), "SubscriptionChannelCapacity must be at least 1.");
         _subscriptionChannelCapacity = capacity;
+        var poll = options?.SubscriptionPollInterval ?? TimeSpan.FromSeconds(1);
+        if (poll < TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(options), "SubscriptionPollInterval cannot be negative.");
+        _subscriptionPollInterval = poll;
         _adapter = new EventStoreAdapter(this, _session, this, _subscriptionChannelCapacity);
     }
 
@@ -134,7 +157,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         lock (_lock)
         {
             var result = AppendFramesToStream(streamId, envelopes, expectedVersion);
-            SignalSubscriptions();
+            SignalCommitted(result);
             return Task.FromResult(result);
         }
     }
@@ -153,7 +176,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         lock (_lock)
         {
             var result = AppendFramesDcb(envelopes, condition, TryReadTenantId(envelopes));
-            SignalSubscriptions();
+            SignalCommitted(result);
             return Task.FromResult(result);
         }
     }
@@ -282,6 +305,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         {
             while (!ct.IsCancellationRequested && !handle.IsDisposed)
             {
+                var ticket = _newEvents.TakeTicket();
                 List<RecordedEvent> batch;
                 lock (_lock)
                 {
@@ -295,10 +319,10 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
 
                 if (batch.Count == 0)
                 {
+                    BeforeIdleWait?.Invoke();
                     try
                     {
-                        await handle.Wake.Reader.WaitToReadAsync(ct).ConfigureAwait(false);
-                        while (handle.Wake.Reader.TryRead(out _)) { }
+                        await _newEvents.WaitAsync(ticket, _subscriptionPollInterval, ct).ConfigureAwait(false);
                     }
                     catch (OperationCanceledException) when (ct.IsCancellationRequested)
                     {
@@ -338,10 +362,10 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         }
     }
 
-    private void SignalSubscriptions()
+    private void SignalCommitted(AppendResult result)
     {
-        foreach (var handle in _subscriptions.Keys)
-            handle.Signal();
+        if (PublishNewEventsSignal)
+            _newEvents.NotifyCommittedPositions(result.SequencePositions);
     }
 
     private static string BuildDcbStreamId(string? tenantId)

@@ -70,6 +70,22 @@ health) and replace-in-place retention: [SNAPSHOTS.md](../SNAPSHOTS.md). Custom 
 `EventSourcingRepositories` and `AddSnapshotWriteInfrastructure` so snapshot
 writes still enqueue.
 
+## New events signal
+
+Each in-memory store keeps a `NewEventsSignal` (`ISignalsNewEvents.NewEvents`).
+After a save commits, the store calls `Notify` with the newest global position.
+The call happens only after the commit. The signal carries no events.
+
+A reader calls `TakeTicket` before it reads. It then waits on that ticket or
+on `SubscriptionPollInterval` (default 1 second), whichever comes first, and
+reads again from its own checkpoint. A save that commits after the ticket
+wakes the reader at once. A missed or extra signal still delivers on the timer.
+
+The same object is public. A listener outside the store, such as a later
+Postgres notification loop, can call `Notify` on it. SQL Server uses this
+signal for saves in this process. Saves from another process are still picked
+up on `SqlSubscriptionPollInterval`.
+
 ## Portable store contract
 
 This package implements `IEventLog` and the typed `IEventStore` adapter

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using LawnDart.EventSourcing.Telemetry;
+using LawnDart.EventStore;
 using LawnDart.Outbox;
 
 namespace LawnDart.EventSourcing.Outbox;
@@ -17,6 +18,7 @@ public class OutboxProcessor : BackgroundService
     private readonly TimeSpan _pollingInterval;
     private readonly int _batchSize;
     private readonly int _maxAttempts;
+    private readonly NewEventsSignal? _newEvents;
     
     /// <summary>
     /// Initializes a new instance of the OutboxProcessor.
@@ -27,13 +29,19 @@ public class OutboxProcessor : BackgroundService
     /// <param name="pollingInterval">How often to poll for new messages. Default is 5 seconds.</param>
     /// <param name="batchSize">Number of messages to process per batch. Default is 100.</param>
     /// <param name="maxAttempts">Maximum retry attempts before giving up. Default is 10.</param>
+    /// <param name="newEvents">
+    /// Optional wake-up shared with the event store. When set, the processor waits on
+    /// this signal or <paramref name="pollingInterval"/>, whichever comes first.
+    /// When null, it waits for the poll interval only.
+    /// </param>
     public OutboxProcessor(
         IOutboxWriter outboxWriter,
         IOutboxPublisher outboxPublisher,
         ILogger<OutboxProcessor> logger,
         TimeSpan? pollingInterval = null,
         int batchSize = 100,
-        int maxAttempts = 10)
+        int maxAttempts = 10,
+        NewEventsSignal? newEvents = null)
     {
         _outboxWriter = outboxWriter ?? throw new ArgumentNullException(nameof(outboxWriter));
         _outboxPublisher = outboxPublisher ?? throw new ArgumentNullException(nameof(outboxPublisher));
@@ -41,6 +49,7 @@ public class OutboxProcessor : BackgroundService
         _pollingInterval = pollingInterval ?? TimeSpan.FromSeconds(5);
         _batchSize = batchSize;
         _maxAttempts = maxAttempts;
+        _newEvents = newEvents;
     }
     
     /// <inheritdoc/>
@@ -50,6 +59,7 @@ public class OutboxProcessor : BackgroundService
         
         while (!stoppingToken.IsCancellationRequested)
         {
+            var ticket = _newEvents?.TakeTicket();
             try
             {
                 await ProcessBatchAsync(stoppingToken).ConfigureAwait(false);
@@ -58,8 +68,11 @@ public class OutboxProcessor : BackgroundService
             {
                 _logger.LogError(ex, "Error processing outbox batch");
             }
-            
-            await Task.Delay(_pollingInterval, stoppingToken).ConfigureAwait(false);
+
+            if (_newEvents is { } signal && ticket is { } since)
+                await signal.WaitAsync(since, _pollingInterval, stoppingToken).ConfigureAwait(false);
+            else
+                await Task.Delay(_pollingInterval, stoppingToken).ConfigureAwait(false);
         }
         
         _logger.LogInformation("Outbox processor stopping");

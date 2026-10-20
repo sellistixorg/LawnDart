@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Xunit;
 using LawnDart;
 using LawnDart.Outbox;
@@ -299,6 +300,94 @@ public class OutboxProcessorTests
 
         Assert.Single(publisher.PublishedMessages);
         Assert.Empty(await writer.GetUnprocessedAsync(10));
+    }
+
+    [Fact]
+    public async Task Processor_WakesOnSignal_BeforeThePollInterval()
+    {
+        var writer = new InMemoryOutboxWriter();
+        var publisher = new GatePublisher();
+        var signal = new NewEventsSignal();
+        var processor = new OutboxProcessor(
+            writer,
+            publisher,
+            NullLogger<OutboxProcessor>.Instance,
+            pollingInterval: TimeSpan.FromSeconds(30),
+            newEvents: signal);
+
+        await processor.StartAsync(CancellationToken.None);
+        try
+        {
+            await WaitForWaitersAsync(signal, 1);
+            await writer.WriteAsync(SampleMessage());
+
+            var started = Stopwatch.StartNew();
+            signal.Notify(1);
+            await publisher.Published.WaitAsync(TimeSpan.FromSeconds(2));
+            Assert.True(started.Elapsed < TimeSpan.FromSeconds(2), $"published after {started.Elapsed}");
+        }
+        finally
+        {
+            await processor.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task Processor_PollsWhenTheSignalIsNeverFired()
+    {
+        var writer = new InMemoryOutboxWriter();
+        var publisher = new GatePublisher();
+        var signal = new NewEventsSignal();
+        var processor = new OutboxProcessor(
+            writer,
+            publisher,
+            NullLogger<OutboxProcessor>.Instance,
+            pollingInterval: TimeSpan.FromMilliseconds(50),
+            newEvents: signal);
+
+        await processor.StartAsync(CancellationToken.None);
+        try
+        {
+            await WaitForWaitersAsync(signal, 1);
+            await writer.WriteAsync(SampleMessage());
+            await publisher.Published.WaitAsync(TimeSpan.FromSeconds(3));
+            Assert.Equal(0, signal.Generation);
+        }
+        finally
+        {
+            await processor.StopAsync(CancellationToken.None);
+        }
+    }
+
+    private static OutboxMessage SampleMessage() => new()
+    {
+        Id = Guid.NewGuid(),
+        EventType = "TestEvent",
+        Payload = "{}"u8.ToArray(),
+        Metadata = "{}",
+        CreatedAt = DateTime.UtcNow,
+        StreamId = "stream1",
+        SequencePosition = 1
+    };
+
+    private static async Task WaitForWaitersAsync(NewEventsSignal signal, int count)
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while (signal.WaitingCount < count)
+            await Task.Delay(10, cts.Token);
+    }
+
+    private sealed class GatePublisher : IOutboxPublisher
+    {
+        private readonly TaskCompletionSource _published = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task Published => _published.Task;
+
+        public Task PublishAsync(OutboxMessage message, CancellationToken cancellationToken = default)
+        {
+            _published.TrySetResult();
+            return Task.CompletedTask;
+        }
     }
 }
 

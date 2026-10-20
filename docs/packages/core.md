@@ -73,6 +73,12 @@ for the session; the log has `IEventLogSubscriptions`.
 
 - `Subscribe(string subscriberId, long fromSequence, EventSubscriptionFilter? filter = null, CancellationToken cancellationToken = default)`
 
+`ISignalsNewEvents` is optional. In-memory and SQL Server implement it.
+`NewEventsSignal` wakes same-process readers after a committed save.
+The signal carries the newest global position and no events. Subscriptions,
+the projection runner, and the outbox processor wait on that signal or their
+poll interval.
+
 `IEventStore` and `IEventLog` have the same members as 0.6.0-alpha.2.
 `QueryResult.TypesResolved` and `EventLogQueryResult.TypesResolved`
 default to true. An existing constructor call still compiles.

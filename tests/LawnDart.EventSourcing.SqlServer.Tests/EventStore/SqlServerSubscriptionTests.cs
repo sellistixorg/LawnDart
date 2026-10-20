@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using LawnDart;
 using LawnDart.EventSourcing.Serialization;
@@ -219,6 +220,92 @@ public class SqlServerSubscriptionTests : IAsyncLifetime
         var unkeyed = sp.GetRequiredService<IEventStoreSubscriptions>();
         Assert.Same(keyed, unkeyed);
         Assert.Same(store, keyed);
+    }
+
+    [Fact]
+    public async Task SameProcessSubscriber_WakesBeforeThePollInterval()
+    {
+        var store = CreateStore("wake", "wake", pollMs: 30_000);
+        await store.InitializeSchemaAsync();
+
+        await using var handle = store.Subscribe("sub-wake", fromSequence: 1);
+        var read = ReadExactlyAsync(handle, 1, TimeSpan.FromSeconds(5));
+        await WaitForWaitersAsync(store.NewEvents, 1);
+
+        var started = Stopwatch.StartNew();
+        await store.AppendAsync("s1", [Evt()]);
+        var received = await read;
+
+        Assert.True(started.Elapsed < TimeSpan.FromSeconds(2), $"woke after {started.Elapsed}");
+        Assert.Equal(1, received[0].SequencePosition);
+        Assert.True(store.NewEvents.Position >= 1);
+        Assert.Equal(1, store.NewEvents.Generation);
+    }
+
+    [Fact]
+    public async Task FailedAppend_DoesNotSignal()
+    {
+        var store = CreateStore("failwake", "failwake", pollMs: 50);
+        await store.InitializeSchemaAsync();
+        await store.AppendAsync("s1", [Evt()]);
+        var generation = store.NewEvents.Generation;
+        var position = store.NewEvents.Position;
+
+        await Assert.ThrowsAsync<ConcurrencyException>(() =>
+            store.AppendAsync("s1", [Evt()], expectedVersion: 0));
+
+        Assert.Equal(generation, store.NewEvents.Generation);
+        Assert.Equal(position, store.NewEvents.Position);
+        Assert.Single(await store.ReadStreamAsync("s1"));
+    }
+
+    [Fact]
+    public async Task Signal_IsRaisedOnlyAfterCommit()
+    {
+        var store = CreateStore("precommit", "precommit", pollMs: 50);
+        await store.InitializeSchemaAsync();
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        store.BeforeAppendCommit = async ct =>
+        {
+            entered.TrySetResult();
+            await release.Task.WaitAsync(ct);
+        };
+
+        var append = store.AppendAsync("s1", [Evt()]);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
+        Assert.Equal(0, store.NewEvents.Generation);
+        Assert.False(append.IsCompleted);
+
+        release.TrySetResult();
+        var result = await append.WaitAsync(TimeSpan.FromSeconds(15));
+        Assert.Equal(1, store.NewEvents.Generation);
+        Assert.Equal(result.SequencePositions[^1], store.NewEvents.Position);
+    }
+
+    [Fact]
+    public async Task SignalNeverFired_PollStillDelivers()
+    {
+        var store = CreateStore("nosignal", "nosignal", pollMs: 50);
+        await store.InitializeSchemaAsync();
+        store.PublishNewEventsSignal = false;
+
+        await using var handle = store.Subscribe("sub-poll", fromSequence: 1);
+        var read = ReadExactlyAsync(handle, 2, TimeSpan.FromSeconds(5));
+        await WaitForWaitersAsync(store.NewEvents, 1);
+
+        await store.AppendAsync("s1", [Evt(), Evt()]);
+        var received = await read;
+
+        Assert.Equal(0, store.NewEvents.Generation);
+        Assert.Equal(new long[] { 1, 2 }, received.Select(e => e.SequencePosition));
+    }
+
+    private static async Task WaitForWaitersAsync(NewEventsSignal signal, int count)
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        while (signal.WaitingCount < count)
+            await Task.Delay(10, cts.Token);
     }
 
     private SqlServerEventStore CreateStore(

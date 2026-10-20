@@ -14,6 +14,10 @@ changes to the public API.
 
 - SQL Server view and checkpoint stores are in the package `LawnDart.Projections.Lightweight.SqlServer`. Add that package. `SqlViewStore`, `SqlCheckpointStore`, `AddSqlProjectionStores`, and `InitializeSqlProjectionStoresAsync` are in the namespace `LawnDart.Projections.Lightweight.SqlServer`. Add `using LawnDart.Projections.Lightweight.SqlServer`. `LawnDart.Projections.Lightweight` no longer depends on `Microsoft.Data.SqlClient`.
 
+### Added
+
+- A save that commits in this process wakes same-process subscriptions, live projection views, and the outbox processor. Each reader takes a ticket before it reads, then waits on that ticket or its existing poll interval, whichever comes first, and reads again from its own checkpoint. A save that commits after the ticket wakes the reader at once. The signal is the newest global position and carries no events. A missed signal still delivers on the poll timer. On the in-memory store that timer is `SubscriptionPollInterval` (default 1 second). Saves from another process are still picked up on the poll timer. Code outside the store can raise the same signal.
+
 ### Changed
 
 - `default` in any casing is a reserved tenant id. A caller-supplied tenant id of `default`, `Default`, or `DEFAULT` is rejected. Set `LawnDartOptions.ValidateNames` to false to keep an existing tenant id of `default`. An empty tenant id is still rejected. When `RequireTenantId` is true and no tenant id is given, the save throws.

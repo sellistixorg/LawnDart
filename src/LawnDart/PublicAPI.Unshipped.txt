@@ -43,3 +43,13 @@ LawnDart.LawnDartOptions.ValidateNames.get -> bool
 LawnDart.LawnDartOptions.ValidateNames.set -> void
 LawnDart.Metadata.AmbientTenantContextProvider.AmbientTenantContextProvider(Microsoft.Extensions.Options.IOptions<LawnDart.LawnDartOptions!>! options) -> void
 LawnDart.Metadata.FixedTenantContextProvider.FixedTenantContextProvider(string! tenantId, bool validateNames) -> void
+LawnDart.EventStore.ISignalsNewEvents
+LawnDart.EventStore.ISignalsNewEvents.NewEvents.get -> LawnDart.EventStore.NewEventsSignal!
+LawnDart.EventStore.NewEventsSignal
+LawnDart.EventStore.NewEventsSignal.NewEventsSignal() -> void
+LawnDart.EventStore.NewEventsSignal.Notify(long globalPosition) -> void
+LawnDart.EventStore.NewEventsSignal.Position.get -> long
+LawnDart.EventStore.NewEventsSignal.TakeTicket() -> LawnDart.EventStore.NewEventsTicket
+LawnDart.EventStore.NewEventsSignal.WaitAsync(LawnDart.EventStore.NewEventsTicket since, System.TimeSpan timeout, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+LawnDart.EventStore.NewEventsTicket
+LawnDart.EventStore.NewEventsTicket.NewEventsTicket() -> void

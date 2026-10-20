@@ -177,10 +177,12 @@ public static class LawnDartSqlServerExtensions
                     ? publishers[0]
                     : new CompositeOutboxPublisher(publishers);
 
+                var store = sp.GetRequiredKeyedService<IEventStore>(contextName);
                 return new OutboxProcessor(
                     outboxWriter,
                     publisher,
-                    sp.GetService<ILogger<OutboxProcessor>>() ?? NullLogger<OutboxProcessor>.Instance);
+                    sp.GetService<ILogger<OutboxProcessor>>() ?? NullLogger<OutboxProcessor>.Instance,
+                    newEvents: (store as ISignalsNewEvents)?.NewEvents);
             });
         }
 

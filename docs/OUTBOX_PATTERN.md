@@ -14,7 +14,10 @@ in-process.
 ## Shape
 
 1. Append domain events and outbox rows in one SQL transaction.
-2. A background publisher reads unpublished rows.
+2. A background publisher reads unpublished rows. It waits on the store's
+   new-events signal or its poll interval, whichever comes first. A committed
+   save in this process wakes it. The poll interval still publishes rows when
+   no signal arrives.
 3. `AddMessageTransportOutboxPublisher` hands payloads to `IMessageTransport`.
 
 The outbox processor counts `outbox.publish.failures` on the `LawnDart.Outbox`

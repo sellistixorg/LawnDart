@@ -35,13 +35,6 @@ internal sealed class InMemorySubscriptionHandle : IEventLogSubscriptionHandle
             SingleWriter = true,
             SingleReader = false
         });
-        // Capacity 1 + DropOldest: wake signal only; never buffers events.
-        Wake = Channel.CreateBounded<bool>(new BoundedChannelOptions(1)
-        {
-            FullMode = BoundedChannelFullMode.DropOldest,
-            SingleWriter = false,
-            SingleReader = true
-        });
     }
 
     public string SubscriberId { get; }
@@ -57,8 +50,6 @@ internal sealed class InMemorySubscriptionHandle : IEventLogSubscriptionHandle
 
     internal CancellationToken CancellationToken => _linkedCts.Token;
 
-    internal Channel<bool> Wake { get; }
-
     internal bool IsDisposed => Volatile.Read(ref _disposed) != 0;
 
     internal void Fault(Exception exception)
@@ -73,8 +64,6 @@ internal sealed class InMemorySubscriptionHandle : IEventLogSubscriptionHandle
         Interlocked.Exchange(ref _lastDelivered, evt.SequencePosition);
     }
 
-    internal void Signal() => Wake.Writer.TryWrite(true);
-
     public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
 
     public ValueTask DisposeAsync()
@@ -84,7 +73,6 @@ internal sealed class InMemorySubscriptionHandle : IEventLogSubscriptionHandle
 
         try { _linkedCts.Cancel(); } catch (ObjectDisposedException) { /* ignore */ }
         _channel.Writer.TryComplete(_fault);
-        Wake.Writer.TryComplete();
         _onDispose(this);
         _linkedCts.Dispose();
         return ValueTask.CompletedTask;
