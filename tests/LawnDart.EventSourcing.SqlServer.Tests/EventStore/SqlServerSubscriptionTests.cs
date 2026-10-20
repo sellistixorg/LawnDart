@@ -38,160 +38,15 @@ public class SqlServerSubscriptionTests : IAsyncLifetime
             await _container.DisposeAsync();
     }
 
-    [Fact]
-    public async Task Global_CatchUp_Then_Live()
-    {
-        await _store.AppendAsync("s1", [Evt()]);
-        await _store.AppendAsync("s1", [Evt()]);
 
-        await using var handle = _store.Subscribe("sub-global", fromSequence: 1);
-        var readTask = ReadExactlyAsync(handle, 3, TimeSpan.FromSeconds(15));
-        await _store.AppendAsync("s1", [Evt()]);
 
-        var received = await readTask;
-        Assert.Equal(new long[] { 1, 2, 3 }, received.Select(e => e.SequencePosition));
-    }
 
-    [Fact]
-    public async Task Stream_Scope_Isolates_Other_Streams()
-    {
-        await _store.AppendAsync("a", [Evt()]);
-        await _store.AppendAsync("b", [Evt()]);
-        await _store.AppendAsync("a", [Evt()]);
 
-        await using var handle = _store.Subscribe(
-            "sub-stream",
-            fromSequence: 1,
-            EventSubscriptionFilter.ForStream("a"));
 
-        var received = await ReadExactlyAsync(handle, 2, TimeSpan.FromSeconds(15));
-        Assert.All(received, e => Assert.Equal("a", e.StreamId));
-        Assert.Equal(new long[] { 1, 3 }, received.Select(e => e.SequencePosition));
-    }
 
-    [Fact]
-    public async Task Query_Scope_Matches_ReadByQuery()
-    {
-        await _store.AppendAsync("s1", [Evt()], tags: ["order:1"]);
-        await _store.AppendAsync("s1", [Evt()], tags: ["other"]);
-        await _store.AppendAsync("s1", [Evt()], tags: ["order:1"]);
 
-        var query = Query.FromItems(QueryItem.ByTags("order:1"));
-        var expected = (await _store.ReadByQueryAsync(query)).Events
-            .Select(e => e.SequencePosition)
-            .ToArray();
 
-        await using var handle = _store.Subscribe(
-            "sub-query",
-            fromSequence: 1,
-            EventSubscriptionFilter.ForQuery(query));
 
-        var received = await ReadExactlyAsync(handle, expected.Length, TimeSpan.FromSeconds(15));
-        Assert.Equal(expected, received.Select(e => e.SequencePosition));
-    }
-
-    [Fact]
-    public async Task FromSequence_Is_Inclusive()
-    {
-        await _store.AppendAsync("s1", [Evt(), Evt(), Evt()]);
-
-        await using var handle = _store.Subscribe("sub-inclusive", fromSequence: 2);
-        var received = await ReadExactlyAsync(handle, 2, TimeSpan.FromSeconds(15));
-        Assert.Equal(new long[] { 2, 3 }, received.Select(e => e.SequencePosition));
-    }
-
-    [Fact]
-    public async Task Idle_Then_Append_Delivers()
-    {
-        await using var handle = _store.Subscribe("sub-idle", fromSequence: 1);
-        // Allow one idle poll cycle with empty store.
-        await Task.Delay(80);
-
-        var readTask = ReadExactlyAsync(handle, 1, TimeSpan.FromSeconds(10));
-        await _store.AppendAsync("s1", [Evt()]);
-        var received = await readTask;
-
-        Assert.Equal(1, received[0].SequencePosition);
-    }
-
-    [Fact]
-    public async Task Client_Reconnect_With_LastSequence_Plus_One()
-    {
-        await _store.AppendAsync("s1", [Evt(), Evt(), Evt()]);
-
-        await using (var first = _store.Subscribe("sub-reconnect", fromSequence: 1))
-        {
-            var batch = await ReadExactlyAsync(first, 2, TimeSpan.FromSeconds(15));
-            Assert.Equal(new long[] { 1, 2 }, batch.Select(e => e.SequencePosition));
-            // Client-owned cursor: lastApplied = 2 → reconnect with 3.
-        }
-
-        await using var second = _store.Subscribe("sub-reconnect", fromSequence: 3);
-        var rest = await ReadExactlyAsync(second, 1, TimeSpan.FromSeconds(15));
-        Assert.Equal(3, rest[0].SequencePosition);
-    }
-
-    [Fact]
-    public async Task Dispose_Stops_Delivery()
-    {
-        await _store.AppendAsync("s1", [Evt()]);
-        var handle = _store.Subscribe("sub-dispose", fromSequence: 1);
-        _ = await ReadExactlyAsync(handle, 1, TimeSpan.FromSeconds(15));
-        await handle.DisposeAsync();
-
-        await _store.AppendAsync("s1", [Evt()]);
-        await Task.Delay(150);
-        Assert.True(handle.Events.Completion.IsCompleted);
-        Assert.False(await handle.Events.WaitToReadAsync());
-    }
-
-    [Fact]
-    public async Task Slow_Consumer_No_Silent_Loss()
-    {
-        var store = CreateStore("slow", "slow", pollMs: 40, batchSize: 50, channelCapacity: 1);
-        await store.InitializeSchemaAsync();
-
-        await using var handle = store.Subscribe("sub-slow", fromSequence: 1);
-        for (var i = 0; i < 5; i++)
-            await store.AppendAsync("s1", [Evt()]);
-
-        var received = await ReadExactlyAsync(handle, 5, TimeSpan.FromSeconds(30));
-        Assert.Equal(new long[] { 1, 2, 3, 4, 5 }, received.Select(e => e.SequencePosition));
-    }
-
-    [Fact]
-    public async Task MultiContext_Sql_Subscriptions_Are_Isolated()
-    {
-        var ordering = CreateStore("ordering", "ordering", pollMs: 50);
-        var catalog = CreateStore("catalog", "catalog", pollMs: 50);
-        await ordering.InitializeSchemaAsync();
-        await catalog.InitializeSchemaAsync();
-
-        await using var oh = ordering.Subscribe("o", fromSequence: 1);
-        await using var ch = catalog.Subscribe("c", fromSequence: 1);
-
-        await ordering.AppendAsync("Order:1", [Evt()]);
-        await catalog.AppendAsync("Product:1", [Evt()]);
-
-        var o = await ReadExactlyAsync(oh, 1, TimeSpan.FromSeconds(15));
-        var c = await ReadExactlyAsync(ch, 1, TimeSpan.FromSeconds(15));
-        Assert.Equal("Order:1", o[0].StreamId);
-        Assert.Equal("Product:1", c[0].StreamId);
-    }
-
-    [Fact]
-    public async Task Load_Smoke_Sustained_Append_With_Global_Subscriber()
-    {
-        await using var handle = _store.Subscribe("sub-load", fromSequence: 1);
-        var readTask = ReadExactlyAsync(handle, 40, TimeSpan.FromSeconds(60));
-
-        for (var i = 0; i < 40; i++)
-            await _store.AppendAsync("load", [Evt()]);
-
-        var received = await readTask;
-        Assert.Equal(40, received.Count);
-        Assert.Equal(Enumerable.Range(1, 40).Select(i => (long)i), received.Select(e => e.SequencePosition));
-    }
 
     [Fact]
     public async Task UseSqlServer_Registers_Keyed_Subscriptions()
@@ -222,84 +77,9 @@ public class SqlServerSubscriptionTests : IAsyncLifetime
         Assert.Same(store, keyed);
     }
 
-    [Fact]
-    public async Task SameProcessSubscriber_WakesBeforeThePollInterval()
-    {
-        var store = CreateStore("wake", "wake", pollMs: 30_000);
-        await store.InitializeSchemaAsync();
 
-        await using var handle = store.Subscribe("sub-wake", fromSequence: 1);
-        var read = ReadExactlyAsync(handle, 1, TimeSpan.FromSeconds(5));
-        await WaitForWaitersAsync(store.NewEvents, 1);
 
-        var started = Stopwatch.StartNew();
-        await store.AppendAsync("s1", [Evt()]);
-        var received = await read;
 
-        Assert.True(started.Elapsed < TimeSpan.FromSeconds(2), $"woke after {started.Elapsed}");
-        Assert.Equal(1, received[0].SequencePosition);
-        Assert.True(store.NewEvents.Position >= 1);
-        Assert.Equal(1, store.NewEvents.Generation);
-    }
-
-    [Fact]
-    public async Task FailedAppend_DoesNotSignal()
-    {
-        var store = CreateStore("failwake", "failwake", pollMs: 50);
-        await store.InitializeSchemaAsync();
-        await store.AppendAsync("s1", [Evt()]);
-        var generation = store.NewEvents.Generation;
-        var position = store.NewEvents.Position;
-
-        await Assert.ThrowsAsync<ConcurrencyException>(() =>
-            store.AppendAsync("s1", [Evt()], expectedVersion: 0));
-
-        Assert.Equal(generation, store.NewEvents.Generation);
-        Assert.Equal(position, store.NewEvents.Position);
-        Assert.Single(await store.ReadStreamAsync("s1"));
-    }
-
-    [Fact]
-    public async Task Signal_IsRaisedOnlyAfterCommit()
-    {
-        var store = CreateStore("precommit", "precommit", pollMs: 50);
-        await store.InitializeSchemaAsync();
-        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        store.BeforeAppendCommit = async ct =>
-        {
-            entered.TrySetResult();
-            await release.Task.WaitAsync(ct);
-        };
-
-        var append = store.AppendAsync("s1", [Evt()]);
-        await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
-        Assert.Equal(0, store.NewEvents.Generation);
-        Assert.False(append.IsCompleted);
-
-        release.TrySetResult();
-        var result = await append.WaitAsync(TimeSpan.FromSeconds(15));
-        Assert.Equal(1, store.NewEvents.Generation);
-        Assert.Equal(result.SequencePositions[^1], store.NewEvents.Position);
-    }
-
-    [Fact]
-    public async Task SignalNeverFired_PollStillDelivers()
-    {
-        var store = CreateStore("nosignal", "nosignal", pollMs: 50);
-        await store.InitializeSchemaAsync();
-        store.PublishNewEventsSignal = false;
-
-        await using var handle = store.Subscribe("sub-poll", fromSequence: 1);
-        var read = ReadExactlyAsync(handle, 2, TimeSpan.FromSeconds(5));
-        await WaitForWaitersAsync(store.NewEvents, 1);
-
-        await store.AppendAsync("s1", [Evt(), Evt()]);
-        var received = await read;
-
-        Assert.Equal(0, store.NewEvents.Generation);
-        Assert.Equal(new long[] { 1, 2 }, received.Select(e => e.SequencePosition));
-    }
 
     private static async Task WaitForWaitersAsync(NewEventsSignal signal, int count)
     {

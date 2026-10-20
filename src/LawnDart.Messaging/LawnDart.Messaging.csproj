@@ -11,6 +11,7 @@
     <InternalsVisibleTo Include="LawnDart.Messaging.Tests" />
     <InternalsVisibleTo Include="LawnDart.Messaging.SqlServer.Tests" />
     <InternalsVisibleTo Include="LawnDart.Testing" />
+    <InternalsVisibleTo Include="LawnDart.Backends.Contract.Tests" />
   </ItemGroup>
 
   <ItemGroup>

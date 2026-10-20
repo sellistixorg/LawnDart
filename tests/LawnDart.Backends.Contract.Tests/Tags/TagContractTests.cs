@@ -1,93 +1,70 @@
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
+using LawnDart;
 using LawnDart.Aggregates;
 using LawnDart.Dcb;
 using LawnDart.EventSourcing.Aggregates;
 using LawnDart.EventSourcing.Dcb;
-using LawnDart.EventSourcing.SqlServer.EventStore;
 using LawnDart.EventStore;
 using LawnDart.Metadata;
 using LawnDart.Tagging;
-using Testcontainers.MsSql;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
-namespace LawnDart.EventSourcing.SqlServer.Tests.Tagging;
+namespace LawnDart.Backends.Contract.Tests;
 
-/// <summary>
-/// Fallback tags and unknown-tag warnings against the SQL Server store.
-/// The warning must not change which rows match.
-/// </summary>
-[Trait("Category", "Integration")]
-public class TagFormatSqlServerTests : IAsyncLifetime
+public abstract class TagContractTests : ContractSuite
 {
-    private MsSqlContainer? _container;
-    private SqlServerEventStore? _store;
-
-    public async Task InitializeAsync()
+    protected TagContractTests(IContractBackend backend)
+        : base(backend)
     {
-        _container = await MsSqlContainerStartup.StartAsync(() =>
-            new MsSqlBuilder(MsSqlTestImage.Server2025).Build());
-        _store = new SqlServerEventStore(
-            _container.GetConnectionString(),
-            options: new SqlServerEventStoreOptions { RequireTenantId = false });
-        await _store.InitializeSchemaAsync();
-    }
-
-    public async Task DisposeAsync()
-    {
-        if (_container != null)
-            await _container.DisposeAsync();
     }
 
     [Fact]
     public async Task FallbackFlag_Off_StoresClrTypeName()
     {
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
         var id = Guid.NewGuid();
-        await SaveAsync(id, formatFallback: false);
-
-        var tags = (await _store!.ReadStreamAsync(Stream(id)))[0].Tags;
+        await SaveAsync(store, id, formatFallback: false);
+        var tags = (await store.ReadStreamAsync(Stream(id)))[0].Tags;
         var clr = $"ProbeAggregate:{id:D}";
         var formatted = LowercaseTagFormat.Instance.Tag("ProbeAggregate", id);
-
         Assert.Contains(clr, tags);
         Assert.DoesNotContain(formatted, tags);
-        Assert.Single((await _store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(clr)))).Events);
-        Assert.Empty((await _store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(formatted)))).Events);
+        Assert.Single((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(clr)))).Events);
+        Assert.Empty((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(formatted)))).Events);
     }
 
     [Fact]
     public async Task FallbackFlag_On_StoresFormattedTag_AndLeavesOldRowsUnderTheClrTag()
     {
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
         var oldId = Guid.NewGuid();
         var newId = Guid.NewGuid();
-        await SaveAsync(oldId, formatFallback: false);
-        await SaveAsync(newId, formatFallback: true);
-
+        await SaveAsync(store, oldId, formatFallback: false);
+        await SaveAsync(store, newId, formatFallback: true);
         var oldClr = $"ProbeAggregate:{oldId:D}";
         var formatted = LowercaseTagFormat.Instance.Tag("ProbeAggregate", newId);
-        var newTags = (await _store!.ReadStreamAsync(Stream(newId)))[0].Tags;
-
+        var newTags = (await store.ReadStreamAsync(Stream(newId)))[0].Tags;
         Assert.Contains(formatted, newTags);
         Assert.DoesNotContain($"ProbeAggregate:{newId:D}", newTags);
-        Assert.Single((await _store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(oldClr)))).Events);
-        Assert.Empty((await _store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(
+        Assert.Single((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(oldClr)))).Events);
+        Assert.Empty((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(
             LowercaseTagFormat.Instance.Tag("ProbeAggregate", oldId))))).Events);
-        Assert.Single((await _store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(formatted)))).Events);
+        Assert.Single((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(formatted)))).Events);
     }
 
     [Fact]
     public async Task Warning_FiresOnce_DoesNotFireWhenDisabled_AndDoesNotChangeRows()
     {
-        var logger = new ListLogger();
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var logger = new TagListLogger();
         var id = Guid.NewGuid();
         var bad = $"Student:{id:D}";
         var good = LowercaseTagFormat.Instance.Tag("student", id);
-        var loud = Dcb(logger, warn: true);
-
+        var loud = Dcb(store, logger, warn: true);
         await loud.AppendWithContextAsync([new ProbeEvent(Guid.NewGuid(), DateTime.UtcNow)], [bad]);
         var first = await loud.GetStateAsync<CountingState>([bad]);
         var second = await loud.GetStateAsync<CountingState>([bad]);
         var formatted = await loud.GetStateAsync<CountingState>([good]);
-
         Assert.Equal(1, first.Count);
         Assert.Equal(1, second.Count);
         Assert.Equal(0, formatted.Count);
@@ -95,50 +72,48 @@ public class TagFormatSqlServerTests : IAsyncLifetime
         Assert.Equal(0, logger.WarningsFor(good));
 
         var quietTag = $"Section:{Guid.NewGuid():D}";
-        var quiet = Dcb(logger, warn: false);
+        var quiet = Dcb(store, logger, warn: false);
         await quiet.GetStateAsync<CountingState>([quietTag]);
         await quiet.AppendWithContextAsync(
             [new ProbeEvent(Guid.NewGuid(), DateTime.UtcNow)],
             [LowercaseTagFormat.Instance.Tag("section", Guid.NewGuid())],
             AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(quietTag))));
-
         Assert.Equal(0, logger.WarningsFor(quietTag));
     }
 
     [Fact]
     public async Task Warning_SkipsTagsTheFormatWouldProduce()
     {
-        var logger = new ListLogger();
-        var repo = Dcb(logger, warn: true);
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var logger = new TagListLogger();
+        var repo = Dcb(store, logger, warn: true);
         var student = LowercaseTagFormat.Instance.Tag("student", Guid.NewGuid());
         var tenant = LowercaseTagFormat.Instance.Tag("tenant", "academy-tenant");
-
         await repo.AppendWithContextAsync([new ProbeEvent(Guid.NewGuid(), DateTime.UtcNow)], [student, tenant]);
         var state = await repo.GetStateAsync<CountingState>([student, tenant]);
-
         Assert.Equal(1, state.Count);
         Assert.Empty(logger.Warnings);
     }
 
-    private DcbRepository Dcb(ListLogger logger, bool warn)
+    private static DcbRepository Dcb(IEventStore store, TagListLogger logger, bool warn)
         => new(
-            _store!,
+            store,
             new DefaultMetadataProvider(),
             new NullTenant(),
             Options.Create(new LawnDartOptions { RequireTenantId = false }),
             tagProvider: null,
             authorizationService: null,
             logger,
-            Options.Create(new EventSourcingOptions { WarnOnUnknownTag = warn }),
+            Options.Create(new EventSourcing.EventSourcingOptions { WarnOnUnknownTag = warn }),
             dcbSnapshotStore: null,
             strategyResolver: null,
             snapshotWriteQueue: null,
             tagFormat: LowercaseTagFormat.Instance);
 
-    private async Task SaveAsync(Guid id, bool formatFallback)
+    private static async Task SaveAsync(IEventStore store, Guid id, bool formatFallback)
     {
         var repository = new AggregateRepository(
-            _store!,
+            store,
             new DefaultMetadataProvider(),
             new NullTenant(),
             Options.Create(new LawnDartOptions { RequireTenantId = false }),
@@ -149,7 +124,7 @@ public class TagFormatSqlServerTests : IAsyncLifetime
             strategyResolver: null,
             snapshotWriteQueue: null,
             tagFormat: LowercaseTagFormat.Instance,
-            eventSourcingOptions: Options.Create(new EventSourcingOptions
+            eventSourcingOptions: Options.Create(new EventSourcing.EventSourcingOptions
             {
                 FormatAggregateFallbackTag = formatFallback
             }));
@@ -174,7 +149,7 @@ public class TagFormatSqlServerTests : IAsyncLifetime
         protected override void ApplyEventToState(IEvent @event) { }
     }
 
-    [EventTypeName("tag-format-sql.probe")]
+    [EventTypeName("tag-contract.probe")]
     private sealed record ProbeEvent(Guid Id, DateTime Timestamp) : IEvent;
 
     private sealed class CountingState : IState
@@ -183,7 +158,7 @@ public class TagFormatSqlServerTests : IAsyncLifetime
         public void Apply(ProbeEvent @event) => Count++;
     }
 
-    private sealed class ListLogger : ILogger<DcbRepository>
+    private sealed class TagListLogger : ILogger<DcbRepository>
     {
         public List<string> Warnings { get; } = [];
         public int WarningsFor(string tag) => Warnings.Count(message => message.Contains(tag, StringComparison.Ordinal));
