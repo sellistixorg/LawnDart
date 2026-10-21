@@ -237,9 +237,11 @@ public sealed class PostgresSubscriptionTests
             options.PollOnlyInterval = TimeSpan.FromSeconds(30);
         });
         store.Listener.KeepAliveSeconds = 1;
+        var hold = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        store.Listener.HoldBeforeWait = hold.Task;
         await using var handle = store.Subscribe("burst-notify", fromSequence: 1);
         _ = handle;
-        await WaitUntilAsync(() => store.Listener.IsWaitingForNotification);
+        await WaitUntilAsync(() => store.Listener.IsHeldBeforeWait);
         var before = store.Listener.NotificationCount;
         await using var connection = new NpgsqlConnection(_fixture.ConnectionString);
         await connection.OpenAsync();
@@ -249,10 +251,14 @@ public sealed class PostgresSubscriptionTests
         command.Parameters.AddWithValue("channel", store.NotifyChannel);
         command.CommandTimeout = 60;
         await command.ExecuteNonQueryAsync();
-        await WaitUntilAsync(() => store.Listener.NotificationCount >= before + 10000, TimeSpan.FromSeconds(20));
-        await WaitUntilAsync(() => store.Listener.IsWaitingForNotification);
+        hold.TrySetResult();
+        await WaitUntilAsync(
+            () => store.Listener.NotificationCount >= before + 10000 && store.Listener.IsWaitingForNotification,
+            TimeSpan.FromSeconds(20));
+        var notifications = store.Listener.NotificationCount - before;
         var wakes = store.Listener.WakeCount;
-        Assert.InRange(wakes, 1, 10_000 + PostgresNotificationListener.NotificationsPerWake);
+        Assert.True(notifications >= 10_000);
+        Assert.InRange(wakes, 1, notifications / 2);
         await AssertIdleAsync(store.Listener);
     }
 
@@ -279,9 +285,11 @@ public sealed class PostgresSubscriptionTests
         Assert.Equal(10_000, received.Count);
         Assert.Equal(1, received[0].SequencePosition);
         Assert.Equal(10_000, received[^1].SequencePosition);
-        await WaitUntilAsync(() => store.Listener.IsWaitingForNotification);
+        await WaitUntilAsync(
+            () => store.Listener.NotificationCount >= 10_000 && store.Listener.IsWaitingForNotification,
+            TimeSpan.FromSeconds(20));
         var wakes = store.Listener.WakeCount;
-        Assert.InRange(wakes, 1, 10_000 + PostgresNotificationListener.NotificationsPerWake);
+        Assert.InRange(wakes, 1, store.Listener.NotificationCount / 2);
         await AssertIdleAsync(store.Listener);
     }
 
@@ -433,23 +441,32 @@ public sealed class PostgresSubscriptionTests
     }
 
     [Fact]
-    public async Task BadHost_EndsTheSubscription()
+    public async Task WrongPassword_EndsTheSubscription()
     {
+        var builder = new NpgsqlConnectionStringBuilder(_fixture.ConnectionString)
+        {
+            Password = "not-the-password",
+            Timeout = 5
+        };
+        var logger = new ListLogger<PostgresEventStore>();
         var options = new PostgresEventStoreOptions
         {
-            ConnectionString = "Host=no-such-lawndart-host.invalid;Port=1;Username=u;Password=p;Database=lawndart;Timeout=2",
-            SchemaName = "badhost",
+            ConnectionString = builder.ConnectionString,
+            SchemaName = "badpassword",
             RequireTenantId = false,
             BackupPollInterval = TimeSpan.FromSeconds(30),
             PollOnlyInterval = TimeSpan.FromMilliseconds(50),
             NotifyOnAppend = false
         };
-        var store = new PostgresEventStore(options.ConnectionString, options: options);
-        await using var handle = store.Subscribe("bad-host", fromSequence: 1);
+        var store = new PostgresEventStore(options.ConnectionString, options: options, logger: logger);
+        await using var handle = store.Subscribe("bad-password", fromSequence: 1);
         var completed = await Task.WhenAny(handle.Events.Completion, Task.Delay(TimeSpan.FromSeconds(10)));
         Assert.Same(handle.Events.Completion, completed);
         var ex = await Assert.ThrowsAsync<EventSubscriptionFailedException>(() => handle.Events.Completion);
-        Assert.Equal("bad-host", ex.SubscriberId);
+        Assert.Equal("bad-password", ex.SubscriberId);
+        Assert.DoesNotContain(
+            logger.Entries,
+            entry => entry.Message.Contains("lost its connection", StringComparison.Ordinal));
     }
 
     [Fact]
