@@ -287,7 +287,7 @@ public sealed partial class PostgresEventStore
             ? _options.BackupPollInterval
             : _options.PollOnlyInterval;
 
-    private static bool IsRetryableReadFailure(Exception exception, bool hadSuccessfulRead)
+    internal static bool IsRetryableReadFailure(Exception exception, bool hadSuccessfulRead)
     {
         if (IsConfigurationFailure(exception))
             return false;

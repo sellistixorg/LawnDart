@@ -1,6 +1,8 @@
+using System.Net.Sockets;
 using LawnDart.EventSourcing.Postgres;
 using LawnDart.EventSourcing.Postgres.EventStore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Npgsql;
 
 namespace LawnDart.Backends.Contract.Tests;
 
@@ -75,6 +77,42 @@ public sealed class PostgresSubscriptionRulesTests
             PostgresNotificationQueueHealthCheck.DefaultUnhealthyUsage);
         Assert.Equal(status, result.Status);
         Assert.Equal(usage, Assert.IsType<double>(result.Data["notificationQueueUsage"]));
+    }
+
+    [Fact]
+    public void ReadFailure_ClassifiesAnUnresolvableHostAsConfiguration()
+    {
+        AssertConfiguration(SocketError.HostNotFound);
+        AssertConfiguration(SocketError.NoData);
+        AssertConfiguration(SocketError.AddressNotAvailable);
+
+        Assert.True(Retryable(SocketError.ConnectionRefused, hadSuccessfulRead: false));
+        Assert.True(Retryable(SocketError.TimedOut, hadSuccessfulRead: false));
+
+        Assert.False(Retryable(SocketError.HostUnreachable, hadSuccessfulRead: false));
+        Assert.True(Retryable(SocketError.HostUnreachable, hadSuccessfulRead: true));
+
+        var password = new PostgresException(
+            "password authentication failed",
+            "FATAL",
+            "FATAL",
+            "28P01");
+        Assert.False(PostgresEventStore.IsRetryableReadFailure(password, hadSuccessfulRead: false));
+        Assert.False(PostgresEventStore.IsRetryableReadFailure(password, hadSuccessfulRead: true));
+
+        static void AssertConfiguration(SocketError error)
+        {
+            Assert.False(Retryable(error, hadSuccessfulRead: false));
+            Assert.False(Retryable(error, hadSuccessfulRead: true));
+        }
+
+        static bool Retryable(SocketError error, bool hadSuccessfulRead)
+        {
+            var socket = new SocketException((int)error);
+            Assert.Equal(error, socket.SocketErrorCode);
+            var failure = new NpgsqlException("Failed to connect", socket);
+            return PostgresEventStore.IsRetryableReadFailure(failure, hadSuccessfulRead);
+        }
     }
 
     [Fact]
