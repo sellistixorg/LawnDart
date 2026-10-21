@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\LawnDart.Projections.Lightweight\LawnDart.Projections.Lightweight.csproj" />
+    <ProjectReference Include="..\LawnDart.EventSourcing.Postgres\LawnDart.EventSourcing.Postgres.csproj" />
   </ItemGroup>
 
   <ItemGroup>

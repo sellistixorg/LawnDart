@@ -194,13 +194,13 @@ public sealed class PostgresProjectionPhase3Tests
         var pending = waiterLock.AcquireAsync("Cart:v1", 0);
         await WaitUntilAsync(() => waiterLog.Entries.Any(entry =>
             entry.Message.Contains("share node number", StringComparison.Ordinal)));
-        Assert.NotNull(leader.SessionProcessId);
+        var leaderSession = Assert.IsType<PostgresSessionLease>(leader);
 
         await using (var connection = new NpgsqlConnection(_fixture.AdminConnectionString))
         {
             await connection.OpenAsync();
             await using var kill = new NpgsqlCommand("SELECT pg_terminate_backend(@pid)", connection);
-            kill.Parameters.AddWithValue("pid", leader.SessionProcessId!.Value);
+            kill.Parameters.AddWithValue("pid", leaderSession.SessionProcessId!.Value);
             await kill.ExecuteScalarAsync();
         }
 

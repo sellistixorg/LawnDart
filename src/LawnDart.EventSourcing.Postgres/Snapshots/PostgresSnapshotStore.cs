@@ -126,7 +126,7 @@ public sealed class PostgresSnapshotStore : ISnapshotStore, IDcbSnapshotStore, I
                 PostgresSnapshotStoreLog.DcbDeserializeFailed(_logger, ex, dcbId);
             return (default, null);
         }
-        catch (PostgresException ex)
+        catch (NpgsqlException ex)
         {
             if (_logger is not null)
                 PostgresSnapshotStoreLog.DcbLoadFailed(_logger, ex, dcbId);
@@ -223,7 +223,7 @@ public sealed class PostgresSnapshotStore : ISnapshotStore, IDcbSnapshotStore, I
                 PostgresSnapshotStoreLog.StreamDeserializeFailed(_logger, ex, streamId);
             return (default, null);
         }
-        catch (PostgresException ex)
+        catch (NpgsqlException ex)
         {
             if (_logger is not null)
                 PostgresSnapshotStoreLog.StreamLoadFailed(_logger, ex, streamId);

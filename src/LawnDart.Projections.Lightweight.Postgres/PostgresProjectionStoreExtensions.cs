@@ -57,17 +57,21 @@ public static class PostgresProjectionStoreExtensions
         services.AddKeyedSingleton(contextName, options);
         services.AddKeyedSingleton<PostgresViewStore>(contextName, (sp, _) =>
             new PostgresViewStore(options, sp.GetService<ILogger<PostgresViewStore>>()));
-        services.AddKeyedSingleton<IViewStore>(contextName, (sp, key) =>
-            sp.GetRequiredKeyedService<PostgresViewStore>(key!));
         services.AddKeyedSingleton<PostgresCheckpointStore>(contextName, (sp, key) =>
             new PostgresCheckpointStore(
                 options,
-                sp.GetRequiredKeyedService<IViewStore>(key!),
+                sp.GetRequiredKeyedService<PostgresViewStore>(key!),
                 sp.GetService<ILogger<PostgresCheckpointStore>>()));
+        services.AddKeyedSingleton<PostgresProjectionStore>(contextName, (sp, key) =>
+            new PostgresProjectionStore(
+                sp.GetRequiredKeyedService<PostgresViewStore>(key!),
+                sp.GetRequiredKeyedService<PostgresCheckpointStore>(key!)));
+        services.AddKeyedSingleton<IViewStore>(contextName, (sp, key) =>
+            sp.GetRequiredKeyedService<PostgresProjectionStore>(key!));
         services.AddKeyedSingleton<ICheckpointStore>(contextName, (sp, key) =>
-            sp.GetRequiredKeyedService<PostgresCheckpointStore>(key!));
+            sp.GetRequiredKeyedService<PostgresProjectionStore>(key!));
         services.AddKeyedSingleton<IAtomicProjectionFlush>(contextName, (sp, key) =>
-            sp.GetRequiredKeyedService<PostgresCheckpointStore>(key!));
+            sp.GetRequiredKeyedService<PostgresProjectionStore>(key!));
 
         if (options.EnableSingleRunnerLock)
         {
@@ -101,23 +105,14 @@ public static class PostgresProjectionStoreExtensions
             throw new ArgumentException("Context name must not be null or whitespace.", nameof(contextName));
 
         var views = services.GetRequiredKeyedService<IViewStore>(contextName);
-        var checkpoints = services.GetRequiredKeyedService<ICheckpointStore>(contextName);
-        if (views is not PostgresViewStore postgresViews)
+        if (views is not PostgresProjectionStore store)
         {
             throw new InvalidOperationException(
-                $"Keyed IViewStore '{contextName}' is {views.GetType().Name}, not PostgresViewStore. " +
+                $"Keyed IViewStore '{contextName}' is {views.GetType().Name}, not PostgresProjectionStore. " +
                 "Call AddPostgresProjectionStores before InitializePostgresProjectionStoresAsync.");
         }
 
-        if (checkpoints is not PostgresCheckpointStore postgresCheckpoints)
-        {
-            throw new InvalidOperationException(
-                $"Keyed ICheckpointStore '{contextName}' is {checkpoints.GetType().Name}, not PostgresCheckpointStore. " +
-                "Call AddPostgresProjectionStores before InitializePostgresProjectionStoresAsync.");
-        }
-
-        await postgresViews.InitializeSchemaAsync(cancellationToken).ConfigureAwait(false);
-        await postgresCheckpoints.InitializeSchemaAsync(cancellationToken).ConfigureAwait(false);
+        await store.InitializeSchemaAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static string SchemaFor(string contextName)

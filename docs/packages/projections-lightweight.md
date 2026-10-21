@@ -33,20 +33,25 @@ For Postgres, add `LawnDart.Projections.Lightweight.Postgres` and call
 
 ## One transaction, and one copy per node number
 
-`IAtomicProjectionFlush` is optional. When the checkpoint store or the view
-store implements it, the runner saves every view in the flush and the
-checkpoint in one transaction. A failure leaves both as they were. A store
-that does not implement it keeps two calls: views, then the checkpoint.
-SQL Server keeps the two calls.
+`IAtomicProjectionFlush` is optional. The runner uses it only when the view
+store and the checkpoint store are the same object. That save writes every
+view in the flush and the checkpoint in one transaction. A failure leaves
+both as they were. When they are different objects, the runner keeps two
+calls: views on the view store, then the checkpoint. SQL Server keeps the
+two calls.
 
 `IProjectionRunnerLock` is optional. With no lock, every copy runs. The lock
 does not change how per-stream projections are split by stream id, and it
 does not change the per-node global view id (`global:n0`, `global:n1`, and
 so on). It only stops two copies that were both given the same node number
-from doing that node's work. Postgres registers a lock unless
-`EnableSingleRunnerLock` is false. The Postgres package page explains the
-epoch, the waiting copy, and the lease used when the connection cannot hold
-a session lock.
+from doing that node's work. If the copy that holds the lock loses it, that
+runner drops its in-memory state and tries to take the lead again. It
+resumes from the stored checkpoint. It stops when the host stops.
+`LeadershipRetryDelay` (default 1 second) is the first wait. The wait doubles
+up to `LeadershipRetryMaxDelay` (default 30 seconds). Postgres registers a
+lock unless `EnableSingleRunnerLock` is false. The Postgres package page
+explains the epoch, the waiting copy, and the lease used when the connection
+cannot hold a session lock.
 
 Academy WebApi maps GET `/api/views/students/{studentId}` this way.
 

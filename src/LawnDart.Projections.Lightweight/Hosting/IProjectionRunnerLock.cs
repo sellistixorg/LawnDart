@@ -33,7 +33,7 @@ public interface IProjectionRunnerLease : IAsyncDisposable
 {
     /// <summary>
     /// True while this copy may save views and the checkpoint.
-    /// False after the lock is lost. The runner stops before its next save.
+    /// False after the lock is lost. The runner does not save until it takes the lead again.
     /// </summary>
     bool IsHeld { get; }
 
@@ -43,10 +43,4 @@ public interface IProjectionRunnerLease : IAsyncDisposable
     /// it carries this number.
     /// </summary>
     long Epoch { get; }
-
-    /// <summary>
-    /// Database process id of the session that holds the lock.
-    /// Null when this copy renews a lease instead of holding a session lock.
-    /// </summary>
-    int? SessionProcessId { get; }
 }

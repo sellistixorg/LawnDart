@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using NpgsqlTypes;
+using LawnDart.EventSourcing.Postgres.EventStore;
 using LawnDart.Projections.Lightweight.Hosting;
 
 namespace LawnDart.Projections.Lightweight.Postgres;
@@ -64,7 +65,12 @@ public sealed class PostgresProjectionRunnerLock : IProjectionRunnerLock
         {
             if (_modeChosen)
                 return;
-            _useLease = LooksLikePooler(_options.LockSource) || !await SessionLockWorksAsync(cancellationToken).ConfigureAwait(false);
+            _useLease = _options.RunnerLockMode switch
+            {
+                PostgresRunnerLockMode.Lease => true,
+                PostgresRunnerLockMode.SessionLock => false,
+                _ => PostgresPoolerHost.LooksLikeTransactionPooler(_options.LockSource)
+            };
             _modeChosen = true;
         }
         finally
@@ -82,10 +88,12 @@ public sealed class PostgresProjectionRunnerLock : IProjectionRunnerLock
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            PostgresProjectionConnections.ClearIdle(_options.ConnectionString!);
             var connection = new NpgsqlConnection(Dedicated(_options.LockSource));
             try
             {
                 await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+                await ApplyKeepAliveAsync(connection, cancellationToken).ConfigureAwait(false);
                 if (!await TryLockAsync(connection, projectionType, nodeId, cancellationToken).ConfigureAwait(false))
                 {
                     if (!warned)
@@ -98,7 +106,7 @@ public sealed class PostgresProjectionRunnerLock : IProjectionRunnerLock
                     await LockAsync(connection, projectionType, nodeId, cancellationToken).ConfigureAwait(false);
                 }
 
-                var epoch = await _checkpoints.RaiseEpochAsync(projectionType, nodeId, cancellationToken).ConfigureAwait(false);
+                var epoch = await RaiseEpochAsync(connection, projectionType, nodeId, cancellationToken).ConfigureAwait(false);
                 _checkpoints.BindLeaderEpoch(projectionType, nodeId, epoch);
                 var pid = await BackendPidAsync(connection, cancellationToken).ConfigureAwait(false);
                 var lease = new PostgresSessionLease(
@@ -111,6 +119,7 @@ public sealed class PostgresProjectionRunnerLock : IProjectionRunnerLock
                 await connection.DisposeAsync().ConfigureAwait(false);
                 if (cancellationToken.IsCancellationRequested)
                     throw;
+                PostgresProjectionConnections.ClearIdle(_options.ConnectionString!);
                 await Task.Delay(TimeSpan.FromMilliseconds(50), cancellationToken).ConfigureAwait(false);
             }
         }
@@ -129,56 +138,67 @@ public sealed class PostgresProjectionRunnerLock : IProjectionRunnerLock
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (await TryTakeLeaseAsync(projectionType, nodeId, holder, cancellationToken).ConfigureAwait(false))
+            try
             {
-                var epoch = await _checkpoints.RaiseEpochAsync(projectionType, nodeId, cancellationToken).ConfigureAwait(false);
-                _checkpoints.BindLeaderEpoch(projectionType, nodeId, epoch);
-                var lease = new PostgresPooledLease(
-                    _options, _names, _logger, projectionType, nodeId, epoch, holder);
-                lease.Start();
-                return lease;
-            }
+                PostgresProjectionConnections.ClearIdle(_options.ConnectionString!);
+                var epoch = await TryTakeLeaseAndRaiseEpochAsync(projectionType, nodeId, holder, cancellationToken).ConfigureAwait(false);
+                if (epoch is long taken)
+                {
+                    _checkpoints.BindLeaderEpoch(projectionType, nodeId, taken);
+                    var lease = new PostgresPooledLease(
+                        _options, _names, _logger, projectionType, nodeId, taken, holder);
+                    lease.Start();
+                    return lease;
+                }
 
-            if (!warned)
+                if (!warned)
+                {
+                    warned = true;
+                    if (_logger is not null)
+                        PostgresProjectionLog.WaitingForNode(_logger, projectionType, nodeId);
+                }
+
+                var expires = await ReadExpiryAsync(projectionType, nodeId, cancellationToken).ConfigureAwait(false);
+                var wait = expires is null ? TimeSpan.FromMilliseconds(50) : expires.Value - DateTime.UtcNow;
+                if (wait < TimeSpan.FromMilliseconds(20))
+                    wait = TimeSpan.FromMilliseconds(20);
+                if (wait > _options.LeaseDuration)
+                    wait = _options.LeaseDuration;
+                await Task.Delay(wait, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                warned = true;
-                if (_logger is not null)
-                    PostgresProjectionLog.WaitingForNode(_logger, projectionType, nodeId);
+                if (cancellationToken.IsCancellationRequested)
+                    throw;
+                PostgresProjectionConnections.ClearIdle(_options.ConnectionString!);
+                await Task.Delay(TimeSpan.FromMilliseconds(50), cancellationToken).ConfigureAwait(false);
             }
-
-            var expires = await ReadExpiryAsync(projectionType, nodeId, cancellationToken).ConfigureAwait(false);
-            var wait = expires is null ? TimeSpan.FromMilliseconds(50) : expires.Value - DateTime.UtcNow;
-            if (wait < TimeSpan.FromMilliseconds(20))
-                wait = TimeSpan.FromMilliseconds(20);
-            if (wait > _options.LeaseDuration)
-                wait = _options.LeaseDuration;
-            await Task.Delay(wait, cancellationToken).ConfigureAwait(false);
         }
     }
 
-    private async Task<bool> SessionLockWorksAsync(CancellationToken cancellationToken)
-    {
-        var probe = "probe:" + Guid.NewGuid().ToString("N");
-        await using var first = await PostgresProjectionConnections.Shared(_options.LockSource).OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var second = await PostgresProjectionConnections.Shared(_options.LockSource).OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        var firstGot = await TryProbeAsync(first, probe, cancellationToken).ConfigureAwait(false);
-        var secondGot = await TryProbeAsync(second, probe, cancellationToken).ConfigureAwait(false);
-        await UnlockProbeAsync(first, probe, cancellationToken).ConfigureAwait(false);
-        await UnlockProbeAsync(second, probe, cancellationToken).ConfigureAwait(false);
-        return firstGot && !secondGot;
-    }
-
-    private async Task<bool> TryTakeLeaseAsync(
+    private async Task<long?> TryTakeLeaseAndRaiseEpochAsync(
         string projectionType, int nodeId, Guid holder, CancellationToken cancellationToken)
     {
         var sql = $"""
-            INSERT INTO {_names.Leases} AS l (projection_type, node_id, holder_id, expires_at)
-            VALUES (@type, @node, @holder, now() + @lease)
-            ON CONFLICT (projection_type, node_id) DO UPDATE
-            SET holder_id = EXCLUDED.holder_id,
-                expires_at = EXCLUDED.expires_at
-            WHERE l.expires_at <= now() OR l.holder_id = EXCLUDED.holder_id
-            RETURNING holder_id
+            WITH taken AS (
+                INSERT INTO {_names.Leases} AS l (projection_type, node_id, holder_id, expires_at)
+                VALUES (@type, @node, @holder, now() + @lease)
+                ON CONFLICT (projection_type, node_id) DO UPDATE
+                SET holder_id = EXCLUDED.holder_id,
+                    expires_at = EXCLUDED.expires_at
+                WHERE l.expires_at <= now() OR l.holder_id = EXCLUDED.holder_id
+                RETURNING 1
+            ),
+            raised AS (
+                INSERT INTO {_names.Checkpoints} AS c
+                    (projection_type, node_id, last_position, last_updated, total_events, leader_epoch)
+                SELECT @type, @node, -1, now(), 0, 1
+                FROM taken
+                ON CONFLICT (projection_type, node_id) DO UPDATE
+                SET leader_epoch = c.leader_epoch + 1
+                RETURNING leader_epoch
+            )
+            SELECT leader_epoch FROM raised
             """;
         await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
@@ -187,7 +207,46 @@ public sealed class PostgresProjectionRunnerLock : IProjectionRunnerLock
         command.Parameters.AddWithValue("holder", holder);
         command.Parameters.Add(new NpgsqlParameter("lease", NpgsqlDbType.Interval) { Value = _options.LeaseDuration });
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        return result is Guid;
+        return result is null or DBNull ? null : Convert.ToInt64(result);
+    }
+
+    private async Task<long> RaiseEpochAsync(
+        NpgsqlConnection connection, string projectionType, int nodeId, CancellationToken cancellationToken)
+    {
+        var sql = $"""
+            INSERT INTO {_names.Checkpoints} AS c
+                (projection_type, node_id, last_position, last_updated, total_events, leader_epoch)
+            VALUES (@type, @node, -1, now(), 0, 1)
+            ON CONFLICT (projection_type, node_id) DO UPDATE
+            SET leader_epoch = c.leader_epoch + 1
+            RETURNING leader_epoch
+            """;
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("type", projectionType);
+        command.Parameters.AddWithValue("node", nodeId);
+        return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false));
+    }
+
+    private async Task ApplyKeepAliveAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using var command = new NpgsqlCommand(
+                """
+                SELECT set_config('tcp_keepalives_idle', @idle, false),
+                       set_config('tcp_keepalives_interval', @interval, false),
+                       set_config('tcp_keepalives_count', @count, false)
+                """,
+                connection);
+            command.Parameters.AddWithValue("idle", _options.LockTcpKeepAliveIdleSeconds.ToString());
+            command.Parameters.AddWithValue("interval", _options.LockTcpKeepAliveIntervalSeconds.ToString());
+            command.Parameters.AddWithValue("count", _options.LockTcpKeepAliveCount.ToString());
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (NpgsqlException)
+        {
+            // The session still has Npgsql's keepalive when the server rejects these settings.
+        }
     }
 
     private async Task<DateTime?> ReadExpiryAsync(string projectionType, int nodeId, CancellationToken cancellationToken)
@@ -209,28 +268,16 @@ public sealed class PostgresProjectionRunnerLock : IProjectionRunnerLock
     private ValueTask<NpgsqlConnection> OpenAsync(CancellationToken cancellationToken)
         => PostgresProjectionConnections.Shared(_options.ConnectionString!).OpenConnectionAsync(cancellationToken);
 
-    private static string Dedicated(string connectionString)
+    private string Dedicated(string connectionString)
     {
-        var builder = new NpgsqlConnectionStringBuilder(connectionString) { Pooling = false };
-        return builder.ConnectionString;
-    }
-
-    private static bool LooksLikePooler(string connectionString)
-    {
-        var builder = new NpgsqlConnectionStringBuilder(connectionString);
-        if (builder.Port == 6543)
-            return true;
-        var host = builder.Host;
-        if (string.IsNullOrEmpty(host))
-            return false;
-        foreach (var part in host.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        var builder = new NpgsqlConnectionStringBuilder(connectionString)
         {
-            if (part.Contains("pooler", StringComparison.OrdinalIgnoreCase)
-                || part.Contains("pgbouncer", StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
-
-        return false;
+            Pooling = false,
+            KeepAlive = _options.LockKeepAliveSeconds
+        };
+        if (string.IsNullOrEmpty(builder.ApplicationName))
+            builder.ApplicationName = "lawndart-projection-lock";
+        return builder.ConnectionString;
     }
 
     private Task<bool> TryLockAsync(NpgsqlConnection connection, string projectionType, int nodeId, CancellationToken cancellationToken)
@@ -265,28 +312,6 @@ public sealed class PostgresProjectionRunnerLock : IProjectionRunnerLock
         return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false));
     }
 
-    private static async Task<bool> TryProbeAsync(NpgsqlConnection connection, string probe, CancellationToken cancellationToken)
-    {
-        await using var command = new NpgsqlCommand(
-            "SELECT pg_try_advisory_lock(hashtext(@probe), hashtext('session'))", connection);
-        command.Parameters.AddWithValue("probe", probe);
-        return (bool)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
-    }
-
-    private static async Task UnlockProbeAsync(NpgsqlConnection connection, string probe, CancellationToken cancellationToken)
-    {
-        await using var command = new NpgsqlCommand(
-            "SELECT pg_advisory_unlock(hashtext(@probe), hashtext('session'))", connection);
-        command.Parameters.AddWithValue("probe", probe);
-        try
-        {
-            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (NpgsqlException)
-        {
-            // The probe lock is gone when this session does not hold it.
-        }
-    }
 }
 
 internal sealed class PostgresSessionLease : IProjectionRunnerLease
@@ -458,8 +483,6 @@ internal sealed class PostgresPooledLease : IProjectionRunnerLease
     public bool IsHeld => Volatile.Read(ref _held) == 1;
 
     public long Epoch { get; }
-
-    public int? SessionProcessId => null;
 
     internal void Start() => _renew = RenewAsync(_stop.Token);
 

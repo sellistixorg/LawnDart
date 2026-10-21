@@ -43,6 +43,9 @@ internal static class PostgresProjectionSchema
                 PRIMARY KEY (projection_type, node_id)
             );
 
+            DROP FUNCTION IF EXISTS {names.Flush}(
+                text, integer, bigint, timestamptz, bigint, boolean, bigint, boolean, text[], text[], bigint[]);
+
             CREATE OR REPLACE FUNCTION {names.Flush}(
                 p_projection_type text,
                 p_node_id integer,
@@ -51,7 +54,6 @@ internal static class PostgresProjectionSchema
                 p_total_events bigint,
                 p_require_epoch boolean,
                 p_epoch bigint,
-                p_fail_after_views boolean,
                 p_instance_ids text[],
                 p_view_data text[],
                 p_checkpoints bigint[]
@@ -72,40 +74,40 @@ internal static class PostgresProjectionSchema
                     checkpoint = EXCLUDED.checkpoint,
                     last_updated = EXCLUDED.last_updated;
 
-                IF p_fail_after_views THEN
-                    RAISE EXCEPTION 'The flush stopped after the view writes. Views and the checkpoint are unchanged.'
-                        USING ERRCODE = 'LD002';
-                END IF;
+                IF p_require_epoch THEN
+                    UPDATE projection_checkpoints
+                    SET last_position = p_last_position,
+                        last_updated = p_last_updated,
+                        total_events = p_total_events
+                    WHERE projection_type = p_projection_type
+                      AND node_id = p_node_id
+                      AND leader_epoch = p_epoch
+                      AND last_position <= p_last_position;
 
-                INSERT INTO projection_checkpoints AS c (
-                    projection_type, node_id, last_position, last_updated, total_events, leader_epoch)
-                VALUES (
-                    p_projection_type,
-                    p_node_id,
-                    p_last_position,
-                    p_last_updated,
-                    p_total_events,
-                    CASE WHEN p_require_epoch THEN p_epoch ELSE 0 END)
-                ON CONFLICT (projection_type, node_id) DO UPDATE
-                SET last_position = EXCLUDED.last_position,
-                    last_updated = EXCLUDED.last_updated,
-                    total_events = EXCLUDED.total_events
-                WHERE c.last_position <= EXCLUDED.last_position
-                  AND (NOT p_require_epoch OR c.leader_epoch = p_epoch);
-
-                GET DIAGNOSTICS wrote = ROW_COUNT;
-                IF wrote = 0 AND p_require_epoch THEN
-                    SELECT leader_epoch INTO current_epoch
-                    FROM projection_checkpoints
-                    WHERE projection_type = p_projection_type AND node_id = p_node_id;
-                    IF NOT FOUND OR current_epoch IS DISTINCT FROM p_epoch THEN
-                        RAISE EXCEPTION 'The checkpoint for % on node % was not saved. This copy started with epoch % and the stored epoch is %. Another copy has taken the lead.',
-                            p_projection_type, p_node_id, p_epoch, current_epoch
-                            USING ERRCODE = 'LD001';
+                    GET DIAGNOSTICS wrote = ROW_COUNT;
+                    IF wrote = 0 THEN
+                        SELECT leader_epoch INTO current_epoch
+                        FROM projection_checkpoints
+                        WHERE projection_type = p_projection_type AND node_id = p_node_id;
+                        IF NOT FOUND OR current_epoch IS DISTINCT FROM p_epoch THEN
+                            RAISE EXCEPTION 'The checkpoint for % on node % was not saved. This copy started with epoch % and the stored epoch is %. Another copy has taken the lead.',
+                                p_projection_type, p_node_id, p_epoch, current_epoch
+                                USING ERRCODE = 'LD001';
+                        END IF;
                     END IF;
+                ELSE
+                    INSERT INTO projection_checkpoints AS c (
+                        projection_type, node_id, last_position, last_updated, total_events, leader_epoch)
+                    VALUES (
+                        p_projection_type, p_node_id, p_last_position, p_last_updated, p_total_events, 0)
+                    ON CONFLICT (projection_type, node_id) DO UPDATE
+                    SET last_position = EXCLUDED.last_position,
+                        last_updated = EXCLUDED.last_updated,
+                        total_events = EXCLUDED.total_events
+                    WHERE c.last_position <= EXCLUDED.last_position;
                 END IF;
 
-                RETURN wrote;
+                RETURN 1;
             END;
             $func$;
             """;

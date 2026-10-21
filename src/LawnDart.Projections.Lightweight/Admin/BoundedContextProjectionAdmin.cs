@@ -100,11 +100,16 @@ public sealed class BoundedContextProjectionAdmin : IProjectionAdmin
     }
 
     /// <inheritdoc />
-    public Task<ProjectionCheckpoint?> GetCheckpointAsync(
+    public async Task<ProjectionCheckpoint?> GetCheckpointAsync(
         string storageKey,
         int nodeId,
         CancellationToken ct = default)
-        => _checkpointStore.GetCheckpointAsync(storageKey, nodeId, ct);
+    {
+        var checkpoint = await _checkpointStore.GetCheckpointAsync(storageKey, nodeId, ct).ConfigureAwait(false);
+        if (checkpoint is null || checkpoint.LastSequencePosition < 0)
+            return null;
+        return checkpoint;
+    }
 
     /// <inheritdoc />
     public async IAsyncEnumerable<string> EnumerateViewInstancesAsync(

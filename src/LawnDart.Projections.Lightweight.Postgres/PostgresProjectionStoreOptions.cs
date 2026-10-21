@@ -57,6 +57,35 @@ public sealed class PostgresProjectionStoreOptions
     /// </summary>
     public TimeSpan LeaseRenewInterval { get; set; } = TimeSpan.FromSeconds(5);
 
+    /// <summary>
+    /// How this copy chooses a session lock or a lease.
+    /// <see cref="PostgresRunnerLockMode.Auto"/> (the default) uses a lease when
+    /// <see cref="LockSource"/> looks like a transaction pooler, and a session lock otherwise.
+    /// Port 6543, or a host containing <c>pooler</c> or <c>pgbouncer</c>, is treated as a pooler.
+    /// </summary>
+    public PostgresRunnerLockMode RunnerLockMode { get; set; } = PostgresRunnerLockMode.Auto;
+
+    /// <summary>
+    /// Seconds of silence on the lock connection before Npgsql sends a keepalive.
+    /// Default 30. The lock connection also asks Postgres to use TCP keepalives.
+    /// </summary>
+    public int LockKeepAliveSeconds { get; set; } = 30;
+
+    /// <summary>
+    /// Seconds of silence before the lock connection's first TCP keepalive. Default 30.
+    /// </summary>
+    public int LockTcpKeepAliveIdleSeconds { get; set; } = 30;
+
+    /// <summary>
+    /// Seconds between TCP keepalives on the lock connection after the first one. Default 10.
+    /// </summary>
+    public int LockTcpKeepAliveIntervalSeconds { get; set; } = 10;
+
+    /// <summary>
+    /// How many TCP keepalives can go unanswered before the lock connection is dropped. Default 3.
+    /// </summary>
+    public int LockTcpKeepAliveCount { get; set; } = 3;
+
     /// <summary>Checks the connection string, schema, and lease timings.</summary>
     public void EnsureValid()
     {
@@ -87,6 +116,16 @@ public sealed class PostgresProjectionStoreOptions
                 nameof(LeaseRenewInterval),
                 LeaseRenewInterval,
                 "LeaseRenewInterval must be greater than zero and shorter than LeaseDuration.");
+        }
+
+        if (LockKeepAliveSeconds < 1
+            || LockTcpKeepAliveIdleSeconds < 1
+            || LockTcpKeepAliveIntervalSeconds < 1
+            || LockTcpKeepAliveCount < 1)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(LockKeepAliveSeconds),
+                "Lock keepalive values must be at least 1.");
         }
     }
 

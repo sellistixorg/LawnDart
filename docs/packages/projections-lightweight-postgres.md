@@ -40,9 +40,27 @@ a later call does not create them again.
 the same. `PostgresCheckpointStore` stores one row per projection per node
 in `projection_checkpoints`.
 
-The runner writes the views and the checkpoint in one call. A failure leaves
-both as they were. A checkpoint save keeps the stored position when the new
-position is older.
+The runner writes the views and the checkpoint in one call when both are this
+store. A failure leaves both as they were. A checkpoint save keeps the stored
+position when the new position is older. Deleting a checkpoint clears the
+position and raises the epoch. The row stays. A later read does not show a
+checkpoint whose position is below zero. A save from a copy that started
+with the old epoch is rejected.
+
+View rows are jsonb. Spacing and key order can change. The decoded view is
+the same. jsonb cannot store a null character (`\u0000`). That save throws.
+A view that records a derived .NET type puts the type name in `$type`.
+jsonb may move `$type` off the first property. `System.Text.Json` then
+refuses the text unless you set `AllowOutOfOrderMetadataProperties` to true
+on the options you pass to `JsonSerializer.Deserialize`:
+
+```csharp
+var options = new JsonSerializerOptions(ProjectionViewJson.Read)
+{
+    AllowOutOfOrderMetadataProperties = true
+};
+var view = JsonSerializer.Deserialize<MyView>(json, options);
+```
 
 ## One copy per node number
 
@@ -52,13 +70,23 @@ id, and it does not change the per-node global view id (`global:n0`,
 `global:n1`, and so on). It only stops two copies that were both given the
 same node number from doing that node's work.
 
+`RunnerLockMode` is `Auto` by default. `Auto` uses a lease when the lock
+connection looks like a transaction pooler, and a session lock otherwise.
+Port 6543, or a host containing `pooler` or `pgbouncer`, is treated as a
+pooler. Set `RunnerLockMode` to `SessionLock` or `Lease` to choose yourself.
+A transaction pooler cannot keep a session lock, so `Lease` is the mode for
+that connection. A wrong guess changes when the waiting copy can take over.
+
 The second copy waits and logs a warning that the two copies share that node
 number. Give each copy its own node number.
 
 On a direct connection, or a session pooler, the holder keeps a session lock
 on `ListenConnectionString` (or on `ConnectionString` when that is the only
 connection). If that connection drops, or the database restarts, the holder
-stops before its next save and the waiting copy takes over.
+does not save. It drops its in-memory state and tries to take the lead again.
+It then reads the stored checkpoint and continues. The runner stops when the
+host stops. A second copy that was waiting takes over while the first copy
+waits. When the second copy stops, the first copy can take the lead again.
 
 Each copy that takes the lead stores a number on the checkpoint row. That
 number is the epoch. It starts at 1 and goes up each time a new copy takes
@@ -77,6 +105,14 @@ change each of those.
 Point `ListenConnectionString` at Postgres directly, or at a session pooler,
 when you want the waiting copy to take over as soon as the holder's
 connection drops.
+
+The lock connection sends a keepalive after `LockKeepAliveSeconds` (default
+30) of silence. It also asks Postgres to send TCP keepalives:
+`LockTcpKeepAliveIdleSeconds` (default 30) is the wait before the first one,
+`LockTcpKeepAliveIntervalSeconds` (default 10) is the gap after that, and
+`LockTcpKeepAliveCount` (default 3) is how many can go unanswered before the
+connection is dropped. A dropped connection releases the lock. The copy that
+held it tries to take the lead again.
 
 ## Related
 

@@ -60,28 +60,6 @@ public sealed class PostgresCheckpointStore : ICheckpointStore, IAtomicProjectio
     /// </summary>
     internal void FailNextFlushAfterViews() => Interlocked.Exchange(ref _failNextFlush, 1);
 
-    /// <summary>
-    /// Raises the epoch on the checkpoint row and returns the new number.
-    /// A missing row is inserted at position -1 so the number has a place to live.
-    /// </summary>
-    internal async Task<long> RaiseEpochAsync(string projectionType, int nodeId, CancellationToken cancellationToken)
-    {
-        var sql = $"""
-            INSERT INTO {_names.Checkpoints} AS c
-                (projection_type, node_id, last_position, last_updated, total_events, leader_epoch)
-            VALUES (@type, @node, -1, now(), 0, 1)
-            ON CONFLICT (projection_type, node_id) DO UPDATE
-            SET leader_epoch = c.leader_epoch + 1
-            RETURNING leader_epoch
-            """;
-        await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("type", projectionType);
-        command.Parameters.AddWithValue("node", nodeId);
-        var value = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        return Convert.ToInt64(value);
-    }
-
     /// <summary>Remembers the epoch this copy must send on later checkpoint saves.</summary>
     internal void BindLeaderEpoch(string projectionType, int nodeId, long epoch)
         => _epochs[(projectionType, nodeId)] = epoch;
@@ -104,7 +82,8 @@ public sealed class PostgresCheckpointStore : ICheckpointStore, IAtomicProjectio
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             return null;
-        return ReadCheckpoint(reader);
+        var row = ReadCheckpoint(reader);
+        return row.LastSequencePosition < 0 ? null : row;
     }
 
     /// <inheritdoc/>
@@ -130,8 +109,17 @@ public sealed class PostgresCheckpointStore : ICheckpointStore, IAtomicProjectio
         if (views.Count > 0)
             (ids, json, viewCheckpoints) = PostgresViewStore.Dedupe(views);
         var requireEpoch = _epochs.TryGetValue((projectionType, checkpoint.NodeId), out var epoch);
-        var fail = Interlocked.Exchange(ref _failNextFlush, 0) == 1;
-        var sql = $"SELECT {_names.Flush}(@type, @node, @position, @updated, @total, @require_epoch, @epoch, @fail, @ids, @json, @view_checkpoints)";
+        if (Interlocked.Exchange(ref _failNextFlush, 0) == 1)
+        {
+            await using var failing = await OpenAsync(cancellationToken).ConfigureAwait(false);
+            await using var transaction = await failing.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            if (ids.Length > 0)
+                await WriteViewsAsync(failing, transaction, projectionType, ids, json, viewCheckpoints, checkpoint.LastUpdated, cancellationToken).ConfigureAwait(false);
+            throw new InvalidOperationException(
+                "The flush stopped after the view writes. Views and the checkpoint are unchanged.");
+        }
+
+        var sql = $"SELECT {_names.Flush}(@type, @node, @position, @updated, @total, @require_epoch, @epoch, @ids, @json, @view_checkpoints)";
         await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("type", projectionType);
@@ -141,7 +129,6 @@ public sealed class PostgresCheckpointStore : ICheckpointStore, IAtomicProjectio
         command.Parameters.AddWithValue("total", checkpoint.TotalEventsProcessed);
         command.Parameters.AddWithValue("require_epoch", requireEpoch);
         command.Parameters.AddWithValue("epoch", requireEpoch ? epoch : 0L);
-        command.Parameters.AddWithValue("fail", fail);
         command.Parameters.Add(new NpgsqlParameter("ids", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = ids });
         command.Parameters.Add(new NpgsqlParameter("json", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = json });
         command.Parameters.Add(new NpgsqlParameter("view_checkpoints", NpgsqlDbType.Array | NpgsqlDbType.Bigint) { Value = viewCheckpoints });
@@ -153,10 +140,34 @@ public sealed class PostgresCheckpointStore : ICheckpointStore, IAtomicProjectio
         {
             throw new ProjectionLeadershipLostException(ex.MessageText, ex);
         }
-        catch (PostgresException ex) when (ex.SqlState == "LD002")
-        {
-            throw new InvalidOperationException(ex.MessageText, ex);
-        }
+    }
+
+    private async Task WriteViewsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string projectionType,
+        string[] ids,
+        string[] json,
+        long[] viewCheckpoints,
+        DateTime updated,
+        CancellationToken cancellationToken)
+    {
+        var sql = $"""
+            INSERT INTO {_names.Views} (projection_type, instance_id, view_data, checkpoint, last_updated)
+            SELECT @projection_type, u.instance_id, u.view_data::jsonb, u.checkpoint, @updated
+            FROM unnest(@instance_ids, @view_data, @checkpoints) AS u(instance_id, view_data, checkpoint)
+            ON CONFLICT (projection_type, instance_id) DO UPDATE
+            SET view_data = EXCLUDED.view_data,
+                checkpoint = EXCLUDED.checkpoint,
+                last_updated = EXCLUDED.last_updated
+            """;
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("projection_type", projectionType);
+        command.Parameters.Add(new NpgsqlParameter("instance_ids", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = ids });
+        command.Parameters.Add(new NpgsqlParameter("view_data", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = json });
+        command.Parameters.Add(new NpgsqlParameter("checkpoints", NpgsqlDbType.Array | NpgsqlDbType.Bigint) { Value = viewCheckpoints });
+        command.Parameters.Add(new NpgsqlParameter("updated", NpgsqlDbType.TimestampTz) { Value = DateTime.SpecifyKind(updated, DateTimeKind.Utc) });
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -214,9 +225,18 @@ public sealed class PostgresCheckpointStore : ICheckpointStore, IAtomicProjectio
         int? nodeId = null,
         CancellationToken cancellationToken = default)
     {
+        // Keep the row so the epoch stays. A later save that still has the old epoch is rejected.
         var sql = nodeId.HasValue
-            ? $"DELETE FROM {_names.Checkpoints} WHERE projection_type = @type AND node_id = @node"
-            : $"DELETE FROM {_names.Checkpoints} WHERE projection_type = @type";
+            ? $"""
+              UPDATE {_names.Checkpoints}
+              SET last_position = -1, total_events = 0, last_updated = now(), leader_epoch = leader_epoch + 1
+              WHERE projection_type = @type AND node_id = @node
+              """
+            : $"""
+              UPDATE {_names.Checkpoints}
+              SET last_position = -1, total_events = 0, last_updated = now(), leader_epoch = leader_epoch + 1
+              WHERE projection_type = @type
+              """;
         await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("type", projectionType);
@@ -230,7 +250,11 @@ public sealed class PostgresCheckpointStore : ICheckpointStore, IAtomicProjectio
         var list = new List<ProjectionCheckpoint>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-            list.Add(ReadCheckpoint(reader));
+        {
+            var row = ReadCheckpoint(reader);
+            if (row.LastSequencePosition >= 0)
+                list.Add(row);
+        }
         return list;
     }
 

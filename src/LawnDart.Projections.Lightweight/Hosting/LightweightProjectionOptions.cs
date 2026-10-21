@@ -168,4 +168,18 @@ public sealed class LightweightProjectionOptions
     /// <para>Default: 10_000.</para>
     /// </summary>
     public long CatchUpJoinThreshold { get; set; } = 10_000;
+
+    /// <summary>
+    /// How long to wait before trying to take the lead again after this copy lost it.
+    /// The wait doubles after each loss, up to <see cref="LeadershipRetryMaxDelay"/>.
+    /// Values below 1 millisecond are treated as 1 millisecond.
+    /// <para>Default: 1 second.</para>
+    /// </summary>
+    public TimeSpan LeadershipRetryDelay { get; set; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// The longest wait before trying to take the lead again.
+    /// <para>Default: 30 seconds.</para>
+    /// </summary>
+    public TimeSpan LeadershipRetryMaxDelay { get; set; } = TimeSpan.FromSeconds(30);
 }

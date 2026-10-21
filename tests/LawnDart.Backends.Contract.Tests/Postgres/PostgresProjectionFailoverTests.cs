@@ -61,6 +61,9 @@ public sealed class PostgresProjectionRestartTests
         }, watch.Token);
 
         await container.StartAsync();
+        // Each new lock attempt clears idle pooled connections. This call does the
+        // same as soon as the server is up, so the test does not wait on a socket
+        // that has not failed a command yet.
         PostgresProjectionConnections.ClearIdle(connectionString);
         var taken = await pending.WaitAsync(TimeSpan.FromSeconds(40));
         try
@@ -171,6 +174,7 @@ public sealed class PostgresProjectionPoolerTests
             ConnectionString = pooled,
             MigrationConnectionString = postgres.GetConnectionString(),
             SchemaName = "pooled",
+            RunnerLockMode = PostgresRunnerLockMode.Lease,
             LockProbeInterval = TimeSpan.FromMilliseconds(100),
             LeaseDuration = TimeSpan.FromSeconds(1),
             LeaseRenewInterval = TimeSpan.FromMilliseconds(200)
@@ -197,7 +201,6 @@ public sealed class PostgresProjectionPoolerTests
             var taken = await pending.WaitAsync(TimeSpan.FromSeconds(15));
             Assert.True(taken.IsHeld);
             Assert.False(leader.IsHeld);
-            Assert.Null(taken.SessionProcessId);
             Assert.True(taken.Epoch > leader.Epoch);
             await taken.DisposeAsync();
         }

@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="LawnDart.Backends.Contract.Tests" />
+    <InternalsVisibleTo Include="LawnDart.Projections.Lightweight.Postgres" />
   </ItemGroup>
 
 </Project>
