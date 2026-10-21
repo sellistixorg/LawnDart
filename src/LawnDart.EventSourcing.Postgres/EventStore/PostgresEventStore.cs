@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
@@ -220,8 +221,13 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
         AppendTenantRules.ValidateStreamAppend(
             streamId, envelopes, _options.RequireTenantId, _options.ValidateNames);
         var eventIds = EventIdResolver.ResolveBatch(envelopes.Select(e => e.Metadata).ToList());
+        var eventTypes = envelopes.Select(static envelope => envelope.EventType).ToArray();
         return await AppendWithRetry(
             ct => AppendCoreAsync(streamId, envelopes, eventIds, expectedVersion, condition: null, isDcb: false, ct),
+            streamId,
+            eventIds,
+            eventTypes,
+            isDcb: false,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -244,8 +250,13 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
             : $"dcb:{Guid.NewGuid()}";
         EnsureStreamLength(streamId, "streamId");
         var eventIds = EventIdResolver.ResolveBatch(envelopes.Select(e => e.Metadata).ToList());
+        var eventTypes = envelopes.Select(static envelope => envelope.EventType).ToArray();
         return await AppendWithRetry(
             ct => AppendCoreAsync(streamId, envelopes, eventIds, expectedVersion: null, condition, isDcb: true, ct),
+            streamId,
+            eventIds,
+            eventTypes,
+            isDcb: true,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -275,6 +286,7 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
         bool isDcb,
         CancellationToken cancellationToken)
     {
+        var eventTypes = envelopes.Select(static envelope => envelope.EventType).ToArray();
         await EnsureEventTypeIdsAsync(envelopes, cancellationToken).ConfigureAwait(false);
         if (condition is not null)
             await EnsureQueryTypesResolvedAsync(condition.FailIfEventsMatch, cancellationToken).ConfigureAwait(false);
@@ -292,7 +304,7 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
             }
             catch (AppendStatementSentException ex)
             {
-                return await RecoverSentAppendAsync(streamId, eventIds, ex, cancellationToken).ConfigureAwait(false);
+                return await RecoverSentAppendAsync(streamId, eventIds, eventTypes, isDcb, ex, cancellationToken).ConfigureAwait(false);
             }
 
             var committed = new AppendResult(written.Positions, null, isDcb ? -1 : written.LastVersion);
@@ -300,111 +312,163 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
             return committed;
         }
 
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        AppendWrite writtenRows;
+        NpgsqlTransaction transaction;
         try
         {
-            writtenRows = await ExecuteAppendAsync(
-                connection, transaction, streamId, envelopes, eventIds, expectedVersion, condition, isDcb, cancellationToken)
-                .ConfigureAwait(false);
+            transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (AppendStatementSentException ex)
+        catch (Exception ex) when (ex is not OperationCanceledException
+            && !PostgresConnectionClosure.HasRetryableClosureSqlState(ex)
+            && (PostgresConnectionClosure.HasTransportBreak(ex) || PostgresConnectionClosure.IsConnectorBroken(connection)))
         {
-            await RollbackQuietlyAsync(transaction, CancellationToken.None).ConfigureAwait(false);
-            return await RecoverSentAppendAsync(streamId, eventIds, ex, cancellationToken).ConfigureAwait(false);
-        }
-        catch
-        {
-            await RollbackQuietlyAsync(transaction, cancellationToken).ConfigureAwait(false);
-            throw;
+            // BEGIN is prepared here and sent with the append call. A broken
+            // connection has not reached COMMIT.
+            throw new ClosedConnectionBeforeCommitException(ex);
         }
 
-        if (BeforeAppendCommit is { } pause)
+        await using (transaction)
         {
+            AppendWrite writtenRows;
             try
             {
-                await pause(cancellationToken).ConfigureAwait(false);
+                writtenRows = await ExecuteAppendAsync(
+                    connection, transaction, streamId, envelopes, eventIds, expectedVersion, condition, isDcb, cancellationToken)
+                    .ConfigureAwait(false);
             }
-            catch (OperationCanceledException ex)
+            catch (AppendStatementSentException ex)
             {
-                return await FinishSentAppendAsync(transaction, streamId, eventIds, ex).ConfigureAwait(false);
+                await RollbackQuietlyAsync(transaction, CancellationToken.None).ConfigureAwait(false);
+                return await RecoverSentAppendAsync(streamId, eventIds, eventTypes, isDcb, ex, cancellationToken).ConfigureAwait(false);
             }
-        }
-
-        try
-        {
-            if (CommitHook is { } hook)
-                await hook(transaction, cancellationToken).ConfigureAwait(false);
-            else
-                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            if (ex is OperationCanceledException or NpgsqlException)
-                return await FinishSentAppendAsync(transaction, streamId, eventIds, ex).ConfigureAwait(false);
-
-            var landed = await ReadBackOrUnknownAsync(streamId, eventIds, cancellationToken).ConfigureAwait(false);
-            if (landed is not null)
+            catch
             {
-                Signal(landed);
-                return landed;
+                await RollbackQuietlyAsync(transaction, cancellationToken).ConfigureAwait(false);
+                throw;
             }
 
-            await RollbackQuietlyAsync(transaction, cancellationToken).ConfigureAwait(false);
-            throw;
-        }
+            if (BeforeAppendCommit is { } pause)
+            {
+                try
+                {
+                    await pause(cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException ex)
+                {
+                    return await FinishSentAppendAsync(transaction, streamId, eventIds, eventTypes, isDcb, ex).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (PostgresConnectionClosure.HasRetryableClosureSqlState(ex)
+                    || PostgresConnectionClosure.HasTransportBreak(ex)
+                    || PostgresConnectionClosure.IsConnectorBroken(connection))
+                {
+                    throw new ClosedConnectionBeforeCommitException(ex);
+                }
+            }
 
-        var result = new AppendResult(writtenRows.Positions, null, isDcb ? -1 : writtenRows.LastVersion);
-        Signal(result);
-        return result;
+            try
+            {
+                if (CommitHook is { } hook)
+                    await hook(transaction, cancellationToken).ConfigureAwait(false);
+                else
+                    await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // Commit was attempted. Never retry, including when the connection is already closed.
+                if (ex is OperationCanceledException or NpgsqlException
+                    || PostgresConnectionClosure.IsClosedConnection(ex, connection))
+                    return await FinishSentAppendAsync(transaction, streamId, eventIds, eventTypes, isDcb, ex).ConfigureAwait(false);
+
+                var read = await ReadBackOrUnknownAsync(streamId, eventIds, eventTypes, cancellationToken).ConfigureAwait(false);
+                if (read.Kind == AppendReadKind.None)
+                {
+                    await RollbackQuietlyAsync(transaction, cancellationToken).ConfigureAwait(false);
+                    throw;
+                }
+
+                return ResolveReadBack(read, isDcb, ex, missingIsUnknown: true);
+            }
+
+            var result = new AppendResult(writtenRows.Positions, null, isDcb ? -1 : writtenRows.LastVersion);
+            Signal(result);
+            return result;
+        }
     }
 
     private async Task<AppendResult> RecoverSentAppendAsync(
         string streamId,
         IReadOnlyList<Guid> eventIds,
+        IReadOnlyList<string> eventTypes,
+        bool isDcb,
         AppendStatementSentException exception,
         CancellationToken cancellationToken)
     {
-        var landed = await ReadBackOrUnknownAsync(streamId, eventIds, ReadBackToken(cancellationToken)).ConfigureAwait(false);
-        if (landed is not null)
-        {
-            Signal(landed);
-            return landed;
-        }
-
-        throw UnknownOutcome(exception.InnerException ?? exception);
+        var read = await ReadBackOrUnknownAsync(
+            streamId, eventIds, eventTypes, ReadBackToken(cancellationToken)).ConfigureAwait(false);
+        return ResolveReadBack(read, isDcb, exception.InnerException ?? exception, missingIsUnknown: true);
     }
 
     private async Task<AppendResult> FinishSentAppendAsync(
         NpgsqlTransaction transaction,
         string streamId,
         IReadOnlyList<Guid> eventIds,
+        IReadOnlyList<string> eventTypes,
+        bool isDcb,
         Exception exception)
     {
-        var landed = await ReadBackOrUnknownAsync(streamId, eventIds, CancellationToken.None).ConfigureAwait(false);
-        if (landed is not null)
+        var read = await ReadBackOrUnknownAsync(streamId, eventIds, eventTypes, CancellationToken.None).ConfigureAwait(false);
+        if (read.Kind == AppendReadKind.None)
         {
-            Signal(landed);
-            return landed;
+            await RollbackQuietlyAsync(transaction, CancellationToken.None).ConfigureAwait(false);
+            throw UnknownOutcome(exception);
         }
 
-        await RollbackQuietlyAsync(transaction, CancellationToken.None).ConfigureAwait(false);
-        throw UnknownOutcome(exception);
+        return ResolveReadBack(read, isDcb, exception, missingIsUnknown: true);
+    }
+
+    private AppendResult ResolveReadBack(CommittedAppendRead read, bool isDcb, Exception original, bool missingIsUnknown)
+    {
+        if (read.Kind == AppendReadKind.Match && read.Result is not null)
+        {
+            var saved = isDcb ? read.Result with { LastStreamVersion = -1 } : read.Result;
+            Signal(saved);
+            return saved;
+        }
+
+        if (read.Kind == AppendReadKind.Partial)
+            throw UnknownOutcome(original);
+
+        if (read.Kind == AppendReadKind.Elsewhere)
+        {
+            if (original is ConcurrencyException or EventAlreadyAppendedException)
+            {
+                ExceptionDispatchInfo.Capture(original).Throw();
+                throw original;
+            }
+
+            throw new EventAlreadyAppendedException(read.ForeignEventId);
+        }
+
+        if (missingIsUnknown)
+            throw UnknownOutcome(original);
+
+        ExceptionDispatchInfo.Capture(original).Throw();
+        throw original;
     }
 
     private static CancellationToken ReadBackToken(CancellationToken cancellationToken)
         => cancellationToken.IsCancellationRequested ? CancellationToken.None : cancellationToken;
 
-    private async Task<AppendResult?> ReadBackOrUnknownAsync(
+    private async Task<CommittedAppendRead> ReadBackOrUnknownAsync(
         string streamId,
         IReadOnlyList<Guid> eventIds,
+        IReadOnlyList<string> eventTypes,
         CancellationToken cancellationToken)
     {
         try
         {
-            return await TryReadCommittedAppendAsync(streamId, eventIds, cancellationToken).ConfigureAwait(false);
+            return await ReadCommittedAppendAsync(streamId, eventIds, eventTypes, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not AppendOutcomeUnknownException)
         {
             throw UnknownOutcome(ex);
         }

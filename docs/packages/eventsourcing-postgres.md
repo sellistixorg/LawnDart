@@ -79,11 +79,22 @@ Metadata is jsonb. Snapshot bytes and outbox bytes are not in this release.
 One function call writes the stream row, the events, and the tags. The
 version check runs before any sequence number is taken. A new stream's first
 event is version 1. A dynamic consistency boundary stream starts at version
-0. Pass `expectedVersion: -1` to require a new stream. After that statement
-is sent, the store does not send it again. A cancellation after that
-statement is sent is handled the same way. If a later read cannot tell
-whether the rows were saved, the call throws `AppendOutcomeUnknownException`.
-Read the stream before sending the append again.
+0. Pass `expectedVersion: -1` to require a new stream. After a result row from
+that statement has been read, the store does not send it again. A
+cancellation after that point is handled the same way. If a later read
+cannot tell whether the rows were saved, the call throws
+`AppendOutcomeUnknownException`. Read the stream before sending the append
+again.
+
+A closed connection is judged by what the store can see. When it can tell
+the append was not saved, it drops that connection and tries the append
+once. It logs one warning. The try uses the same cancellation token. When
+it cannot tell, it reads the event ids on that stream. If every event
+is stored there under the same event name, the call returns them. If the
+read still cannot tell, the call throws
+`AppendOutcomeUnknownException`. Read the stream before sending the append
+again. A version conflict, a condition failure, a constraint failure, and a
+rejected login are reported as those errors when the events are not stored.
 
 A normal append takes a shared lock per tag, plus one shared lock for the
 store. A dynamic consistency boundary append takes an exclusive lock on each

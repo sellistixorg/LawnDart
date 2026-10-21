@@ -69,4 +69,10 @@ internal static partial class PostgresEventStoreLog
         Level = LogLevel.Information,
         Message = "Postgres subscription {SubscriberId} read the log again after a lost connection.")]
     internal static partial void SubscriptionConnectionRestored(ILogger logger, string subscriberId);
+
+    [LoggerMessage(
+        EventId = 13,
+        Level = LogLevel.Warning,
+        Message = "The Postgres connection was closed before the append was saved. That connection was dropped, and the append will be tried once more.")]
+    internal static partial void AppendConnectionClosed(ILogger logger, Exception exception);
 }
