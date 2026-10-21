@@ -198,6 +198,8 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
         foreach (var statement in PostgresSchema.CreateStatements(_names, _options))
             await ExecuteAsync(connection, transaction, statement, cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(connection, transaction, PostgresSchema.StreamIndexes(_names), cancellationToken).ConfigureAwait(false);
+        await Snapshots.PostgresSnapshotSchema.EnsureAsync(
+            connection, transaction, _options, cancellationToken).ConfigureAwait(false);
         await GrantAppRoleAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         await ReloadEventTypeCacheAsync(cancellationToken).ConfigureAwait(false);

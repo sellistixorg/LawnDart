@@ -12,8 +12,10 @@ You also change projection stores (`AddInMemoryProjectionStores` to
 `AddSqlProjectionStores` in `LawnDart.Projections.Lightweight.SqlServer`) and
 run schema init (`InitializeSchemaAsync` /
 `InitializeSqlProjectionStoresAsync`). Add
-`using LawnDart.Projections.Lightweight.SqlServer`. SQL snapshots are opt-in
-(`WithSnapshots`). Academy's `SqlServer` launch profile is the local Windows
+`using LawnDart.Projections.Lightweight.SqlServer`. Postgres uses
+`AddPostgresProjectionStores` and `InitializePostgresProjectionStoresAsync`
+in `LawnDart.Projections.Lightweight.Postgres`. SQL Server and Postgres
+snapshots are opt-in (`WithSnapshots` on that store's builder). Academy's `SqlServer` launch profile is the local Windows
 path (`Trusted_Connection=True`); see [BACKEND_SELECTION.md](../BACKEND_SELECTION.md).
 
 Host grammar: [DI Grammar](../DI_GRAMMAR.md).

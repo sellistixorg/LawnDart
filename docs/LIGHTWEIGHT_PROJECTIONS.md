@@ -20,11 +20,19 @@ services.AddBoundedContext("default")
 app.MapProjectionQueries("default");
 ```
 
-Production-shaped stores are in `LawnDart.Projections.Lightweight.SqlServer`.
-Add `using LawnDart.Projections.Lightweight.SqlServer`.
+Production-shaped stores are in `LawnDart.Projections.Lightweight.SqlServer`
+and `LawnDart.Projections.Lightweight.Postgres`.
+Add `using LawnDart.Projections.Lightweight.SqlServer` or
+`using LawnDart.Projections.Lightweight.Postgres`.
 
 ```csharp
 services.AddSqlProjectionStores("default", connectionString);
+```
+
+Postgres:
+
+```csharp
+services.AddPostgresProjectionStores("default", connectionString);
 ```
 
 ## Authoring

@@ -9,9 +9,11 @@ LawnDart is pre-1.0 and the public API is still settling. To avoid wasted
 effort, please open an issue before starting on any of the following:
 
 - **A new event store backend.** InMemory, SQL Server, and Postgres are the
-  supported stores. The Postgres package is `LawnDart.EventSourcing.Postgres`
-  (the event store). Postgres projections, the outbox, and the inbox are still
-  in progress for the 0.7 line. Open an issue before starting any other store.
+  supported stores. The Postgres event store is `LawnDart.EventSourcing.Postgres`
+  (events, subscriptions, and snapshots). Postgres projection views and
+  checkpoints are `LawnDart.Projections.Lightweight.Postgres`. The outbox and
+  the inbox are still in progress for the 0.7 line. Open an issue before
+  starting any other store.
 - **A new message transport.** InMemory, RabbitMQ, Azure Service Bus, and
   Amazon SQS are the supported transports. Another transport needs an issue first.
 - **Changes that reshape public API surface** — new abstractions, renamed

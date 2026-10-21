@@ -76,4 +76,7 @@ internal static partial class LightweightProjectionRunnerServiceLog
 
     [LoggerMessage(EventId = 24, Level = LogLevel.Warning, Message = "[{Projection}] Subscription fault; poll recover from {Position}")]
     internal static partial void SubscriptionFault(ILogger logger, Exception exception, string projection, long position);
+
+    [LoggerMessage(EventId = 25, Level = LogLevel.Warning, Message = "[{Projection}] This copy lost the lead for node {Node}. It stops before the next save.")]
+    internal static partial void LeadershipLost(ILogger logger, Exception? exception, string projection, int node);
 }

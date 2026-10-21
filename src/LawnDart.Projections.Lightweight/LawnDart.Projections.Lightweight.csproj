@@ -3,7 +3,7 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <PackageId>LawnDart.Projections.Lightweight</PackageId>
-    <Description>In-process projection host for LawnDart. In-memory view and checkpoint stores. SQL Server stores are in LawnDart.Projections.Lightweight.SqlServer.</Description>
+    <Description>In-process projection host for LawnDart. In-memory view and checkpoint stores. A store can save views and the checkpoint in one transaction, and can keep one runner per node number. SQL Server stores are in LawnDart.Projections.Lightweight.SqlServer. Postgres stores are in LawnDart.Projections.Lightweight.Postgres.</Description>
     <IsPackable>true</IsPackable>
   </PropertyGroup>
 

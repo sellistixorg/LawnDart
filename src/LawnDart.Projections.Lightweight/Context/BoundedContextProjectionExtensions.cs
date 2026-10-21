@@ -107,7 +107,8 @@ public static class BoundedContextProjectionExtensions
                     opts,
                     sp.GetService<ILogger<LightweightProjectionRunnerService>>(),
                     sp.GetRequiredKeyedService<IProjectionReadCache>(contextName),
-                    catalog),
+                    catalog,
+                    sp.GetKeyedService<IProjectionRunnerLock>(contextName)),
                 sp.GetService<ILogger<BoundedContextProjectionRunnerManager>>(),
                 sp.GetRequiredKeyedService<LawnDart.EventStore.IEventStore>(contextName),
                 opts);

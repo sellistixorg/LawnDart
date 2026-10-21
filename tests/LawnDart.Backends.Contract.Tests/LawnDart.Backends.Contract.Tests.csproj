@@ -44,6 +44,7 @@
     <ProjectReference Include="..\..\src\LawnDart.EventSourcing.Postgres\LawnDart.EventSourcing.Postgres.csproj" />
     <ProjectReference Include="..\..\src\LawnDart.Projections.Lightweight\LawnDart.Projections.Lightweight.csproj" />
     <ProjectReference Include="..\..\src\LawnDart.Projections.Lightweight.SqlServer\LawnDart.Projections.Lightweight.SqlServer.csproj" />
+    <ProjectReference Include="..\..\src\LawnDart.Projections.Lightweight.Postgres\LawnDart.Projections.Lightweight.Postgres.csproj" />
     <ProjectReference Include="..\..\src\LawnDart.Testing\LawnDart.Testing.csproj" />
     <ProjectReference Include="..\LawnDart.TestUtilities\LawnDart.TestUtilities.csproj" />
     <ProjectReference Include="..\..\samples\Library.Host\Library.Host.csproj" />

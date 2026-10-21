@@ -170,11 +170,18 @@ services.AddBoundedContext("default")
 uses its own name as the schema. Set `SchemaName` to choose a different one.
 Tables do not go in `public`.
 
-This release is the event store: append, read, tags, the dynamic consistency
-boundary, the stream registry, the read horizon, and live subscriptions.
+This release stores events and runs projections and snapshots. Append, read,
+tags, the dynamic consistency boundary, the stream registry, the read
+horizon, and live subscriptions are in `LawnDart.EventSourcing.Postgres`.
+Projection views and checkpoints are in
+`LawnDart.Projections.Lightweight.Postgres`
+(`AddPostgresProjectionStores`, then `InitializePostgresProjectionStoresAsync`).
+Snapshots are opt-in (`WithSnapshots` on the Postgres builder, plus a
+strategy). State is stored as bytes. A missing snapshot, a bad checksum, or
+a snapshot that cannot be read returns empty and the repository replays the
+events.
 `EnableOutbox = true` is rejected when the store is built. Leave
-`EnableOutbox` false until the outbox release. Snapshot tables, the inbox,
-and projection views are a later release.
+`EnableOutbox` false until the outbox release. The inbox is a later release.
 
 A committed append sends a wake-up whose message is the newest position.
 One listener per store reads it on `ListenConnectionString`, or on

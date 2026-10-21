@@ -2,9 +2,11 @@ using LawnDart.Aggregates;
 using LawnDart.Dcb;
 using LawnDart.EventSourcing;
 using LawnDart.EventSourcing.Postgres.EventStore;
+using LawnDart.EventSourcing.Postgres.Snapshots;
 using LawnDart.EventSourcing.Serialization;
 using LawnDart.EventStore;
 using LawnDart.Serialization;
+using LawnDart.Snapshots;
 using LawnDart.Tagging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -102,6 +104,60 @@ public static class LawnDartPostgresExtensions
             if (options.FormatAggregateFallbackTag)
                 o.FormatAggregateFallbackTag = true;
         });
+
+        return builder;
+    }
+
+    /// <summary>
+    /// Enables Postgres snapshot storage for stream aggregates and dynamic consistency boundary entities.
+    /// Registers keyed <see cref="ISnapshotStore"/>, <see cref="IDcbSnapshotStore"/>, and
+    /// <see cref="ISnapshotAdmin"/> for this bounded context.
+    /// </summary>
+    /// <param name="builder">Bounded context already configured with <see cref="UsePostgres"/>.</param>
+    /// <param name="configure">
+    /// Optional callback for registering per-type snapshot strategies. A type without a
+    /// registration keeps <see cref="NeverSnapshotStrategy"/>. For a dynamic consistency
+    /// boundary, register the entity type used as <c>TEntity</c> in <c>HandleCommandAsync</c>.
+    /// </param>
+    /// <returns>The same <paramref name="builder"/> for fluent chaining.</returns>
+    /// <remarks>
+    /// Call <c>PostgresEventStore.InitializeSchemaAsync</c> so <c>event_snapshots</c> and
+    /// <c>dcb_snapshots</c> exist. State is stored as bytes. A missing snapshot, a bad checksum,
+    /// or a snapshot that cannot be read returns empty and the repository replays the events.
+    /// </remarks>
+    public static BoundedContextBuilder WithSnapshots(
+        this BoundedContextBuilder builder,
+        Action<SnapshotStrategyResolver>? configure = null)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        var resolver = new SnapshotStrategyResolver();
+        configure?.Invoke(resolver);
+
+        var contextName = builder.ContextName;
+        builder.Services.AddKeyedSingleton<PostgresSnapshotStore>(contextName, (sp, key) =>
+        {
+            var options = sp.GetRequiredKeyedService<PostgresEventStoreOptions>((string)key!);
+            return new PostgresSnapshotStore(options, sp.GetService<ILogger<PostgresSnapshotStore>>());
+        });
+        builder.Services.AddKeyedSingleton<ISnapshotStore>(contextName,
+            (sp, key) => sp.GetRequiredKeyedService<PostgresSnapshotStore>((string)key!));
+        builder.Services.AddKeyedSingleton<IDcbSnapshotStore>(contextName,
+            (sp, key) => sp.GetRequiredKeyedService<PostgresSnapshotStore>((string)key!));
+        builder.Services.AddKeyedSingleton<ISnapshotAdmin>(contextName,
+            (sp, key) => sp.GetRequiredKeyedService<PostgresSnapshotStore>((string)key!));
+        builder.Services.AddSingleton<ISnapshotStrategyResolver>(resolver);
+        BoundedContextBuilderExtensions.EnsureSnapshotWriteInfrastructure(builder.Services);
+
+        if (string.Equals(contextName, LawnDart.LawnDartNames.DefaultContextName, StringComparison.Ordinal))
+        {
+            builder.Services.TryAddSingleton<ISnapshotStore>(sp =>
+                sp.GetRequiredKeyedService<ISnapshotStore>("default"));
+            builder.Services.TryAddSingleton<IDcbSnapshotStore>(sp =>
+                sp.GetRequiredKeyedService<IDcbSnapshotStore>("default"));
+            builder.Services.TryAddSingleton<ISnapshotAdmin>(sp =>
+                sp.GetRequiredKeyedService<ISnapshotAdmin>("default"));
+        }
 
         return builder;
     }

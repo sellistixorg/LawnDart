@@ -14,7 +14,7 @@ public sealed partial class PostgresEventStore
 
     private readonly record struct Stamp(int Format, int PartitionCount, bool Partitioning);
 
-    private static NpgsqlDataSource Source(string connectionString)
+    internal static NpgsqlDataSource Source(string connectionString)
     {
         var builder = new NpgsqlConnectionStringBuilder(connectionString)
         {

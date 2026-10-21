@@ -15,8 +15,10 @@
             "src/LawnDart.Messaging.SqlServer/bin/Release/net10.0/LawnDart.Messaging.SqlServer.dll",
             "src/LawnDart.Messaging.Testing/bin/Release/net10.0/LawnDart.Messaging.Testing.dll",
             "src/LawnDart.EventSourcing.SqlServer/bin/Release/net10.0/LawnDart.EventSourcing.SqlServer.dll",
+            "src/LawnDart.EventSourcing.Postgres/bin/Release/net10.0/LawnDart.EventSourcing.Postgres.dll",
             "src/LawnDart.Projections.Lightweight/bin/Release/net10.0/LawnDart.Projections.Lightweight.dll",
             "src/LawnDart.Projections.Lightweight.SqlServer/bin/Release/net10.0/LawnDart.Projections.Lightweight.SqlServer.dll",
+            "src/LawnDart.Projections.Lightweight.Postgres/bin/Release/net10.0/LawnDart.Projections.Lightweight.Postgres.dll",
             "src/LawnDart.AspNetCore/bin/Release/net10.0/LawnDart.AspNetCore.dll",
             "src/LawnDart.Authorization.AspNetCore/bin/Release/net10.0/LawnDart.Authorization.AspNetCore.dll",
             "src/LawnDart.Testing/bin/Release/net10.0/LawnDart.Testing.dll"

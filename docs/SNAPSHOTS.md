@@ -35,9 +35,15 @@ dropped pending work or the store has failed. Register it with the host's
 health checks if you want that signal on a probe.
 
 `UseInMemory()` registers `InMemorySnapshotStore` (replace-in-place, one entry
-per stream / DCB id). SQL Server hosts opt in with `WithSnapshots`. Neither
-backend writes until an `ISnapshotStrategyResolver` says so (default is
+per stream / DCB id). SQL Server and Postgres hosts opt in with
+`WithSnapshots` from the package that owns the store. None of the backends
+write until an `ISnapshotStrategyResolver` says so (default is
 `NeverSnapshotStrategy`).
+
+Postgres stores snapshot state as bytes. The checksum is a SHA-256 of those
+bytes. A bad checksum, or a snapshot that cannot be read, returns empty and
+the repository replays the events. The table is one row per stream
+(`tenant_id`, `stream_id`) or one row per dynamic consistency boundary hash.
 
 A custom `Use*` must call `AddSnapshotWriteInfrastructure` and construct
 repositories with `EventSourcingRepositories.CreateAggregateRepository` /

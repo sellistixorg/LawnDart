@@ -39,7 +39,8 @@ These live on `IAggregateRepository` in Core (not `Add*` extensions). Guid overl
 | `UseInMemory` | `LawnDart.EventSourcing` | Process-local store, snapshot store, and outbox writer; registers `ICommandDispatcher` (interface lives in Core) |
 | `UseSqlServer` | `LawnDart.EventSourcing.SqlServer` | Durable SQL store |
 | `UsePostgres` | `LawnDart.EventSourcing.Postgres` | Durable Postgres store |
-| `WithSnapshots` | `LawnDart.EventSourcing.SqlServer` | Optional snapshot store |
+| `WithSnapshots` | `LawnDart.EventSourcing.SqlServer` | Optional SQL Server snapshot store |
+| `WithSnapshots` | `LawnDart.EventSourcing.Postgres` | Optional Postgres snapshot store |
 | `AddSnapshotWriteInfrastructure` | `LawnDart.EventSourcing` | Snapshot write channel + hosted consumer. `UseInMemory` / `UseSqlServer` already call it; third-party `Use*` methods must |
 | `EventSourcingRepositories.Create*` | `LawnDart.EventSourcing` | Build repositories with the write queue. Public constructors omit the queue. |
 | `WithCommandHandlers` / `WithCommandHandlers<TMarker>` | `LawnDart.EventSourcing` | The only handler registrar. Scan `ICommandHandler<T>` and register `ICommandDispatcher` (`LawnDart.Messaging` namespace, Core package) |
@@ -53,6 +54,8 @@ These live on `IAggregateRepository` in Core (not `Add*` extensions). Guid overl
 | `AddInMemoryProjectionStores` | `LawnDart.Projections.Lightweight` | Dev/test view + checkpoint stores |
 | `AddSqlProjectionStores` | `LawnDart.Projections.Lightweight.SqlServer` | Durable SQL Server view + checkpoint stores |
 | `InitializeSqlProjectionStoresAsync` | `LawnDart.Projections.Lightweight.SqlServer` | Create the view and checkpoint tables |
+| `AddPostgresProjectionStores` | `LawnDart.Projections.Lightweight.Postgres` | Durable Postgres view and checkpoint stores, and the single-runner lock |
+| `InitializePostgresProjectionStoresAsync` | `LawnDart.Projections.Lightweight.Postgres` | Create the view and checkpoint tables |
 | `WithProjections` | `LawnDart.Projections.Lightweight` | Scan projectors for a context |
 | `MapProjectionQueries` | `LawnDart.Projections.Lightweight` | HTTP GET views |
 

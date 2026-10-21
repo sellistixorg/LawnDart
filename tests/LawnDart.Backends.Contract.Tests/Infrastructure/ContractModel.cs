@@ -71,6 +71,12 @@ public sealed class ContractCapabilities
     public bool PreservesExactJsonText { get; init; } = true;
 
     /// <summary>
+    /// View JSON text round-trips unchanged.
+    /// A store that keeps views in jsonb compares the decoded value instead.
+    /// </summary>
+    public bool PreservesExactViewJson { get; init; } = true;
+
+    /// <summary>
     /// A stream id prefix matches without regard to case.
     /// </summary>
     public bool StreamIdPrefixCaseInsensitive { get; init; } = true;

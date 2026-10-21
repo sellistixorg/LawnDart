@@ -41,6 +41,8 @@ app.MapLawnDartCommands();
 | `LawnDart.Messaging.Testing` | Transport conformance tests |
 | `LawnDart.Projections.Lightweight` | Read-model host (in-memory stores) |
 | `LawnDart.Projections.Lightweight.SqlServer` | SQL Server view and checkpoint stores |
+| `LawnDart.Projections.Lightweight.Postgres` | Postgres view and checkpoint stores |
+| `LawnDart.EventSourcing.Postgres` | Postgres event store and snapshots |
 | `LawnDart.AspNetCore` | HTTP command mapping |
 | `LawnDart.Authorization.AspNetCore` | HTTP claims to `AuthorizationContext` |
 | `LawnDart.Testing` | Given / when / then harnesses |

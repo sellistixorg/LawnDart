@@ -167,7 +167,7 @@ live object heap. Zero infrastructure. Default for Academy and tests.
 ## L
 
 **Lightweight projections**  
-In-process projection host (`LawnDart.Projections.Lightweight`). SQL Server view and checkpoint stores are in `LawnDart.Projections.Lightweight.SqlServer`.
+In-process projection host (`LawnDart.Projections.Lightweight`). SQL Server view and checkpoint stores are in `LawnDart.Projections.Lightweight.SqlServer`. Postgres view and checkpoint stores are in `LawnDart.Projections.Lightweight.Postgres`.
 
 ## M
 

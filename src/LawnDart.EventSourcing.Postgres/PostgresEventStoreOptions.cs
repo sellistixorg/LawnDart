@@ -56,6 +56,12 @@ public class PostgresEventStoreOptions : EventSourcingOptions
     /// <summary>Format stamp table. Default <c>schema_info</c>.</summary>
     public string SchemaInfoTableName { get; set; } = "schema_info";
 
+    /// <summary>Stream snapshot table. Default <c>event_snapshots</c>. State is stored as bytes.</summary>
+    public string EventSnapshotsTableName { get; set; } = "event_snapshots";
+
+    /// <summary>Dynamic consistency boundary snapshot table. Default <c>dcb_snapshots</c>.</summary>
+    public string DcbSnapshotsTableName { get; set; } = "dcb_snapshots";
+
     /// <summary>
     /// Keep the stream registry up to date on append. Default true.
     /// </summary>

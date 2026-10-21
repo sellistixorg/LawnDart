@@ -72,7 +72,8 @@ change. The decoded event is the same. A JSON payload that contains a null
 character, or that jsonb cannot store, is stored as bytes and comes back
 unchanged. Any other payload-format number is stored as bytes.
 
-Metadata is jsonb. Snapshot bytes and outbox bytes are not in this release.
+Metadata is jsonb. Outbox bytes are not in this release. Snapshot state
+is bytes. See [Snapshots](#snapshots).
 
 ## Append
 
@@ -167,8 +168,22 @@ services.AddHealthChecks()
 An append that sends a wake-up fails when that queue is full. A listener
 that has stopped reading is the usual cause.
 
+## Snapshots
+
+`UsePostgres(...).WithSnapshots(...)` registers the snapshot stores. Call
+`InitializeSchemaAsync` so `event_snapshots` and `dcb_snapshots` exist.
+One row per stream, and one row per dynamic consistency boundary hash. A
+write replaces that row. State is `bytea`. The checksum is a SHA-256 of
+those bytes. A missing snapshot, a bad checksum, or a snapshot that cannot
+be read returns empty and the repository replays the events.
+
+A dynamic consistency boundary snapshot is stored under the same 64-character
+hash as on SQL Server. The plaintext load tags are stored beside the hash.
+After a restore, the repository replays events that landed after the
+snapshot.
+
 ## Later in the 0.7 line
 
-The outbox, inbox, snapshot tables, and projection views ship after this
-event store. `EnableOutbox = true` throws when the store is built. Leave it
-false until that release.
+The outbox and the inbox ship after this release. `EnableOutbox = true`
+throws when the store is built. Leave it false until that release.
+Projection views are in `LawnDart.Projections.Lightweight.Postgres`.

@@ -24,6 +24,7 @@ Host grammar: [DI Grammar](../DI_GRAMMAR.md). Envelope fields:
 | [`LawnDart.EventSourcing.Postgres`](eventsourcing-postgres.md) | You need a durable Postgres store. | `UsePostgres(...)` |
 | [`LawnDart.Projections.Lightweight`](projections-lightweight.md) | You need read models. | `WithProjections` / `MapProjectionQueries` |
 | [`LawnDart.Projections.Lightweight.SqlServer`](projections-lightweight-sqlserver.md) | Read models must survive a restart on SQL Server. | `AddSqlProjectionStores` |
+| [`LawnDart.Projections.Lightweight.Postgres`](projections-lightweight-postgres.md) | Read models must survive a restart on Postgres. | `AddPostgresProjectionStores` |
 | [`LawnDart.Messaging`](messaging.md) | You need reactors or task processors. | `AddMessaging` / `AddReactor` |
 | [`LawnDart.Messaging.InMemory`](messaging-inmemory.md) | You want choreography without a broker. | `AddInMemoryMessaging()` |
 | [`LawnDart.Messaging.RabbitMQ`](messaging-rabbitmq.md) | You want a RabbitMQ broker. | `AddRabbitMqTransport` |
@@ -53,9 +54,11 @@ app.MapLawnDartCommands();
 app.MapProjectionQueries("default");
 ```
 
-Swap `.UseInMemory()` for `.UseSqlServer(...)` and
-`AddInMemoryProjectionStores` for `AddSqlProjectionStores` when you leave
-dev. `AddSqlProjectionStores` is in `LawnDart.Projections.Lightweight.SqlServer`.
+Swap `.UseInMemory()` for `.UseSqlServer(...)` or `.UsePostgres(...)` and
+`AddInMemoryProjectionStores` for `AddSqlProjectionStores` or
+`AddPostgresProjectionStores` when you leave dev. The SQL Server methods are
+in `LawnDart.Projections.Lightweight.SqlServer`. The Postgres methods are in
+`LawnDart.Projections.Lightweight.Postgres`.
 The bounded-context name stays the same. That swap is verified for
 command dispatch, persist, reload, project, and read-back. Outbox and
 subscriptions have their own tests. Inbox dedup swaps with `AddSqlInboxStore`
