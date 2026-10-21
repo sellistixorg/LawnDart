@@ -12,8 +12,9 @@ namespace LawnDart.Projections.Lightweight.Postgres;
 /// <remarks>
 /// On a direct connection this holds a session lock. A second copy with the same
 /// node number waits and logs a warning. If the holder's connection drops, or the
-/// database restarts, the holder stops before its next save and the waiting copy
-/// takes over. Each new leader stores a higher epoch on the checkpoint row. A
+/// database restarts, the holder drops its in-memory state and tries to take the
+/// lead again. The waiting copy takes over while it waits. Each new leader stores
+/// a higher epoch on the checkpoint row. A
 /// checkpoint save from a copy that started with an older epoch is rejected.
 /// When the connection cannot hold a session lock, this uses a lease row instead
 /// and logs that failover is slower. Set <see cref="PostgresProjectionStoreOptions.EnableSingleRunnerLock"/>

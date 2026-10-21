@@ -42,17 +42,16 @@ public sealed class BoundedContextProjectionAdmin : IProjectionAdmin
     /// <inheritdoc />
     /// <remarks>
     /// <para>
-    /// Ordering (load-bearing):
+    /// Order:
     /// <list type="number">
-    ///   <item>Stop runner — prevents in-flight flushes from resurrecting deleted state.</item>
-    ///   <item>Delete views before checkpoints — avoids warm-restore of stale JSON on restart.</item>
-    ///   <item>Delete checkpoints for all nodes.</item>
-    ///   <item>Start fresh runner — cold-start path handles missing checkpoint as sequence 0.</item>
+    ///   <item>Stop the runner, so an in-flight flush cannot write the old state back.</item>
+    ///   <item>Clear the checkpoint, then delete the views. When both stores are the same object and it implements <see cref="IProjectionReset"/>, both happen in one transaction, checkpoint first.</item>
+    ///   <item>Start a new runner. No checkpoint means it starts empty and does not load stored views.</item>
     /// </list>
     /// </para>
     /// <para>
-    /// If <see cref="IProjectionRunnerManager.StartAsync"/> fails after the deletes, stores are
-    /// clean and a retry of <see cref="RebuildAsync"/> is safe.
+    /// If <see cref="IProjectionRunnerManager.StartAsync"/> fails after the clear, the stores
+    /// have no checkpoint and a retry of <see cref="RebuildAsync"/> is safe.
     /// </para>
     /// </remarks>
     public async Task RebuildAsync(
@@ -67,7 +66,7 @@ public sealed class BoundedContextProjectionAdmin : IProjectionAdmin
             throw new NotSupportedException(
                 $"RebuildAsync is only supported in single-node deployments (TotalInstances == 1). " +
                 $"This context has TotalInstances = {_partitioning.TotalInstances}. " +
-                "For multi-node deployments use DeleteAllViewsAsync + DeleteCheckpointAsync " +
+                "For multi-node deployments use DeleteCheckpointAsync, then DeleteAllViewsAsync, " +
                 "followed by a rolling restart of all nodes.");
 
         // Resolve storage key — throws InvalidOperationException for unknown names.
@@ -84,13 +83,20 @@ public sealed class BoundedContextProjectionAdmin : IProjectionAdmin
         // 1b. Drop hot-cache accelerators so GET cannot serve pre-rebuild bodies.
         _readCache?.Clear(storageKey);
 
-        // 2a. Delete views before checkpoints.
-        await _viewStore.DeleteAllViewsAsync(storageKey, ct).ConfigureAwait(false);
-        _logger?.LogDebug("RebuildAsync: views deleted for '{StorageKey}'", storageKey);
-
-        // 2b. Delete checkpoints for all nodes (nodeId: null = all nodes).
-        await _checkpointStore.DeleteCheckpointAsync(storageKey, nodeId: null, ct).ConfigureAwait(false);
-        _logger?.LogDebug("RebuildAsync: checkpoints deleted for '{StorageKey}'", storageKey);
+        // Clear the checkpoint first. A waiting copy that still has the old epoch
+        // cannot save once that reset is visible, and then the views go.
+        if (ReferenceEquals(_checkpointStore, _viewStore) && _checkpointStore is IProjectionReset reset)
+        {
+            await reset.ClearCheckpointAndViewsAsync(storageKey, ct).ConfigureAwait(false);
+            _logger?.LogDebug("RebuildAsync: checkpoint cleared and views deleted for '{StorageKey}'", storageKey);
+        }
+        else
+        {
+            await _checkpointStore.DeleteCheckpointAsync(storageKey, nodeId: null, ct).ConfigureAwait(false);
+            _logger?.LogDebug("RebuildAsync: checkpoints cleared for '{StorageKey}'", storageKey);
+            await _viewStore.DeleteAllViewsAsync(storageKey, ct).ConfigureAwait(false);
+            _logger?.LogDebug("RebuildAsync: views deleted for '{StorageKey}'", storageKey);
+        }
 
         // 3. Restart cold from sequence 0.
         await _runnerManager.StartAsync(storageKey, ct).ConfigureAwait(false);

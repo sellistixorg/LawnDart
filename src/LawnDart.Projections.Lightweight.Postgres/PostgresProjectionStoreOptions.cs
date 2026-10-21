@@ -41,7 +41,7 @@ public sealed class PostgresProjectionStoreOptions
 
     /// <summary>
     /// How often the lock holder checks that its session is still connected.
-    /// Default 2 seconds. The runner stops before its next save after a failed check.
+    /// Default 2 seconds. After a failed check the copy tries to take the lead again.
     /// </summary>
     public TimeSpan LockProbeInterval { get; set; } = TimeSpan.FromSeconds(2);
 
@@ -59,9 +59,10 @@ public sealed class PostgresProjectionStoreOptions
 
     /// <summary>
     /// How this copy chooses a session lock or a lease.
-    /// <see cref="PostgresRunnerLockMode.Auto"/> (the default) uses a lease when
-    /// <see cref="LockSource"/> looks like a transaction pooler, and a session lock otherwise.
-    /// Port 6543, or a host containing <c>pooler</c> or <c>pgbouncer</c>, is treated as a pooler.
+    /// Set <see cref="PostgresRunnerLockMode.Lease"/> for any transaction pooler.
+    /// <see cref="PostgresRunnerLockMode.Auto"/> (the default) recognizes a pooler
+    /// only by host name: port 6543, or a host containing <c>pooler</c> or <c>pgbouncer</c>.
+    /// Any other host uses a session lock.
     /// </summary>
     public PostgresRunnerLockMode RunnerLockMode { get; set; } = PostgresRunnerLockMode.Auto;
 

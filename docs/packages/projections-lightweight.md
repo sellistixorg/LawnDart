@@ -53,6 +53,12 @@ lock unless `EnableSingleRunnerLock` is false. The Postgres package page
 explains the epoch, the waiting copy, and the lease used when the connection
 cannot hold a session lock.
 
+`RebuildAsync` stops the runner, clears the checkpoint, deletes the views,
+and starts the runner again. The checkpoint is cleared first. When the view
+store and the checkpoint store are the same object and it implements
+`IProjectionReset`, both happen in one transaction. A runner that finds no
+checkpoint does not load stored views. It starts empty and replays.
+
 Academy WebApi maps GET `/api/views/students/{studentId}` this way.
 
 ## Related

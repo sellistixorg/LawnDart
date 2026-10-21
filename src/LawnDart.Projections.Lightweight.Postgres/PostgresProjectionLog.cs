@@ -19,7 +19,7 @@ internal static partial class PostgresProjectionLog
     [LoggerMessage(
         EventId = 3,
         Level = LogLevel.Warning,
-        Message = "Projection {Projection} node {Node} lost its lock. This copy stops before the next save.")]
+        Message = "Projection {Projection} node {Node} lost its lock. This copy will try to take the lead again.")]
     internal static partial void LockLost(ILogger logger, string projection, int node);
 
     [LoggerMessage(

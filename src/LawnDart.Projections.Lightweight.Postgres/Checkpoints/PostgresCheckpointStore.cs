@@ -23,6 +23,12 @@ public sealed class PostgresCheckpointStore : ICheckpointStore, IAtomicProjectio
     private readonly ConcurrentDictionary<(string Type, int Node), long> _epochs = new();
     private int _failNextFlush;
 
+    /// <summary>
+    /// Runs after the checkpoint reset and before the view delete, inside the
+    /// same transaction. Tests use this to save from a waiting copy in that gap.
+    /// </summary>
+    internal Func<NpgsqlConnection, NpgsqlTransaction, CancellationToken, Task>? BeforeDeletingViews { get; set; }
+
     /// <summary>Creates a checkpoint store. Call <see cref="InitializeSchemaAsync"/> before the first write.</summary>
     public PostgresCheckpointStore(
         PostgresProjectionStoreOptions options,
@@ -219,30 +225,73 @@ public sealed class PostgresCheckpointStore : ICheckpointStore, IAtomicProjectio
         CancellationToken cancellationToken = default)
         => Task.CompletedTask;
 
+    /// <summary>
+    /// Sets every checkpoint for <paramref name="projectionType"/> below zero, raises its epoch,
+    /// and deletes its views. Both happen in one transaction. The checkpoint is cleared first.
+    /// </summary>
+    internal async Task ClearCheckpointAndViewsAsync(
+        string projectionType,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        await ResetCheckpointsAsync(connection, transaction, projectionType, nodeId: null, cancellationToken).ConfigureAwait(false);
+        if (BeforeDeletingViews is { } beforeViews)
+            await beforeViews(connection, transaction, cancellationToken).ConfigureAwait(false);
+        var deleteViews = $"DELETE FROM {_names.Views} WHERE projection_type = @type";
+        await using (var command = new NpgsqlCommand(deleteViews, connection, transaction))
+        {
+            command.Parameters.AddWithValue("type", projectionType);
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     /// <inheritdoc/>
-    public async Task DeleteCheckpointAsync(
+    public Task DeleteCheckpointAsync(
         string projectionType,
         int? nodeId = null,
         CancellationToken cancellationToken = default)
+        => ResetCheckpointsAsync(connection: null, transaction: null, projectionType, nodeId, cancellationToken);
+
+    private async Task ResetCheckpointsAsync(
+        NpgsqlConnection? connection,
+        NpgsqlTransaction? transaction,
+        string projectionType,
+        int? nodeId,
+        CancellationToken cancellationToken)
     {
-        // Keep the row so the epoch stays. A later save that still has the old epoch is rejected.
-        var sql = nodeId.HasValue
-            ? $"""
-              UPDATE {_names.Checkpoints}
-              SET last_position = -1, total_events = 0, last_updated = now(), leader_epoch = leader_epoch + 1
-              WHERE projection_type = @type AND node_id = @node
-              """
-            : $"""
-              UPDATE {_names.Checkpoints}
-              SET last_position = -1, total_events = 0, last_updated = now(), leader_epoch = leader_epoch + 1
-              WHERE projection_type = @type
-              """;
-        await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("type", projectionType);
-        if (nodeId.HasValue)
-            command.Parameters.AddWithValue("node", nodeId.Value);
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        var ownsConnection = connection is null;
+        if (connection is null)
+            connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            // Keep the row so the epoch stays. A later save that still has the old epoch is rejected.
+            var sql = nodeId.HasValue
+                ? $"""
+                  UPDATE {_names.Checkpoints}
+                  SET last_position = -1, total_events = 0, last_updated = now(), leader_epoch = leader_epoch + 1
+                  WHERE projection_type = @type AND node_id = @node
+                  """
+                : $"""
+                  UPDATE {_names.Checkpoints}
+                  SET last_position = -1, total_events = 0, last_updated = now(), leader_epoch = leader_epoch + 1
+                  WHERE projection_type = @type
+                  """;
+            await using var command = transaction is null
+                ? new NpgsqlCommand(sql, connection)
+                : new NpgsqlCommand(sql, connection, transaction);
+            command.Parameters.AddWithValue("type", projectionType);
+            if (nodeId.HasValue)
+                command.Parameters.AddWithValue("node", nodeId.Value);
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (ownsConnection)
+                await connection.DisposeAsync().ConfigureAwait(false);
+        }
     }
 
     private static async Task<List<ProjectionCheckpoint>> ReadAllAsync(NpgsqlCommand command, CancellationToken cancellationToken)

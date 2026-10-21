@@ -6,9 +6,10 @@ namespace LawnDart.Projections.Lightweight.Postgres;
 
 /// <summary>
 /// One Postgres store for views and checkpoints. The runner saves both in one
-/// transaction because this object is both stores.
+/// transaction because this object is both stores. A rebuild clears the checkpoint
+/// and deletes the views in one transaction, checkpoint first.
 /// </summary>
-public sealed class PostgresProjectionStore : IViewStore, ICheckpointStore, IAtomicProjectionFlush
+public sealed class PostgresProjectionStore : IViewStore, ICheckpointStore, IAtomicProjectionFlush, IProjectionReset
 {
     private readonly PostgresViewStore _views;
     private readonly PostgresCheckpointStore _checkpoints;
@@ -90,6 +91,10 @@ public sealed class PostgresProjectionStore : IViewStore, ICheckpointStore, IAto
     /// <inheritdoc/>
     public Task DeleteCheckpointAsync(string projectionType, int? nodeId = null, CancellationToken cancellationToken = default)
         => _checkpoints.DeleteCheckpointAsync(projectionType, nodeId, cancellationToken);
+
+    /// <inheritdoc/>
+    public Task ClearCheckpointAndViewsAsync(string projectionType, CancellationToken cancellationToken = default)
+        => _checkpoints.ClearCheckpointAndViewsAsync(projectionType, cancellationToken);
 
     /// <inheritdoc/>
     public Task SaveViewsAndCheckpointAsync(

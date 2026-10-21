@@ -111,6 +111,9 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
     private IProjectionRunnerLease? _lease;
     private int _stopForLeadership;
     private bool _sawDurableCheckpoint;
+    private bool _startedEmpty;
+    private readonly HashSet<string> _trustedViews = new();
+    private long _nextStoredCheckpointCheckAt;
     private LightweightProjectionSharedPipe? _sharedPipe;
     private bool _sharedPipePrivateCatchUp;
 
@@ -281,6 +284,12 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
     private static TimeSpan LeadershipDelay(TimeSpan value)
         => value < TimeSpan.FromMilliseconds(1) ? TimeSpan.FromMilliseconds(1) : value;
 
+    private void ArmCheckpointWatch()
+    {
+        _nextStoredCheckpointCheckAt = Environment.TickCount64
+            + (long)LeadershipDelay(_options.LeadershipRetryDelay).TotalMilliseconds;
+    }
+
     private async Task AbandonTermAsync()
     {
         _sharedPipe?.Unregister(StorageKey);
@@ -304,6 +313,8 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
 
         _lastCheckpointSequence = -1;
         _sawDurableCheckpoint = false;
+        _startedEmpty = false;
+        _trustedViews.Clear();
         _lastAppliedSequence = -1;
         _subscribeFaulted = false;
         _suppressResubscribe = false;
@@ -339,8 +350,10 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
         long totalEventsProcessed = checkpoint?.TotalEventsProcessed ?? 0;
         int eventsSinceCheckpoint = 0;
         bool isColdStart = checkpoint is null;
+        _startedEmpty = isColdStart;
         _lastCheckpointSequence = lastPosition;
         _sawDurableCheckpoint = checkpoint is not null;
+        ArmCheckpointWatch();
 
         LightweightProjectionRunnerServiceLog.Resuming(
             _logger,
@@ -348,7 +361,9 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
             isColdStart ? "Cold start" : "Warm start",
             lastPosition);
 
-        // 2. Restore working set (Eager) or skip bulk load (Lazy — hydrate on first event).
+        // 2. Restore working set (Eager) or skip bulk load (Lazy: hydrate on first event).
+        //    No checkpoint means start empty. Stored views belong to a checkpoint
+        //    that is gone, and loading them would count those events again.
         if (_registration.Kind == ProjectionKind.MultiStream)
         {
             // Initialize the shared resolver prototype before the poll loop
@@ -359,7 +374,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
                     $"'{_registration.HandlerType.FullName}' does not implement IMultiStreamEntityResolver.");
         }
 
-        if (_options.WorkingSetMode == ProjectionWorkingSetMode.EagerRestore)
+        if (!isColdStart && _options.WorkingSetMode == ProjectionWorkingSetMode.EagerRestore)
         {
             if (_registration.Kind == ProjectionKind.SingleStream
                 || _registration.Kind == ProjectionKind.MultiStream)
@@ -377,6 +392,10 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
                 EvictCleanInstancesIfNeeded_NoLock();
                 ProjectionTelemetry.SetWorkingSetSize(StorageKey, _instances.Count);
             }
+        }
+        else if (_options.WorkingSetMode == ProjectionWorkingSetMode.EagerRestore)
+        {
+            ProjectionTelemetry.SetWorkingSetSize(StorageKey, 0);
         }
         else
         {
@@ -425,8 +444,14 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
                 if (Volatile.Read(ref _stopForLeadership) == 1)
                     throw new ProjectionLeadershipLostException(DisplayName, _options.NodeInstance, _lease?.Epoch);
 
-                if (_sawDurableCheckpoint && _lease is { IsHeld: true })
+                // A save is rejected when the epoch changed. An idle copy does not save,
+                // so it also checks the stored position, at most once per leadership retry
+                // delay, and drops its state when that position moves backward.
+                if (_sawDurableCheckpoint
+                    && _lease is { IsHeld: true }
+                    && Environment.TickCount64 >= _nextStoredCheckpointCheckAt)
                 {
+                    ArmCheckpointWatch();
                     var stored = await _checkpointStore.GetCheckpointAsync(
                         StorageKey, _options.NodeInstance, stoppingToken).ConfigureAwait(false);
                     if (stored is null || stored.LastSequencePosition < _lastCheckpointSequence)
@@ -996,7 +1021,19 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
             ?? throw new InvalidOperationException(
                 $"Cannot create instance of '{_registration.HandlerType.FullName}'.");
 
-        var saved = await _viewStore.GetViewWithCheckpointAsync(StorageKey, instanceId, ct).ConfigureAwait(false);
+        // A run with no checkpoint starts empty. A stored view from before that
+        // checkpoint was cleared would count the same events again. A view this
+        // run has already saved can be loaded after eviction.
+        var loadStored = !_startedEmpty;
+        if (!loadStored)
+        {
+            lock (_instanceStateGate)
+                loadStored = _trustedViews.Contains(instanceId);
+        }
+
+        (string ViewData, long Checkpoint)? saved = null;
+        if (loadStored)
+            saved = await _viewStore.GetViewWithCheckpointAsync(StorageKey, instanceId, ct).ConfigureAwait(false);
         if (saved is not null)
         {
             SetProjectionState(instance, saved.Value.ViewData);
@@ -1436,6 +1473,11 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
             if (wave.Position > _lastCheckpointSequence)
                 _lastCheckpointSequence = wave.Position;
             _sawDurableCheckpoint = true;
+            if (_startedEmpty)
+            {
+                foreach (var (id, _, _) in wave.Writes)
+                    _trustedViews.Add(id);
+            }
         }
 
         LightweightProjectionRunnerServiceLog.CheckpointSaved(

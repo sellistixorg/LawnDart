@@ -61,10 +61,22 @@ internal static class PostgresProjectionSchema
             LANGUAGE plpgsql
             AS $func$
             DECLARE
-                wrote integer;
                 current_epoch bigint;
             BEGIN
                 PERFORM set_config('search_path', '{names.SearchPath}', true);
+
+                IF p_require_epoch THEN
+                    SELECT leader_epoch INTO current_epoch
+                    FROM projection_checkpoints
+                    WHERE projection_type = p_projection_type AND node_id = p_node_id
+                    FOR UPDATE;
+
+                    IF NOT FOUND OR current_epoch IS DISTINCT FROM p_epoch THEN
+                        RAISE EXCEPTION 'The checkpoint for % on node % was not saved. This copy started with epoch % and the stored epoch is %. Another copy has taken the lead.',
+                            p_projection_type, p_node_id, p_epoch, current_epoch
+                            USING ERRCODE = 'LD001';
+                    END IF;
+                END IF;
 
                 INSERT INTO projection_views (projection_type, instance_id, view_data, checkpoint, last_updated)
                 SELECT p_projection_type, u.instance_id, u.view_data::jsonb, u.checkpoint, p_last_updated
@@ -83,18 +95,6 @@ internal static class PostgresProjectionSchema
                       AND node_id = p_node_id
                       AND leader_epoch = p_epoch
                       AND last_position <= p_last_position;
-
-                    GET DIAGNOSTICS wrote = ROW_COUNT;
-                    IF wrote = 0 THEN
-                        SELECT leader_epoch INTO current_epoch
-                        FROM projection_checkpoints
-                        WHERE projection_type = p_projection_type AND node_id = p_node_id;
-                        IF NOT FOUND OR current_epoch IS DISTINCT FROM p_epoch THEN
-                            RAISE EXCEPTION 'The checkpoint for % on node % was not saved. This copy started with epoch % and the stored epoch is %. Another copy has taken the lead.',
-                                p_projection_type, p_node_id, p_epoch, current_epoch
-                                USING ERRCODE = 'LD001';
-                        END IF;
-                    END IF;
                 ELSE
                     INSERT INTO projection_checkpoints AS c (
                         projection_type, node_id, last_position, last_updated, total_events, leader_epoch)

@@ -38,6 +38,72 @@ public sealed class AtomicFlushRoutingTests
     }
 
     [Fact]
+    public async Task ColdStart_DoesNotLoadStoredViews()
+    {
+        var store = new MemoryProjectionStore();
+        const string streamId = "tenant1:Counter:cold";
+        await store.SaveViewAsync("CounterSummary:v1", streamId, """{"count":40}""", 9);
+        var events = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        await events.AppendAsync(
+            streamId,
+            [
+                new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1),
+                new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)
+            ],
+            metadata: Meta());
+        var runner = Runner(events, store, store);
+        await runner.StartAsync(CancellationToken.None);
+        try
+        {
+            await WaitUntilAsync(() => CountOf(store, streamId) == 2);
+            Assert.Equal(2, CountOf(store, streamId));
+        }
+        finally
+        {
+            await runner.StopAsync(CancellationToken.None);
+            runner.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task WarmStart_LoadsTheStoredView()
+    {
+        var store = new MemoryProjectionStore();
+        const string streamId = "tenant1:Counter:warm";
+        var events = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        await events.AppendAsync(
+            streamId,
+            [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)],
+            metadata: Meta());
+        var head = await events.GetCurrentSequenceAsync();
+        await store.SaveCheckpointAsync(new ProjectionCheckpoint
+        {
+            ProjectionType = "CounterSummary:v1",
+            NodeId = 0,
+            LastSequencePosition = head,
+            LastUpdated = DateTime.UtcNow,
+            TotalEventsProcessed = 1
+        });
+        await store.SaveViewAsync("CounterSummary:v1", streamId, """{"count":10}""", head);
+        await events.AppendAsync(
+            streamId,
+            [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)],
+            metadata: Meta());
+        var runner = Runner(events, store, store);
+        await runner.StartAsync(CancellationToken.None);
+        try
+        {
+            await WaitUntilAsync(() => CountOf(store, streamId) == 11);
+            Assert.Equal(11, CountOf(store, streamId));
+        }
+        finally
+        {
+            await runner.StopAsync(CancellationToken.None);
+            runner.Dispose();
+        }
+    }
+
+    [Fact]
     public async Task DifferentObjects_KeepTwoCalls()
     {
         var views = new MemoryProjectionStore();
@@ -87,6 +153,12 @@ public sealed class AtomicFlushRoutingTests
             });
 
     private static EventMetadata Meta() => new() { Timestamp = DateTime.UtcNow, UserId = "test" };
+
+    private static int CountOf(MemoryProjectionStore store, string streamId)
+    {
+        var json = store.GetViewAsync("CounterSummary:v1", streamId).GetAwaiter().GetResult();
+        return json is null ? -1 : System.Text.Json.Nodes.JsonNode.Parse(json)!["count"]!.GetValue<int>();
+    }
 
     private static async Task WaitUntilAsync(Func<bool> condition)
     {

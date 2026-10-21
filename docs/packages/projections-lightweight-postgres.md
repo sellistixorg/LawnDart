@@ -70,12 +70,12 @@ id, and it does not change the per-node global view id (`global:n0`,
 `global:n1`, and so on). It only stops two copies that were both given the
 same node number from doing that node's work.
 
-`RunnerLockMode` is `Auto` by default. `Auto` uses a lease when the lock
-connection looks like a transaction pooler, and a session lock otherwise.
-Port 6543, or a host containing `pooler` or `pgbouncer`, is treated as a
-pooler. Set `RunnerLockMode` to `SessionLock` or `Lease` to choose yourself.
-A transaction pooler cannot keep a session lock, so `Lease` is the mode for
-that connection. A wrong guess changes when the waiting copy can take over.
+Set `RunnerLockMode` to `Lease` for any transaction pooler. `Auto` is the
+default, and it recognizes a pooler only by the host name: port 6543, or a
+host containing `pooler` or `pgbouncer`. Any other host uses a session lock.
+`SessionLock` holds a session lock. A transaction pooler cannot keep that
+lock, so set `Lease` when the host name does not match. A wrong mode changes
+when the waiting copy can take over.
 
 The second copy waits and logs a warning that the two copies share that node
 number. Give each copy its own node number.
@@ -94,10 +94,10 @@ the lead. A checkpoint save is kept only when it carries the epoch this copy
 started with, and the position is not older than the stored position. A save
 from a copy that already lost the lead is rejected.
 
-A transaction pooler cannot keep that session lock. The store then uses a
-lease row, renews it on a timer, and logs that failover is slower: another
-copy can take over only after the lease expires. `LeaseDuration` (default
-15 seconds) is that wait. `LeaseRenewInterval` (default 5 seconds) is how
+When `RunnerLockMode` is `Lease`, the store uses a lease row, renews it on a
+timer, and logs that failover is slower: another copy can take over only
+after the lease expires. `LeaseDuration` (default 15 seconds) is that wait.
+`LeaseRenewInterval` (default 5 seconds) is how
 often the holder extends it. `LockProbeInterval` (default 2 seconds) is how
 often a session-lock holder checks that its connection is still up. You can
 change each of those.
@@ -105,6 +105,12 @@ change each of those.
 Point `ListenConnectionString` at Postgres directly, or at a session pooler,
 when you want the waiting copy to take over as soon as the holder's
 connection drops.
+
+`RebuildAsync` clears the checkpoint and deletes the views in one transaction.
+The checkpoint is cleared first: its position is set below zero and its epoch
+goes up. Then the views are deleted. A copy that still has the old epoch
+cannot save into that gap. A runner that finds no checkpoint, or a position
+below zero, does not load stored views. It starts empty and replays.
 
 The lock connection sends a keepalive after `LockKeepAliveSeconds` (default
 30) of silence. It also asks Postgres to send TCP keepalives:

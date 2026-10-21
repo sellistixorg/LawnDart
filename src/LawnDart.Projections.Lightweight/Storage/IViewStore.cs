@@ -98,8 +98,8 @@ public interface IViewStore
 
     /// <summary>
     /// Deletes all views for a given projection type in a single bulk operation.
-    /// Used by the rebuild orchestrator after stopping a runner and before deleting checkpoints,
-    /// ensuring the store is clean before a cold restart replays from sequence 0.
+    /// The rebuild path calls this after the checkpoint is cleared, so a restart
+    /// does not replay on top of views from the old checkpoint.
     /// </summary>
     /// <remarks>
     /// <see cref="InMemoryViewStore"/> removes the matching entries. A durable

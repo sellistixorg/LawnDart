@@ -6,9 +6,10 @@ namespace LawnDart.Projections.Lightweight.Postgres;
 public enum PostgresRunnerLockMode
 {
     /// <summary>
-    /// Use a lease when the lock connection looks like a transaction pooler.
+    /// Use a lease when the lock connection's host name looks like a transaction pooler.
     /// Otherwise hold a session lock. This is the default.
     /// Port 6543, or a host containing <c>pooler</c> or <c>pgbouncer</c>, is treated as a pooler.
+    /// Set <see cref="Lease"/> for any transaction pooler. <see cref="Auto"/> does not see the others.
     /// </summary>
     Auto = 0,
 

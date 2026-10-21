@@ -113,6 +113,74 @@ public sealed class PostgresProjectionRecoveryTests
         }
     }
 
+    [Fact(Timeout = 180000)]
+    public async Task Rebuild_WaitingCopySavesBetweenResetAndViewDelete_KeepsTheEventTotal()
+    {
+        const int total = 60;
+        var options = StoreOptions(Schema());
+        var (views, checkpoints) = await OpenStoresAsync(options);
+        var events = NewEvents();
+        var reg = Registration();
+        var streamId = Stream();
+        await AppendAsync(events, streamId, total);
+        var runnerOptions = FastOptions();
+        var bundle = new PostgresProjectionStore(views, checkpoints);
+        var manager = new BoundedContextProjectionRunnerManager(
+            [reg],
+            r => Runner(r, events, bundle, bundle, new PostgresProjectionRunnerLock(checkpoints, options), runnerOptions));
+        var admin = new BoundedContextProjectionAdmin(
+            manager, bundle, bundle, new ProjectionRegistrationCatalog([reg]), new SingleNodePartitioningService());
+        await manager.StartAsync(reg.StorageKey);
+        try
+        {
+            await WaitForCountAsync(views, reg.StorageKey, streamId, total);
+            var stored = await checkpoints.GetCheckpointAsync(reg.StorageKey, 0);
+            Assert.NotNull(stored);
+            var epoch = await LeaderEpochAsync(checkpoints.QualifiedTableName, reg.StorageKey);
+            var viewJson = await views.GetViewAsync(reg.StorageKey, streamId);
+            Assert.Equal(total, CountOf(viewJson));
+            var waiter = new PostgresCheckpointStore(options, views);
+            waiter.BindLeaderEpoch(reg.StorageKey, 0, epoch);
+            Task? save = null;
+            checkpoints.BeforeDeletingViews = async (connection, transaction, ct) =>
+            {
+                await using var position = new NpgsqlCommand(
+                    $"SELECT last_position FROM {checkpoints.QualifiedTableName} WHERE projection_type = @type AND node_id = 0",
+                    connection,
+                    transaction);
+                position.Parameters.AddWithValue("type", reg.StorageKey);
+                Assert.Equal(-1L, Convert.ToInt64(await position.ExecuteScalarAsync(ct)));
+
+                await using var stillThere = new NpgsqlCommand(
+                    $"SELECT view_data::text FROM {views.QualifiedTableName} WHERE projection_type = @type AND instance_id = @id",
+                    connection,
+                    transaction);
+                stillThere.Parameters.AddWithValue("type", reg.StorageKey);
+                stillThere.Parameters.AddWithValue("id", streamId);
+                Assert.Equal(total, CountOf((string)(await stillThere.ExecuteScalarAsync(ct))!));
+
+                save = waiter.SaveViewsAndCheckpointAsync(
+                    reg.StorageKey,
+                    [(streamId, viewJson!, stored.LastSequencePosition)],
+                    Checkpoint(reg.StorageKey, stored.LastSequencePosition));
+                await Task.Delay(TimeSpan.FromMilliseconds(150), ct);
+            };
+
+            await admin.RebuildAsync("ContractCounter");
+            Assert.NotNull(save);
+            await Assert.ThrowsAsync<ProjectionLeadershipLostException>(() => save!);
+            await WaitForCountAsync(views, reg.StorageKey, streamId, total);
+            Assert.Equal(total, CountOf(await views.GetViewAsync(reg.StorageKey, streamId)));
+            var head = await events.GetCurrentSequenceAsync();
+            Assert.Equal(head, (await checkpoints.GetCheckpointAsync(reg.StorageKey, 0))!.LastSequencePosition);
+        }
+        finally
+        {
+            checkpoints.BeforeDeletingViews = null;
+            await manager.StopAllAsync(CancellationToken.None);
+        }
+    }
+
     [Fact(Timeout = 120000)]
     public async Task Rebuild_WhileASecondCopyWaits_ReplaysWithoutLosingEvents()
     {
@@ -288,6 +356,17 @@ public sealed class PostgresProjectionRecoveryTests
 
     private static int CountOf(string? json)
         => JsonNode.Parse(json)!["count"]!.GetValue<int>();
+
+    private async Task<long> LeaderEpochAsync(string checkpointTable, string projectionType)
+    {
+        await using var connection = new NpgsqlConnection(_fixture.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(
+            $"SELECT leader_epoch FROM {checkpointTable} WHERE projection_type = @type AND node_id = 0",
+            connection);
+        command.Parameters.AddWithValue("type", projectionType);
+        return Convert.ToInt64(await command.ExecuteScalarAsync());
+    }
 
     private static string Schema() => "r" + Guid.NewGuid().ToString("N");
 

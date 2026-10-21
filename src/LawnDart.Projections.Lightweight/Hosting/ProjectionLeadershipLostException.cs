@@ -7,7 +7,7 @@ namespace LawnDart.Projections.Lightweight.Hosting;
 public sealed class ProjectionLeadershipLostException : InvalidOperationException
 {
     /// <summary>
-    /// Creates the exception for a runner that must stop before its next save.
+    /// Creates the exception for a runner that lost the lead and will try to take it again.
     /// </summary>
     /// <param name="projection">Projection display name.</param>
     /// <param name="nodeId">Node number this copy was configured with.</param>
