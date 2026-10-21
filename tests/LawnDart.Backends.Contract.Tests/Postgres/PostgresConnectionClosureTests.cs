@@ -24,6 +24,16 @@ public sealed class PostgresConnectionClosureTests
     }
 
     [Fact]
+    public void DatabaseStarting_IsRetried_AndIsRecognizedOnItsOwn()
+    {
+        var exception = new PostgresException("the database system is starting up", "FATAL", "FATAL", "57P03");
+        Assert.True(PostgresConnectionClosure.HasRetryableClosureSqlState(exception));
+        Assert.True(PostgresConnectionClosure.IsDatabaseStarting(exception));
+        var shutdown = new PostgresException("closed", "FATAL", "FATAL", "57P01");
+        Assert.False(PostgresConnectionClosure.IsDatabaseStarting(shutdown));
+    }
+
+    [Fact]
     public void TransactionResolutionUnknown_IsNotRetried()
     {
         var exception = new PostgresException("could not tell", "ERROR", "ERROR", "08007");

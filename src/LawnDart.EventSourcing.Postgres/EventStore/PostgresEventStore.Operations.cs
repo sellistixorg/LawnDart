@@ -26,17 +26,18 @@ public sealed partial class PostgresEventStore
 
     private async Task<AppendResult> AppendWithRetry(
         Func<CancellationToken, Task<AppendResult>> action,
+        string streamId,
+        IReadOnlyList<Guid> eventIds,
+        bool isDcb,
         CancellationToken cancellationToken)
     {
-        // The usual append is one autocommit function call: locks, inserts, then
-        // Postgres commits that statement only if it finishes. An error response
-        // (57P01, 57P02, 57P03, or 08xxx except 08007) means the statement was
-        // aborted, so the write is not saved. That case is tried once.
-        // A socket break after that call was submitted can mean the implicit
-        // commit already happened, so it stays AppendStatementSentException.
-        // An explicit transaction (the commit hook) sends BEGIN with the call
-        // and COMMIT afterwards. A closure before CommitAsync is the same one
-        // try. CommitAsync is never tried again.
+        // Retry a closed connection only when no result row was read. That is
+        // the case where the append was not saved. Postgres commits an
+        // autocommit statement when it handles the end of the request, after
+        // the rows are sent, so a closure after a row can follow a real commit.
+        // A transaction pooler can report that closure itself. The second try
+        // reuses these event ids. If that try looks like a conflict, read the
+        // ids back before telling the caller the append failed.
         var max = _options.MaxRetryCount;
         var closedConnectionRetried = false;
         for (var attempt = 0; ; attempt++)
@@ -52,7 +53,7 @@ public sealed partial class PostgresEventStore
             catch (ClosedConnectionBeforeCommitException ex) when (!closedConnectionRetried && !cancellationToken.IsCancellationRequested)
             {
                 closedConnectionRetried = true;
-                RetryClosedConnection(ex.InnerException ?? ex);
+                await PrepareClosedConnectionRetryAsync(ex.InnerException ?? ex, cancellationToken).ConfigureAwait(false);
                 attempt--;
             }
             catch (ClosedConnectionBeforeCommitException ex)
@@ -64,8 +65,12 @@ public sealed partial class PostgresEventStore
                 && PostgresConnectionClosure.HasRetryableClosureSqlState(ex))
             {
                 closedConnectionRetried = true;
-                RetryClosedConnection(ex);
+                await PrepareClosedConnectionRetryAsync(ex, cancellationToken).ConfigureAwait(false);
                 attempt--;
+            }
+            catch (Exception ex) when (closedConnectionRetried && IsConflictAfterRetry(ex))
+            {
+                return await ReturnSavedOrRethrowAsync(streamId, eventIds, isDcb, ex, cancellationToken).ConfigureAwait(false);
             }
             catch (NpgsqlException ex) when (ex is not PostgresException
                 && attempt < max
@@ -79,11 +84,52 @@ public sealed partial class PostgresEventStore
         }
     }
 
-    private void RetryClosedConnection(Exception exception)
+    private static bool IsConflictAfterRetry(Exception exception)
+        => exception is ConcurrencyException or EventAlreadyAppendedException;
+
+    private async Task<AppendResult> ReturnSavedOrRethrowAsync(
+        string streamId,
+        IReadOnlyList<Guid> eventIds,
+        bool isDcb,
+        Exception conflict,
+        CancellationToken cancellationToken)
     {
+        CommittedAppendRead read;
+        try
+        {
+            read = await ReadCommittedAppendAsync(streamId, eventIds, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw UnknownOutcome(ex);
+        }
+
+        if (read.Found == eventIds.Count && read.Result is not null)
+        {
+            var saved = isDcb ? read.Result with { LastStreamVersion = -1 } : read.Result;
+            Signal(saved);
+            return saved;
+        }
+
+        if (read.Found > 0)
+            throw UnknownOutcome(conflict);
+
+        ExceptionDispatchInfo.Capture(conflict).Throw();
+        throw conflict;
+    }
+
+    private async Task PrepareClosedConnectionRetryAsync(Exception exception, CancellationToken cancellationToken)
+    {
+        // This data source is cached for the connection string. Clear drops every
+        // idle connection on it, including idle connections of another store that
+        // uses the same string. Npgsql discards a connector that already failed
+        // when that connector is closed. It does not offer a way to drop one
+        // other idle connector, so those idle connections are cleared together.
         _dataSource.Clear();
         if (_logger is not null)
             PostgresEventStoreLog.AppendConnectionClosed(_logger, exception);
+        if (PostgresConnectionClosure.IsDatabaseStarting(exception))
+            await Task.Delay(_options.RetryDelay, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task DelayRetryAsync(int attempt, string code, string message, CancellationToken cancellationToken)
@@ -194,6 +240,12 @@ public sealed partial class PostgresEventStore
         command.Parameters.Add(new NpgsqlParameter("items_with_types", NpgsqlDbType.Array | NpgsqlDbType.Integer) { Value = itemsWithTypes });
         command.Parameters.Add(new NpgsqlParameter("items_with_tags", NpgsqlDbType.Array | NpgsqlDbType.Integer) { Value = itemsWithTags });
 
+        // A closure before any result row means this call did not observe a saved
+        // append, so it may be tried once. Postgres commits an autocommit statement
+        // when it handles the end of the request, after the rows are sent. A
+        // closure after a row can follow that commit, including when a transaction
+        // pooler reports the drop. Read the event ids back instead of trying again.
+        var rowsRead = 0;
         try
         {
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -205,6 +257,7 @@ public sealed partial class PostgresEventStore
                     await afterStatement(cancellationToken).ConfigureAwait(false);
                 while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
                 {
+                    rowsRead++;
                     positions.Add(reader.GetInt64(0));
                     lastVersion = reader.GetInt64(1);
                 }
@@ -221,14 +274,14 @@ public sealed partial class PostgresEventStore
         {
             throw;
         }
-        catch (PostgresException ex) when (ex.SqlState == "08007")
+        catch (PostgresException ex) when (ex.SqlState == "08007" || (rowsRead > 0 && PostgresConnectionClosure.HasRetryableClosureSqlState(ex)))
         {
-            // Commit outcome cannot be told. Read the event ids back. Do not retry.
+            // Commit outcome cannot be told, or a row was already read.
+            // Read the event ids back. Do not retry.
             throw new AppendStatementSentException(ex);
         }
         catch (PostgresException ex) when (PostgresConnectionClosure.HasRetryableClosureSqlState(ex))
         {
-            // The server aborted the statement. The implicit commit did not happen.
             throw;
         }
         catch (PostgresException ex)
@@ -244,11 +297,12 @@ public sealed partial class PostgresEventStore
             throw;
         }
         catch (Exception ex) when (ex is not OperationCanceledException
+            && rowsRead == 0
             && transaction is not null
             && (PostgresConnectionClosure.HasTransportBreak(ex) || PostgresConnectionClosure.IsConnectorBroken(connection)))
         {
-            // BEGIN is sent with this call. COMMIT is a later round trip, so a
-            // broken connection here cannot have committed.
+            // BEGIN is sent with this call. COMMIT is a later round trip.
+            // No result row was read, so the commit was not sent.
             throw new ClosedConnectionBeforeCommitException(ex);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -578,7 +632,18 @@ public sealed partial class PostgresEventStore
         }
     }
 
+    private readonly record struct CommittedAppendRead(int Found, AppendResult? Result);
+
     private async Task<AppendResult?> TryReadCommittedAppendAsync(
+        string streamId,
+        IReadOnlyList<Guid> eventIds,
+        CancellationToken cancellationToken)
+    {
+        var read = await ReadCommittedAppendAsync(streamId, eventIds, cancellationToken).ConfigureAwait(false);
+        return read.Found == eventIds.Count ? read.Result : null;
+    }
+
+    private async Task<CommittedAppendRead> ReadCommittedAppendAsync(
         string streamId,
         IReadOnlyList<Guid> eventIds,
         CancellationToken cancellationToken)
@@ -587,7 +652,7 @@ public sealed partial class PostgresEventStore
             throw new NpgsqlException("read-back failed");
 
         if (eventIds.Count == 0)
-            return null;
+            return new CommittedAppendRead(0, null);
 
         var tenant = TenantKey.ForStream(streamId);
         var sql = $"""
@@ -605,19 +670,19 @@ public sealed partial class PostgresEventStore
             rows[reader.GetGuid(0)] = (reader.GetInt64(1), reader.GetInt64(2));
 
         if (rows.Count != eventIds.Count)
-            return null;
+            return new CommittedAppendRead(rows.Count, null);
 
         var positions = new List<long>(eventIds.Count);
         long version = -1;
         foreach (var id in eventIds)
         {
             if (!rows.TryGetValue(id, out var row))
-                return null;
+                return new CommittedAppendRead(rows.Count, null);
             positions.Add(row.Position);
             version = Math.Max(version, row.Version);
         }
 
-        return new AppendResult(positions, null, version);
+        return new CommittedAppendRead(rows.Count, new AppendResult(positions, null, version));
     }
 
     private static void EnsureStreamLength(string streamId, string paramName)

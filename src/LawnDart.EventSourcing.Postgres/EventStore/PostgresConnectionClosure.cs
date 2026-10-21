@@ -78,6 +78,21 @@ internal static class PostgresConnectionClosure
         return false;
     }
 
+    /// <summary>
+    /// True when Postgres reports that it is still starting.
+    /// The next try waits, because opening again at once usually fails the same way.
+    /// </summary>
+    internal static bool IsDatabaseStarting(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is NpgsqlException npgsql && npgsql.SqlState == "57P03")
+                return true;
+        }
+
+        return false;
+    }
+
     private static bool IsRetryableClosureSqlState(string? sqlState)
         => IsClosureSqlState(sqlState) && sqlState != "08007";
 

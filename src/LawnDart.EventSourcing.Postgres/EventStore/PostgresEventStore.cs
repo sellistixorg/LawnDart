@@ -222,6 +222,9 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
         var eventIds = EventIdResolver.ResolveBatch(envelopes.Select(e => e.Metadata).ToList());
         return await AppendWithRetry(
             ct => AppendCoreAsync(streamId, envelopes, eventIds, expectedVersion, condition: null, isDcb: false, ct),
+            streamId,
+            eventIds,
+            isDcb: false,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -246,6 +249,9 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
         var eventIds = EventIdResolver.ResolveBatch(envelopes.Select(e => e.Metadata).ToList());
         return await AppendWithRetry(
             ct => AppendCoreAsync(streamId, envelopes, eventIds, expectedVersion: null, condition, isDcb: true, ct),
+            streamId,
+            eventIds,
+            isDcb: true,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -292,7 +298,7 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
             }
             catch (AppendStatementSentException ex)
             {
-                return await RecoverSentAppendAsync(streamId, eventIds, ex, cancellationToken).ConfigureAwait(false);
+                return await RecoverSentAppendAsync(streamId, eventIds, isDcb, ex, cancellationToken).ConfigureAwait(false);
             }
 
             var committed = new AppendResult(written.Positions, null, isDcb ? -1 : written.LastVersion);
@@ -326,7 +332,7 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
             catch (AppendStatementSentException ex)
             {
                 await RollbackQuietlyAsync(transaction, CancellationToken.None).ConfigureAwait(false);
-                return await RecoverSentAppendAsync(streamId, eventIds, ex, cancellationToken).ConfigureAwait(false);
+                return await RecoverSentAppendAsync(streamId, eventIds, isDcb, ex, cancellationToken).ConfigureAwait(false);
             }
             catch
             {
@@ -386,12 +392,15 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
     private async Task<AppendResult> RecoverSentAppendAsync(
         string streamId,
         IReadOnlyList<Guid> eventIds,
+        bool isDcb,
         AppendStatementSentException exception,
         CancellationToken cancellationToken)
     {
         var landed = await ReadBackOrUnknownAsync(streamId, eventIds, ReadBackToken(cancellationToken)).ConfigureAwait(false);
         if (landed is not null)
         {
+            if (isDcb)
+                landed = landed with { LastStreamVersion = -1 };
             Signal(landed);
             return landed;
         }

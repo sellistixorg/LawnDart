@@ -16,7 +16,7 @@ public sealed class PostgresAppendClosureTests
     {
         await using var postgres = await StartPostgresAsync();
         var logger = new ListLogger<PostgresEventStore>();
-        var store = await OpenStoreAsync(postgres.ConnectionString, logger);
+        var store = (await OpenStoreAsync(postgres.ConnectionString, logger)).Store;
         var warmed = "Order:" + Guid.NewGuid().ToString("N");
         await store.AppendAsync(warmed, [ContractEvent.Tick()]);
         Assert.Single(await store.ReadStreamAsync(warmed));
@@ -42,7 +42,7 @@ public sealed class PostgresAppendClosureTests
     {
         await using var postgres = await StartPostgresAsync(maxPoolSize: 10);
         var logger = new ListLogger<PostgresEventStore>();
-        var store = await OpenStoreAsync(postgres.ConnectionString, logger);
+        var store = (await OpenStoreAsync(postgres.ConnectionString, logger)).Store;
         var attempts = 0;
         store.CommitHook = async (transaction, cancellationToken) =>
         {
@@ -67,7 +67,7 @@ public sealed class PostgresAppendClosureTests
     public async Task Restart_VersionConflict_StillThrowsConcurrencyException()
     {
         await using var postgres = await StartPostgresAsync();
-        var store = await OpenStoreAsync(postgres.ConnectionString, logger: null);
+        var store = (await OpenStoreAsync(postgres.ConnectionString, logger: null)).Store;
         var stream = "Order:" + Guid.NewGuid().ToString("N");
         await store.AppendAsync(stream, [ContractEvent.Tick()]);
 
@@ -81,7 +81,77 @@ public sealed class PostgresAppendClosureTests
         Assert.Single(await store.ReadStreamAsync(stream));
     }
 
-    private static async Task<PostgresEventStore> OpenStoreAsync(
+    [Fact]
+    public async Task ClosureBeforeTheAppendReachesTheServer_RetriesAndSavesOnce()
+    {
+        await using var harness = await StartProxiedPostgresAsync(PostgresClosureProxy.Mode.BeforeAppendReachesServer);
+        var logger = new ListLogger<PostgresEventStore>();
+        var opened = await OpenStoreAsync(harness.ProxyConnectionString, logger);
+        harness.Proxy.Arm();
+
+        var stream = "Order:" + Guid.NewGuid().ToString("N");
+        var appended = await opened.Store.AppendAsync(stream, [ContractEvent.Tick()]);
+        var read = await opened.Store.ReadStreamAsync(stream);
+        Assert.Single(read);
+        Assert.Equal(appended.SequencePositions[0], read[0].SequencePosition);
+        Assert.Equal(1, await CountRowsAsync(harness.DirectConnectionString, opened.SchemaName, stream));
+        Assert.Contains(
+            logger.Entries,
+            entry => entry.Level == LogLevel.Warning && entry.Message.Contains("tried once more", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ClosureAfterCommit_ExpectedVersion_ReturnsTheSavedAppendOnce()
+    {
+        await using var harness = await StartProxiedPostgresAsync(PostgresClosureProxy.Mode.AfterCommit);
+        var opened = await OpenStoreAsync(harness.ProxyConnectionString, logger: null);
+        var stream = "Order:" + Guid.NewGuid().ToString("N");
+        harness.Proxy.Arm(appendsToForwardFirst: 1);
+        await opened.Store.AppendAsync(stream, [ContractEvent.Tick()]);
+
+        var appended = await opened.Store.AppendAsync(stream, [ContractEvent.Tick()], expectedVersion: 1);
+        var read = await opened.Store.ReadStreamAsync(stream);
+        Assert.Equal(2, read.Count);
+        Assert.Equal(appended.SequencePositions[0], read[1].SequencePosition);
+        Assert.Equal(2, appended.LastStreamVersion);
+        Assert.Equal(2, await CountRowsAsync(harness.DirectConnectionString, opened.SchemaName, stream));
+    }
+
+    [Fact]
+    public async Task ClosureAfterCommit_WithoutExpectedVersion_ReturnsTheSavedAppendOnce()
+    {
+        await using var harness = await StartProxiedPostgresAsync(PostgresClosureProxy.Mode.AfterCommit);
+        var opened = await OpenStoreAsync(harness.ProxyConnectionString, logger: null);
+        harness.Proxy.Arm();
+
+        var stream = "Order:" + Guid.NewGuid().ToString("N");
+        var appended = await opened.Store.AppendAsync(stream, [ContractEvent.Tick()]);
+        var read = await opened.Store.ReadStreamAsync(stream);
+        Assert.Single(read);
+        Assert.Equal(appended.SequencePositions[0], read[0].SequencePosition);
+        Assert.Equal(1, await CountRowsAsync(harness.DirectConnectionString, opened.SchemaName, stream));
+    }
+
+    [Fact]
+    public async Task ClosureAfterCommit_DcbConditionOnItsOwnTag_ReturnsTheSavedAppendOnce()
+    {
+        await using var harness = await StartProxiedPostgresAsync(PostgresClosureProxy.Mode.AfterCommit);
+        var opened = await OpenStoreAsync(harness.ProxyConnectionString, logger: null);
+        harness.Proxy.Arm();
+
+        var tag = "own-" + Guid.NewGuid().ToString("N");
+        var appended = await opened.Store.AppendAsync(
+            [ContractEvent.Tick()],
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(tag))),
+            tags: [tag]);
+        var read = await opened.Store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(tag)));
+        Assert.Single(read.Events);
+        Assert.Equal(appended.SequencePositions[0], read.Events[0].SequencePosition);
+        Assert.Equal(-1, appended.LastStreamVersion);
+        Assert.Equal(1, await CountTaggedRowsAsync(harness.DirectConnectionString, opened.SchemaName, tag));
+    }
+
+    private static async Task<OpenedStore> OpenStoreAsync(
         string connectionString,
         ListLogger<PostgresEventStore>? logger)
     {
@@ -96,8 +166,61 @@ public sealed class PostgresAppendClosureTests
             },
             logger: logger);
         await store.InitializeSchemaAsync();
-        return store;
+        return new OpenedStore(store, schema);
     }
+
+    private static async Task<ProxiedPostgres> StartProxiedPostgresAsync(PostgresClosureProxy.Mode mode)
+    {
+        var hostPort = FreeTcpPort();
+        var container = new PostgreSqlBuilder(PostgresTestImage.Current)
+            .WithDatabase("lawndart")
+            .WithUsername("postgres")
+            .WithPassword("postgres")
+            .WithPortBinding(hostPort, 5432)
+            .Build();
+        await container.StartAsync();
+        var direct = new NpgsqlConnectionStringBuilder
+        {
+            Host = "127.0.0.1",
+            Port = hostPort,
+            Username = "postgres",
+            Password = "postgres",
+            Database = "lawndart",
+            SslMode = SslMode.Disable
+        }.ConnectionString;
+        var proxy = new PostgresClosureProxy("127.0.0.1", hostPort, mode);
+        await proxy.StartAsync();
+        var throughProxy = new NpgsqlConnectionStringBuilder(direct)
+        {
+            Port = proxy.Port,
+            SslMode = SslMode.Disable
+        }.ConnectionString;
+        return new ProxiedPostgres(container, proxy, direct, throughProxy);
+    }
+
+    private static async Task<int> CountRowsAsync(string connectionString, string schema, string streamId)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(
+            $"SELECT count(*) FROM {Quote(schema)}.events WHERE stream_id = @id",
+            connection);
+        command.Parameters.AddWithValue("id", streamId);
+        return Convert.ToInt32(await command.ExecuteScalarAsync());
+    }
+
+    private static async Task<int> CountTaggedRowsAsync(string connectionString, string schema, string tag)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(
+            $"SELECT count(*) FROM {Quote(schema)}.events WHERE @tag = ANY(tags)",
+            connection);
+        command.Parameters.AddWithValue("tag", tag);
+        return Convert.ToInt32(await command.ExecuteScalarAsync());
+    }
+
+    private static string Quote(string identifier) => "\"" + identifier.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
 
     private static async Task<StartedPostgres> StartPostgresAsync(int maxPoolSize = 2)
     {
@@ -201,5 +324,47 @@ public sealed class PostgresAppendClosureTests
         public string ConnectionString { get; }
 
         public ValueTask DisposeAsync() => Container.DisposeAsync();
+    }
+
+    private sealed class ProxiedPostgres : IAsyncDisposable
+    {
+        public ProxiedPostgres(
+            PostgreSqlContainer container,
+            PostgresClosureProxy proxy,
+            string directConnectionString,
+            string proxyConnectionString)
+        {
+            Container = container;
+            Proxy = proxy;
+            DirectConnectionString = directConnectionString;
+            ProxyConnectionString = proxyConnectionString;
+        }
+
+        public PostgreSqlContainer Container { get; }
+
+        public PostgresClosureProxy Proxy { get; }
+
+        public string DirectConnectionString { get; }
+
+        public string ProxyConnectionString { get; }
+
+        public async ValueTask DisposeAsync()
+        {
+            await Proxy.DisposeAsync();
+            await Container.DisposeAsync();
+        }
+    }
+
+    private sealed class OpenedStore
+    {
+        public OpenedStore(PostgresEventStore store, string schemaName)
+        {
+            Store = store;
+            SchemaName = schemaName;
+        }
+
+        public PostgresEventStore Store { get; }
+
+        public string SchemaName { get; }
     }
 }
