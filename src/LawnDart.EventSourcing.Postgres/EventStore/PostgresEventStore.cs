@@ -87,6 +87,9 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
     /// <summary>Channel used by <c>pg_notify</c>. The payload is the newest position.</summary>
     internal string NotifyChannel => _names.NotifyChannel;
 
+    /// <summary>Test seam. Closes idle pooled connections so the next open is a new connection.</summary>
+    internal void ClearPool() => _dataSource.Clear();
+
     /// <summary>Test seam. Runs inside the append transaction after the rows are written and before commit.</summary>
     internal Func<CancellationToken, Task>? BeforeAppendCommit { get; set; }
 

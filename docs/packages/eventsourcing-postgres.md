@@ -110,7 +110,8 @@ same stream. The caller keeps the resume position.
 Each read asks for one page (`SubscriptionBatchSize`, default 500) and stops
 at the caught-up sequence. The scan cursor then moves to the highest position
 examined, including a position that did not match the filter. A read that
-is refused or that times out is tried again, including the first read. The
+is refused or that times out is tried again, including the first read. A
+temporary failure to look up the host name is tried again the same way. The
 store logs one warning, waits, and tries again, with a longer wait each time.
 When the read works again it logs that the connection is back. Once those
 tries run out, the subscription ends with an error. A wrong host, a name

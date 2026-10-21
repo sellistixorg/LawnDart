@@ -88,6 +88,8 @@ public sealed class PostgresSubscriptionRulesTests
 
         Assert.True(Retryable(SocketError.ConnectionRefused, hadSuccessfulRead: false));
         Assert.True(Retryable(SocketError.TimedOut, hadSuccessfulRead: false));
+        Assert.True(Retryable(SocketError.TryAgain, hadSuccessfulRead: false));
+        Assert.True(Retryable(SocketError.TryAgain, hadSuccessfulRead: true));
 
         Assert.False(Retryable(SocketError.HostUnreachable, hadSuccessfulRead: false));
         Assert.True(Retryable(SocketError.HostUnreachable, hadSuccessfulRead: true));

@@ -365,8 +365,11 @@ public sealed partial class PostgresEventStore
         {
             if (current is TimeoutException)
                 return true;
+            // TryAgain is a temporary name lookup failure, so it is tried again from the first read.
             if (current is SocketException socket
-                && socket.SocketErrorCode is SocketError.ConnectionRefused or SocketError.TimedOut)
+                && socket.SocketErrorCode is SocketError.ConnectionRefused
+                    or SocketError.TimedOut
+                    or SocketError.TryAgain)
                 return true;
         }
 

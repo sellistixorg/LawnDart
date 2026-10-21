@@ -339,6 +339,7 @@ public sealed class PostgresSubscriptionTests
         await WaitUntilAsync(() => store.Listener.Mode == PostgresListenMode.Reconnecting, TimeSpan.FromSeconds(20));
         await container.StartAsync();
         await WaitUntilAsync(() => store.Listener.Mode == PostgresListenMode.Listening, TimeSpan.FromSeconds(30));
+        store.ClearPool();
         await store.AppendAsync(stream, [ContractEvent.Tick()]);
         var second = await ReadExactlyAsync(handle, 1, TimeSpan.FromSeconds(20));
         Assert.Equal(2, second[0].SequencePosition);
