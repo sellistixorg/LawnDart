@@ -28,7 +28,7 @@ changes to the public API.
 
 ### Fixed
 
-- A Postgres append that can tell a closed connection saved nothing drops that connection and tries once. The store logs one warning. When it cannot tell, it reads the event ids. If those events are stored, the call returns them. If the read still cannot tell, the call throws `AppendOutcomeUnknownException`. Read the stream before sending the append again.
+- A Postgres append that can tell a closed connection saved nothing drops that connection and tries once. The store logs one warning. When it cannot tell, it reads the event ids on that stream. If every event is stored there under the same event name, the call returns them. If the read still cannot tell, the call throws `AppendOutcomeUnknownException`. Read the stream before sending the append again.
 
 ### Removed
 

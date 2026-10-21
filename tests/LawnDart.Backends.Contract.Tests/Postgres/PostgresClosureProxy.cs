@@ -10,17 +10,19 @@ namespace LawnDart.Backends.Contract.Tests;
 /// One mode drops the call before Postgres sees it. The other lets the commit
 /// finish, drops the ready message, and reports a fatal protocol error.
 /// </summary>
-sealed class PostgresClosureProxy : IAsyncDisposable
+public sealed class PostgresClosureProxy : IAsyncDisposable
 {
     public enum Mode
     {
         BeforeAppendReachesServer,
-        AfterCommit
+        AfterCommit,
+        DropReply
     }
 
     const int SslRequestCode = 80877103;
     const byte ReadyForQuery = (byte)'Z';
     const byte CommandComplete = (byte)'C';
+    const byte ErrorResponse = (byte)'E';
     static readonly byte[] AppendCall = "SELECT global_position, version"u8.ToArray();
 
     readonly TcpListener _listener;
@@ -172,13 +174,28 @@ sealed class PostgresClosureProxy : IAsyncDisposable
             while (!relayStop.IsCancellationRequested)
             {
                 var message = await ReadMessageAsync(serverStream, relayStop.Token).ConfigureAwait(false);
+                if (_mode == Mode.DropReply && state.SwallowReady && message.Length > 0
+                    && (message[0] == CommandComplete || message[0] == ErrorResponse))
+                {
+                    relayStop.Cancel();
+                    clientStream.Close();
+                    return;
+                }
+
                 if (state.SwallowReady && message.Length > 0 && message[0] == CommandComplete)
                     state.SawCommandComplete = true;
+                if (state.SwallowReady && message.Length > 0 && message[0] == ErrorResponse)
+                {
+                    state.SawServerError = true;
+                    continue;
+                }
+
                 if (state.SwallowReady && message.Length > 0 && message[0] == ReadyForQuery)
                 {
-                    var replace = state.SawCommandComplete;
+                    var replace = state.SawCommandComplete || state.SawServerError;
                     state.SwallowReady = false;
                     state.SawCommandComplete = false;
+                    state.SawServerError = false;
                     if (replace)
                     {
                         await FailAsync(clientStream, gate, "08P01", "server conn crashed?", relayStop).ConfigureAwait(false);
@@ -319,5 +336,6 @@ sealed class PostgresClosureProxy : IAsyncDisposable
     {
         public volatile bool SwallowReady;
         public volatile bool SawCommandComplete;
+        public volatile bool SawServerError;
     }
 }

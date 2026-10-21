@@ -28,6 +28,7 @@ public sealed partial class PostgresEventStore
         Func<CancellationToken, Task<AppendResult>> action,
         string streamId,
         IReadOnlyList<Guid> eventIds,
+        IReadOnlyList<string> eventTypes,
         bool isDcb,
         CancellationToken cancellationToken)
     {
@@ -70,7 +71,7 @@ public sealed partial class PostgresEventStore
             }
             catch (Exception ex) when (closedConnectionRetried && IsConflictAfterRetry(ex))
             {
-                return await ReturnSavedOrRethrowAsync(streamId, eventIds, isDcb, ex, cancellationToken).ConfigureAwait(false);
+                return await ReturnSavedOrRethrowAsync(streamId, eventIds, eventTypes, isDcb, ex, cancellationToken).ConfigureAwait(false);
             }
             catch (NpgsqlException ex) when (ex is not PostgresException
                 && attempt < max
@@ -90,32 +91,13 @@ public sealed partial class PostgresEventStore
     private async Task<AppendResult> ReturnSavedOrRethrowAsync(
         string streamId,
         IReadOnlyList<Guid> eventIds,
+        IReadOnlyList<string> eventTypes,
         bool isDcb,
         Exception conflict,
         CancellationToken cancellationToken)
     {
-        CommittedAppendRead read;
-        try
-        {
-            read = await ReadCommittedAppendAsync(streamId, eventIds, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            throw UnknownOutcome(ex);
-        }
-
-        if (read.Found == eventIds.Count && read.Result is not null)
-        {
-            var saved = isDcb ? read.Result with { LastStreamVersion = -1 } : read.Result;
-            Signal(saved);
-            return saved;
-        }
-
-        if (read.Found > 0)
-            throw UnknownOutcome(conflict);
-
-        ExceptionDispatchInfo.Capture(conflict).Throw();
-        throw conflict;
+        var read = await ReadBackOrUnknownAsync(streamId, eventIds, eventTypes, cancellationToken).ConfigureAwait(false);
+        return ResolveReadBack(read, isDcb, conflict, missingIsUnknown: false);
     }
 
     private async Task PrepareClosedConnectionRetryAsync(Exception exception, CancellationToken cancellationToken)
@@ -632,57 +614,91 @@ public sealed partial class PostgresEventStore
         }
     }
 
-    private readonly record struct CommittedAppendRead(int Found, AppendResult? Result);
-
-    private async Task<AppendResult?> TryReadCommittedAppendAsync(
-        string streamId,
-        IReadOnlyList<Guid> eventIds,
-        CancellationToken cancellationToken)
+    private enum AppendReadKind
     {
-        var read = await ReadCommittedAppendAsync(streamId, eventIds, cancellationToken).ConfigureAwait(false);
-        return read.Found == eventIds.Count ? read.Result : null;
+        None,
+        Partial,
+        Elsewhere,
+        Match
     }
+
+    private readonly record struct CommittedAppendRead(AppendReadKind Kind, AppendResult? Result, Guid ForeignEventId);
+
+    private readonly record struct StoredAppendRow(string StreamId, long Position, long Version, string EventType);
 
     private async Task<CommittedAppendRead> ReadCommittedAppendAsync(
         string streamId,
         IReadOnlyList<Guid> eventIds,
+        IReadOnlyList<string> eventTypes,
         CancellationToken cancellationToken)
     {
         if (FailAppendReadBack)
             throw new NpgsqlException("read-back failed");
 
         if (eventIds.Count == 0)
-            return new CommittedAppendRead(0, null);
+            return new CommittedAppendRead(AppendReadKind.None, null, Guid.Empty);
 
+        // The event id is unique for a tenant, so the row is that id's only row.
+        // A match also requires this stream and this event name. An id saved on
+        // another stream is a different append. JSON is stored as jsonb, so the
+        // stored text can differ from the bytes that were sent. A hash of those
+        // bytes would not match the stored value.
         var tenant = TenantKey.ForStream(streamId);
         var sql = $"""
-            SELECT event_id, global_position, version
-            FROM {_names.Events}
-            WHERE tenant_id = @tenant AND event_id = ANY(@ids)
+            SELECT e.event_id, e.stream_id, e.global_position, e.version, t.token
+            FROM {_names.Events} e
+            JOIN {_names.Types} t ON t.id = e.event_type_id
+            WHERE e.tenant_id = @tenant AND e.event_id = ANY(@ids)
             """;
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.Add(new NpgsqlParameter("tenant", tenant));
         command.Parameters.Add(new NpgsqlParameter("ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid) { Value = eventIds.ToArray() });
-        var rows = new Dictionary<Guid, (long Position, long Version)>();
+        var rows = new Dictionary<Guid, StoredAppendRow>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-            rows[reader.GetGuid(0)] = (reader.GetInt64(1), reader.GetInt64(2));
-
-        if (rows.Count != eventIds.Count)
-            return new CommittedAppendRead(rows.Count, null);
-
-        var positions = new List<long>(eventIds.Count);
-        long version = -1;
-        foreach (var id in eventIds)
         {
-            if (!rows.TryGetValue(id, out var row))
-                return new CommittedAppendRead(rows.Count, null);
-            positions.Add(row.Position);
-            version = Math.Max(version, row.Version);
+            rows[reader.GetGuid(0)] = new StoredAppendRow(
+                reader.GetString(1),
+                reader.GetInt64(2),
+                reader.GetInt64(3),
+                reader.GetString(4));
         }
 
-        return new CommittedAppendRead(rows.Count, new AppendResult(positions, null, version));
+        var matches = 0;
+        var elsewhere = 0;
+        Guid foreign = Guid.Empty;
+        var positions = new List<long>(eventIds.Count);
+        long version = -1;
+        for (var i = 0; i < eventIds.Count; i++)
+        {
+            if (!rows.TryGetValue(eventIds[i], out var row))
+                continue;
+
+            var expectedType = i < eventTypes.Count ? eventTypes[i] : "";
+            if (string.Equals(row.StreamId, streamId, StringComparison.Ordinal)
+                && string.Equals(row.EventType, expectedType, StringComparison.Ordinal))
+            {
+                matches++;
+                positions.Add(row.Position);
+                version = Math.Max(version, row.Version);
+            }
+            else
+            {
+                elsewhere++;
+                if (foreign == Guid.Empty)
+                    foreign = eventIds[i];
+            }
+        }
+
+        var missing = eventIds.Count - matches - elsewhere;
+        if (matches == eventIds.Count)
+            return new CommittedAppendRead(AppendReadKind.Match, new AppendResult(positions, null, version), Guid.Empty);
+        if (matches > 0 || (elsewhere > 0 && missing > 0))
+            return new CommittedAppendRead(AppendReadKind.Partial, null, foreign);
+        if (elsewhere > 0)
+            return new CommittedAppendRead(AppendReadKind.Elsewhere, null, foreign);
+        return new CommittedAppendRead(AppendReadKind.None, null, Guid.Empty);
     }
 
     private static void EnsureStreamLength(string streamId, string paramName)

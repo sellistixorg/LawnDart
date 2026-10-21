@@ -89,8 +89,9 @@ again.
 A closed connection is judged by what the store can see. When it can tell
 the append was not saved, it drops that connection and tries the append
 once. It logs one warning. The try uses the same cancellation token. When
-it cannot tell, it reads the event ids. If those events are stored, the
-call returns them. If the read still cannot tell, the call throws
+it cannot tell, it reads the event ids on that stream. If every event
+is stored there under the same event name, the call returns them. If the
+read still cannot tell, the call throws
 `AppendOutcomeUnknownException`. Read the stream before sending the append
 again. A version conflict, a condition failure, a constraint failure, and a
 rejected login are reported as those errors when the events are not stored.

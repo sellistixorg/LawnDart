@@ -1,4 +1,5 @@
 using System.Net.Sockets;
+using System.Text;
 using LawnDart.EventSourcing.Postgres;
 using LawnDart.EventSourcing.Postgres.EventStore;
 using LawnDart.EventStore;
@@ -149,6 +150,50 @@ public sealed class PostgresAppendClosureTests
         Assert.Equal(appended.SequencePositions[0], read.Events[0].SequencePosition);
         Assert.Equal(-1, appended.LastStreamVersion);
         Assert.Equal(1, await CountTaggedRowsAsync(harness.DirectConnectionString, opened.SchemaName, tag));
+    }
+
+    [Theory]
+    [InlineData(PostgresClosureProxy.Mode.BeforeAppendReachesServer)]
+    [InlineData(PostgresClosureProxy.Mode.AfterCommit)]
+    public async Task ForeignEventId_Closure_DoesNotReturnTheOtherStream(PostgresClosureProxy.Mode mode)
+    {
+        await using var harness = await StartProxiedPostgresAsync(mode);
+        var opened = await OpenStoreAsync(harness.ProxyConnectionString, logger: null);
+        var id = Guid.NewGuid();
+        var envelope = Envelope(id);
+        var held = "Order:" + Guid.NewGuid().ToString("N");
+        var other = "Order:" + Guid.NewGuid().ToString("N");
+        await opened.Store.AppendAsync(held, [envelope]);
+        harness.Proxy.Arm();
+
+        var ex = await Assert.ThrowsAsync<EventAlreadyAppendedException>(() => opened.Store.AppendAsync(other, [envelope]));
+        Assert.Equal(id, ex.EventId);
+        Assert.Equal(1, await CountRowsAsync(harness.DirectConnectionString, opened.SchemaName, held));
+        Assert.Equal(0, await CountRowsAsync(harness.DirectConnectionString, opened.SchemaName, other));
+    }
+
+    [Fact]
+    public async Task ForeignEventId_DroppedReply_DoesNotReturnTheOtherStream()
+    {
+        await using var harness = await StartProxiedPostgresAsync(PostgresClosureProxy.Mode.DropReply);
+        var opened = await OpenStoreAsync(harness.ProxyConnectionString, logger: null);
+        var id = Guid.NewGuid();
+        var envelope = Envelope(id);
+        var held = "Order:" + Guid.NewGuid().ToString("N");
+        var other = "Order:" + Guid.NewGuid().ToString("N");
+        await opened.Store.AppendAsync(held, [envelope]);
+        harness.Proxy.Arm();
+
+        var ex = await Assert.ThrowsAsync<EventAlreadyAppendedException>(() => opened.Store.AppendAsync(other, [envelope]));
+        Assert.Equal(id, ex.EventId);
+        Assert.Equal(1, await CountRowsAsync(harness.DirectConnectionString, opened.SchemaName, held));
+        Assert.Equal(0, await CountRowsAsync(harness.DirectConnectionString, opened.SchemaName, other));
+    }
+
+    private static AppendEvent Envelope(Guid id)
+    {
+        var metadata = Encoding.UTF8.GetBytes($$"""{"EventId":"{{id}}"}""");
+        return new AppendEvent("backend-contract.test-event", "{}"u8.ToArray(), metadata);
     }
 
     private static async Task<OpenedStore> OpenStoreAsync(
