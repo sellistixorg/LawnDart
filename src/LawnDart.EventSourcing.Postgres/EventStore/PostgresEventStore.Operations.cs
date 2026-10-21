@@ -694,10 +694,13 @@ public sealed partial class PostgresEventStore
         var missing = eventIds.Count - matches - elsewhere;
         if (matches == eventIds.Count)
             return new CommittedAppendRead(AppendReadKind.Match, new AppendResult(positions, null, version), Guid.Empty);
-        if (matches > 0 || (elsewhere > 0 && missing > 0))
-            return new CommittedAppendRead(AppendReadKind.Partial, null, foreign);
+        // One statement writes the whole batch. An id already stored on another
+        // stream, or under another event name, means none of this call was saved.
+        // Unknown is only when some ids are on this stream and the others are absent.
         if (elsewhere > 0)
             return new CommittedAppendRead(AppendReadKind.Elsewhere, null, foreign);
+        if (matches > 0 && missing > 0)
+            return new CommittedAppendRead(AppendReadKind.Partial, null, Guid.Empty);
         return new CommittedAppendRead(AppendReadKind.None, null, Guid.Empty);
     }
 

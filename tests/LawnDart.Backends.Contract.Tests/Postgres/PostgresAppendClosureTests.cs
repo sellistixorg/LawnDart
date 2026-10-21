@@ -190,6 +190,40 @@ public sealed class PostgresAppendClosureTests
         Assert.Equal(0, await CountRowsAsync(harness.DirectConnectionString, opened.SchemaName, other));
     }
 
+    [Theory]
+    [InlineData(PostgresClosureProxy.Mode.BeforeAppendReachesServer)]
+    [InlineData(PostgresClosureProxy.Mode.AfterCommit)]
+    [InlineData(PostgresClosureProxy.Mode.DropReply)]
+    public async Task ForeignIdPlusNewId_DoesNotSaveTheBatch(PostgresClosureProxy.Mode mode)
+    {
+        await using var harness = await StartProxiedPostgresAsync(mode);
+        var opened = await OpenStoreAsync(harness.ProxyConnectionString, logger: null);
+        var heldId = Guid.NewGuid();
+        var freshId = Guid.NewGuid();
+        var held = "Order:" + Guid.NewGuid().ToString("N");
+        var other = "Order:" + Guid.NewGuid().ToString("N");
+        await opened.Store.AppendAsync(held, [Envelope(heldId)]);
+        harness.Proxy.Arm();
+
+        var ex = await Assert.ThrowsAsync<EventAlreadyAppendedException>(() =>
+            opened.Store.AppendAsync(other, [Envelope(heldId), Envelope(freshId)]));
+        Assert.Equal(heldId, ex.EventId);
+        Assert.Equal(1, await CountRowsAsync(harness.DirectConnectionString, opened.SchemaName, held));
+        Assert.Equal(0, await CountRowsAsync(harness.DirectConnectionString, opened.SchemaName, other));
+        Assert.Equal(0, await CountEventIdAsync(harness.DirectConnectionString, opened.SchemaName, freshId));
+    }
+
+    private static async Task<int> CountEventIdAsync(string connectionString, string schema, Guid eventId)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(
+            $"SELECT count(*) FROM {Quote(schema)}.events WHERE event_id = @id",
+            connection);
+        command.Parameters.AddWithValue("id", eventId);
+        return Convert.ToInt32(await command.ExecuteScalarAsync());
+    }
+
     private static AppendEvent Envelope(Guid id)
     {
         var metadata = Encoding.UTF8.GetBytes($$"""{"EventId":"{{id}}"}""");
