@@ -110,10 +110,11 @@ same stream. The caller keeps the resume position.
 Each read asks for one page (`SubscriptionBatchSize`, default 500) and stops
 at the caught-up sequence. The scan cursor then moves to the highest position
 examined, including a position that did not match the filter. A read that
-loses the connection is tried again. The store logs one warning, waits, and
-tries again, with a longer wait each time, up to a limit. When the read works
-again it logs that the connection is back. A wrong host, a name that does not
-resolve, or a TLS error ends the subscription with
+is refused or that times out is tried again, including the first read. The
+store logs one warning, waits, and tries again, with a longer wait each time.
+When the read works again it logs that the connection is back. Once those
+tries run out, the subscription ends with an error. A wrong host, a name
+that does not resolve, or a TLS error ends the subscription with
 `EventSubscriptionFailedException`. Cancel and dispose end it without an error.
 
 An append sends a Postgres NOTIFY wake-up in the same transaction when
@@ -137,10 +138,11 @@ listener is not used. A save in this process also ends the wait early, on
 either interval.
 
 At startup the listener opens its connection and sends a probe wake-up.
-If the connection cannot be opened, subscriptions poll and the listener
-keeps trying. If the connection opens but the probe does not come back, or
-the host name contains `pooler` or `pgbouncer`, or the port is 6543, the
-store logs one warning and stops trying to listen. Set
+If that connection cannot be opened, the listener keeps trying for as long
+as a subscription is still reading. When the subscription ends, the listener
+stops. If the connection opens but the probe does not come back, or the
+host name contains `pooler` or `pgbouncer`, or the port is 6543, the store
+logs one warning and stops trying to listen. Set
 `ListenConnectionString` to a direct Postgres connection, or to a session
 pooler, when the app connection goes through a transaction pooler. PgBouncer
 in transaction mode cannot keep a listen session. On that app connection,

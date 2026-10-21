@@ -291,9 +291,12 @@ public sealed partial class PostgresEventStore
     {
         if (IsConfigurationFailure(exception))
             return false;
-        if (IsConnectionLoss(exception))
+        if (IsConnectionLoss(exception) || IsRefusedOrTimeout(exception))
             return true;
-        return hadSuccessfulRead && IsRefusedOrTimeout(exception);
+
+        // HostUnreachable is also what a bad address looks like before any read has worked.
+        // After a read has worked, the same code means the route dropped, so try again.
+        return hadSuccessfulRead && IsHostUnreachable(exception);
     }
 
     private static bool IsConfigurationFailure(Exception exception)
@@ -308,12 +311,23 @@ public sealed partial class PostgresEventStore
             if (current is SocketException socket
                 && socket.SocketErrorCode is SocketError.HostNotFound
                     or SocketError.NoData
-                    or SocketError.HostUnreachable
                     or SocketError.AddressNotAvailable)
                 return true;
-            if (current.Message.Contains("pool has been exhausted", StringComparison.OrdinalIgnoreCase)
-                || current.Message.Contains("SSL", StringComparison.Ordinal)
-                || current.Message.Contains("certificate", StringComparison.OrdinalIgnoreCase))
+
+            // Npgsql has no exception type or SqlState for a full connection pool.
+            if (current is NpgsqlException
+                && current.Message.Contains("connection pool has been exhausted", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsHostUnreachable(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is SocketException socket && socket.SocketErrorCode == SocketError.HostUnreachable)
                 return true;
         }
 
@@ -334,6 +348,7 @@ public sealed partial class PostgresEventStore
                     or SocketError.NetworkDown
                     or SocketError.NetworkReset)
                 return true;
+            // A dropped socket sometimes arrives as a plain IOException with no socket error code.
             if (current is IOException && current is not SocketException
                 && (current.Message.Contains("forcibly closed", StringComparison.OrdinalIgnoreCase)
                     || current.Message.Contains("broken pipe", StringComparison.OrdinalIgnoreCase)

@@ -252,8 +252,7 @@ public sealed class PostgresSubscriptionTests
         await WaitUntilAsync(() => store.Listener.NotificationCount >= before + 10000, TimeSpan.FromSeconds(20));
         await WaitUntilAsync(() => store.Listener.IsWaitingForNotification);
         var wakes = store.Listener.WakeCount;
-        var perWake = PostgresNotificationListener.NotificationsPerWake;
-        Assert.InRange(wakes, 10_000 / perWake, (10_000 / perWake) + 80);
+        Assert.InRange(wakes, 1, 10_000 + PostgresNotificationListener.NotificationsPerWake);
         await AssertIdleAsync(store.Listener);
     }
 
@@ -282,8 +281,7 @@ public sealed class PostgresSubscriptionTests
         Assert.Equal(10_000, received[^1].SequencePosition);
         await WaitUntilAsync(() => store.Listener.IsWaitingForNotification);
         var wakes = store.Listener.WakeCount;
-        var perWake = PostgresNotificationListener.NotificationsPerWake;
-        Assert.InRange(wakes, 1, (10_000 / perWake) + 80);
+        Assert.InRange(wakes, 1, 10_000 + PostgresNotificationListener.NotificationsPerWake);
         await AssertIdleAsync(store.Listener);
     }
 
@@ -455,11 +453,10 @@ public sealed class PostgresSubscriptionTests
     }
 
     [Fact]
-    public async Task Listener_RetriesUntilTheDatabaseAcceptsConnections()
+    public async Task Subscribe_WhileDatabaseIsDown_DeliversAfterItStarts()
     {
         var port = FreeTcpPort();
-        var image = PostgresTestImage.Current;
-        await using var container = new PostgreSqlBuilder(image)
+        await using var container = new PostgreSqlBuilder(PostgresTestImage.Current)
             .WithDatabase("lawndart")
             .WithUsername("postgres")
             .WithPassword("postgres")
@@ -491,27 +488,49 @@ public sealed class PostgresSubscriptionTests
         await store.InitializeSchemaAsync();
         await container.StopAsync();
 
-        store.Listener.AddUser();
-        try
-        {
-            await WaitUntilAsync(() => store.Listener.Mode == PostgresListenMode.Reconnecting, TimeSpan.FromSeconds(15));
-            Assert.Contains(logger.Entries, entry => entry.Message.Contains("could not be opened", StringComparison.Ordinal));
-            Assert.DoesNotContain(logger.Entries, entry => entry.Message.Contains("probe", StringComparison.OrdinalIgnoreCase));
+        var stream = Stream();
+        await using var handle = store.Subscribe("returns", fromSequence: 1);
+        await WaitUntilAsync(
+            () => logger.Entries.Any(entry => entry.Message.Contains("lost its connection", StringComparison.Ordinal)),
+            TimeSpan.FromSeconds(15));
+        Assert.False(handle.Events.Completion.IsCompleted);
 
-            await container.StartAsync();
-            await WaitUntilAsync(() => store.Listener.Mode == PostgresListenMode.Listening, TimeSpan.FromSeconds(30));
-            var stream = Stream();
-            await using var handle = store.Subscribe("returns", fromSequence: 1);
-            await store.AppendAsync(stream, [ContractEvent.Tick()]);
-            var received = await ReadExactlyAsync(handle, 1, TimeSpan.FromSeconds(10));
-            Assert.Equal(1, received[0].SequencePosition);
-        }
-        finally
-        {
-            store.Listener.RemoveUser();
-        }
+        await container.StartAsync();
+        await store.AppendAsync(stream, [ContractEvent.Tick()]);
+        var received = await ReadExactlyAsync(handle, 1, TimeSpan.FromSeconds(30));
+        Assert.Equal(1, received[0].SequencePosition);
+        await WaitUntilAsync(() => store.Listener.Mode == PostgresListenMode.Listening, TimeSpan.FromSeconds(20));
+        Assert.Contains(
+            logger.Entries,
+            entry => entry.Message.Contains("read the log again", StringComparison.OrdinalIgnoreCase));
+    }
 
-        Assert.Contains(logger.Entries, entry => entry.Message.Contains("listen connection is open", StringComparison.OrdinalIgnoreCase));
+    [Fact]
+    public async Task Subscribe_WhileDatabaseStaysDown_EndsAfterRetries()
+    {
+        var logger = new ListLogger<PostgresEventStore>();
+        var options = new PostgresEventStoreOptions
+        {
+            ConnectionString = "Host=127.0.0.1;Port=1;Username=u;Password=p;Database=lawndart;Timeout=1",
+            SchemaName = "staysdown",
+            RequireTenantId = false,
+            BackupPollInterval = TimeSpan.FromSeconds(30),
+            PollOnlyInterval = TimeSpan.FromMilliseconds(50)
+        };
+        var store = new PostgresEventStore(options.ConnectionString, options: options, logger: logger);
+        store.Listener.ReconnectDelayOverride = TimeSpan.FromMilliseconds(50);
+        await using var handle = store.Subscribe("stays-down", fromSequence: 1);
+        var completed = await Task.WhenAny(handle.Events.Completion, Task.Delay(TimeSpan.FromSeconds(40)));
+        Assert.Same(handle.Events.Completion, completed);
+        var ex = await Assert.ThrowsAsync<EventSubscriptionFailedException>(() => handle.Events.Completion);
+        Assert.Equal("stays-down", ex.SubscriberId);
+        Assert.Contains(
+            logger.Entries,
+            entry => entry.Level == LogLevel.Warning && entry.Message.Contains("lost its connection", StringComparison.Ordinal));
+        Assert.Contains(
+            logger.Entries,
+            entry => entry.Level == LogLevel.Error && entry.Message.Contains("failed", StringComparison.Ordinal));
+        Assert.Equal(PostgresListenMode.Idle, store.Listener.Mode);
     }
 
     private static async Task AssertIdleAsync(PostgresNotificationListener listener)

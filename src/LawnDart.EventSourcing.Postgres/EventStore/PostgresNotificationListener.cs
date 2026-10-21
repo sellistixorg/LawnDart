@@ -63,7 +63,6 @@ internal sealed class PostgresNotificationListener
     private long _wakeCount;
     private long _notificationCount;
     private long _idleWaits;
-    private long _highest;
     private long _batchPosition;
     private string? _probePayload;
     private TaskCompletionSource? _probeSeen;
@@ -171,6 +170,8 @@ internal sealed class PostgresNotificationListener
 
     private void StopLocked()
     {
+        // The loop that is stopping must not write mode or ready state after this.
+        Interlocked.Increment(ref _generation);
         try
         {
             _cts?.Cancel();
@@ -180,6 +181,8 @@ internal sealed class PostgresNotificationListener
         }
 
         _ready.TrySetCanceled();
+        if ((PostgresListenMode)Volatile.Read(ref _mode) == PostgresListenMode.Reconnecting)
+            Volatile.Write(ref _mode, (int)PostgresListenMode.Idle);
     }
 
     private async Task RunAsync(CancellationTokenSource cts, TaskCompletionSource ready, int generation)
@@ -468,14 +471,6 @@ internal sealed class PostgresNotificationListener
             return;
 
         Volatile.Write(ref _batchPosition, position);
-        long observed;
-        do
-        {
-            observed = Interlocked.Read(ref _highest);
-            if (position <= observed)
-                return;
-        }
-        while (Interlocked.CompareExchange(ref _highest, position, observed) != observed);
     }
 
     private async Task ExecuteListenAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
