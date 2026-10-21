@@ -85,10 +85,12 @@ on `SubscriptionPollInterval` (default 1 second), whichever comes first, and
 reads again from its own checkpoint. A save that commits after the ticket
 wakes the reader at once. A missed or extra signal still delivers on the timer.
 
-The same object is public. A listener outside the store, such as a later
-Postgres notification loop, can call `Notify` on it. SQL Server uses this
-signal for saves in this process. Saves from another process are still picked
-up on `SqlSubscriptionPollInterval`.
+The same object is public. Code outside the store can call `Notify` on it.
+The Postgres listener does that when a wake-up arrives from another process.
+SQL Server uses this signal for saves in this process. Saves from another
+process are still picked up on `SqlSubscriptionPollInterval`. On Postgres,
+that cross-process wake-up is the listener, with `BackupPollInterval` as the
+backup read.
 
 ## Portable store contract
 

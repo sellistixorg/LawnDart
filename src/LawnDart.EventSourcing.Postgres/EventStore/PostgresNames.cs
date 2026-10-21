@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace LawnDart.EventSourcing.Postgres.EventStore;
 
@@ -28,7 +30,44 @@ internal sealed class PostgresNames
         Sequence = PgIdentifier.Qualify(Schema, "event_position");
         Append = PgIdentifier.Qualify(Schema, "append_to_stream");
         ExactText = PgIdentifier.Qualify(Schema, "exact_text");
-        NotifyChannel = "ld_" + Schema;
+        NotifyChannel = NotifyChannelFor(Schema);
+    }
+
+    /// <summary>
+    /// Wake-up channel for a schema. Postgres rejects a name of 64 bytes or more,
+    /// so a longer schema is shortened and a stable hash is added. NOTIFY and LISTEN
+    /// both use this string.
+    /// </summary>
+    internal static string NotifyChannelFor(string schema)
+    {
+        const int maxBytes = 63;
+        var prefixed = "ld_" + schema;
+        if (Encoding.UTF8.GetByteCount(prefixed) <= maxBytes)
+            return prefixed;
+
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(schema)))
+            .ToLowerInvariant()[..8];
+        var suffix = "_" + hash;
+        var budget = maxBytes - Encoding.UTF8.GetByteCount("ld_") - Encoding.UTF8.GetByteCount(suffix);
+        return "ld_" + Utf8Prefix(schema, budget) + suffix;
+    }
+
+    private static string Utf8Prefix(string value, int maxBytes)
+    {
+        if (maxBytes <= 0 || value.Length == 0)
+            return "";
+
+        var bytes = 0;
+        var chars = 0;
+        foreach (var rune in value.EnumerateRunes())
+        {
+            if (bytes + rune.Utf8SequenceLength > maxBytes)
+                break;
+            bytes += rune.Utf8SequenceLength;
+            chars += rune.Utf16SequenceLength;
+        }
+
+        return value[..chars];
     }
 
     public string Schema { get; }

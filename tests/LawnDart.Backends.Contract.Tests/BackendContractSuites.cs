@@ -115,6 +115,14 @@ public sealed class PostgresSubscriptionContractTests : SubscriptionContractTest
     public PostgresSubscriptionContractTests(PostgresContractFixture fixture) : base(fixture.Backend) { }
 }
 
+[Collection("PostgresContract")]
+[Trait("Category", "Integration")]
+[Trait("Category", "Contract")]
+public sealed class PostgresPollOnlySubscriptionContractTests : SubscriptionContractTests
+{
+    public PostgresPollOnlySubscriptionContractTests(PostgresContractFixture fixture) : base(fixture.PollOnlyBackend) { }
+}
+
 [Collection(InMemoryContractCollection.Name)]
 [Trait("Category", "Contract")]
 public sealed class InMemoryReadHorizonContractTests : ReadHorizonContractTests

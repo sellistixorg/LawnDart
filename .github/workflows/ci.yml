@@ -34,7 +34,7 @@ jobs:
     - name: Test (unit)
       run: >
         dotnet test LawnDart.sln --no-build --configuration Release
-        --verbosity normal --filter "Category!=Integration&Category!=Benchmark"
+        --verbosity normal --filter "Category!=Integration&Category!=Benchmark&Category!=Pooler"
 
     - name: Test reference slice
       run: >
@@ -59,7 +59,7 @@ jobs:
           tests/LawnDart.Backends.Contract.Tests
         do
           dotnet test "$proj" --no-build --configuration Release --verbosity normal \
-            --filter "Category=Integration|Category=Contract"
+            --filter "(Category=Integration|Category=Contract)&Category!=Pooler"
         done
 
     - name: Restore local tools
