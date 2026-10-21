@@ -300,63 +300,87 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
             return committed;
         }
 
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        AppendWrite writtenRows;
+        NpgsqlTransaction transaction;
         try
         {
-            writtenRows = await ExecuteAppendAsync(
-                connection, transaction, streamId, envelopes, eventIds, expectedVersion, condition, isDcb, cancellationToken)
-                .ConfigureAwait(false);
+            transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (AppendStatementSentException ex)
+        catch (Exception ex) when (ex is not OperationCanceledException
+            && !PostgresConnectionClosure.HasRetryableClosureSqlState(ex)
+            && (PostgresConnectionClosure.HasTransportBreak(ex) || PostgresConnectionClosure.IsConnectorBroken(connection)))
         {
-            await RollbackQuietlyAsync(transaction, CancellationToken.None).ConfigureAwait(false);
-            return await RecoverSentAppendAsync(streamId, eventIds, ex, cancellationToken).ConfigureAwait(false);
-        }
-        catch
-        {
-            await RollbackQuietlyAsync(transaction, cancellationToken).ConfigureAwait(false);
-            throw;
+            // BEGIN is prepared here and sent with the append call. A broken
+            // connection has not reached COMMIT.
+            throw new ClosedConnectionBeforeCommitException(ex);
         }
 
-        if (BeforeAppendCommit is { } pause)
+        await using (transaction)
         {
+            AppendWrite writtenRows;
             try
             {
-                await pause(cancellationToken).ConfigureAwait(false);
+                writtenRows = await ExecuteAppendAsync(
+                    connection, transaction, streamId, envelopes, eventIds, expectedVersion, condition, isDcb, cancellationToken)
+                    .ConfigureAwait(false);
             }
-            catch (OperationCanceledException ex)
+            catch (AppendStatementSentException ex)
             {
-                return await FinishSentAppendAsync(transaction, streamId, eventIds, ex).ConfigureAwait(false);
+                await RollbackQuietlyAsync(transaction, CancellationToken.None).ConfigureAwait(false);
+                return await RecoverSentAppendAsync(streamId, eventIds, ex, cancellationToken).ConfigureAwait(false);
             }
-        }
-
-        try
-        {
-            if (CommitHook is { } hook)
-                await hook(transaction, cancellationToken).ConfigureAwait(false);
-            else
-                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            if (ex is OperationCanceledException or NpgsqlException)
-                return await FinishSentAppendAsync(transaction, streamId, eventIds, ex).ConfigureAwait(false);
-
-            var landed = await ReadBackOrUnknownAsync(streamId, eventIds, cancellationToken).ConfigureAwait(false);
-            if (landed is not null)
+            catch
             {
-                Signal(landed);
-                return landed;
+                await RollbackQuietlyAsync(transaction, cancellationToken).ConfigureAwait(false);
+                throw;
             }
 
-            await RollbackQuietlyAsync(transaction, cancellationToken).ConfigureAwait(false);
-            throw;
-        }
+            if (BeforeAppendCommit is { } pause)
+            {
+                try
+                {
+                    await pause(cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException ex)
+                {
+                    return await FinishSentAppendAsync(transaction, streamId, eventIds, ex).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (PostgresConnectionClosure.HasRetryableClosureSqlState(ex)
+                    || PostgresConnectionClosure.HasTransportBreak(ex)
+                    || PostgresConnectionClosure.IsConnectorBroken(connection))
+                {
+                    throw new ClosedConnectionBeforeCommitException(ex);
+                }
+            }
 
-        var result = new AppendResult(writtenRows.Positions, null, isDcb ? -1 : writtenRows.LastVersion);
-        Signal(result);
-        return result;
+            try
+            {
+                if (CommitHook is { } hook)
+                    await hook(transaction, cancellationToken).ConfigureAwait(false);
+                else
+                    await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // Commit was attempted. Never retry, including when the connection is already closed.
+                if (ex is OperationCanceledException or NpgsqlException
+                    || PostgresConnectionClosure.IsClosedConnection(ex, connection))
+                    return await FinishSentAppendAsync(transaction, streamId, eventIds, ex).ConfigureAwait(false);
+
+                var landed = await ReadBackOrUnknownAsync(streamId, eventIds, cancellationToken).ConfigureAwait(false);
+                if (landed is not null)
+                {
+                    Signal(landed);
+                    return landed;
+                }
+
+                await RollbackQuietlyAsync(transaction, cancellationToken).ConfigureAwait(false);
+                throw;
+            }
+
+            var result = new AppendResult(writtenRows.Positions, null, isDcb ? -1 : writtenRows.LastVersion);
+            Signal(result);
+            return result;
+        }
     }
 
     private async Task<AppendResult> RecoverSentAppendAsync(

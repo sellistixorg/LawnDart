@@ -26,6 +26,10 @@ changes to the public API.
 
 - Postgres idle subscriptions wait on `BackupPollInterval` while the listener is connected, and on `PollOnlyInterval` when it is not. The wait is chosen again each time, so an outage uses the poll-only interval.
 
+### Fixed
+
+- A Postgres append that finds a closed pooled connection before the write is committed drops that connection and tries once. The store logs one warning. A connection that closes while the append is being committed is not tried again. That call throws `AppendOutcomeUnknownException`. Read the stream before sending the append again.
+
 ### Removed
 
 - `PostgresEventStoreOptions.SubscriptionPollInterval` is removed. Use `BackupPollInterval` and `PollOnlyInterval`.

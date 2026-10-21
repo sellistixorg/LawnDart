@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Text.Json;
 using LawnDart.EventStore;
@@ -27,7 +28,17 @@ public sealed partial class PostgresEventStore
         Func<CancellationToken, Task<AppendResult>> action,
         CancellationToken cancellationToken)
     {
+        // The usual append is one autocommit function call: locks, inserts, then
+        // Postgres commits that statement only if it finishes. An error response
+        // (57P01, 57P02, 57P03, or 08xxx except 08007) means the statement was
+        // aborted, so the write is not saved. That case is tried once.
+        // A socket break after that call was submitted can mean the implicit
+        // commit already happened, so it stays AppendStatementSentException.
+        // An explicit transaction (the commit hook) sends BEGIN with the call
+        // and COMMIT afterwards. A closure before CommitAsync is the same one
+        // try. CommitAsync is never tried again.
         var max = _options.MaxRetryCount;
+        var closedConnectionRetried = false;
         for (var attempt = 0; ; attempt++)
         {
             try
@@ -38,13 +49,41 @@ public sealed partial class PostgresEventStore
             {
                 await DelayRetryAsync(attempt, ex.SqlState, ex.MessageText, cancellationToken).ConfigureAwait(false);
             }
-            catch (NpgsqlException ex) when (ex is not PostgresException && attempt < max && IsConnectionFailure(ex))
+            catch (ClosedConnectionBeforeCommitException ex) when (!closedConnectionRetried && !cancellationToken.IsCancellationRequested)
+            {
+                closedConnectionRetried = true;
+                RetryClosedConnection(ex.InnerException ?? ex);
+                attempt--;
+            }
+            catch (ClosedConnectionBeforeCommitException ex)
+            {
+                ExceptionDispatchInfo.Capture(ex.InnerException ?? ex).Throw();
+            }
+            catch (Exception ex) when (!closedConnectionRetried
+                && !cancellationToken.IsCancellationRequested
+                && PostgresConnectionClosure.HasRetryableClosureSqlState(ex))
+            {
+                closedConnectionRetried = true;
+                RetryClosedConnection(ex);
+                attempt--;
+            }
+            catch (NpgsqlException ex) when (ex is not PostgresException
+                && attempt < max
+                && IsConnectionFailure(ex)
+                && !PostgresConnectionClosure.HasRetryableClosureSqlState(ex))
             {
                 // Only a failure before the statement is sent. A failure after
                 // ExecuteReader is AppendStatementSentException and is not retried.
                 await DelayRetryAsync(attempt, ex.SqlState ?? "08", ex.Message, cancellationToken).ConfigureAwait(false);
             }
         }
+    }
+
+    private void RetryClosedConnection(Exception exception)
+    {
+        _dataSource.Clear();
+        if (_logger is not null)
+            PostgresEventStoreLog.AppendConnectionClosed(_logger, exception);
     }
 
     private async Task DelayRetryAsync(int attempt, string code, string message, CancellationToken cancellationToken)
@@ -182,6 +221,16 @@ public sealed partial class PostgresEventStore
         {
             throw;
         }
+        catch (PostgresException ex) when (ex.SqlState == "08007")
+        {
+            // Commit outcome cannot be told. Read the event ids back. Do not retry.
+            throw new AppendStatementSentException(ex);
+        }
+        catch (PostgresException ex) when (PostgresConnectionClosure.HasRetryableClosureSqlState(ex))
+        {
+            // The server aborted the statement. The implicit commit did not happen.
+            throw;
+        }
         catch (PostgresException ex)
         {
             throw MapAppendError(ex, expectedVersion, condition?.After);
@@ -189,6 +238,18 @@ public sealed partial class PostgresEventStore
         catch (AppendStatementSentException)
         {
             throw;
+        }
+        catch (ClosedConnectionBeforeCommitException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException
+            && transaction is not null
+            && (PostgresConnectionClosure.HasTransportBreak(ex) || PostgresConnectionClosure.IsConnectorBroken(connection)))
+        {
+            // BEGIN is sent with this call. COMMIT is a later round trip, so a
+            // broken connection here cannot have committed.
+            throw new ClosedConnectionBeforeCommitException(ex);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -694,6 +755,17 @@ public sealed partial class PostgresEventStore
     private sealed class AppendStatementSentException : Exception
     {
         public AppendStatementSentException(Exception inner)
+            : base(inner.Message, inner)
+        {
+        }
+    }
+
+    /// <summary>
+    /// The connection closed before commit was sent. The write was not saved.
+    /// </summary>
+    private sealed class ClosedConnectionBeforeCommitException : Exception
+    {
+        public ClosedConnectionBeforeCommitException(Exception inner)
             : base(inner.Message, inner)
         {
         }

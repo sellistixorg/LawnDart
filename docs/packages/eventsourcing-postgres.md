@@ -85,6 +85,16 @@ statement is sent is handled the same way. If a later read cannot tell
 whether the rows were saved, the call throws `AppendOutcomeUnknownException`.
 Read the stream before sending the append again.
 
+A pooled connection can already be closed after Postgres restarts. If the
+append then fails with a closed-connection error before the write is
+committed, the store drops that connection and tries the append once. It
+logs one warning. The try uses the same cancellation token. A version
+conflict, a condition failure, a constraint failure, and a rejected login
+still surface as they do today. If the connection closes while the append
+is being committed, the store does not try again. That call throws
+`AppendOutcomeUnknownException`. Read the stream before sending the append
+again.
+
 A normal append takes a shared lock per tag, plus one shared lock for the
 store. A dynamic consistency boundary append takes an exclusive lock on each
 tag in its condition, and the same shared locks on the tags it writes.
