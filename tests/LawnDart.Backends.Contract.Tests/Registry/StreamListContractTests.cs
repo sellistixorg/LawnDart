@@ -19,12 +19,13 @@ public abstract class StreamListContractTests : ContractSuite
     public async Task ListStreams_OrdersByStreamId_CharacterByCharacter()
     {
         var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
-        var created = new[] { "acme:Order:b", "acme:Order:A", "acme:Order:Z", "acme:Order:a", "acme:Order:B" };
-        foreach (var id in created)
+        // B, Z, _, a. A case-insensitive primary key would still keep these as four streams.
+        // A culture sort puts "a" before "B". Character order puts "B" first and "_" before "a".
+        foreach (var id in new[] { "acme:Order:a", "acme:Order:_", "acme:Order:Z", "acme:Order:B" })
             await AppendAsync(store, id);
 
         var page = await DrainAsync(store, new StreamListFilter { Prefix = "acme:Order:" }, pageSize: 2);
-        Assert.Equal(["acme:Order:A", "acme:Order:B", "acme:Order:Z", "acme:Order:a", "acme:Order:b"], page.Ids);
+        Assert.Equal(["acme:Order:B", "acme:Order:Z", "acme:Order:_", "acme:Order:a"], page.Ids);
         Assert.Null(page.LastToken);
     }
 
