@@ -32,7 +32,10 @@ The default schema is `lawndart`. Any other schema name is set on
 `PostgresInboxStoreOptions.SchemaName`. The `public` schema is rejected.
 The table name defaults to `inbox`.
 
-`message_id` is text, the primary key, at most 256 characters.
+`message_id` is text, the primary key, at most 256 characters. Postgres
+compares that key exactly. Case and trailing spaces are part of the key.
+A SQL Server inbox on the usual database collation treats a different case,
+or trailing spaces, as the same key.
 `processed_at` and `claimed_at` are timestamps. An index covers purge by time.
 
 `IsProcessedAsync` returns true only when `processed_at` is inside

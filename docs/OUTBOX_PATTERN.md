@@ -34,8 +34,11 @@ A failed publish clears the claim. On SQL Server, format `1` outbox tables gain
 `ClaimedUntil` when `InitializeSchemaAsync` runs. On Postgres,
 `InitializeSchemaAsync` adds the `outbox` table when it is missing. The events
 format stamp stays at 1. A process still running 0.7.0-alpha.1 can keep
-appending. It does not write outbox rows. The in-memory writer uses the same
-lease option.
+appending. It does not write outbox rows, and the store does not report that.
+Deploy the new version with `EnableOutbox` false until no 0.7.0-alpha.1 copy
+can run. On a host that keeps old revisions, such as Azure Container Apps,
+deactivate the old revisions first. Then set `EnableOutbox` to true. The
+in-memory writer uses the same lease option.
 
 Postgres details are on the [Postgres event store page](packages/eventsourcing-postgres.md#outbox).
 

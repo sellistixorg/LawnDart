@@ -47,9 +47,6 @@ internal static class PostgresSchema
         sql.Add(CreatePartitioned(names.Tags, names.TagsShared, names.TagsHash, options, TagsColumns(names), TagsKeys()));
         sql.Add(DropAppendFunction(names));
         sql.Add(PostgresAppendSql.CreateFunction(names, options));
-        // The longer function writes outbox rows. The shorter one stays so a
-        // 0.7.0-alpha.1 process can keep appending after this script commits.
-        sql.Add(PostgresAppendSql.CreateOutboxFunction(names));
         sql.Add(Stamp(names, options));
         return sql;
     }

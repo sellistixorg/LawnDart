@@ -182,19 +182,56 @@ public sealed partial class PostgresEventStore
 
         BuildLocks(envelopes, condition, out var lockTags, out var lockModes, out var lockStore);
         BuildCondition(condition, out var check, out var all, out var after, out var itemCount, out var typeItems, out var typeCond, out var tagItems, out var tagCond, out var itemsWithTypes, out var itemsWithTags);
+        const string emptyJson = "'{}'::jsonb";
 
-        var outboxArgs = writeOutbox
-            ? ", @write_outbox, @event_type_names, @outbox_payloads"
-            : "";
-        var sql = $"""
-            SELECT global_position, version
-            FROM {_names.Append}(
+        var call = $"""
+            {_names.Append}(
                 @stream_id, @tenant_id, @expected, @is_dcb, @aggregate_type, @aggregate_id,
                 @event_ids, @type_ids, @schema_versions, @codec_ids, @data, @bdata, @metadata,
                 @tag_ords, @tag_values, @stream_tags, @partition_hash, @recorded_at, @notify, @notify_channel,
                 @lock_tags, @lock_modes, @lock_store, @store_lock_key,
                 @check_condition, @condition_all, @condition_after, @item_count,
-                @type_items, @type_ids_cond, @tag_items, @tag_values_cond, @items_with_types, @items_with_tags{outboxArgs})
+                @type_items, @type_ids_cond, @tag_items, @tag_values_cond, @items_with_types, @items_with_tags)
+            """;
+        // One statement. MATERIALIZED runs the original function once. The outbox
+        // insert is in that same statement, so a rollback removes both. An older
+        // init that recreates only this function still serves the call.
+        var sql = writeOutbox
+            ? $"""
+            WITH r AS MATERIALIZED (
+                SELECT src.global_position, src.version, src.ord
+                FROM {call} WITH ORDINALITY AS src(global_position, version, ord)
+            ),
+            written AS (
+                INSERT INTO {_names.Outbox} (
+                    id, event_type, schema_version, codec_id, payload, metadata,
+                    created_at, attempts, stream_id, sequence_position)
+                SELECT
+                    u.event_id,
+                    u.event_type,
+                    u.schema_version,
+                    u.codec_id,
+                    u.payload,
+                    coalesce(u.metadata, {emptyJson}),
+                    @recorded_at,
+                    0,
+                    @stream_id,
+                    r.global_position
+                FROM r
+                JOIN unnest(
+                    @event_ids, @event_type_names, @schema_versions, @codec_ids, @outbox_payloads, @metadata
+                ) WITH ORDINALITY AS u(event_id, event_type, schema_version, codec_id, payload, metadata, ord)
+                    ON u.ord = r.ord
+                RETURNING sequence_position
+            )
+            SELECT r.global_position, r.version
+            FROM r
+            WHERE (SELECT count(*) FROM written) >= 0
+            ORDER BY r.ord
+            """
+            : $"""
+            SELECT global_position, version
+            FROM {call}
             """;
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.Add(new NpgsqlParameter("stream_id", streamId));
@@ -234,7 +271,6 @@ public sealed partial class PostgresEventStore
         command.Parameters.Add(new NpgsqlParameter("items_with_tags", NpgsqlDbType.Array | NpgsqlDbType.Integer) { Value = itemsWithTags });
         if (writeOutbox)
         {
-            command.Parameters.Add(new NpgsqlParameter("write_outbox", true));
             command.Parameters.Add(new NpgsqlParameter("event_type_names", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = eventTypeNames });
             command.Parameters.Add(new NpgsqlParameter("outbox_payloads", NpgsqlDbType.Array | NpgsqlDbType.Bytea) { Value = outboxPayloads });
         }
@@ -285,7 +321,7 @@ public sealed partial class PostgresEventStore
         }
         catch (PostgresException ex)
         {
-            throw MapAppendError(ex, expectedVersion, condition?.After);
+            throw MapAppendError(ex, expectedVersion, condition?.After, _options.OutboxTableName);
         }
         catch (AppendStatementSentException)
         {
@@ -311,10 +347,19 @@ public sealed partial class PostgresEventStore
         }
     }
 
-    private static Exception MapAppendError(PostgresException exception, long? expectedVersion, long? conditionAfter)
+    private static Exception MapAppendError(
+        PostgresException exception,
+        long? expectedVersion,
+        long? conditionAfter,
+        string outboxTable)
     {
         if (exception.Hint == "event_already_appended" && Guid.TryParse(exception.Detail, out var eventId))
             return new EventAlreadyAppendedException(eventId);
+
+        if (exception.SqlState == "23505"
+            && OutboxKeyViolation(exception, outboxTable)
+            && TryReadDuplicateKey(exception.Detail, out var duplicateId))
+            return new EventAlreadyAppendedException(duplicateId);
 
         if (exception.MessageText == "condition")
         {
@@ -358,6 +403,24 @@ public sealed partial class PostgresEventStore
             ? right
             : null;
         return (expected, actual);
+    }
+
+    private static bool OutboxKeyViolation(PostgresException exception, string outboxTable)
+        => string.Equals(exception.TableName, outboxTable, StringComparison.Ordinal)
+           || string.Equals(exception.ConstraintName, outboxTable + "_pkey", StringComparison.Ordinal);
+
+    private static bool TryReadDuplicateKey(string? detail, out Guid eventId)
+    {
+        eventId = default;
+        if (string.IsNullOrEmpty(detail))
+            return false;
+
+        var open = detail.LastIndexOf('(');
+        var close = detail.LastIndexOf(')');
+        if (open < 0 || close <= open)
+            return false;
+
+        return Guid.TryParse(detail[(open + 1)..close], out eventId);
     }
 
     private void BuildLocks(

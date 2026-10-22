@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text;
 using LawnDart.EventSourcing.Postgres.EventStore;
 using LawnDart.EventSourcing.Postgres.Outbox;
 using LawnDart.EventStore;
@@ -151,7 +152,7 @@ public sealed class PostgresOutboxInboxTests
                     counts.Add(reader.GetInt32(0));
             }
 
-            Assert.Equal(new[] { 34, 37 }, counts);
+            Assert.Equal(new[] { 34 }, counts);
 
             await using var options = new NpgsqlCommand(
                 """
@@ -181,6 +182,192 @@ public sealed class PostgresOutboxInboxTests
         var third = "acme:Order:" + Guid.NewGuid().ToString("N");
         await enabled.Store.AppendAsync(third, [ContractEvent.Tick()]);
         Assert.Equal(third, Assert.Single(await enabled.Outbox.GetUnprocessedAsync(10)).StreamId);
+    }
+
+    [Fact]
+    public async Task OutboxAppend_SucceedsAfterAlpha1InitRecreatesOnlyTheShortFunction()
+    {
+        var opened = await _fixture.Backend.OpenEventStoreAsync(ContractStores.Isolated(enableOutbox: true));
+        var store = (PostgresEventStore)opened.Store;
+        var schema = store.SchemaName;
+        var quoted = Quote(schema);
+
+        await using var connection = new NpgsqlConnection(_fixture.AdminConnectionString);
+        await connection.OpenAsync();
+
+        string definition;
+        await using (var read = new NpgsqlCommand(
+            """
+            SELECT pg_get_functiondef(p.oid)
+            FROM pg_proc p
+            JOIN pg_namespace n ON n.oid = p.pronamespace
+            WHERE n.nspname = @schema AND p.proname = 'append_to_stream' AND p.pronargs = 34
+            """,
+            connection))
+        {
+            read.Parameters.AddWithValue("schema", schema);
+            definition = (string)(await read.ExecuteScalarAsync())!;
+        }
+
+        var escaped = schema.Replace("'", "''", StringComparison.Ordinal);
+        await using (var plant = new NpgsqlCommand(
+            $"""
+            CREATE FUNCTION {quoted}.append_to_stream(integer)
+            RETURNS integer LANGUAGE sql AS 'SELECT $1'
+            """,
+            connection))
+        {
+            await plant.ExecuteNonQueryAsync();
+        }
+
+        await using (var rebuild = new NpgsqlCommand(
+            $"""
+            DO $drop$
+            DECLARE sig regprocedure;
+            BEGIN
+                FOR sig IN
+                    SELECT p.oid::regprocedure
+                    FROM pg_proc p
+                    JOIN pg_namespace n ON n.oid = p.pronamespace
+                    WHERE n.nspname = '{escaped}' AND p.proname = 'append_to_stream'
+                LOOP
+                    EXECUTE 'DROP FUNCTION ' || sig::text;
+                END LOOP;
+            END
+            $drop$;
+            {definition}
+            """,
+            connection))
+        {
+            await rebuild.ExecuteNonQueryAsync();
+        }
+
+        Assert.Equal(new[] { 34 }, await AppendFunctionArgumentCountsAsync(connection, schema));
+
+        var streamId = "acme:Order:" + Guid.NewGuid().ToString("N");
+        await store.AppendAsync(streamId, [ContractEvent.Tick()]);
+        Assert.Single(await store.ReadStreamAsync(streamId));
+        Assert.Equal(streamId, Assert.Single(await opened.Outbox.GetUnprocessedAsync(10)).StreamId);
+    }
+
+    [Fact]
+    public async Task InitializeSchemaAsync_RemovesALongerAppendFunction()
+    {
+        var opened = await _fixture.Backend.OpenEventStoreAsync(ContractStores.Isolated(enableOutbox: true));
+        var store = (PostgresEventStore)opened.Store;
+        var quoted = Quote(store.SchemaName);
+
+        await using (var connection = new NpgsqlConnection(_fixture.AdminConnectionString))
+        {
+            await connection.OpenAsync();
+            await using var plant = new NpgsqlCommand(
+                $"""
+                CREATE FUNCTION {quoted}.append_to_stream(integer)
+                RETURNS integer LANGUAGE sql AS 'SELECT $1'
+                """,
+                connection);
+            await plant.ExecuteNonQueryAsync();
+        }
+
+        await store.InitializeSchemaAsync();
+
+        await using var check = new NpgsqlConnection(_fixture.AdminConnectionString);
+        await check.OpenAsync();
+        Assert.Equal(new[] { 34 }, await AppendFunctionArgumentCountsAsync(check, store.SchemaName));
+
+        var streamId = "acme:Order:" + Guid.NewGuid().ToString("N");
+        await store.AppendAsync(streamId, [ContractEvent.Tick()]);
+        Assert.Equal(streamId, Assert.Single(await opened.Outbox.GetUnprocessedAsync(10)).StreamId);
+    }
+
+    [Fact]
+    public async Task EventStore_InitializesAfterInboxInTheSameSchema()
+    {
+        var schema = "lawndart";
+        await _fixture.Backend.OpenInboxAsync(new ContractStoreOptions { SchemaName = schema, RequireTenantId = false });
+        var opened = await _fixture.Backend.OpenEventStoreAsync(new ContractStoreOptions
+        {
+            SchemaName = schema,
+            RequireTenantId = false,
+            EnableOutbox = true
+        });
+        var streamId = "acme:Order:" + Guid.NewGuid().ToString("N");
+        await opened.Store.AppendAsync(streamId, [ContractEvent.Tick()]);
+        Assert.Single(await opened.Store.ReadStreamAsync(streamId));
+        Assert.Equal(streamId, Assert.Single(await opened.Outbox.GetUnprocessedAsync(10)).StreamId);
+    }
+
+    [Fact]
+    public async Task EventStore_InitializesAfterOutboxWriterInTheSameSchema()
+    {
+        var schema = "c" + Guid.NewGuid().ToString("N");
+        await _fixture.Backend.OpenOutboxAsync(new ContractStoreOptions { SchemaName = schema, RequireTenantId = false });
+        var opened = await _fixture.Backend.OpenEventStoreAsync(new ContractStoreOptions
+        {
+            SchemaName = schema,
+            RequireTenantId = false,
+            EnableOutbox = true
+        });
+        var streamId = "acme:Order:" + Guid.NewGuid().ToString("N");
+        await opened.Store.AppendAsync(streamId, [ContractEvent.Tick()]);
+        Assert.Equal(streamId, Assert.Single(await opened.Outbox.GetUnprocessedAsync(10)).StreamId);
+    }
+
+    [Fact]
+    public async Task InboxAndOutboxWriter_InitializeAfterTheEventStore()
+    {
+        var schema = "c" + Guid.NewGuid().ToString("N");
+        var options = new ContractStoreOptions { SchemaName = schema, RequireTenantId = false, EnableOutbox = true };
+        var opened = await _fixture.Backend.OpenEventStoreAsync(options);
+        var inbox = await _fixture.Backend.OpenInboxAsync(options);
+        var writer = await _fixture.Backend.OpenOutboxAsync(options);
+
+        await inbox.Store.MarkProcessedAsync("after-events", DateTimeOffset.UtcNow);
+        Assert.True(await inbox.Store.IsProcessedAsync("after-events"));
+        await writer.WriteAsync(Message(1));
+        var streamId = "acme:Order:" + Guid.NewGuid().ToString("N");
+        await opened.Store.AppendAsync(streamId, [ContractEvent.Tick()]);
+        var rows = await opened.Outbox.GetUnprocessedAsync(10);
+        Assert.Contains(rows, row => row.StreamId == streamId);
+    }
+
+    [Fact]
+    public async Task SameEventId_OnTwoTenants_WithOutbox_ThrowsEventAlreadyAppended()
+    {
+        var opened = await _fixture.Backend.OpenEventStoreAsync(ContractStores.Isolated(enableOutbox: true));
+        var id = Guid.NewGuid();
+        var metadata = Encoding.UTF8.GetBytes($"{{\"EventId\":\"{id:D}\"}}");
+        var payload = """{"n":1}"""u8.ToArray();
+        var first = "alpha:Order:" + Guid.NewGuid().ToString("N");
+        var second = "beta:Order:" + Guid.NewGuid().ToString("N");
+        await opened.Log.AppendAsync(first, [new AppendEvent("contract.outbox.same-id", payload, metadata)]);
+
+        var ex = await Assert.ThrowsAsync<EventAlreadyAppendedException>(() =>
+            opened.Log.AppendAsync(second, [new AppendEvent("contract.outbox.same-id", payload, metadata)]));
+
+        Assert.Equal(id, ex.EventId);
+        Assert.Single(await opened.Log.ReadStreamAsync(first));
+        Assert.Empty(await opened.Log.ReadStreamAsync(second));
+        Assert.Single(await opened.Outbox.GetUnprocessedAsync(10));
+    }
+
+    private static async Task<List<int>> AppendFunctionArgumentCountsAsync(NpgsqlConnection connection, string schema)
+    {
+        await using var command = new NpgsqlCommand(
+            """
+            SELECT p.pronargs
+            FROM pg_proc p
+            JOIN pg_namespace n ON n.oid = p.pronamespace
+            WHERE n.nspname = @schema AND p.proname = 'append_to_stream'
+            ORDER BY p.pronargs
+            """,
+            connection);
+        command.Parameters.AddWithValue("schema", schema);
+        var counts = new List<int>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            counts.Add(reader.GetInt32(0));
+        return counts;
     }
 
     private static OutboxMessage Message(long sequence)

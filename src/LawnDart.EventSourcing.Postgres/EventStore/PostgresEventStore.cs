@@ -180,22 +180,31 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
         }
 
         var infoExists = await RegclassExistsAsync(connection, transaction, _names.SchemaInfo, cancellationToken).ConfigureAwait(false);
+        var eventsExist = await RegclassExistsAsync(connection, transaction, _names.Events, cancellationToken).ConfigureAwait(false);
         if (infoExists)
         {
-            var found = await ReadStampAsync(connection, transaction, cancellationToken).ConfigureAwait(false)
-                ?? throw new IncompatibleEventStoreSchemaException(_names.Schema, null, CurrentSchemaFormat);
-            if (found.Format != CurrentSchemaFormat)
-                throw new IncompatibleEventStoreSchemaException(_names.Schema, found.Format, CurrentSchemaFormat);
-            if (found.PartitionCount != _options.PartitionCount || found.Partitioning != _options.Partitioning)
+            var found = await ReadStampAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+            if (found is not { } stamp)
+            {
+                // The inbox or a standalone outbox writer can create schema_info
+                // before any event table exists. That schema is still new.
+                if (eventsExist)
+                    throw new IncompatibleEventStoreSchemaException(_names.Schema, null, CurrentSchemaFormat);
+            }
+            else if (stamp.Format != CurrentSchemaFormat)
+            {
+                throw new IncompatibleEventStoreSchemaException(_names.Schema, stamp.Format, CurrentSchemaFormat);
+            }
+            else if (stamp.PartitionCount != _options.PartitionCount || stamp.Partitioning != _options.Partitioning)
             {
                 throw new InvalidOperationException(
-                    $"This schema was created with {found.PartitionCount} hash buckets " +
-                    $"and partitioning {(found.Partitioning ? "on" : "off")}. " +
+                    $"This schema was created with {stamp.PartitionCount} hash buckets " +
+                    $"and partitioning {(stamp.Partitioning ? "on" : "off")}. " +
                     $"PartitionCount is {_options.PartitionCount} and partitioning is {(_options.Partitioning ? "on" : "off")}. " +
                     "Drop and recreate the schema to change the bucket layout.");
             }
         }
-        else if (await RegclassExistsAsync(connection, transaction, _names.Events, cancellationToken).ConfigureAwait(false))
+        else if (eventsExist)
         {
             throw new IncompatibleEventStoreSchemaException(_names.Schema, null, CurrentSchemaFormat);
         }
