@@ -102,6 +102,26 @@ public sealed class PostgresAppendClosureTests
     }
 
     [Fact]
+    public async Task Outbox_ClosureBeforeTheAppendReachesTheServer_RetriesAndSavesOneEventAndOneOutboxRow()
+    {
+        await using var harness = await StartProxiedPostgresAsync(PostgresClosureProxy.Mode.BeforeAppendReachesServer);
+        var logger = new ListLogger<PostgresEventStore>();
+        var opened = await OpenStoreAsync(harness.ProxyConnectionString, logger, enableOutbox: true);
+        harness.Proxy.Arm();
+
+        var stream = "Order:" + Guid.NewGuid().ToString("N");
+        var appended = await opened.Store.AppendAsync(stream, [ContractEvent.Tick()]);
+        var read = await opened.Store.ReadStreamAsync(stream);
+        Assert.Single(read);
+        Assert.Equal(appended.SequencePositions[0], read[0].SequencePosition);
+        Assert.True(harness.Proxy.DidPoison);
+        await AssertEventAndOutboxCountsAsync(harness.DirectConnectionString, opened.SchemaName, stream, 1);
+        Assert.Contains(
+            logger.Entries,
+            entry => entry.Level == LogLevel.Warning && entry.Message.Contains("tried once more", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task ClosureAfterCommit_ExpectedVersion_ReturnsTheSavedAppendOnce()
     {
         await using var harness = await StartProxiedPostgresAsync(PostgresClosureProxy.Mode.AfterCommit);
@@ -131,6 +151,38 @@ public sealed class PostgresAppendClosureTests
         Assert.Single(read);
         Assert.Equal(appended.SequencePositions[0], read[0].SequencePosition);
         Assert.Equal(1, await CountRowsAsync(harness.DirectConnectionString, opened.SchemaName, stream));
+    }
+
+    [Fact]
+    public async Task Outbox_ClosureAfterCommit_ReturnsTheSavedAppendOnce()
+    {
+        await using var harness = await StartProxiedPostgresAsync(PostgresClosureProxy.Mode.AfterCommit);
+        var opened = await OpenStoreAsync(harness.ProxyConnectionString, logger: null, enableOutbox: true);
+        harness.Proxy.Arm();
+
+        var stream = "Order:" + Guid.NewGuid().ToString("N");
+        var appended = await opened.Store.AppendAsync(stream, [ContractEvent.Tick()]);
+        var read = await opened.Store.ReadStreamAsync(stream);
+        Assert.Single(read);
+        Assert.Equal(appended.SequencePositions[0], read[0].SequencePosition);
+        Assert.True(harness.Proxy.DidPoison);
+        await AssertEventAndOutboxCountsAsync(harness.DirectConnectionString, opened.SchemaName, stream, 1);
+    }
+
+    [Fact]
+    public async Task Outbox_ClosureDropReply_ReturnsTheSavedAppendOnce()
+    {
+        await using var harness = await StartProxiedPostgresAsync(PostgresClosureProxy.Mode.DropReply);
+        var opened = await OpenStoreAsync(harness.ProxyConnectionString, logger: null, enableOutbox: true);
+        harness.Proxy.Arm();
+
+        var stream = "Order:" + Guid.NewGuid().ToString("N");
+        var appended = await opened.Store.AppendAsync(stream, [ContractEvent.Tick()]);
+        var read = await opened.Store.ReadStreamAsync(stream);
+        Assert.Single(read);
+        Assert.Equal(appended.SequencePositions[0], read[0].SequencePosition);
+        Assert.True(harness.Proxy.DidPoison);
+        await AssertEventAndOutboxCountsAsync(harness.DirectConnectionString, opened.SchemaName, stream, 1);
     }
 
     [Fact]
@@ -232,7 +284,8 @@ public sealed class PostgresAppendClosureTests
 
     private static async Task<OpenedStore> OpenStoreAsync(
         string connectionString,
-        ListLogger<PostgresEventStore>? logger)
+        ListLogger<PostgresEventStore>? logger,
+        bool enableOutbox = false)
     {
         var schema = "a" + Guid.NewGuid().ToString("N");
         var store = new PostgresEventStore(
@@ -241,11 +294,35 @@ public sealed class PostgresAppendClosureTests
             {
                 ConnectionString = connectionString,
                 SchemaName = schema,
-                RequireTenantId = false
+                RequireTenantId = false,
+                EnableOutbox = enableOutbox
             },
             logger: logger);
         await store.InitializeSchemaAsync();
         return new OpenedStore(store, schema);
+    }
+
+    private static async Task AssertEventAndOutboxCountsAsync(
+        string connectionString,
+        string schema,
+        string streamId,
+        int expected)
+    {
+        var events = await CountRowsAsync(connectionString, schema, streamId);
+        var outbox = await CountOutboxRowsAsync(connectionString, schema, streamId);
+        Assert.Equal(expected, events);
+        Assert.Equal(events, outbox);
+    }
+
+    private static async Task<int> CountOutboxRowsAsync(string connectionString, string schema, string streamId)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(
+            $"SELECT count(*) FROM {Quote(schema)}.outbox WHERE stream_id = @id",
+            connection);
+        command.Parameters.AddWithValue("id", streamId);
+        return Convert.ToInt32(await command.ExecuteScalarAsync());
     }
 
     private static async Task<ProxiedPostgres> StartProxiedPostgresAsync(PostgresClosureProxy.Mode mode)
