@@ -245,8 +245,8 @@ append function and can keep appending. That process does not write outbox
 rows, and the store does not report that.
 
 Deploy this version with `EnableOutbox` false until no 0.7.0-alpha.1 copy can
-run. On a host that keeps old revisions, such as Azure Container Apps,
-deactivate the old revisions first. Then set `EnableOutbox` to true.
+run. If your host keeps older versions of the app running, stop them first.
+Then set `EnableOutbox` to true.
 On a brand-new database during a mixed-version deploy, initialize the event
 store with the new version first, because the 0.7.0-alpha.1 event store cannot
 initialize a schema that the new inbox created first.
