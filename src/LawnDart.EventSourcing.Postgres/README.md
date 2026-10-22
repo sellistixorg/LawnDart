@@ -16,7 +16,8 @@ services.AddBoundedContext("default")
     });
 ```
 
-Call `InitializeSchemaAsync` before the first append. `EnableOutbox = true`
-is rejected. Leave it false until the outbox release.
+Call `InitializeSchemaAsync` before the first append. `WithSnapshots` stores
+snapshot state as bytes. `EnableOutbox = true` is rejected. Leave it false
+until the outbox release.
 
 See [the package page](../../docs/packages/eventsourcing-postgres.md).

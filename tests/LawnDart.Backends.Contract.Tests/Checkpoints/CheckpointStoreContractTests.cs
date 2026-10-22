@@ -10,6 +10,17 @@ public abstract class CheckpointStoreContractTests : ContractSuite
     }
 
     [ContractFact]
+    public async Task Save_InOneSchema_DoesNotAffectOther()
+    {
+        SkipUnless(Cap.HasProjectionStores, "This backend does not have view and checkpoint stores yet.");
+        var ordering = await Backend.OpenProjectionStoresAsync(ContractStores.Isolated());
+        var catalog = await Backend.OpenProjectionStoresAsync(ContractStores.Isolated());
+        await ordering.Checkpoints.SaveCheckpointAsync(Checkpoint("OrderSummary:v1", 0, 9));
+        Assert.Equal(9, (await ordering.Checkpoints.GetCheckpointAsync("OrderSummary:v1", 0))!.LastSequencePosition);
+        Assert.Null(await catalog.Checkpoints.GetCheckpointAsync("OrderSummary:v1", 0));
+    }
+
+    [ContractFact]
     public async Task SaveThenGet_ReturnsTheCheckpoint()
     {
         SkipUnless(Cap.HasProjectionStores, "This backend does not have view and checkpoint stores yet.");

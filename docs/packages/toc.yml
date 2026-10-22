@@ -26,6 +26,8 @@
   href: projections-lightweight.md
 - name: Projections.Lightweight.SqlServer
   href: projections-lightweight-sqlserver.md
+- name: Projections.Lightweight.Postgres
+  href: projections-lightweight-postgres.md
 - name: AspNetCore
   href: aspnetcore.md
 - name: Authorization.AspNetCore

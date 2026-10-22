@@ -69,9 +69,14 @@ namespace LawnDart.Projections.Lightweight.Hosting;
 /// <para>
 /// <strong>Checkpointing</strong><br/>
 /// After processing every <see cref="LightweightProjectionOptions.CheckpointInterval"/> events
-/// all dirty views are written to <see cref="IViewStore"/> first, then the global checkpoint
-/// is advanced. This ordering guarantees that on restart, view state is always consistent with
-/// or ahead of the checkpoint position. A final checkpoint is saved on graceful stop.
+/// all dirty views are written, then the global checkpoint is advanced. When the store implements
+/// <see cref="IAtomicProjectionFlush"/>, both writes are one transaction. Otherwise the runner
+/// keeps two calls. On restart, view state is consistent with or ahead of the checkpoint.
+/// A final checkpoint is saved on graceful stop. When an <see cref="IProjectionRunnerLock"/>
+/// is passed in, the runner waits for it before reading. If that lease is lost, or a
+/// checkpoint save is rejected, the runner drops its in-memory state and waits to take
+/// the lead again. It reads the stored checkpoint and continues. It stops when the host stops.
+/// With no lock, every copy runs.
 /// When <see cref="LightweightProjectionOptions.EnableWriteBehind"/> is enabled, view writes run
 /// on a serialized background drain so the poll loop can overlap SQL I/O; the checkpoint still
 /// advances only after durable ack for that flush wave (never enqueue-then-checkpoint).
@@ -102,6 +107,13 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
     private readonly ILogger<LightweightProjectionRunnerService> _logger;
     private readonly IEventStoreSubscriptions? _subscriptions;
     private readonly NewEventsSignal? _newEvents;
+    private readonly IProjectionRunnerLock? _runnerLock;
+    private IProjectionRunnerLease? _lease;
+    private int _stopForLeadership;
+    private bool _sawDurableCheckpoint;
+    private bool _startedEmpty;
+    private readonly HashSet<string> _trustedViews = new();
+    private long _nextStoredCheckpointCheckAt;
     private LightweightProjectionSharedPipe? _sharedPipe;
     private bool _sharedPipePrivateCatchUp;
 
@@ -189,6 +201,10 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
     /// <param name="logger">Optional logger.</param>
     /// <param name="readCache">Optional hot read cache; updated on apply.</param>
     /// <param name="catalog">Scoped event-type catalog for live type filters.</param>
+    /// <param name="runnerLock">
+    /// Optional lock so two copies with the same node number do not both run this projection.
+    /// Null keeps the previous behavior: every copy runs.
+    /// </param>
     public LightweightProjectionRunnerService(
         ProjectionRegistration registration,
         IEventStore eventStore,
@@ -198,7 +214,8 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
         LightweightProjectionOptions options,
         ILogger<LightweightProjectionRunnerService>? logger = null,
         IProjectionReadCache? readCache = null,
-        IEventTypeCatalog? catalog = null)
+        IEventTypeCatalog? catalog = null,
+        IProjectionRunnerLock? runnerLock = null)
     {
         _registration       = registration        ?? throw new ArgumentNullException(nameof(registration));
         _eventStore         = eventStore          ?? throw new ArgumentNullException(nameof(eventStore));
@@ -209,6 +226,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
         _logger             = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<LightweightProjectionRunnerService>.Instance;
         _readCache          = readCache;
         _catalog            = catalog;
+        _runnerLock         = runnerLock;
         _subscriptions      = eventStore as IEventStoreSubscriptions;
         _newEvents          = (eventStore as ISignalsNewEvents)?.NewEvents;
     }
@@ -216,11 +234,107 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
     /// <inheritdoc/>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        var delay = LeadershipDelay(_options.LeadershipRetryDelay);
+        var maxDelay = LeadershipDelay(_options.LeadershipRetryMaxDelay);
+        if (maxDelay < delay)
+            maxDelay = delay;
+        try
+        {
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                try
+                {
+                    await RunAsync(stoppingToken).ConfigureAwait(false);
+                    break;
+                }
+                catch (ProjectionLeadershipLostException ex)
+                {
+                    NoteLeadershipLost(ex);
+                    if (_runnerLock is null || stoppingToken.IsCancellationRequested)
+                        break;
+                    await AbandonTermAsync().ConfigureAwait(false);
+                    ResetWorkingMemory();
+                    LightweightProjectionRunnerServiceLog.LeadershipRetry(
+                        _logger, DisplayName, _options.NodeInstance, delay);
+                    try
+                    {
+                        await Task.Delay(delay, stoppingToken).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        break;
+                    }
+
+                    var next = delay + delay;
+                    delay = next > maxDelay ? maxDelay : next;
+                    Interlocked.Exchange(ref _stopForLeadership, 0);
+                }
+            }
+        }
+        finally
+        {
+            if (_lease is not null)
+            {
+                await _lease.DisposeAsync().ConfigureAwait(false);
+                _lease = null;
+            }
+        }
+    }
+
+    private static TimeSpan LeadershipDelay(TimeSpan value)
+        => value < TimeSpan.FromMilliseconds(1) ? TimeSpan.FromMilliseconds(1) : value;
+
+    private void ArmCheckpointWatch()
+    {
+        _nextStoredCheckpointCheckAt = Environment.TickCount64
+            + (long)LeadershipDelay(_options.LeadershipRetryDelay).TotalMilliseconds;
+    }
+
+    private async Task AbandonTermAsync()
+    {
+        _sharedPipe?.Unregister(StorageKey);
+        StopSubscription();
+        if (_lease is null)
+            return;
+        var lease = _lease;
+        _lease = null;
+        await lease.DisposeAsync().ConfigureAwait(false);
+    }
+
+    private void ResetWorkingMemory()
+    {
+        lock (_instanceStateGate)
+        {
+            _instances.Clear();
+            _dirtyInstances.Clear();
+            _lastAppliedByInstance.Clear();
+            _lastAccessTicks.Clear();
+        }
+
+        _lastCheckpointSequence = -1;
+        _sawDurableCheckpoint = false;
+        _startedEmpty = false;
+        _trustedViews.Clear();
+        _lastAppliedSequence = -1;
+        _subscribeFaulted = false;
+        _suppressResubscribe = false;
+        _sharedPipePrivateCatchUp = false;
+        _readCache?.Clear(StorageKey);
+    }
+
+    private async Task RunAsync(CancellationToken stoppingToken)
+    {
         LightweightProjectionRunnerServiceLog.RunnerStarting(
             _logger,
             _options.ContextName ?? "default",
             DisplayName, _registration.Kind,
             _options.NodeInstance, _options.TotalInstances);
+
+        if (_runnerLock is not null)
+        {
+            _lease = await _runnerLock.AcquireAsync(
+                StorageKey, _options.NodeInstance, stoppingToken).ConfigureAwait(false);
+        }
 
         // 1. Load global checkpoint
         var checkpoint = await _checkpointStore.GetCheckpointAsync(
@@ -228,11 +342,18 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
             _options.NodeInstance,
             stoppingToken).ConfigureAwait(false);
 
+        if (checkpoint is { LastSequencePosition: < 0 })
+            checkpoint = null;
+
         long lastPosition = checkpoint?.LastSequencePosition ?? -1;
         _lastAppliedSequence = lastPosition;
         long totalEventsProcessed = checkpoint?.TotalEventsProcessed ?? 0;
         int eventsSinceCheckpoint = 0;
         bool isColdStart = checkpoint is null;
+        _startedEmpty = isColdStart;
+        _lastCheckpointSequence = lastPosition;
+        _sawDurableCheckpoint = checkpoint is not null;
+        ArmCheckpointWatch();
 
         LightweightProjectionRunnerServiceLog.Resuming(
             _logger,
@@ -240,7 +361,9 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
             isColdStart ? "Cold start" : "Warm start",
             lastPosition);
 
-        // 2. Restore working set (Eager) or skip bulk load (Lazy — hydrate on first event).
+        // 2. Restore working set (Eager) or skip bulk load (Lazy: hydrate on first event).
+        //    No checkpoint means start empty. Stored views belong to a checkpoint
+        //    that is gone, and loading them would count those events again.
         if (_registration.Kind == ProjectionKind.MultiStream)
         {
             // Initialize the shared resolver prototype before the poll loop
@@ -251,7 +374,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
                     $"'{_registration.HandlerType.FullName}' does not implement IMultiStreamEntityResolver.");
         }
 
-        if (_options.WorkingSetMode == ProjectionWorkingSetMode.EagerRestore)
+        if (!isColdStart && _options.WorkingSetMode == ProjectionWorkingSetMode.EagerRestore)
         {
             if (_registration.Kind == ProjectionKind.SingleStream
                 || _registration.Kind == ProjectionKind.MultiStream)
@@ -269,6 +392,10 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
                 EvictCleanInstancesIfNeeded_NoLock();
                 ProjectionTelemetry.SetWorkingSetSize(StorageKey, _instances.Count);
             }
+        }
+        else if (_options.WorkingSetMode == ProjectionWorkingSetMode.EagerRestore)
+        {
+            ProjectionTelemetry.SetWorkingSetSize(StorageKey, 0);
         }
         else
         {
@@ -314,6 +441,26 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
         {
             try
             {
+                if (Volatile.Read(ref _stopForLeadership) == 1)
+                    throw new ProjectionLeadershipLostException(DisplayName, _options.NodeInstance, _lease?.Epoch);
+
+                // A save is rejected when the epoch changed. An idle copy does not save,
+                // so it also checks the stored position, at most once per leadership retry
+                // delay, and drops its state when that position moves backward.
+                if (_sawDurableCheckpoint
+                    && _lease is { IsHeld: true }
+                    && Environment.TickCount64 >= _nextStoredCheckpointCheckAt)
+                {
+                    ArmCheckpointWatch();
+                    var stored = await _checkpointStore.GetCheckpointAsync(
+                        StorageKey, _options.NodeInstance, stoppingToken).ConfigureAwait(false);
+                    if (stored is null || stored.LastSequencePosition < _lastCheckpointSequence)
+                    {
+                        throw new ProjectionLeadershipLostException(
+                            DisplayName, _options.NodeInstance, _lease.Epoch);
+                    }
+                }
+
                 if (_poisoned)
                 {
                     await HaltOnPoisonAsync(lastPosition, totalEventsProcessed, stoppingToken).ConfigureAwait(false);
@@ -629,6 +776,10 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
             {
                 break;
             }
+            catch (ProjectionLeadershipLostException)
+            {
+                throw;
+            }
             catch (EventHydrationException ex)
             {
                 LightweightProjectionRunnerServiceLog.FailClosed(
@@ -652,19 +803,26 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
         // 4. Graceful stop — drop the subscription, drain write-behind, then persist dirty state.
         _sharedPipe?.Unregister(StorageKey);
         StopSubscription();
-        try
+        if (Volatile.Read(ref _stopForLeadership) == 0 && _lease is not { IsHeld: false })
         {
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-            await DrainWriteBehindAsync(cts.Token).ConfigureAwait(false);
-            if (_dirtyInstances.Count > 0 || eventsSinceCheckpoint > 0 || lastPosition > _lastCheckpointSequence)
+            try
             {
-                // Stop path always uses the inline barrier (await durable ack).
-                await FlushViewsAndCheckpointCoreAsync(lastPosition, totalEventsProcessed, cts.Token).ConfigureAwait(false);
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                await DrainWriteBehindAsync(cts.Token).ConfigureAwait(false);
+                if (_dirtyInstances.Count > 0 || eventsSinceCheckpoint > 0 || lastPosition > _lastCheckpointSequence)
+                {
+                    // Stop path always uses the inline barrier (await durable ack).
+                    await FlushViewsAndCheckpointCoreAsync(lastPosition, totalEventsProcessed, cts.Token).ConfigureAwait(false);
+                }
             }
-        }
-        catch (Exception ex)
-        {
-            LightweightProjectionRunnerServiceLog.FinalFlushIncomplete(_logger, ex, DisplayName);
+            catch (ProjectionLeadershipLostException ex)
+            {
+                NoteLeadershipLost(ex);
+            }
+            catch (Exception ex)
+            {
+                LightweightProjectionRunnerServiceLog.FinalFlushIncomplete(_logger, ex, DisplayName);
+            }
         }
 
         LightweightProjectionRunnerServiceLog.RunnerStopped(
@@ -863,7 +1021,19 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
             ?? throw new InvalidOperationException(
                 $"Cannot create instance of '{_registration.HandlerType.FullName}'.");
 
-        var saved = await _viewStore.GetViewWithCheckpointAsync(StorageKey, instanceId, ct).ConfigureAwait(false);
+        // A run with no checkpoint starts empty. A stored view from before that
+        // checkpoint was cleared would count the same events again. A view this
+        // run has already saved can be loaded after eviction.
+        var loadStored = !_startedEmpty;
+        if (!loadStored)
+        {
+            lock (_instanceStateGate)
+                loadStored = _trustedViews.Contains(instanceId);
+        }
+
+        (string ViewData, long Checkpoint)? saved = null;
+        if (loadStored)
+            saved = await _viewStore.GetViewWithCheckpointAsync(StorageKey, instanceId, ct).ConfigureAwait(false);
         if (saved is not null)
         {
             SetProjectionState(instance, saved.Value.ViewData);
@@ -1179,6 +1349,10 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
         {
             await PersistFlushWaveAsync(wave, CancellationToken.None).ConfigureAwait(false);
         }
+        catch (ProjectionLeadershipLostException ex)
+        {
+            NoteLeadershipLost(ex);
+        }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             LightweightProjectionRunnerServiceLog.WriteBehindFailed(
@@ -1237,32 +1411,43 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
     }
 
     /// <summary>
-    /// Durability barrier: SaveViewsAsync (if any) → SaveCheckpointAsync → clear dirties that
-    /// were not re-applied after the wave snapshot → optional working-set eviction.
+    /// Durability barrier: views and the checkpoint, then clear dirties that
+    /// were not re-applied after the wave snapshot, then optional working-set eviction.
+    /// A store that implements <see cref="IAtomicProjectionFlush"/> writes both in one transaction.
+    /// Any other store keeps two calls: views, then the checkpoint.
     /// </summary>
     private async Task PersistFlushWaveAsync(FlushWave wave, CancellationToken ct)
     {
+        ThrowIfCannotSave();
         var flushSw = Stopwatch.StartNew();
+        var checkpoint = new ProjectionCheckpoint
+        {
+            ProjectionType = StorageKey,
+            NodeId = _options.NodeInstance,
+            LastSequencePosition = wave.Position,
+            LastUpdated = DateTime.UtcNow,
+            TotalEventsProcessed = wave.TotalEventsProcessed
+        };
         try
         {
-            if (wave.Writes.Count > 0)
+            if (AtomicFlush is { } atomic)
             {
-                // Bulk path: the SQL Server view store saves the wave with one OPENJSON MERGE.
-                // Other stores override SaveViewsAsync or use the interface default, which loops SaveViewAsync.
-                await _viewStore.SaveViewsAsync(StorageKey, wave.Writes, ct).ConfigureAwait(false);
+                await atomic.SaveViewsAndCheckpointAsync(StorageKey, wave.Writes, checkpoint, ct).ConfigureAwait(false);
             }
-
-            // Advance checkpoint only after all view writes for this flush have succeeded.
-            await _checkpointStore.SaveCheckpointAsync(new ProjectionCheckpoint
+            else
             {
-                ProjectionType = StorageKey,
-                NodeId = _options.NodeInstance,
-                LastSequencePosition = wave.Position,
-                LastUpdated = DateTime.UtcNow,
-                TotalEventsProcessed = wave.TotalEventsProcessed
-            }, ct).ConfigureAwait(false);
+                if (wave.Writes.Count > 0)
+                {
+                    // Bulk path: the SQL Server view store saves the wave with one OPENJSON MERGE.
+                    // Other stores override SaveViewsAsync or use the interface default, which loops SaveViewAsync.
+                    await _viewStore.SaveViewsAsync(StorageKey, wave.Writes, ct).ConfigureAwait(false);
+                }
+
+                // Advance checkpoint only after all view writes for this flush have succeeded.
+                await _checkpointStore.SaveCheckpointAsync(checkpoint, ct).ConfigureAwait(false);
+            }
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not ProjectionLeadershipLostException)
         {
             ProjectionTelemetry.RecordFlushError(StorageKey);
             throw;
@@ -1287,12 +1472,43 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
 
             if (wave.Position > _lastCheckpointSequence)
                 _lastCheckpointSequence = wave.Position;
+            _sawDurableCheckpoint = true;
+            if (_startedEmpty)
+            {
+                foreach (var (id, _, _) in wave.Writes)
+                    _trustedViews.Add(id);
+            }
         }
 
         LightweightProjectionRunnerServiceLog.CheckpointSaved(
             _logger, DisplayName, wave.Position, wave.Writes.Count);
 
         ProjectionTelemetry.RecordCheckpointSaved(StorageKey, wave.Position);
+    }
+
+    private IAtomicProjectionFlush? AtomicFlush =>
+        _checkpointStore is IAtomicProjectionFlush flush && ReferenceEquals(_checkpointStore, _viewStore)
+            ? flush
+            : null;
+
+    private void ThrowIfCannotSave()
+    {
+        if (_runnerLock is null && Volatile.Read(ref _stopForLeadership) == 0)
+            return;
+        if (Volatile.Read(ref _stopForLeadership) == 1 || _lease is { IsHeld: false })
+        {
+            NoteLeadershipLost(null);
+            throw new ProjectionLeadershipLostException(DisplayName, _options.NodeInstance, _lease?.Epoch);
+        }
+    }
+
+    private void NoteLeadershipLost(Exception? exception)
+    {
+        if (Interlocked.Exchange(ref _stopForLeadership, 1) == 0)
+        {
+            LightweightProjectionRunnerServiceLog.LeadershipLost(
+                _logger, exception, DisplayName, _options.NodeInstance);
+        }
     }
 
     private readonly record struct FlushWave(

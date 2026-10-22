@@ -108,7 +108,7 @@ jobs:
           base="HEAD^"
         fi
         git diff --name-only "$base"...HEAD > /tmp/changed.txt || git diff --name-only "$base" HEAD > /tmp/changed.txt
-        if grep -Eq '^(src/LawnDart/|src/LawnDart.EventSourcing/|src/LawnDart.EventSourcing.Postgres/|src/LawnDart.Projections.Lightweight/|src/LawnDart.Messaging/|tests/LawnDart.Backends.Contract.Tests/|tests/LawnDart.TestUtilities/)' /tmp/changed.txt; then
+        if grep -Eq '^(src/LawnDart/|src/LawnDart.EventSourcing/|src/LawnDart.EventSourcing.Postgres/|src/LawnDart.Projections.Lightweight/|src/LawnDart.Projections.Lightweight.Postgres/|src/LawnDart.Messaging/|tests/LawnDart.Backends.Contract.Tests/|tests/LawnDart.TestUtilities/)' /tmp/changed.txt; then
           echo "run=true" >> "$GITHUB_OUTPUT"
         else
           echo "run=false" >> "$GITHUB_OUTPUT"

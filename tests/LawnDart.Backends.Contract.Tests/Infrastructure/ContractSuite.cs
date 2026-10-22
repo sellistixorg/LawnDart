@@ -119,6 +119,18 @@ public abstract class ContractSuite
         Assert.True(JsonNode.DeepEquals(JsonNode.Parse(expected), JsonNode.Parse(bytes)));
     }
 
+    protected void AssertViewJson(string expected, string? actual)
+    {
+        Assert.NotNull(actual);
+        if (Cap.PreservesExactViewJson)
+        {
+            Assert.Equal(expected, actual);
+            return;
+        }
+
+        Assert.True(JsonNode.DeepEquals(JsonNode.Parse(expected), JsonNode.Parse(actual)));
+    }
+
     protected static async Task WaitForWaitersAsync(NewEventsSignal signal, int count)
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));

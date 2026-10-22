@@ -20,6 +20,7 @@
     <InternalsVisibleTo Include="LawnDart.EventSourcing" />
     <InternalsVisibleTo Include="LawnDart.Projections.Lightweight" />
     <InternalsVisibleTo Include="LawnDart.Projections.Lightweight.SqlServer" />
+    <InternalsVisibleTo Include="LawnDart.Projections.Lightweight.Postgres" />
     <InternalsVisibleTo Include="LawnDart.EventSourcing.SqlServer" />
     <InternalsVisibleTo Include="LawnDart.EventSourcing.Postgres" />
     <InternalsVisibleTo Include="LawnDart.Testing" />

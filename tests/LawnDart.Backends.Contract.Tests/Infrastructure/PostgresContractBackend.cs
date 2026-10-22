@@ -2,8 +2,11 @@ using System.Collections.Concurrent;
 using LawnDart.EventSourcing.Outbox;
 using LawnDart.EventSourcing.Postgres;
 using LawnDart.EventSourcing.Postgres.EventStore;
+using LawnDart.EventSourcing.Postgres.Snapshots;
 using LawnDart.Outbox;
+using LawnDart.Projections.Lightweight.Postgres;
 using Npgsql;
+using NpgsqlTypes;
 
 namespace LawnDart.Backends.Contract.Tests;
 
@@ -42,9 +45,12 @@ public sealed class PostgresContractBackend : IContractBackend
             CanBreakLiveReads = true,
             CommittedAppendMayEchoSignal = !pollOnly,
             HasOutboxStore = false,
-            HasSnapshotStore = false,
+            HasSnapshotStore = true,
+            StoresDcbSnapshotLoadTags = true,
+            CanCorruptDcbSnapshot = true,
             HasInboxStore = false,
-            HasProjectionStores = false
+            HasProjectionStores = true,
+            PreservesExactViewJson = false
         };
     }
 
@@ -108,11 +114,64 @@ public sealed class PostgresContractBackend : IContractBackend
     public Task<ContractInbox> OpenInboxAsync(ContractStoreOptions options, CancellationToken cancellationToken = default)
         => throw new InvalidOperationException("The Postgres inbox is a later release.");
 
-    public Task<ContractSnapshots> OpenSnapshotsAsync(ContractStoreOptions options, CancellationToken cancellationToken = default)
-        => throw new InvalidOperationException("Postgres snapshots are a later release.");
+    public async Task<ContractSnapshots> OpenSnapshotsAsync(
+        ContractStoreOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        var opened = await OpenEventStoreAsync(options, cancellationToken).ConfigureAwait(false);
+        var snapshotOptions = new PostgresEventStoreOptions
+        {
+            ConnectionString = _connectionString,
+            MigrationConnectionString = _migrationConnectionString ?? _connectionString,
+            SchemaName = options.SchemaName,
+            RequireTenantId = options.RequireTenantId,
+            ValidateNames = options.ValidateNames
+        };
+        var snapshots = new PostgresSnapshotStore(snapshotOptions);
+        await snapshots.InitializeSchemaAsync(cancellationToken).ConfigureAwait(false);
+        return new ContractSnapshots
+        {
+            Store = opened.Store,
+            Snapshots = snapshots,
+            DcbSnapshots = snapshots,
+            CorruptDcbSnapshotAsync = (id, ct) => CorruptSnapshotAsync(snapshots.QualifiedDcbTable, id, ct),
+            ReadDcbLoadTagsAsync = (id, ct) => snapshots.LoadDcbSnapshotTagsAsync(id, ct)
+        };
+    }
 
-    public Task<ContractProjectionStores> OpenProjectionStoresAsync(ContractStoreOptions options, CancellationToken cancellationToken = default)
-        => throw new InvalidOperationException("Postgres projection stores are a later release.");
+    public async Task<ContractProjectionStores> OpenProjectionStoresAsync(
+        ContractStoreOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        var storeOptions = new PostgresProjectionStoreOptions
+        {
+            ConnectionString = _connectionString,
+            MigrationConnectionString = _migrationConnectionString ?? _connectionString,
+            SchemaName = options.SchemaName,
+            EnableSingleRunnerLock = false
+        };
+        var views = new PostgresViewStore(storeOptions);
+        var checkpoints = new PostgresCheckpointStore(storeOptions, views);
+        await views.InitializeSchemaAsync(cancellationToken).ConfigureAwait(false);
+        await checkpoints.InitializeSchemaAsync(cancellationToken).ConfigureAwait(false);
+        return new ContractProjectionStores
+        {
+            Views = views,
+            Checkpoints = checkpoints
+        };
+    }
+
+    private async Task<int> CorruptSnapshotAsync(string qualifiedTable, string dcbId, CancellationToken cancellationToken)
+    {
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(
+            $"UPDATE {qualifiedTable} SET state_data = @data WHERE dcb_id = @id",
+            connection);
+        command.Parameters.Add(new NpgsqlParameter("data", NpgsqlDbType.Bytea) { Value = "not-json"u8.ToArray() });
+        command.Parameters.AddWithValue("id", dcbId);
+        return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
 }
 
 sealed class PostgresContractHooks : IContractHooks

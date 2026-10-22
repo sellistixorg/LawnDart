@@ -10,5 +10,6 @@ flowchart LR
 ```
 
 The runner applies `ProjectionBase<TView>` handlers. Stores are in-memory
-(`AddInMemoryProjectionStores`) or SQL Server (`AddSqlProjectionStores` in
-`LawnDart.Projections.Lightweight.SqlServer`).
+(`AddInMemoryProjectionStores`), SQL Server (`AddSqlProjectionStores` in
+`LawnDart.Projections.Lightweight.SqlServer`), or Postgres
+(`AddPostgresProjectionStores` in `LawnDart.Projections.Lightweight.Postgres`).
