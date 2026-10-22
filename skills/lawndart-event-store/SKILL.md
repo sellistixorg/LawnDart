@@ -17,8 +17,9 @@ a wipe: drop and recreate event and outbox tables. There is no in-place
 migration.
 
 SQL does not create tables on first append. Call
-`SqlServerEventStore.InitializeSchemaAsync` before the first command.
-See `lawndart-host-setup` for snapshots and projection-store init.
+`SqlServerEventStore.InitializeSchemaAsync` from a deploy or admin step,
+once per deploy, before the first command. Normal app startup does not call it.
+See `docs/SCHEMA_INITIALIZATION.md` and `lawndart-host-setup`.
 
 Additive JSON rolls freely. A breaking payload change is expand-contract.
 Register hops with `WithUpcasters` after `WithEventTypes`. See
@@ -59,8 +60,9 @@ ctx.WithProjections(
     });
 ```
 
-Call `InitializeSqlLibraryAsync` before the first command. It creates the
-event-store, outbox, projection, and inbox tables.
+Call `InitializeSqlLibraryAsync` from a deploy or admin step before the first
+command. It creates the event-store, outbox, projection, and inbox tables.
+Normal app startup does not call it. See `docs/SCHEMA_INITIALIZATION.md`.
 
 The SQL excerpt publishes on the in-process transport.
 A RabbitMQ host calls `AddRabbitMqTransport`.

@@ -65,5 +65,6 @@ consumers of one message both run.
 
 `AddInMemoryMessaging` keeps that record in the process.
 `AddSqlInboxStore` stores it in SQL Server. Call
-`InitializeSqlInboxStoreAsync` at startup. See
+`InitializeSqlInboxStoreAsync` from a deploy or admin step. See
+[Schema initialization](SCHEMA_INITIALIZATION.md) and
 [SQL Server inbox](packages/messaging-sqlserver.md).

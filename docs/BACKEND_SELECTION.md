@@ -147,8 +147,10 @@ Required: a local SQL Server and `ConnectionStrings__Academy`, or
 
 `Server=localhost;Database=LawnDartAcademy;Trusted_Connection=True;TrustServerCertificate=True`
 
-Create the database first. The host creates event-store and outbox tables at
-startup. Both SQL profiles set `EnableOutbox` and register the in-memory
+Create the database first. The Academy demo creates event-store and outbox
+tables when that process starts. A deployed app runs schema setup from a
+deploy or admin step. See [Schema initialization](SCHEMA_INITIALIZATION.md).
+Both SQL profiles set `EnableOutbox` and register the in-memory
 outbox publisher. Academy WebApi also creates view and checkpoint tables and
 reads those views from SQL Server. Academy console keeps hand-written
 projectors, so that profile does not register Lightweight projection stores.
@@ -166,7 +168,9 @@ services.AddBoundedContext("default")
 ```
 
 `UsePostgres` is in `LawnDart.EventSourcing.Postgres`. Call
-`PostgresEventStore.InitializeSchemaAsync` before the first append. The
+`PostgresEventStore.InitializeSchemaAsync` from a deploy or admin step
+before the first append. See [Schema initialization](SCHEMA_INITIALIZATION.md).
+The
 `default` context stores tables in schema `lawndart`. Any other context
 uses its own name as the schema. Set `SchemaName` to choose a different one.
 Tables do not go in `public`.

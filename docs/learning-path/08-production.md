@@ -10,8 +10,9 @@ their own tests. A green swap does not prove those paths.
 
 You also change projection stores (`AddInMemoryProjectionStores` to
 `AddSqlProjectionStores` in `LawnDart.Projections.Lightweight.SqlServer`) and
-run schema init (`InitializeSchemaAsync` /
-`InitializeSqlProjectionStoresAsync`). Add
+run schema init from a deploy or admin step (`InitializeSchemaAsync` /
+`InitializeSqlProjectionStoresAsync`). See
+[Schema initialization](../SCHEMA_INITIALIZATION.md). Add
 `using LawnDart.Projections.Lightweight.SqlServer`. Postgres uses
 `AddPostgresProjectionStores` and `InitializePostgresProjectionStoresAsync`
 in `LawnDart.Projections.Lightweight.Postgres`. SQL Server and Postgres
@@ -65,8 +66,9 @@ fields: [Metadata](../METADATA.md).
 
 Drop and recreate SQL event, outbox, and inbox tables, then run
 `InitializeSchemaAsync` and, when the inbox is SQL Server,
-`InitializeSqlInboxStoreAsync`. Opening an older table throws and names
-drop-and-recreate. There is no in-place `ALTER` and no migration tool.
+`InitializeSqlInboxStoreAsync`, from that same deploy step. Opening an
+older table throws and names drop-and-recreate. Setup makes additive
+changes in place, and there is no separate migration tool.
 
 Checklist:
 

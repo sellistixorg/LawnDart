@@ -76,6 +76,9 @@ public sealed class SqlServerSnapshotStore : ISnapshotStore, IDcbSnapshotStore, 
     /// Creates <c>DcbSnapshots</c> and <c>EventSnapshots</c> if they do not exist.
     /// Idempotent. The event store's <c>InitializeSchemaAsync</c> also creates these tables.
     /// </summary>
+    /// <remarks>
+    /// Run this from a deploy step. Normal app startup should not call it.
+    /// </remarks>
     public async Task InitializeSchemaAsync(CancellationToken cancellationToken = default)
     {
         var connection = new SqlConnection(_connectionString);

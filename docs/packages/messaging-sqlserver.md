@@ -20,10 +20,14 @@ the transport registration. The snippet above uses the in-process transport.
 `AddRabbitMqTransport` and `AddAzureServiceBusTransport` keep their transport
 the same way.
 
-After the host is built, create the table once:
+Create the table from a deploy or admin step, once per deploy. Normal app
+startup does not run it. See
+[Schema initialization](../SCHEMA_INITIALIZATION.md).
+
+`provider` is the built service provider in your deploy step.
 
 ```csharp
-await app.Services.InitializeSqlInboxStoreAsync();
+await provider.InitializeSqlInboxStoreAsync();
 ```
 
 ## Table
@@ -61,6 +65,7 @@ Defaults are schema `dbo` and table `Inbox`. Pass a configure delegate to
 ## Related
 
 - [Package map](README.md)
+- [Schema initialization](../SCHEMA_INITIALIZATION.md)
 - [Messaging](messaging.md)
 - [InMemory messaging](messaging-inmemory.md)
 - [RabbitMQ](messaging-rabbitmq.md)

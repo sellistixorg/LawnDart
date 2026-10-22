@@ -22,6 +22,8 @@
   href: EVENT_SCHEMA_VERSIONING.md
 - name: Backend selection
   href: BACKEND_SELECTION.md
+- name: Schema initialization
+  href: SCHEMA_INITIALIZATION.md
 - name: Stream IDs
   href: STREAM_IDS.md
 - name: Tagging

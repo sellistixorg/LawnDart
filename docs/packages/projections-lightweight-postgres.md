@@ -23,10 +23,14 @@ schema, the `default` context uses schema `lawndart` and any other context
 uses its own name. Pass `schemaName` to choose a different schema. The
 `public` schema is rejected.
 
-After the host is built, create the tables once:
+Create the tables from a deploy or admin step, once per deploy. Normal app
+startup does not run it. See
+[Schema initialization](../SCHEMA_INITIALIZATION.md).
+
+`provider` is the built service provider in your deploy step.
 
 ```csharp
-await app.Services.InitializePostgresProjectionStoresAsync("default");
+await provider.InitializePostgresProjectionStoresAsync("default");
 ```
 
 Run that from a connection that can create tables. `MigrationConnectionString`
@@ -123,5 +127,6 @@ held it tries to take the lead again.
 ## Related
 
 - [Package map](README.md)
+- [Schema initialization](../SCHEMA_INITIALIZATION.md)
 - [Lightweight projections](projections-lightweight.md)
 - [Postgres event store](eventsourcing-postgres.md)

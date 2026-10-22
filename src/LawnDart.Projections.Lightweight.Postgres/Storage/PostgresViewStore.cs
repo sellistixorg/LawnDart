@@ -14,7 +14,7 @@ public sealed class PostgresViewStore : IViewStore
     private readonly PostgresProjectionNames _names;
     private readonly ILogger<PostgresViewStore>? _logger;
 
-    /// <summary>Creates a view store. Call <see cref="InitializeSchemaAsync"/> before the first write.</summary>
+    /// <summary>Creates a view store. Call <see cref="InitializeSchemaAsync"/> from a deploy or admin step before the first write.</summary>
     public PostgresViewStore(
         PostgresProjectionStoreOptions options,
         ILogger<PostgresViewStore>? logger = null)
@@ -33,6 +33,11 @@ public sealed class PostgresViewStore : IViewStore
     /// Creates the schema and <c>projection_views</c> when they are missing.
     /// A later call does not create them again.
     /// </summary>
+    /// <remarks>
+    /// Run this from a deploy job, a migration step, or an admin tool, once per deploy.
+    /// Normal app startup should not call it. An older copy that restarts and runs it
+    /// can change a schema a newer version already upgraded, including <c>save_projection_flush</c>.
+    /// </remarks>
     public async Task InitializeSchemaAsync(CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenMigrationAsync(cancellationToken).ConfigureAwait(false);

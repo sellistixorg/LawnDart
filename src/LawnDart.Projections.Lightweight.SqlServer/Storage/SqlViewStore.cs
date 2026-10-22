@@ -382,6 +382,9 @@ public class SqlViewStore : IViewStore
     /// After objects exist in the target shape, subsequent calls only evaluate catalog existence
     /// checks and skip DDL (suitable for a DML-only login once an elevated init has run).
     /// </summary>
+    /// <remarks>
+    /// Run this from a deploy step. Normal app startup should not call it.
+    /// </remarks>
     public async Task InitializeSchemaAsync(CancellationToken cancellationToken = default)
     {
         var connection = new SqlConnection(_connectionString);

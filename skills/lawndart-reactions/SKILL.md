@@ -11,7 +11,7 @@ path with `AddReactor<TReactor, TEvent>()` and a transport:
 `AddInMemoryMessaging()`, `AddRabbitMqTransport`,
 `AddAzureServiceBusTransport`, or `AddAwsSqsTransport`.
 `AddSqlInboxStore(connectionString)` replaces the in-memory inbox when
-dedup must survive a restart. Call `InitializeSqlInboxStoreAsync` at startup.
+dedup must survive a restart. Call `InitializeSqlInboxStoreAsync` from a deploy or admin step, not at startup. See `docs/SCHEMA_INITIALIZATION.md`.
 The excerpt below uses the in-process transport. A RabbitMQ host calls
 `AddRabbitMqTransport` from `LawnDart.Messaging.RabbitMQ`. An Azure Service Bus
 host calls `AddAzureServiceBusTransport` from `LawnDart.Messaging.AzureServiceBus`.

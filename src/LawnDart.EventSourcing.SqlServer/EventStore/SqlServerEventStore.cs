@@ -948,6 +948,11 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
     /// <summary>
     /// Creates the events table if it doesn't exist.
     /// </summary>
+    /// <remarks>
+    /// Run this from a deploy job, a migration step, or an admin tool, once per deploy.
+    /// Normal app startup should not call it. An older copy that accepts the events
+    /// stamp and runs this replaces the stream tag trigger with that copy's body.
+    /// </remarks>
     public async Task InitializeSchemaAsync(CancellationToken cancellationToken = default)
     {
         // Ensure the target schema exists before creating any objects within it.

@@ -109,6 +109,9 @@ public sealed class PostgresInboxStore : IInboxStore
     /// An existing table with another format throws <see cref="IncompatibleInboxSchemaException"/>.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <remarks>
+    /// Run this from a deploy step. Normal app startup should not call it.
+    /// </remarks>
     public async Task InitializeSchemaAsync(CancellationToken cancellationToken = default)
     {
         var schema = PgIdentifier.Quote(_schemaName);

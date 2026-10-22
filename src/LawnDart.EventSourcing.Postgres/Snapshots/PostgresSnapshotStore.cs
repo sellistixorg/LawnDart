@@ -62,6 +62,9 @@ public sealed class PostgresSnapshotStore : ISnapshotStore, IDcbSnapshotStore, I
     /// Creates <c>event_snapshots</c> and <c>dcb_snapshots</c> when they are missing.
     /// <c>InitializeSchemaAsync</c> on the event store also creates these tables.
     /// </summary>
+    /// <remarks>
+    /// Run this from a deploy step. Normal app startup should not call it.
+    /// </remarks>
     public async Task InitializeSchemaAsync(CancellationToken cancellationToken = default)
     {
         var migration = string.IsNullOrWhiteSpace(_options.MigrationConnectionString)

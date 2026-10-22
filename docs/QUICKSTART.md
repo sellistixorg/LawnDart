@@ -53,7 +53,9 @@ ctx.WithEventTypes<CounterCreated>();
 ```
 
 `UsePostgres` is in `LawnDart.EventSourcing.Postgres`. Call
-`InitializeSchemaAsync` before the first append. See
+`InitializeSchemaAsync` from a deploy or admin step before the first append.
+Normal app startup does not run it. See
+[Schema initialization](SCHEMA_INITIALIZATION.md) and
 [Backend selection](BACKEND_SELECTION.md).
 
 ## 3. Handle a command

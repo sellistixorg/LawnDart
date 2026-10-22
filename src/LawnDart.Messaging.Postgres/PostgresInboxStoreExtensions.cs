@@ -50,6 +50,9 @@ public static class PostgresInboxStoreExtensions
     /// </summary>
     /// <param name="services">Built service provider.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <remarks>
+    /// Run this from a deploy step. Normal app startup should not call it.
+    /// </remarks>
     public static async Task InitializePostgresInboxStoreAsync(
         this IServiceProvider services,
         CancellationToken cancellationToken = default)

@@ -249,6 +249,9 @@ public sealed class PostgresOutboxWriter : IOutboxWriter
     /// <summary>
     /// Creates the outbox table when it is missing. A second call keeps format 1.
     /// </summary>
+    /// <remarks>
+    /// Run this from a deploy step. Normal app startup should not call it.
+    /// </remarks>
     public async Task InitializeSchemaAsync(CancellationToken cancellationToken = default)
     {
         using var connection = await OpenMigrationAsync(cancellationToken).ConfigureAwait(false);

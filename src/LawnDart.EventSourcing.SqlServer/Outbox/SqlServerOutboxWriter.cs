@@ -345,6 +345,9 @@ public class SqlServerOutboxWriter : IOutboxWriter
     /// <summary>
     /// Initializes the outbox table schema.
     /// </summary>
+    /// <remarks>
+    /// Run this from a deploy step. Normal app startup should not call it.
+    /// </remarks>
     public async Task InitializeSchemaAsync(CancellationToken cancellationToken = default)
     {
         var schemaSql = $@"

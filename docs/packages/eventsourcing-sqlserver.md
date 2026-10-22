@@ -181,7 +181,10 @@ outbox `LawnDart_OutboxSchemaFormat` 1, and the inbox
 and inbox 2.
 
 Call `InitializeSchemaAsync` on the SQL event store once on each database
-before the new process reads. Call it on the outbox writer when
+before the new process reads. Run that call from a deploy or admin step.
+Normal app startup does not run it. See
+[Schema initialization](../SCHEMA_INITIALIZATION.md).
+Call it on the outbox writer when
 `EnableOutbox` is on. Call `InitializeSqlInboxStoreAsync` when the inbox
 is SQL Server. A second call on a table that is already current returns.
 
@@ -234,6 +237,7 @@ short schema change.
 ## Related
 
 - [Package map](README.md)
+- [Schema initialization](../SCHEMA_INITIALIZATION.md)
 - [Backend selection](../BACKEND_SELECTION.md)
 - [Outbox](../OUTBOX_PATTERN.md)
 - [Production shape](../learning-path/08-production.md)

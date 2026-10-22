@@ -15,11 +15,15 @@ using LawnDart.Projections.Lightweight.Postgres;
 services.AddPostgresProjectionStores("default", connectionString);
 ```
 
-After the host is built, create the tables once:
+Create the tables from a deploy or admin step, once per deploy:
+
+`provider` is the built service provider in your deploy step.
 
 ```csharp
-await app.Services.InitializePostgresProjectionStoresAsync("default");
+await provider.InitializePostgresProjectionStoresAsync("default");
 ```
+
+See [Schema initialization](https://github.com/sellistixorg/LawnDart/blob/main/docs/SCHEMA_INITIALIZATION.md).
 
 The `default` context uses schema `lawndart`. Any other context uses its own name.
 Pass `schemaName` to choose a different schema. The `public` schema is rejected.

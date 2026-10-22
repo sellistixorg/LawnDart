@@ -287,6 +287,9 @@ public class SqlCheckpointStore : ICheckpointStore
     /// Idempotent - safe to call multiple times.
     /// Migrates existing schema if NodeId column doesn't exist.
     /// </summary>
+    /// <remarks>
+    /// Run this from a deploy step. Normal app startup should not call it.
+    /// </remarks>
     public async Task InitializeSchemaAsync(CancellationToken cancellationToken = default)
     {
         var connection = new SqlConnection(_connectionString);

@@ -21,8 +21,9 @@ public static class SqlProjectionStoreExtensions
     /// to keep that schema while still using a non-dbo dependency injection key.
     /// <paramref name="contextName"/> is checked with <see cref="LawnDartNames"/>.
     /// <para>
-    /// After the host is built, call <see cref="InitializeSqlProjectionStoresAsync"/> once with
-    /// an elevated connection so tables and indexes exist before runners start.
+    /// Call <see cref="InitializeSqlProjectionStoresAsync"/> from a deploy or admin step,
+    /// once per deploy, with a connection that can change the schema, so tables and indexes
+    /// exist before runners start.
     /// </para>
     /// </remarks>
     /// <param name="services">The service collection.</param>
@@ -65,8 +66,7 @@ public static class SqlProjectionStoreExtensions
     /// <see cref="ICheckpointStore"/> registered by <see cref="AddSqlProjectionStores"/>.
     /// </summary>
     /// <remarks>
-    /// Prefer running this from an elevated deploy or admin job rather than the long-lived app
-    /// process. After the tables exist, a later call does not create them again.
+    /// Run this from a deploy step. Normal app startup should not call it.
     /// </remarks>
     /// <param name="services">Built service provider.</param>
     /// <param name="contextName">Bounded context dependency injection key.</param>

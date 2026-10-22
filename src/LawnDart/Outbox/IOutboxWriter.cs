@@ -105,5 +105,9 @@ public interface IOutboxWriter
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Task representing the async operation.</returns>
+    /// <remarks>
+    /// Run this from a deploy step. Normal app startup should not call it.
+    /// The in-memory writer completes without a database.
+    /// </remarks>
     Task InitializeSchemaAsync(CancellationToken cancellationToken = default);
 }

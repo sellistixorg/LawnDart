@@ -30,6 +30,11 @@ public sealed class PostgresProjectionStore : IViewStore, ICheckpointStore, IAto
     public PostgresCheckpointStore Checkpoints => _checkpoints;
 
     /// <summary>Creates the view table, the checkpoint table, and the flush function.</summary>
+    /// <remarks>
+    /// Run this from a deploy job, a migration step, or an admin tool, once per deploy.
+    /// Normal app startup should not call it. An older copy that restarts and runs it
+    /// can change a schema a newer version already upgraded, including <c>save_projection_flush</c>.
+    /// </remarks>
     public async Task InitializeSchemaAsync(CancellationToken cancellationToken = default)
     {
         await _views.InitializeSchemaAsync(cancellationToken).ConfigureAwait(false);

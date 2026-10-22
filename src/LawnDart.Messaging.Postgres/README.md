@@ -15,4 +15,7 @@ The transport you registered stays.
 
 The default schema is `lawndart`. The `public` schema is rejected.
 
+Call `InitializePostgresInboxStoreAsync` from a deploy or admin step. See
+[Schema initialization](https://github.com/sellistixorg/LawnDart/blob/main/docs/SCHEMA_INITIALIZATION.md).
+
 See [the package page](https://github.com/sellistixorg/LawnDart/blob/main/docs/packages/messaging-postgres.md).

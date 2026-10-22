@@ -141,6 +141,9 @@ public sealed class SqlServerInboxStore : IInboxStore
     /// An existing table with another shape throws <see cref="IncompatibleInboxSchemaException"/>.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <remarks>
+    /// Run this from a deploy step. Normal app startup should not call it.
+    /// </remarks>
     public async Task InitializeSchemaAsync(CancellationToken cancellationToken = default)
     {
         var schemaSql = $@"
