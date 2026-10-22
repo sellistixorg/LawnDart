@@ -1,10 +1,12 @@
 using System.Text;
 using LawnDart;
 using LawnDart.EventSourcing.Postgres;
-using Microsoft.Extensions.Logging;
 using LawnDart.EventSourcing.Postgres.EventStore;
+using LawnDart.EventSourcing.Postgres.Outbox;
 using LawnDart.EventStore;
+using LawnDart.Outbox;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 
 namespace LawnDart.Backends.Contract.Tests;
@@ -733,18 +735,20 @@ public sealed class PostgresPhase1Tests
 public sealed class PostgresRegistrationTests
 {
     [Fact]
-    public void UsePostgres_EnableOutbox_IsRejected()
+    public void UsePostgres_EnableOutbox_RegistersTheWriter()
     {
         var services = new ServiceCollection();
         services.AddLawnDart();
-        var ex = Assert.Throws<InvalidOperationException>(() =>
-            services.AddBoundedContext("default").UsePostgres(o =>
-            {
-                o.ConnectionString = "Host=localhost;Username=lawndart_app;Password=lawndart_app;Database=lawndart";
-                o.EnableOutbox = true;
-            }));
-        Assert.Contains("EnableOutbox", ex.Message, StringComparison.Ordinal);
-        Assert.Contains("false", ex.Message, StringComparison.Ordinal);
+        services.AddBoundedContext("default").UsePostgres(o =>
+        {
+            o.ConnectionString = "Host=localhost;Username=lawndart_app;Password=lawndart_app;Database=lawndart";
+            o.EnableOutbox = true;
+        });
+        using var provider = services.BuildServiceProvider();
+        var writer = provider.GetRequiredKeyedService<IOutboxWriter>("default");
+        Assert.IsType<PostgresOutboxWriter>(writer);
+        var options = provider.GetRequiredKeyedService<PostgresEventStoreOptions>("default");
+        Assert.True(options.EnableOutbox);
     }
 
     [Fact]

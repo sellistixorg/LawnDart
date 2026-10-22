@@ -40,6 +40,7 @@
     <ProjectReference Include="..\..\src\LawnDart.Messaging\LawnDart.Messaging.csproj" />
     <ProjectReference Include="..\..\src\LawnDart.Messaging.InMemory\LawnDart.Messaging.InMemory.csproj" />
     <ProjectReference Include="..\..\src\LawnDart.Messaging.SqlServer\LawnDart.Messaging.SqlServer.csproj" />
+    <ProjectReference Include="..\..\src\LawnDart.Messaging.Postgres\LawnDart.Messaging.Postgres.csproj" />
     <ProjectReference Include="..\..\src\LawnDart.EventSourcing.SqlServer\LawnDart.EventSourcing.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\LawnDart.EventSourcing.Postgres\LawnDart.EventSourcing.Postgres.csproj" />
     <ProjectReference Include="..\..\src\LawnDart.Projections.Lightweight\LawnDart.Projections.Lightweight.csproj" />

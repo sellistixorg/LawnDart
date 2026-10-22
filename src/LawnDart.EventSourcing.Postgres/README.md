@@ -17,7 +17,7 @@ services.AddBoundedContext("default")
 ```
 
 Call `InitializeSchemaAsync` before the first append. `WithSnapshots` stores
-snapshot state as bytes. `EnableOutbox = true` is rejected. Leave it false
-until the outbox release.
+snapshot state as bytes. `EnableOutbox = true` writes one outbox row per
+event in that same transaction.
 
 See [the package page](https://github.com/sellistixorg/LawnDart/blob/main/docs/packages/eventsourcing-postgres.md).

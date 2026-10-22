@@ -364,8 +364,8 @@ public abstract class OutboxContractTests : ContractSuite
         Assert.Equal(recorded.EventType, outbox.EventType);
         Assert.Equal(recorded.SchemaVersion, outbox.SchemaVersion);
         Assert.Equal(recorded.CodecId, outbox.CodecId);
-        Assert.Equal(recorded.Payload.ToArray(), outbox.Payload.ToArray());
-        Assert.Equal(Encoding.UTF8.GetString(recorded.Metadata.Span), outbox.Metadata);
+        AssertStoredPayload(recorded.Payload.ToArray(), outbox.Payload, recorded.CodecId);
+        AssertStoredMetadata(recorded.Metadata.ToArray(), Encoding.UTF8.GetBytes(outbox.Metadata));
         Assert.Equal("backend-contract.outbox-event", outbox.EventType);
         Assert.Contains("frame-copy", Encoding.UTF8.GetString(outbox.Payload.Span), StringComparison.Ordinal);
         Assert.Contains("outbox-user", outbox.Metadata, StringComparison.Ordinal);
@@ -463,7 +463,7 @@ public abstract class OutboxContractTests : ContractSuite
         });
         var outbox = Assert.Single(await reader.GetUnprocessedAsync(10));
         Assert.Equal(recorded.CodecId, outbox.CodecId);
-        Assert.Equal(recorded.Payload.ToArray(), outbox.Payload.ToArray());
+        AssertStoredPayload(recorded.Payload.ToArray(), outbox.Payload, recorded.CodecId);
     }
 
     [ContractFact]

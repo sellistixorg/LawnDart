@@ -1,16 +1,21 @@
 using LawnDart.Aggregates;
 using LawnDart.Dcb;
 using LawnDart.EventSourcing;
+using LawnDart.EventSourcing.Outbox;
 using LawnDart.EventSourcing.Postgres.EventStore;
+using LawnDart.EventSourcing.Postgres.Outbox;
 using LawnDart.EventSourcing.Postgres.Snapshots;
 using LawnDart.EventSourcing.Serialization;
 using LawnDart.EventStore;
+using LawnDart.Outbox;
 using LawnDart.Serialization;
 using LawnDart.Snapshots;
 using LawnDart.Tagging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace LawnDart.EventSourcing.Postgres;
 
@@ -29,7 +34,8 @@ public static class LawnDartPostgresExtensions
     /// Keyed services use <see cref="BoundedContextBuilder.ContextName"/>.
     /// The context named <c>default</c> also gets unkeyed aliases.
     /// The callback must set <see cref="PostgresEventStoreOptions.ConnectionString"/>.
-    /// <see cref="PostgresEventStoreOptions.EnableOutbox"/> must stay false until the outbox release.
+    /// <see cref="PostgresEventStoreOptions.EnableOutbox"/> writes outbox rows in the append.
+    /// Call <c>InitializeSchemaAsync</c> so the outbox table exists before the first append.
     /// </remarks>
     public static BoundedContextBuilder UsePostgres(
         this BoundedContextBuilder builder,
@@ -53,6 +59,15 @@ public static class LawnDartPostgresExtensions
 
         services.AddKeyedSingleton(contextName, LawnDart.EventSourcing.Context.EventStoreContextMarker.Instance);
         services.TryAddSingleton<IEventSerializer, JsonEventSerializer>();
+
+        services.AddKeyedSingleton<IOutboxWriter>(contextName, (sp, _) =>
+            new PostgresOutboxWriter(
+                options.ConnectionString!,
+                options.OutboxTableName,
+                sp.GetService<ILogger<PostgresOutboxWriter>>(),
+                options.SchemaName,
+                options.OutboxClaimLease,
+                options.MigrationConnectionString));
 
         services.AddKeyedSingleton<IEventStore>(contextName, (sp, _) =>
         {
@@ -94,6 +109,30 @@ public static class LawnDartPostgresExtensions
 
         services.AddSingleton<IBoundedContextEventStore>(sp =>
             new PostgresBoundedContextEventStore(contextName, sp.GetRequiredKeyedService<IEventStore>(contextName)));
+
+        if (options.EnableOutbox)
+        {
+            services.AddSingleton<IHostedService>(sp =>
+            {
+                var outboxWriter = sp.GetRequiredKeyedService<IOutboxWriter>(contextName);
+                var publishers = sp.GetServices<IOutboxPublisher>().ToArray();
+                if (publishers.Length == 0)
+                {
+                    throw new InvalidOperationException(
+                        $"EnableOutbox is true for context '{contextName}' but no IOutboxPublisher is registered.");
+                }
+
+                IOutboxPublisher publisher = publishers.Length == 1
+                    ? publishers[0]
+                    : new CompositeOutboxPublisher(publishers);
+                var store = sp.GetRequiredKeyedService<IEventStore>(contextName);
+                return new OutboxProcessor(
+                    outboxWriter,
+                    publisher,
+                    sp.GetService<ILogger<OutboxProcessor>>() ?? NullLogger<OutboxProcessor>.Instance,
+                    newEvents: (store as ISignalsNewEvents)?.NewEvents);
+            });
+        }
 
         services.AddKeyedSingleton(contextName, options);
         services.TryAddKeyedSingleton<UnknownTagWarningLog>(contextName, (_, _) => new UnknownTagWarningLog());
@@ -160,6 +199,20 @@ public static class LawnDartPostgresExtensions
         }
 
         return builder;
+    }
+}
+
+file sealed class CompositeOutboxPublisher : IOutboxPublisher
+{
+    private readonly IOutboxPublisher[] _publishers;
+
+    public CompositeOutboxPublisher(IOutboxPublisher[] publishers) => _publishers = publishers;
+
+    /// <summary>Publishes one outbox row through each registered publisher.</summary>
+    public async Task PublishAsync(OutboxMessage message, CancellationToken cancellationToken = default)
+    {
+        foreach (var publisher in _publishers)
+            await publisher.PublishAsync(message, cancellationToken).ConfigureAwait(false);
     }
 }
 

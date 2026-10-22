@@ -4,7 +4,8 @@ using System.Text;
 namespace LawnDart.EventSourcing.Postgres.EventStore;
 
 /// <summary>
-/// DDL for one context. Format 1. Running it twice is a no-op when the stamp matches.
+/// DDL for one context. The events format stays at 1. Running it twice is a no-op when the stamp matches.
+/// The outbox table is a separate <c>schema_info</c> component and does not change that number.
 /// </summary>
 internal static class PostgresSchema
 {

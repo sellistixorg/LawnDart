@@ -1,6 +1,6 @@
 # Package map
 
-Seventeen packages. Take `LawnDart` + `LawnDart.EventSourcing` first; add the
+Eighteen packages. Take `LawnDart` + `LawnDart.EventSourcing` first; add the
 others when you need a durable store, read models, HTTP, tests, or
 compile-time schema checks.
 
@@ -31,6 +31,7 @@ Host grammar: [DI Grammar](../DI_GRAMMAR.md). Envelope fields:
 | [`LawnDart.Messaging.AzureServiceBus`](messaging-azureservicebus.md) | You want an Azure Service Bus namespace. | `AddAzureServiceBusTransport` |
 | [`LawnDart.Messaging.AwsSqs`](messaging-awssqs.md) | You want Amazon SQS. SNS fans each topic out to one queue per subscription. | `AddAwsSqsTransport` |
 | [`LawnDart.Messaging.SqlServer`](messaging-sqlserver.md) | Inbox dedup must survive a restart. | `AddSqlInboxStore` |
+| [`LawnDart.Messaging.Postgres`](messaging-postgres.md) | Inbox dedup must survive a restart on Postgres. | `AddPostgresInboxStore` |
 | [`LawnDart.Messaging.Testing`](messaging-testing.md) | You are writing a message transport and want the conformance suite. | Inherit `MessageTransportConformanceTests` |
 | [`LawnDart.AspNetCore`](aspnetcore.md) | You want HTTP POST to a command. | `AddLawnDartHttpCommands` / `MapLawnDartCommands` |
 | [`LawnDart.Authorization.AspNetCore`](authorization-aspnetcore.md) | You want HTTP claims on those commands. | `AddHttpAuthorizationContext()` |
@@ -62,7 +63,8 @@ in `LawnDart.Projections.Lightweight.SqlServer`. The Postgres methods are in
 The bounded-context name stays the same. That swap is verified for
 command dispatch, persist, reload, project, and read-back. Outbox and
 subscriptions have their own tests. Inbox dedup swaps with `AddSqlInboxStore`
-and `InitializeSqlInboxStoreAsync`. The transport you registered stays.
+or `AddPostgresInboxStore`, then the matching initialize call. The transport
+you registered stays.
 `AddInMemoryMessaging` is the in-process transport.
 `AddRabbitMqTransport` is the RabbitMQ transport.
 `AddAzureServiceBusTransport` is the Azure Service Bus transport.

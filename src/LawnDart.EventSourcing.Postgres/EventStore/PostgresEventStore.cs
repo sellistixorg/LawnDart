@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
 using LawnDart.EventSourcing.EventStore;
+using LawnDart.EventSourcing.Postgres.Outbox;
 using LawnDart.EventSourcing.Serialization;
 using LawnDart.EventStore;
 using LawnDart.Serialization;
@@ -179,22 +180,31 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
         }
 
         var infoExists = await RegclassExistsAsync(connection, transaction, _names.SchemaInfo, cancellationToken).ConfigureAwait(false);
+        var eventsExist = await RegclassExistsAsync(connection, transaction, _names.Events, cancellationToken).ConfigureAwait(false);
         if (infoExists)
         {
-            var found = await ReadStampAsync(connection, transaction, cancellationToken).ConfigureAwait(false)
-                ?? throw new IncompatibleEventStoreSchemaException(_names.Schema, null, CurrentSchemaFormat);
-            if (found.Format != CurrentSchemaFormat)
-                throw new IncompatibleEventStoreSchemaException(_names.Schema, found.Format, CurrentSchemaFormat);
-            if (found.PartitionCount != _options.PartitionCount || found.Partitioning != _options.Partitioning)
+            var found = await ReadStampAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+            if (found is not { } stamp)
+            {
+                // The inbox or a standalone outbox writer can create schema_info
+                // before any event table exists. That schema is still new.
+                if (eventsExist)
+                    throw new IncompatibleEventStoreSchemaException(_names.Schema, null, CurrentSchemaFormat);
+            }
+            else if (stamp.Format != CurrentSchemaFormat)
+            {
+                throw new IncompatibleEventStoreSchemaException(_names.Schema, stamp.Format, CurrentSchemaFormat);
+            }
+            else if (stamp.PartitionCount != _options.PartitionCount || stamp.Partitioning != _options.Partitioning)
             {
                 throw new InvalidOperationException(
-                    $"This schema was created with {found.PartitionCount} hash buckets " +
-                    $"and partitioning {(found.Partitioning ? "on" : "off")}. " +
+                    $"This schema was created with {stamp.PartitionCount} hash buckets " +
+                    $"and partitioning {(stamp.Partitioning ? "on" : "off")}. " +
                     $"PartitionCount is {_options.PartitionCount} and partitioning is {(_options.Partitioning ? "on" : "off")}. " +
                     "Drop and recreate the schema to change the bucket layout.");
             }
         }
-        else if (await RegclassExistsAsync(connection, transaction, _names.Events, cancellationToken).ConfigureAwait(false))
+        else if (eventsExist)
         {
             throw new IncompatibleEventStoreSchemaException(_names.Schema, null, CurrentSchemaFormat);
         }
@@ -207,6 +217,12 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
         await ExecuteAsync(connection, transaction, PostgresSchema.EnsureStreamTagTrigger(_names), cancellationToken).ConfigureAwait(false);
         await Snapshots.PostgresSnapshotSchema.EnsureAsync(
             connection, transaction, _options, cancellationToken).ConfigureAwait(false);
+        await PostgresOutboxSchema.EnsureAsync(
+            connection,
+            transaction,
+            _names.Schema,
+            _options.OutboxTableName,
+            cancellationToken).ConfigureAwait(false);
         await GrantAppRoleAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         await FillStreamTagsIfNeededAsync(connection, cancellationToken).ConfigureAwait(false);
@@ -543,27 +559,17 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
             "Read the stream before sending it again.",
             inner);
 
-    private async Task GrantAppRoleAsync(
+    private Task GrantAppRoleAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         CancellationToken cancellationToken)
-    {
-        var app = new NpgsqlConnectionStringBuilder(_options.ConnectionString).Username;
-        var ownerSource = string.IsNullOrWhiteSpace(_options.MigrationConnectionString)
-            ? _options.ConnectionString
-            : _options.MigrationConnectionString;
-        var owner = new NpgsqlConnectionStringBuilder(ownerSource!).Username;
-        if (string.IsNullOrWhiteSpace(app) || string.Equals(app, owner, StringComparison.Ordinal))
-            return;
-
-        var role = PgIdentifier.Quote(app);
-        var schema = PgIdentifier.Quote(_names.Schema);
-        var sql = $"""
-            GRANT USAGE ON SCHEMA {schema} TO {role};
-            GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA {schema} TO {role};
-            GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA {schema} TO {role};
-            GRANT EXECUTE ON ALL ROUTINES IN SCHEMA {schema} TO {role};
-            """;
-        await ExecuteAsync(connection, transaction, sql, cancellationToken).ConfigureAwait(false);
-    }
+        => PostgresRoleGrant.GrantAppRoleAsync(
+            connection,
+            transaction,
+            _names.Schema,
+            _options.ConnectionString,
+            string.IsNullOrWhiteSpace(_options.MigrationConnectionString)
+                ? _options.ConnectionString
+                : _options.MigrationConnectionString,
+            cancellationToken);
 }

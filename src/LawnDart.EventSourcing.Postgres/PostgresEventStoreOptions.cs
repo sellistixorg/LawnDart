@@ -84,10 +84,13 @@ public class PostgresEventStoreOptions : EventSourcingOptions
     public bool ValidateNames { get; set; } = true;
 
     /// <summary>
-    /// The transactional outbox is not in this release.
-    /// <c>true</c> is rejected when the store is built.
+    /// When true, an append writes one outbox row per event in that same transaction.
+    /// Default false. Call <c>InitializeSchemaAsync</c> so the outbox table exists.
     /// </summary>
     public bool EnableOutbox { get; set; }
+
+    /// <summary>Outbox table name. Default <c>outbox</c>. Not partitioned.</summary>
+    public string OutboxTableName { get; set; } = "outbox";
 
     /// <summary>
     /// How many hash buckets the shared tenant partition uses.
@@ -190,11 +193,7 @@ public class PostgresEventStoreOptions : EventSourcingOptions
                 "PollOnlyInterval cannot be negative.");
         }
 
-        if (EnableOutbox)
-        {
-            throw new InvalidOperationException(
-                "EnableOutbox is not available on the Postgres event store yet. " +
-                "Leave EnableOutbox false. The outbox arrives in a later release.");
-        }
+        if (string.IsNullOrWhiteSpace(OutboxTableName))
+            throw new ArgumentException("OutboxTableName is required.", nameof(OutboxTableName));
     }
 }

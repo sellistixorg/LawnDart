@@ -24,6 +24,7 @@ public sealed class PostgresClosureProxy : IAsyncDisposable
     const byte CommandComplete = (byte)'C';
     const byte ErrorResponse = (byte)'E';
     static readonly byte[] AppendCall = "SELECT global_position, version"u8.ToArray();
+    static readonly byte[] OutboxAppendCall = "WITH r AS MATERIALIZED"u8.ToArray();
 
     readonly TcpListener _listener;
     readonly string _upstreamHost;
@@ -44,6 +45,9 @@ public sealed class PostgresClosureProxy : IAsyncDisposable
     }
 
     public int Port { get; private set; }
+
+    /// <summary>True after this proxy has injected its one closure on an append.</summary>
+    public bool DidPoison => Volatile.Read(ref _poisoned) == 1;
 
     public async Task StartAsync()
     {
@@ -221,7 +225,10 @@ public sealed class PostgresClosureProxy : IAsyncDisposable
     }
 
     static bool IsAppendCall(byte[] message)
-        => message.AsSpan().IndexOf(AppendCall) >= 0;
+    {
+        var span = message.AsSpan();
+        return span.IndexOf(AppendCall) >= 0 || span.IndexOf(OutboxAppendCall) >= 0;
+    }
 
     static async Task FailAsync(
         NetworkStream clientStream,

@@ -19,7 +19,8 @@ public class EventSourcingOptions
     /// </summary>
     /// <remarks>
     /// SQL Server stores the deadline in <c>ClaimedUntil</c>, in whole seconds
-    /// rounded up. The in-memory writer uses the full time span.
+    /// rounded up. Postgres stores <c>claimed_until</c> as a timestamp with the
+    /// full time span. The in-memory writer uses the full time span.
     /// <see cref="TimeSpan.Zero"/> expires the claim at once, so the next poll
     /// can take the row.
     /// </remarks>

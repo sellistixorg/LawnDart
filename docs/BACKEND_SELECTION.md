@@ -171,18 +171,18 @@ services.AddBoundedContext("default")
 uses its own name as the schema. Set `SchemaName` to choose a different one.
 Tables do not go in `public`.
 
-This release stores events and runs projections and snapshots. Append, read,
-tags, the dynamic consistency boundary, the stream registry, the read
-horizon, and live subscriptions are in `LawnDart.EventSourcing.Postgres`.
-Projection views and checkpoints are in
+This release stores events, runs projections and snapshots, and writes the
+outbox. Append, read, tags, the dynamic consistency boundary, the stream
+registry, the read horizon, and live subscriptions are in
+`LawnDart.EventSourcing.Postgres`. Projection views and checkpoints are in
 `LawnDart.Projections.Lightweight.Postgres`
 (`AddPostgresProjectionStores`, then `InitializePostgresProjectionStoresAsync`).
 Snapshots are opt-in (`WithSnapshots` on the Postgres builder, plus a
 strategy). State is stored as bytes. A missing snapshot, a bad checksum, or
 a snapshot that cannot be read returns empty and the repository replays the
-events.
-`EnableOutbox = true` is rejected when the store is built. Leave
-`EnableOutbox` false until the outbox release. The inbox is a later release.
+events. `EnableOutbox = true` writes outbox rows in the append transaction.
+The inbox is `LawnDart.Messaging.Postgres` (`AddPostgresInboxStore`, then
+`InitializePostgresInboxStoreAsync`).
 
 A committed append sends a wake-up whose message is the newest position.
 One listener per store reads it on `ListenConnectionString`, or on
@@ -198,9 +198,9 @@ contains a null character is stored as bytes and comes back unchanged.
 
 The shared contract suite runs on Postgres in
 `tests/LawnDart.Backends.Contract.Tests`, including live subscriptions in
-listener mode and poll-only mode. One Postgres container serves the run.
-Tests that need the outbox, inbox, snapshots, or projection stores are
-skipped with a reason.
+listener mode and poll-only mode, the outbox, and the inbox. One Postgres
+container serves the run. A test that needs a behavior this backend does not
+have is skipped with a reason.
 
 ## Switching
 
