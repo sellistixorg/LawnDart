@@ -118,6 +118,36 @@ public static class PostgresProjectionStoreExtensions
         await store.InitializeSchemaAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Reads the keyed Postgres projection schema registered by <see cref="AddPostgresProjectionStores"/>.
+    /// </summary>
+    /// <param name="services">Built service provider.</param>
+    /// <param name="contextName">Bounded context dependency injection key.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Whether the projection schema matches this version.</returns>
+    /// <remarks>
+    /// This method does not create or change objects. Call it at startup.
+    /// <see cref="SchemaCheckResult.ThrowIfMismatch"/> throws when the result does not match.
+    /// </remarks>
+    public static async Task<SchemaCheckResult> VerifyPostgresProjectionStoresAsync(
+        this IServiceProvider services,
+        string contextName,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(contextName))
+            throw new ArgumentException("Context name must not be null or whitespace.", nameof(contextName));
+
+        var views = services.GetRequiredKeyedService<IViewStore>(contextName);
+        if (views is not PostgresProjectionStore store)
+        {
+            throw new InvalidOperationException(
+                $"Keyed IViewStore '{contextName}' is {views.GetType().Name}, not PostgresProjectionStore. " +
+                "Call AddPostgresProjectionStores before VerifyPostgresProjectionStoresAsync.");
+        }
+
+        return await store.VerifySchemaAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     private static string SchemaFor(string contextName)
         => string.Equals(contextName, LawnDartNames.DefaultContextName, StringComparison.Ordinal)
             ? "lawndart"

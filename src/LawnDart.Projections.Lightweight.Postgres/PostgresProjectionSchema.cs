@@ -1,16 +1,46 @@
+using LawnDart;
+using LawnDart.EventSourcing.Postgres;
 using Npgsql;
 
 namespace LawnDart.Projections.Lightweight.Postgres;
 
 internal static class PostgresProjectionSchema
 {
+    /// <summary>Prefix of the version marker written into <c>save_projection_flush</c>.</summary>
+    internal const string FlushMarkerPrefix = "LawnDart:save_projection_flush:";
+
+    /// <summary>Marker version written into <c>save_projection_flush</c>. A later number is a different body.</summary>
+    internal const int FlushMarkerVersion = 1;
+
+    /// <summary>Text written into <c>save_projection_flush</c> so a later read can tell this body from an older one.</summary>
+    internal const string FlushFunctionMarker = FlushMarkerPrefix + "1";
+
     internal static async Task EnsureAsync(
         NpgsqlConnection connection,
         PostgresProjectionNames names,
         string? appRole,
         CancellationToken cancellationToken)
     {
-        var sql = $"""
+        var sql = SchemaSql(names);
+        await using (var command = new NpgsqlCommand(sql, connection))
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+        if (string.IsNullOrWhiteSpace(appRole))
+            return;
+
+        var grant = $"""
+            GRANT USAGE ON SCHEMA {PgIdentifier.Quote(names.Schema)} TO {PgIdentifier.Quote(appRole)};
+            GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA {PgIdentifier.Quote(names.Schema)} TO {PgIdentifier.Quote(appRole)};
+            GRANT EXECUTE ON ALL ROUTINES IN SCHEMA {PgIdentifier.Quote(names.Schema)} TO {PgIdentifier.Quote(appRole)};
+            """;
+        await using var grantCommand = new NpgsqlCommand(grant, connection);
+        await grantCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    internal static string ExpectedFlushBody(PostgresProjectionNames names)
+        => PostgresSchemaProbe.DollarBody(SchemaSql(names), "$func$");
+
+    private static string SchemaSql(PostgresProjectionNames names) => $"""
             CREATE SCHEMA IF NOT EXISTS {PgIdentifier.Quote(names.Schema)};
 
             CREATE TABLE IF NOT EXISTS {names.Views} (
@@ -63,6 +93,7 @@ internal static class PostgresProjectionSchema
             DECLARE
                 current_epoch bigint;
             BEGIN
+                -- {FlushFunctionMarker}
                 PERFORM set_config('search_path', '{names.SearchPath}', true);
 
                 IF p_require_epoch THEN
@@ -112,20 +143,29 @@ internal static class PostgresProjectionSchema
             $func$;
             """;
 
-        await using (var command = new NpgsqlCommand(sql, connection))
-            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-
-        if (string.IsNullOrWhiteSpace(appRole))
-            return;
-
-        var grant = $"""
-            GRANT USAGE ON SCHEMA {PgIdentifier.Quote(names.Schema)} TO {PgIdentifier.Quote(appRole)};
-            GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA {PgIdentifier.Quote(names.Schema)} TO {PgIdentifier.Quote(appRole)};
-            GRANT EXECUTE ON ALL ROUTINES IN SCHEMA {PgIdentifier.Quote(names.Schema)} TO {PgIdentifier.Quote(appRole)};
-            """;
-        await using var grantCommand = new NpgsqlCommand(grant, connection);
-        await grantCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-    }
+    internal static Task<SchemaCheckResult> VerifyAsync(
+        NpgsqlConnection connection,
+        PostgresProjectionNames names,
+        CancellationToken cancellationToken)
+        => PostgresSchemaProbe.CheckAsync(
+            connection,
+            expectedFormat: null,
+            names.Schema,
+            stampTable: null,
+            stampComponent: null,
+            [
+                new PostgresSchemaProbe.Relation("projection_views", names.Views),
+                new PostgresSchemaProbe.Relation("projection_checkpoints", names.Checkpoints),
+                new PostgresSchemaProbe.Relation("projection_runner_leases", names.Leases)
+            ],
+            [],
+            [new PostgresSchemaProbe.Routine(
+                "save_projection_flush",
+                FlushMarkerPrefix,
+                FlushMarkerVersion,
+                ExpectedFlushBody(names))],
+            [],
+            cancellationToken);
 
     internal static string? AppRole(PostgresProjectionStoreOptions options)
     {

@@ -11,6 +11,8 @@ internal static class PostgresSchema
 {
     internal const int CurrentFormat = 1;
 
+    internal const string EventsComponent = "events";
+
     internal static IReadOnlyList<string> CreateStatements(PostgresNames names, PostgresEventStoreOptions options)
     {
         var sql = new List<string>
@@ -312,7 +314,7 @@ internal static class PostgresSchema
         var partitioning = options.Partitioning ? "true" : "false";
         return $"""
             INSERT INTO {names.SchemaInfo} (component, format, partition_count, partitioning, updated_at)
-            VALUES ('events', {CurrentFormat}, {count}, {partitioning}, clock_timestamp())
+            VALUES ('{EventsComponent}', {CurrentFormat}, {count}, {partitioning}, clock_timestamp())
             ON CONFLICT (component) DO NOTHING
             """;
     }

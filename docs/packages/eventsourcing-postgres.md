@@ -30,11 +30,13 @@ aliases.
 
 Call `InitializeSchemaAsync` on `PostgresEventStore` before the first append.
 Run that call from a deploy or admin step. Normal app startup does not run
-it. See [Schema initialization](../SCHEMA_INITIALIZATION.md).
-The call creates the schema if it is missing. A second call with the same
+it. The call creates the schema if it is missing. A second call with the same
 bucket count succeeds. A different bucket count is rejected. Drop and
 recreate the schema to change it. An unknown format number in `schema_info`
-is rejected the same way.
+is rejected the same way. At startup, call `VerifySchemaAsync`. It reads the
+stamp and the objects. It does not create or change them. `ThrowIfMismatch`
+throws when they do not match. The outbox writer and the snapshot store have
+the same call. See [Schema initialization](../SCHEMA_INITIALIZATION.md).
 
 ## Schema
 

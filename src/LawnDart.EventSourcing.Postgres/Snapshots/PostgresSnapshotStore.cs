@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using LawnDart;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -73,6 +74,37 @@ public sealed class PostgresSnapshotStore : ISnapshotStore, IDcbSnapshotStore, I
         await using var connection = await PostgresEventStore.Source(migration).OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await PostgresSnapshotSchema.EnsureAsync(connection, transaction: null, _options, cancellationToken).ConfigureAwait(false);
         await GrantAsync(connection, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Reads whether <c>event_snapshots</c> and <c>dcb_snapshots</c> are present.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A match when both tables exist. This store has no format stamp.</returns>
+    /// <remarks>
+    /// This method does not create or change objects. It uses
+    /// <see cref="PostgresEventStoreOptions.ConnectionString"/>, not
+    /// <see cref="PostgresEventStoreOptions.MigrationConnectionString"/>.
+    /// Call it at startup. <see cref="SchemaCheckResult.ThrowIfMismatch"/> throws when the result does not match.
+    /// </remarks>
+    public async Task<SchemaCheckResult> VerifySchemaAsync(CancellationToken cancellationToken = default)
+    {
+        var schema = PgIdentifier.RequireSchema(_options.SchemaName);
+        await using var connection = await PostgresEventStore.Source(_options.ConnectionString!).OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        return await PostgresSchemaProbe.CheckAsync(
+            connection,
+            expectedFormat: null,
+            schema,
+            stampTable: null,
+            stampComponent: null,
+            [
+                new(PostgresSnapshotSchema.EventTable(_options), _events),
+                new(PostgresSnapshotSchema.DcbTable(_options), _dcb)
+            ],
+            [],
+            [],
+            [],
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

@@ -1,5 +1,6 @@
 using System.Data;
 using System.Runtime.CompilerServices;
+using LawnDart;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -96,6 +97,28 @@ public sealed class SqlServerSnapshotStore : ISnapshotStore, IDcbSnapshotStore, 
 
         await SqlServerSnapshotSchema.EnsureCreatedAsync(
             connection, _schemaName, _dcbTableName, _eventTableName, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Reads whether <c>EventSnapshots</c> and <c>DcbSnapshots</c> are present.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A match when both tables exist. This store has no format stamp.</returns>
+    /// <remarks>
+    /// This method does not create or change objects. Call it at startup.
+    /// <see cref="SchemaCheckResult.ThrowIfMismatch"/> throws when the result does not match.
+    /// </remarks>
+    public async Task<SchemaCheckResult> VerifySchemaAsync(CancellationToken cancellationToken = default)
+    {
+        var connection = new SqlConnection(_connectionString);
+        await using var disposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await SqlSchemaProbe.RequireViewDefinitionAsync(connection, _schemaName, cancellationToken).ConfigureAwait(false);
+
+        var missing = new List<string>();
+        await SqlSchemaProbe.AddMissingAsync(connection, _schemaName, _eventTableName, "U", missing, cancellationToken).ConfigureAwait(false);
+        await SqlSchemaProbe.AddMissingAsync(connection, _schemaName, _dcbTableName, "U", missing, cancellationToken).ConfigureAwait(false);
+        return SqlSchemaProbe.Finish(expected: null, found: null, missing);
     }
 
     /// <summary>

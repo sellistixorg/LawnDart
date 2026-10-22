@@ -14,6 +14,10 @@ changes to the public API.
 
 - Schema setup runs once per deploy from a deploy job, a migration step, or an admin tool. Normal app startup does not run it. An older copy that restarts can run its own schema setup at startup and change a schema a newer copy already upgraded. That copy can put an older append function back, or append events with no outbox rows. Upgrade the schema with the new version, make sure no older copy can start, then turn on `EnableOutbox`. See [Schema initialization](docs/SCHEMA_INITIALIZATION.md).
 
+### Added
+
+- `VerifySchemaAsync` reads the format stamp and the required tables, functions, triggers, partitions, and key indexes. It returns `SchemaCheckResult` and does not create or change objects. Call it at startup. `ThrowIfMismatch` throws `SchemaMismatchException` when the schema does not match. The Postgres check compares the whole body of `append_to_stream` and `save_projection_flush`. The schema has that one function, and the marker version must be the exact number this version writes. An extra overload does not match. A custom `IOutboxWriter` returns a match until it overrides `VerifySchemaAsync`. `InMemoryOutboxWriter.VerifySchemaAsync` returns a match. See [Schema initialization](docs/SCHEMA_INITIALIZATION.md).
+
 ## [0.7.0-alpha.2] - 2026-10-22
 
 This release adds the Postgres outbox and the `LawnDart.Messaging.Postgres` inbox. The build kit targets LawnDart 0.7.
