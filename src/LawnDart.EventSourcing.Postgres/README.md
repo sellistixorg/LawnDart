@@ -20,4 +20,4 @@ Call `InitializeSchemaAsync` before the first append. `WithSnapshots` stores
 snapshot state as bytes. `EnableOutbox = true` is rejected. Leave it false
 until the outbox release.
 
-See [the package page](../../docs/packages/eventsourcing-postgres.md).
+See [the package page](https://github.com/sellistixorg/LawnDart/blob/main/docs/packages/eventsourcing-postgres.md).
