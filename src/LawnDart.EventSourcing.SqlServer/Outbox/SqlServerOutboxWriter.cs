@@ -1,6 +1,7 @@
 using System.Data;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
+using LawnDart;
 using LawnDart.Outbox;
 using LawnDart.Sql;
 
@@ -340,6 +341,31 @@ public class SqlServerOutboxWriter : IOutboxWriter
 
         _logger?.LogInformation("Reset {Count} dead-lettered outbox messages", updated);
         return updated;
+    }
+
+    /// <summary>
+    /// Reads the outbox format stamp and the outbox table.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Whether the outbox schema matches, which stamp was found, and any missing objects.</returns>
+    /// <remarks>
+    /// This method does not create or change objects. Call it at startup.
+    /// <see cref="SchemaCheckResult.ThrowIfMismatch"/> throws when the result does not match.
+    /// </remarks>
+    public async Task<SchemaCheckResult> VerifySchemaAsync(CancellationToken cancellationToken = default)
+    {
+        var connection = new SqlConnection(_connectionString);
+        await using var disposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        var missing = new List<string>();
+        string? found = null;
+        if (await SqlSchemaProbe.ExistsAsync(connection, _schemaName, _tableName, "U", cancellationToken).ConfigureAwait(false))
+            found = await SqlSchemaProbe.ReadStampAsync(connection, _schemaName, _tableName, SchemaFormatPropertyName, cancellationToken).ConfigureAwait(false);
+        else
+            missing.Add(_tableName);
+
+        return SqlSchemaProbe.Finish(CurrentSchemaFormat, found, missing);
     }
 
     /// <summary>

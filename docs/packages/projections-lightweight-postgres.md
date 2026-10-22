@@ -33,6 +33,10 @@ startup does not run it. See
 await provider.InitializePostgresProjectionStoresAsync("default");
 ```
 
+At startup, call `VerifyPostgresProjectionStoresAsync`. It reads the tables
+and `save_projection_flush`. It does not create or change them. A function
+body without this version's marker does not match.
+
 Run that from a connection that can create tables. `MigrationConnectionString`
 is that connection when the app role is not the owner. After the tables exist,
 a later call does not create them again.

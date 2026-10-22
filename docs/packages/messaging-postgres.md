@@ -30,6 +30,9 @@ startup does not run it. See
 await provider.InitializePostgresInboxStoreAsync();
 ```
 
+At startup, call `VerifyPostgresInboxStoreAsync`. It reads the stamp and the
+table. It does not create or change them.
+
 ## Table
 
 The default schema is `lawndart`. Any other schema name is set on

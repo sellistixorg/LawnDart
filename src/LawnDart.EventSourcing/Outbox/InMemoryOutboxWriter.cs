@@ -1,3 +1,4 @@
+using LawnDart;
 using LawnDart.Outbox;
 
 namespace LawnDart.EventSourcing.Outbox;
@@ -32,6 +33,17 @@ public sealed class InMemoryOutboxWriter : IOutboxWriter
     /// </remarks>
     public Task InitializeSchemaAsync(CancellationToken cancellationToken = default)
         => Task.CompletedTask;
+
+    /// <summary>
+    /// Returns a match. This writer keeps messages in memory and has no database schema.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A match with no format stamp and no missing objects.</returns>
+    public Task<SchemaCheckResult> VerifySchemaAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(SchemaCheckResult.Match());
+    }
 
     /// <inheritdoc/>
     public Task WriteAsync(OutboxMessage message, CancellationToken cancellationToken = default)

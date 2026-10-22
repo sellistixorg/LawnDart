@@ -1,3 +1,5 @@
+using System.Globalization;
+using LawnDart;
 using LawnDart.Messaging;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -14,6 +16,8 @@ public sealed class PostgresInboxStore : IInboxStore
 {
     /// <summary>Format written into <c>schema_info</c> for component <c>inbox</c>.</summary>
     internal const int CurrentSchemaFormat = 1;
+
+    internal const string Component = "inbox";
 
     /// <summary>Maximum characters stored in <c>message_id</c>.</summary>
     public const int MaxKeyLength = 256;
@@ -157,7 +161,7 @@ public sealed class PostgresInboxStore : IInboxStore
                 """, cancellationToken).ConfigureAwait(false);
             await ExecuteAsync(connection, transaction, $"""
                 INSERT INTO {schemaInfo} (component, format, partition_count, partitioning, updated_at)
-                VALUES ('inbox', {CurrentSchemaFormat}, 0, false, clock_timestamp())
+                VALUES ('{Component}', {CurrentSchemaFormat}, 0, false, clock_timestamp())
                 ON CONFLICT (component) DO NOTHING
                 """, cancellationToken).ConfigureAwait(false);
             var found = await ReadFormatAsync(connection, transaction, schemaInfo, cancellationToken).ConfigureAwait(false);
@@ -179,6 +183,59 @@ public sealed class PostgresInboxStore : IInboxStore
         await GrantAppRoleAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         _logger?.LogInformation("Inbox schema initialized for {Table}", _qualifiedTableName);
+    }
+
+    /// <summary>
+    /// Reads the inbox format stamp and the inbox table.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Whether the inbox schema matches, which stamp was found, and any missing objects.</returns>
+    /// <remarks>
+    /// This method does not create or change objects. It uses
+    /// <see cref="PostgresInboxStoreOptions.ConnectionString"/>, not
+    /// <see cref="PostgresInboxStoreOptions.MigrationConnectionString"/>.
+    /// Call it at startup. <see cref="SchemaCheckResult.ThrowIfMismatch"/> throws when the result does not match.
+    /// </remarks>
+    public async Task<SchemaCheckResult> VerifySchemaAsync(CancellationToken cancellationToken = default)
+    {
+        var schemaInfo = PgIdentifier.Qualify(_schemaName, "schema_info");
+        using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        var missing = new List<string>();
+        string? found = null;
+        if (!await ScalarExistsAsync(connection, "SELECT to_regclass(@name) IS NOT NULL", _qualifiedTableName, cancellationToken).ConfigureAwait(false))
+            missing.Add(_tableName);
+
+        if (await ScalarExistsAsync(connection, "SELECT to_regclass(@name) IS NOT NULL", schemaInfo, cancellationToken).ConfigureAwait(false))
+        {
+            await using var format = new NpgsqlCommand(
+                $"SELECT format FROM {schemaInfo} WHERE component = @component",
+                connection);
+            format.Parameters.AddWithValue("component", Component);
+            var result = await format.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            if (result is not null and not DBNull)
+                found = Convert.ToInt32(result).ToString(CultureInfo.InvariantCulture);
+        }
+        else
+        {
+            missing.Add("schema_info");
+        }
+
+        return SchemaCheckResult.FromRead(
+            CurrentSchemaFormat.ToString(CultureInfo.InvariantCulture),
+            found,
+            missing);
+    }
+
+    private static async Task<bool> ScalarExistsAsync(
+        NpgsqlConnection connection,
+        string sql,
+        string name,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("name", name);
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return result is true;
     }
 
     /// <summary>
@@ -302,7 +359,7 @@ public sealed class PostgresInboxStore : IInboxStore
         CancellationToken cancellationToken)
     {
         using var command = new NpgsqlCommand(
-            $"SELECT format FROM {schemaInfo} WHERE component = 'inbox'",
+            $"SELECT format FROM {schemaInfo} WHERE component = '{Component}'",
             connection,
             transaction);
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);

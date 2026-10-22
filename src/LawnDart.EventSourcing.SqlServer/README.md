@@ -28,5 +28,5 @@ services.AddBoundedContext("default")
 ```
 
 Call `InitializeSchemaAsync` from a deploy or admin step. Normal app startup
-does not call it. See
+calls `VerifySchemaAsync` instead. That call only reads. See
 [Schema initialization](https://github.com/sellistixorg/LawnDart/blob/main/docs/SCHEMA_INITIALIZATION.md).

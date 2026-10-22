@@ -175,10 +175,59 @@ A host that already called `AddPostgresProjectionStores` and
 and `InitializePostgresInboxStoreAsync` on that provider instead of
 constructing those stores.
 
+## Startup check
+
+`VerifySchemaAsync` reads the format stamp and the tables, functions, and
+triggers this version writes. It does not create, replace, or alter them.
+Call it when the process starts. `ThrowIfMismatch` throws
+`SchemaMismatchException` when the result does not match.
+
+Postgres setup writes the marker `LawnDart:append_to_stream:1` into
+`append_to_stream`, and `LawnDart:save_projection_flush:1` into
+`save_projection_flush`. The check reads the function body. A body without
+that marker does not match. That includes a function an older copy put back.
+The missing list names that function with ` body` after the name.
+
+`InMemoryOutboxWriter.VerifySchemaAsync` returns a match. That writer has no
+database. `IOutboxWriter` includes the same method.
+
+### Postgres
+
+| Call | What it reads |
+|---|---|
+| `PostgresEventStore.VerifySchemaAsync` | Events stamp, tables, the position sequence, `append_to_stream`, `sync_stream_tags`, and `streams_sync_tags` |
+| `PostgresOutboxWriter.VerifySchemaAsync` | Outbox stamp and the outbox table |
+| `PostgresSnapshotStore.VerifySchemaAsync` | `event_snapshots` and `dcb_snapshots` |
+| `PostgresViewStore.VerifySchemaAsync`, `PostgresCheckpointStore.VerifySchemaAsync`, `PostgresProjectionStore.VerifySchemaAsync`, `VerifyPostgresProjectionStoresAsync` | Projection tables and `save_projection_flush` |
+| `PostgresInboxStore.VerifySchemaAsync`, `VerifyPostgresInboxStoreAsync` | Inbox stamp and the inbox table |
+
+The event store, the outbox writer, the snapshot store, the projection stores,
+and the inbox use `ConnectionString`. They do not use
+`MigrationConnectionString`.
+
+A login that only reads needs `CONNECT` on the database, `USAGE` on the
+schema, and `SELECT` on `schema_info`. The check also reads `pg_catalog`
+(`pg_class`, `pg_proc`, `pg_trigger`, and `pg_type`). A normal login can read
+that catalog. Snapshot and projection checks do not read `schema_info`. They
+need `USAGE` on the schema.
+
+### SQL Server
+
+| Call | What it reads |
+|---|---|
+| `SqlServerEventStore.VerifySchemaAsync` | Events stamp `LawnDart_SchemaFormat`, tables, the position sequence, and the stream tag trigger when the registry is on |
+| `SqlServerOutboxWriter.VerifySchemaAsync` | Outbox stamp `LawnDart_OutboxSchemaFormat` and the outbox table |
+| `SqlServerSnapshotStore.VerifySchemaAsync` | `EventSnapshots` and `DcbSnapshots` |
+| `SqlViewStore.VerifySchemaAsync`, `SqlCheckpointStore.VerifySchemaAsync`, `VerifySqlProjectionStoresAsync` | `ProjectionViews` and `ProjectionCheckpoints` |
+| `SqlServerInboxStore.VerifySchemaAsync`, `VerifySqlInboxStoreAsync` | Inbox stamp `LawnDart_InboxSchemaFormat` and the inbox table |
+
+A login that only reads needs `VIEW DEFINITION` on the schema. That grant
+shows the objects and the format stamp. The check does not read table rows.
+
 ## App startup
 
 After no older copy can start, the app turns `EnableOutbox` on. It does not
-call a setup method.
+call a setup method. It calls the check.
 
 ```csharp
 using LawnDart;
@@ -201,6 +250,27 @@ services.AddBoundedContext("default")
 
 `UseSqlServer` is the same registration for SQL Server. It does not call
 `InitializeSchemaAsync`.
+
+After the host is built, read the schema with the app connection.
+
+```csharp
+var store = new PostgresEventStore(appConnectionString, options: new PostgresEventStoreOptions
+{
+    ConnectionString = appConnectionString,
+    RequireTenantId = false
+});
+(await store.VerifySchemaAsync()).ThrowIfMismatch();
+
+var outbox = new PostgresOutboxWriter(appConnectionString);
+(await outbox.VerifySchemaAsync()).ThrowIfMismatch();
+
+(await provider.VerifyPostgresProjectionStoresAsync("default")).ThrowIfMismatch();
+(await provider.VerifyPostgresInboxStoreAsync()).ThrowIfMismatch();
+```
+
+`provider` is the built service provider. The SQL Server calls are
+`SqlServerEventStore.VerifySchemaAsync`, `SqlServerOutboxWriter.VerifySchemaAsync`,
+`VerifySqlProjectionStoresAsync`, and `VerifySqlInboxStoreAsync`.
 
 ## Related
 

@@ -6,6 +6,9 @@ namespace LawnDart.EventSourcing.Postgres.EventStore;
 /// </summary>
 internal static class PostgresAppendSql
 {
+    /// <summary>Text written into <c>append_to_stream</c> so a later read can tell this body from an older one.</summary>
+    internal const string BodyMarker = "LawnDart:append_to_stream:1";
+
     internal static string CreateFunction(PostgresNames names, PostgresEventStoreOptions options)
     {
         _ = options;
@@ -61,6 +64,7 @@ internal static class PostgresAppendSql
                 v_detail text;
                 v_baseline bigint;
             BEGIN
+                -- {BodyMarker}
                 -- Assign a transaction id before any position is taken.
                 -- A reader that sees a later position can then prove which
                 -- writers might still fill a hole: they already had an id.

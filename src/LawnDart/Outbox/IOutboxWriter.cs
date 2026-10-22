@@ -1,3 +1,5 @@
+using LawnDart;
+
 namespace LawnDart.Outbox;
 
 /// <summary>
@@ -110,4 +112,18 @@ public interface IOutboxWriter
     /// The in-memory writer completes without a database.
     /// </remarks>
     Task InitializeSchemaAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reads the outbox schema and reports whether it matches this version.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>
+    /// A match when the schema is the one this version writes.
+    /// The in-memory writer returns a match without a database.
+    /// </returns>
+    /// <remarks>
+    /// This method does not create or change objects. Call it at startup.
+    /// <see cref="SchemaCheckResult.ThrowIfMismatch"/> throws when the result does not match.
+    /// </remarks>
+    Task<SchemaCheckResult> VerifySchemaAsync(CancellationToken cancellationToken = default);
 }

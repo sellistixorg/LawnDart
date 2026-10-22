@@ -1,9 +1,14 @@
+using LawnDart;
+using LawnDart.EventSourcing.Postgres;
 using Npgsql;
 
 namespace LawnDart.Projections.Lightweight.Postgres;
 
 internal static class PostgresProjectionSchema
 {
+    /// <summary>Text written into <c>save_projection_flush</c> so a later read can tell this body from an older one.</summary>
+    internal const string FlushFunctionMarker = "LawnDart:save_projection_flush:1";
+
     internal static async Task EnsureAsync(
         NpgsqlConnection connection,
         PostgresProjectionNames names,
@@ -63,6 +68,7 @@ internal static class PostgresProjectionSchema
             DECLARE
                 current_epoch bigint;
             BEGIN
+                -- {FlushFunctionMarker}
                 PERFORM set_config('search_path', '{names.SearchPath}', true);
 
                 IF p_require_epoch THEN
@@ -126,6 +132,26 @@ internal static class PostgresProjectionSchema
         await using var grantCommand = new NpgsqlCommand(grant, connection);
         await grantCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
+
+    internal static Task<SchemaCheckResult> VerifyAsync(
+        NpgsqlConnection connection,
+        PostgresProjectionNames names,
+        CancellationToken cancellationToken)
+        => PostgresSchemaProbe.CheckAsync(
+            connection,
+            expectedFormat: null,
+            names.Schema,
+            stampTable: null,
+            stampComponent: null,
+            [
+                new PostgresSchemaProbe.Relation("projection_views", names.Views),
+                new PostgresSchemaProbe.Relation("projection_checkpoints", names.Checkpoints),
+                new PostgresSchemaProbe.Relation("projection_runner_leases", names.Leases)
+            ],
+            [],
+            [new PostgresSchemaProbe.Routine("save_projection_flush", FlushFunctionMarker)],
+            [],
+            cancellationToken);
 
     internal static string? AppRole(PostgresProjectionStoreOptions options)
     {

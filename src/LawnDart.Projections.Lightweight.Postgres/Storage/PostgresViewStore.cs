@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using NpgsqlTypes;
+using LawnDart;
 using LawnDart.Projections.Storage;
 
 namespace LawnDart.Projections.Lightweight.Postgres;
@@ -45,6 +46,26 @@ public sealed class PostgresViewStore : IViewStore
             connection, _names, PostgresProjectionSchema.AppRole(_options), cancellationToken).ConfigureAwait(false);
         if (_logger is not null)
             PostgresProjectionLog.SchemaReady(_logger, _names.Schema);
+    }
+
+    /// <summary>
+    /// Reads the projection tables and <c>save_projection_flush</c>.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>
+    /// A match when the tables exist and the flush function body contains this version's marker.
+    /// This store has no format stamp.
+    /// </returns>
+    /// <remarks>
+    /// This method does not create or change objects. It uses
+    /// <see cref="PostgresProjectionStoreOptions.ConnectionString"/>, not
+    /// <see cref="PostgresProjectionStoreOptions.MigrationConnectionString"/>.
+    /// Call it at startup. <see cref="SchemaCheckResult.ThrowIfMismatch"/> throws when the result does not match.
+    /// </remarks>
+    public async Task<SchemaCheckResult> VerifySchemaAsync(CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        return await PostgresProjectionSchema.VerifyAsync(connection, _names, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>

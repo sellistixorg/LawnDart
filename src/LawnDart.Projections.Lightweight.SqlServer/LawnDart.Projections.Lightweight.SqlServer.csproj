@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <Compile Include="..\Shared\SqlIdentifier.cs" Link="Internal\SqlIdentifier.cs" />
+    <Compile Include="..\Shared\SqlSchemaProbe.cs" Link="Internal\SqlSchemaProbe.cs" />
   </ItemGroup>
 
   <ItemGroup>
