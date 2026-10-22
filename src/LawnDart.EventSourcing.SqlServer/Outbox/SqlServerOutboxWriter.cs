@@ -357,6 +357,7 @@ public class SqlServerOutboxWriter : IOutboxWriter
         var connection = new SqlConnection(_connectionString);
         await using var disposal = connection.ConfigureAwait(false);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await SqlSchemaProbe.RequireViewDefinitionAsync(connection, _schemaName, cancellationToken).ConfigureAwait(false);
 
         var missing = new List<string>();
         string? found = null;

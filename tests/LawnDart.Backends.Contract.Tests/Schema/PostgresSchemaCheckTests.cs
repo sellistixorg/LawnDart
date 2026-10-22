@@ -113,6 +113,79 @@ public sealed class PostgresSchemaCheckTests(PostgresSchemaCheckFixture fixture)
     }
 
     [Fact]
+    public async Task VerifySchemaAsync_MismatchesOnANewerMarkerVersion()
+    {
+        var bundle = await fixture.CreateAsync("chk_ver");
+        await ReplaceBodyAsync(bundle.Schema, "append_to_stream", "LawnDart:append_to_stream:1", "LawnDart:append_to_stream:2");
+        await ReplaceBodyAsync(bundle.Schema, "save_projection_flush", "LawnDart:save_projection_flush:1", "LawnDart:save_projection_flush:2");
+
+        var version2Events = await bundle.Store.VerifySchemaAsync();
+        var version2Flush = await bundle.Projections.VerifySchemaAsync();
+        Assert.False(version2Events.Matches);
+        Assert.Contains("append_to_stream body", version2Events.Missing);
+        Assert.False(version2Flush.Matches);
+        Assert.Contains("save_projection_flush body", version2Flush.Missing);
+
+        await ReplaceBodyAsync(bundle.Schema, "append_to_stream", "LawnDart:append_to_stream:2", "LawnDart:append_to_stream:10");
+        await ReplaceBodyAsync(bundle.Schema, "save_projection_flush", "LawnDart:save_projection_flush:2", "LawnDart:save_projection_flush:10");
+
+        var version10Events = await bundle.Store.VerifySchemaAsync();
+        var version10Flush = await bundle.Projections.VerifySchemaAsync();
+        Assert.False(version10Events.Matches);
+        Assert.Contains("append_to_stream body", version10Events.Missing);
+        Assert.False(version10Flush.Matches);
+        Assert.Contains("save_projection_flush body", version10Flush.Missing);
+    }
+
+    [Fact]
+    public async Task VerifySchemaAsync_MismatchesWhenTheBodyChangesAndKeepsTheMarker()
+    {
+        var bundle = await fixture.CreateAsync("chk_edit");
+        await ReplaceBodyAsync(bundle.Schema, "append_to_stream", "PERFORM pg_current_xact_id();", "PERFORM pg_current_xact_id(); PERFORM 1;");
+        await ReplaceBodyAsync(bundle.Schema, "save_projection_flush", "RETURN 1;", "RETURN 2;");
+
+        var events = await bundle.Store.VerifySchemaAsync();
+        var projections = await bundle.Projections.VerifySchemaAsync();
+
+        Assert.False(events.Matches);
+        Assert.Contains("append_to_stream body", events.Missing);
+        Assert.False(projections.Matches);
+        Assert.Contains("save_projection_flush body", projections.Missing);
+    }
+
+    [Fact]
+    public async Task VerifySchemaAsync_MismatchesWhenAPartitionOrUniqueKeyIsMissing()
+    {
+        var partition = await fixture.CreateAsync("chk_part");
+        await fixture.ExecuteAsync($"""DROP TABLE {LawnDart.EventSourcing.Postgres.PgIdentifier.Qualify(partition.Schema, "events_shared_h0")}""");
+        var droppedPartition = await partition.Store.VerifySchemaAsync();
+        Assert.False(droppedPartition.Matches);
+        Assert.Contains("events_shared_h0", droppedPartition.Missing);
+
+        var key = await fixture.CreateAsync("chk_key");
+        var events = LawnDart.EventSourcing.Postgres.PgIdentifier.Qualify(key.Schema, "events");
+        await fixture.ExecuteAsync($"""ALTER TABLE {events} DROP CONSTRAINT events_event_id_tenant_id_key""");
+        var droppedKey = await key.Store.VerifySchemaAsync();
+        Assert.False(droppedKey.Matches);
+        Assert.Contains("events_event_id_tenant_id_key", droppedKey.Missing);
+    }
+
+    private Task ReplaceBodyAsync(string schema, string function, string from, string to)
+    {
+        var escapedSchema = schema.Replace("'", "''", StringComparison.Ordinal);
+        var escapedFrom = from.Replace("'", "''", StringComparison.Ordinal);
+        var escapedTo = to.Replace("'", "''", StringComparison.Ordinal);
+        return fixture.ExecuteAsync($"""
+            UPDATE pg_proc AS p
+            SET prosrc = replace(p.prosrc, '{escapedFrom}', '{escapedTo}')
+            FROM pg_namespace AS n
+            WHERE n.oid = p.pronamespace
+              AND n.nspname = '{escapedSchema}'
+              AND p.proname = '{function}'
+            """);
+    }
+
+    [Fact]
     public async Task VerifySchemaAsync_DoesNotChangeTheCatalog()
     {
         var bundle = await fixture.CreateAsync("chk_still");

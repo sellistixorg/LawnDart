@@ -184,9 +184,11 @@ Call it when the process starts. `ThrowIfMismatch` throws
 
 Postgres setup writes the marker `LawnDart:append_to_stream:1` into
 `append_to_stream`, and `LawnDart:save_projection_flush:1` into
-`save_projection_flush`. The check reads the function body. A body without
-that marker does not match. That includes a function an older copy put back.
-The missing list names that function with ` body` after the name.
+`save_projection_flush`. The check compares the whole function body with the
+body this version writes, and it reads the marker version as an exact number.
+Version 1 does not match version 2 or version 10. A body that keeps the marker
+and changes anything else does not match. That includes a function an older
+copy put back. The missing list names that function with ` body` after the name.
 
 `InMemoryOutboxWriter.VerifySchemaAsync` returns a match. That writer has no
 database. `IOutboxWriter` includes the same method.
@@ -195,11 +197,11 @@ database. `IOutboxWriter` includes the same method.
 
 | Call | What it reads |
 |---|---|
-| `PostgresEventStore.VerifySchemaAsync` | Events stamp, tables, the position sequence, `append_to_stream`, `sync_stream_tags`, and `streams_sync_tags` |
-| `PostgresOutboxWriter.VerifySchemaAsync` | Outbox stamp and the outbox table |
+| `PostgresEventStore.VerifySchemaAsync`, `VerifyPostgresEventStoreAsync` | Events stamp, tables, hash partitions, unique keys, `ix_streams_stream_id`, the position sequence, `append_to_stream`, `sync_stream_tags`, and `streams_sync_tags` |
+| `PostgresOutboxWriter.VerifySchemaAsync` | Outbox stamp, the outbox table, and `ix_outbox_pending` |
 | `PostgresSnapshotStore.VerifySchemaAsync` | `event_snapshots` and `dcb_snapshots` |
 | `PostgresViewStore.VerifySchemaAsync`, `PostgresCheckpointStore.VerifySchemaAsync`, `PostgresProjectionStore.VerifySchemaAsync`, `VerifyPostgresProjectionStoresAsync` | Projection tables and `save_projection_flush` |
-| `PostgresInboxStore.VerifySchemaAsync`, `VerifyPostgresInboxStoreAsync` | Inbox stamp and the inbox table |
+| `PostgresInboxStore.VerifySchemaAsync`, `VerifyPostgresInboxStoreAsync` | Inbox stamp, the inbox table, and `ix_inbox_processed_at` |
 
 The event store, the outbox writer, the snapshot store, the projection stores,
 and the inbox use `ConnectionString`. They do not use
@@ -215,14 +217,16 @@ need `USAGE` on the schema.
 
 | Call | What it reads |
 |---|---|
-| `SqlServerEventStore.VerifySchemaAsync` | Events stamp `LawnDart_SchemaFormat`, tables, the position sequence, and the stream tag trigger when the registry is on |
+| `SqlServerEventStore.VerifySchemaAsync`, `VerifySqlServerEventStoreAsync` | Events stamp `LawnDart_SchemaFormat`, tables, `UX_EventId`, `UX_SequencePosition`, and, when the registry is on, `StreamIdBin`, `UX_StreamIdBin`, and the stream tag trigger |
 | `SqlServerOutboxWriter.VerifySchemaAsync` | Outbox stamp `LawnDart_OutboxSchemaFormat` and the outbox table |
 | `SqlServerSnapshotStore.VerifySchemaAsync` | `EventSnapshots` and `DcbSnapshots` |
 | `SqlViewStore.VerifySchemaAsync`, `SqlCheckpointStore.VerifySchemaAsync`, `VerifySqlProjectionStoresAsync` | `ProjectionViews` and `ProjectionCheckpoints` |
 | `SqlServerInboxStore.VerifySchemaAsync`, `VerifySqlInboxStoreAsync` | Inbox stamp `LawnDart_InboxSchemaFormat` and the inbox table |
 
-A login that only reads needs `VIEW DEFINITION` on the schema. That grant
-shows the objects and the format stamp. The check does not read table rows.
+A login that only reads needs a database user. Grant `VIEW DEFINITION` on
+the schema to that user. That grant shows the objects and the format stamp.
+The check does not read table rows. Without the grant, the check throws and
+says the login lacks permission to read the schema definition.
 
 ## App startup
 
@@ -251,26 +255,30 @@ services.AddBoundedContext("default")
 `UseSqlServer` is the same registration for SQL Server. It does not call
 `InitializeSchemaAsync`.
 
-After the host is built, read the schema with the app connection.
+After the host is built, read the schema through the registered stores.
+`provider` is that built service provider.
 
 ```csharp
-var store = new PostgresEventStore(appConnectionString, options: new PostgresEventStoreOptions
-{
-    ConnectionString = appConnectionString,
-    RequireTenantId = false
-});
-(await store.VerifySchemaAsync()).ThrowIfMismatch();
+using LawnDart.EventSourcing.Postgres.EventStore;
+using LawnDart.EventSourcing.Postgres.Outbox;
+using LawnDart.Messaging.Postgres;
+using LawnDart.Outbox;
+using LawnDart.Projections.Lightweight.Postgres;
+using Microsoft.Extensions.DependencyInjection;
 
-var outbox = new PostgresOutboxWriter(appConnectionString);
+(await provider.VerifyPostgresEventStoreAsync("default")).ThrowIfMismatch();
+
+var outbox = (PostgresOutboxWriter)provider.GetRequiredKeyedService<IOutboxWriter>("default");
 (await outbox.VerifySchemaAsync()).ThrowIfMismatch();
 
 (await provider.VerifyPostgresProjectionStoresAsync("default")).ThrowIfMismatch();
 (await provider.VerifyPostgresInboxStoreAsync()).ThrowIfMismatch();
 ```
 
-`provider` is the built service provider. The SQL Server calls are
-`SqlServerEventStore.VerifySchemaAsync`, `SqlServerOutboxWriter.VerifySchemaAsync`,
-`VerifySqlProjectionStoresAsync`, and `VerifySqlInboxStoreAsync`.
+`VerifySqlServerEventStoreAsync` is the same call for a SQL Server context.
+It uses the options registered for that context. The other SQL Server calls
+are `SqlServerOutboxWriter.VerifySchemaAsync`, `VerifySqlProjectionStoresAsync`,
+and `VerifySqlInboxStoreAsync`.
 
 ## Related
 

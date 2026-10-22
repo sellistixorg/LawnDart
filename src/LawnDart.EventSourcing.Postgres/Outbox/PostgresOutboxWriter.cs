@@ -272,7 +272,7 @@ public sealed class PostgresOutboxWriter : IOutboxWriter
     }
 
     /// <summary>
-    /// Reads the outbox format stamp and the outbox table.
+    /// Reads the outbox format stamp, the outbox table, and the pending index.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Whether the outbox schema matches, which stamp was found, and any missing objects.</returns>
@@ -284,6 +284,7 @@ public sealed class PostgresOutboxWriter : IOutboxWriter
     public async Task<SchemaCheckResult> VerifySchemaAsync(CancellationToken cancellationToken = default)
     {
         var schemaInfo = PgIdentifier.Qualify(_schemaName, "schema_info");
+        var pending = "ix_" + _tableName + "_pending";
         using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await PostgresSchemaProbe.CheckAsync(
             connection,
@@ -293,7 +294,8 @@ public sealed class PostgresOutboxWriter : IOutboxWriter
             PostgresOutboxSchema.Component,
             [
                 new(_tableName, _qualifiedTableName),
-                new("schema_info", schemaInfo)
+                new("schema_info", schemaInfo),
+                new(pending, PgIdentifier.Qualify(_schemaName, pending))
             ],
             [],
             [],

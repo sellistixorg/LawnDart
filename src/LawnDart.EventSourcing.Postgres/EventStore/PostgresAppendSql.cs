@@ -6,8 +6,17 @@ namespace LawnDart.EventSourcing.Postgres.EventStore;
 /// </summary>
 internal static class PostgresAppendSql
 {
+    /// <summary>Prefix of the version marker written into <c>append_to_stream</c>.</summary>
+    internal const string BodyMarkerPrefix = "LawnDart:append_to_stream:";
+
+    /// <summary>Marker version written into <c>append_to_stream</c>. A later number is a different body.</summary>
+    internal const int BodyMarkerVersion = 1;
+
     /// <summary>Text written into <c>append_to_stream</c> so a later read can tell this body from an older one.</summary>
-    internal const string BodyMarker = "LawnDart:append_to_stream:1";
+    internal const string BodyMarker = BodyMarkerPrefix + "1";
+
+    internal static string ExpectedProsrc(PostgresNames names, PostgresEventStoreOptions options)
+        => PostgresSchemaProbe.DollarBody(CreateFunction(names, options), "$fn$");
 
     internal static string CreateFunction(PostgresNames names, PostgresEventStoreOptions options)
     {

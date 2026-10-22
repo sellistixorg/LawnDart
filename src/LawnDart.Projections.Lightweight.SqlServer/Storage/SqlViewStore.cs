@@ -475,6 +475,7 @@ public class SqlViewStore : IViewStore
         var connection = new SqlConnection(_connectionString);
         await using var disposal = connection.ConfigureAwait(false);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await SqlSchemaProbe.RequireViewDefinitionAsync(connection, _schemaName, cancellationToken).ConfigureAwait(false);
 
         var missing = new List<string>();
         await SqlSchemaProbe.AddMissingAsync(connection, _schemaName, _tableName, "U", missing, cancellationToken).ConfigureAwait(false);

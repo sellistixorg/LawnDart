@@ -8,6 +8,52 @@ namespace LawnDart.Sql;
 /// </summary>
 internal static class SqlSchemaProbe
 {
+    /// <summary>
+    /// Throws when the login cannot read the schema definition.
+    /// A missing schema is left for the object checks when the login could see it.
+    /// </summary>
+    internal static async Task RequireViewDefinitionAsync(
+        SqlConnection connection,
+        string schema,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT
+                SCHEMA_ID(@schema),
+                HAS_PERMS_BY_NAME(@schema, N'SCHEMA', N'VIEW DEFINITION'),
+                HAS_PERMS_BY_NAME(DB_NAME(), N'DATABASE', N'VIEW DEFINITION'),
+                IS_MEMBER(N'db_owner')
+            """;
+        var command = new SqlCommand(sql, connection);
+        await using var disposal = command.ConfigureAwait(false);
+        command.Parameters.AddWithValue("@schema", schema);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            throw Permission(schema);
+
+        var schemaVisible = !reader.IsDBNull(0);
+        var schemaView = ReadFlag(reader, 1);
+        var databaseView = ReadFlag(reader, 2);
+        var owner = ReadFlag(reader, 3) == 1;
+        if (schemaView == 1)
+            return;
+        if (!schemaVisible && (owner || databaseView == 1))
+            return;
+
+        throw Permission(schema);
+    }
+
+    private static int? ReadFlag(System.Data.Common.DbDataReader reader, int ordinal)
+        => reader.IsDBNull(ordinal)
+            ? null
+            : Convert.ToInt32(reader.GetValue(ordinal), System.Globalization.CultureInfo.InvariantCulture);
+
+    private static InvalidOperationException Permission(string schema)
+        => new(
+            "The login lacks permission to read the schema definition. " +
+            "Create a database user for the login and grant VIEW DEFINITION on schema '" +
+            schema + "'.");
+
     internal static async Task<bool> ExistsAsync(
         SqlConnection connection,
         string schema,
@@ -61,6 +107,44 @@ internal static class SqlSchemaProbe
         return result is null or DBNull ? null : Convert.ToString(result);
     }
 
+    internal static async Task<bool> IndexExistsAsync(
+        SqlConnection connection,
+        string schema,
+        string table,
+        string index,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT 1
+            FROM sys.indexes i
+            INNER JOIN sys.objects o ON o.object_id = i.object_id
+            INNER JOIN sys.schemas s ON s.schema_id = o.schema_id
+            WHERE s.name = @schema AND o.name = @table AND i.name = @index
+            """;
+        var command = new SqlCommand(sql, connection);
+        await using var disposal = command.ConfigureAwait(false);
+        command.Parameters.AddWithValue("@schema", schema);
+        command.Parameters.AddWithValue("@table", table);
+        command.Parameters.AddWithValue("@index", index);
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return result is not null and not DBNull;
+    }
+
+    internal static async Task<bool> ColumnExistsAsync(
+        SqlConnection connection,
+        string qualifiedTable,
+        string column,
+        CancellationToken cancellationToken)
+    {
+        const string sql = "SELECT CASE WHEN COL_LENGTH(@table, @column) IS NULL THEN 0 ELSE 1 END";
+        var command = new SqlCommand(sql, connection);
+        await using var disposal = command.ConfigureAwait(false);
+        command.Parameters.AddWithValue("@table", qualifiedTable);
+        command.Parameters.AddWithValue("@column", column);
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return Convert.ToInt32(result, System.Globalization.CultureInfo.InvariantCulture) == 1;
+    }
+
     internal static async Task AddMissingAsync(
         SqlConnection connection,
         string schema,
@@ -71,6 +155,29 @@ internal static class SqlSchemaProbe
     {
         if (!await ExistsAsync(connection, schema, name, typeCode, cancellationToken).ConfigureAwait(false))
             missing.Add(name);
+    }
+
+    internal static async Task AddMissingIndexAsync(
+        SqlConnection connection,
+        string schema,
+        string table,
+        string index,
+        List<string> missing,
+        CancellationToken cancellationToken)
+    {
+        if (!await IndexExistsAsync(connection, schema, table, index, cancellationToken).ConfigureAwait(false))
+            missing.Add(index);
+    }
+
+    internal static async Task AddMissingColumnAsync(
+        SqlConnection connection,
+        string qualifiedTable,
+        string column,
+        List<string> missing,
+        CancellationToken cancellationToken)
+    {
+        if (!await ColumnExistsAsync(connection, qualifiedTable, column, cancellationToken).ConfigureAwait(false))
+            missing.Add(column);
     }
 
     internal static SchemaCheckResult Finish(string? expected, string? found, List<string> missing)

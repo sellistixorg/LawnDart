@@ -124,6 +124,9 @@ public interface IOutboxWriter
     /// <remarks>
     /// This method does not create or change objects. Call it at startup.
     /// <see cref="SchemaCheckResult.ThrowIfMismatch"/> throws when the result does not match.
+    /// A custom writer returns a match until it overrides this method.
+    /// Override it when the writer has a database schema to read.
     /// </remarks>
-    Task<SchemaCheckResult> VerifySchemaAsync(CancellationToken cancellationToken = default);
+    Task<SchemaCheckResult> VerifySchemaAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult(SchemaCheckResult.Match());
 }

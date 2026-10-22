@@ -205,6 +205,10 @@ public sealed class PostgresInboxStore : IInboxStore
         if (!await ScalarExistsAsync(connection, "SELECT to_regclass(@name) IS NOT NULL", _qualifiedTableName, cancellationToken).ConfigureAwait(false))
             missing.Add(_tableName);
 
+        var pending = PgIdentifier.Qualify(_schemaName, "ix_" + _tableName + "_processed_at");
+        if (!await ScalarExistsAsync(connection, "SELECT to_regclass(@name) IS NOT NULL", pending, cancellationToken).ConfigureAwait(false))
+            missing.Add("ix_" + _tableName + "_processed_at");
+
         if (await ScalarExistsAsync(connection, "SELECT to_regclass(@name) IS NOT NULL", schemaInfo, cancellationToken).ConfigureAwait(false))
         {
             await using var format = new NpgsqlCommand(

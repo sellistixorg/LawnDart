@@ -16,11 +16,7 @@ changes to the public API.
 
 ### Added
 
-- `VerifySchemaAsync` reads the format stamp and the required tables, functions, and triggers. It returns `SchemaCheckResult` and does not create or change objects. Call it at startup. `ThrowIfMismatch` throws `SchemaMismatchException` when the schema does not match. Postgres setup writes a marker in `append_to_stream` and `save_projection_flush` so a replaced function body does not match. `InMemoryOutboxWriter.VerifySchemaAsync` returns a match. See [Schema initialization](docs/SCHEMA_INITIALIZATION.md).
-
-### Breaking
-
-- `IOutboxWriter` includes `VerifySchemaAsync`. A type that implements `IOutboxWriter` adds that method.
+- `VerifySchemaAsync` reads the format stamp and the required tables, functions, triggers, partitions, and key indexes. It returns `SchemaCheckResult` and does not create or change objects. Call it at startup. `ThrowIfMismatch` throws `SchemaMismatchException` when the schema does not match. The Postgres check compares the whole body of `append_to_stream` and `save_projection_flush`, and the marker version must be the exact number this version writes. A custom `IOutboxWriter` returns a match until it overrides `VerifySchemaAsync`. `InMemoryOutboxWriter.VerifySchemaAsync` returns a match. See [Schema initialization](docs/SCHEMA_INITIALIZATION.md).
 
 ## [0.7.0-alpha.2] - 2026-10-22
 

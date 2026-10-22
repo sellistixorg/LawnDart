@@ -55,6 +55,64 @@ public sealed class SqlServerSchemaCheckTests(SqlServerSchemaCheckFixture fixtur
     }
 
     [Fact]
+    public async Task VerifySchemaAsync_MismatchesWhenAKeyIndexOrColumnIsMissing()
+    {
+        var bundle = await fixture.CreateAsync("chk_idx");
+        var events = Qualify(bundle.Schema, "Events");
+        var streams = Qualify(bundle.Schema, "Streams");
+        var tags = Qualify(bundle.Schema, "EventTags");
+        await fixture.ExecuteAsync($"""
+            DROP INDEX [UX_EventId] ON {events};
+            ALTER TABLE {tags} DROP CONSTRAINT [FK_EventTags_Events];
+            DROP INDEX [UX_SequencePosition] ON {events};
+            DROP INDEX [UX_StreamIdBin] ON {streams};
+            IF EXISTS (
+                SELECT 1
+                FROM sys.indexes i
+                INNER JOIN sys.tables t ON t.object_id = i.object_id
+                INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
+                WHERE i.name = N'IX_AggregateType' AND s.name = N'{bundle.Schema}' AND t.name = N'Streams')
+                DROP INDEX [IX_AggregateType] ON {streams};
+            ALTER TABLE {streams} DROP COLUMN [StreamIdBin];
+            """);
+
+        var result = await bundle.Store.VerifySchemaAsync();
+
+        Assert.False(result.Matches);
+        Assert.Contains("UX_EventId", result.Missing);
+        Assert.Contains("UX_SequencePosition", result.Missing);
+        Assert.Contains("UX_StreamIdBin", result.Missing);
+        Assert.Contains("StreamIdBin", result.Missing);
+    }
+
+    [Fact]
+    public async Task VerifySchemaAsync_ThrowsWhenTheLoginCannotReadTheSchemaDefinition()
+    {
+        var bundle = await fixture.CreateAsync("chk_perm");
+        await fixture.ExecuteAsync("""
+            IF SUSER_ID(N'lawndart_schema_none') IS NULL
+                CREATE LOGIN lawndart_schema_none WITH PASSWORD = N'LawnDart_None1a', CHECK_POLICY = OFF;
+            IF DATABASE_PRINCIPAL_ID(N'lawndart_schema_none') IS NULL
+                CREATE USER lawndart_schema_none FOR LOGIN lawndart_schema_none;
+            IF SUSER_ID(N'lawndart_schema_select') IS NULL
+                CREATE LOGIN lawndart_schema_select WITH PASSWORD = N'LawnDart_Select1a', CHECK_POLICY = OFF;
+            IF DATABASE_PRINCIPAL_ID(N'lawndart_schema_select') IS NULL
+                CREATE USER lawndart_schema_select FOR LOGIN lawndart_schema_select;
+            ALTER ROLE db_datareader ADD MEMBER lawndart_schema_select;
+            """);
+
+        var none = fixture.Open(fixture.ConnectionFor("lawndart_schema_none", "LawnDart_None1a"), bundle.Schema);
+        var select = fixture.Open(fixture.ConnectionFor("lawndart_schema_select", "LawnDart_Select1a"), bundle.Schema);
+
+        var noneError = await Assert.ThrowsAsync<InvalidOperationException>(() => none.Store.VerifySchemaAsync());
+        var selectError = await Assert.ThrowsAsync<InvalidOperationException>(() => select.Store.VerifySchemaAsync());
+
+        Assert.Contains("lacks permission to read the schema definition", noneError.Message, StringComparison.Ordinal);
+        Assert.Contains("lacks permission to read the schema definition", selectError.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("EventSequencePosition", selectError.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task VerifySchemaAsync_MismatchesOnAnOlderStamp()
     {
         var bundle = await fixture.CreateAsync("chk_stamp");
@@ -214,10 +272,15 @@ public sealed class SqlServerSchemaCheckFixture : IAsyncLifetime
     {
         var escaped = schema.Replace("]", "]]", StringComparison.Ordinal);
         await ExecuteAsync($"GRANT VIEW DEFINITION ON SCHEMA::[{escaped}] TO lawndart_schema_reader;");
+        return ConnectionFor("lawndart_schema_reader", "LawnDart_Reader1a");
+    }
+
+    public string ConnectionFor(string user, string password)
+    {
         var builder = new SqlConnectionStringBuilder(AdminConnectionString)
         {
-            UserID = "lawndart_schema_reader",
-            Password = "LawnDart_Reader1a",
+            UserID = user,
+            Password = password,
             IntegratedSecurity = false
         };
         return builder.ConnectionString;

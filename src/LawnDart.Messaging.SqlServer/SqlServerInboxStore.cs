@@ -218,6 +218,7 @@ public sealed class SqlServerInboxStore : IInboxStore
     {
         using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await SqlSchemaProbe.RequireViewDefinitionAsync(connection, _schemaName, cancellationToken).ConfigureAwait(false);
 
         var missing = new List<string>();
         string? found = null;

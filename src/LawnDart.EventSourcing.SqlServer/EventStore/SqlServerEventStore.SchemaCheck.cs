@@ -15,13 +15,16 @@ public partial class SqlServerEventStore
     /// <remarks>
     /// This method does not create or change objects. Call it at startup.
     /// <see cref="SchemaCheckResult.ThrowIfMismatch"/> throws when the result does not match.
-    /// Stream tables and the stream tag trigger are required only when the stream registry is on.
+    /// Stream tables, <c>StreamIdBin</c>, <c>UX_StreamIdBin</c>, and the stream tag trigger
+    /// are required only when the stream registry is on.
+    /// <c>UX_EventId</c> and <c>UX_SequencePosition</c> are required on the events table.
     /// </remarks>
     public async Task<SchemaCheckResult> VerifySchemaAsync(CancellationToken cancellationToken = default)
     {
         var connection = new SqlConnection(_connectionString);
         await using var disposal = connection.ConfigureAwait(false);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await SqlSchemaProbe.RequireViewDefinitionAsync(connection, _schemaName, cancellationToken).ConfigureAwait(false);
 
         var missing = new List<string>();
         string? found = null;
@@ -34,11 +37,15 @@ public partial class SqlServerEventStore
         await SqlSchemaProbe.AddMissingAsync(connection, _schemaName, _tagsTableName, "U", missing, cancellationToken).ConfigureAwait(false);
         await SqlSchemaProbe.AddMissingAsync(connection, _schemaName, AppendFenceTableName, "U", missing, cancellationToken).ConfigureAwait(false);
         await SqlSchemaProbe.AddMissingAsync(connection, _schemaName, "EventSequencePosition", "SO", missing, cancellationToken).ConfigureAwait(false);
+        await SqlSchemaProbe.AddMissingIndexAsync(connection, _schemaName, _tableName, "UX_EventId", missing, cancellationToken).ConfigureAwait(false);
+        await SqlSchemaProbe.AddMissingIndexAsync(connection, _schemaName, _tableName, "UX_SequencePosition", missing, cancellationToken).ConfigureAwait(false);
 
         if (_enableRegistry)
         {
             await SqlSchemaProbe.AddMissingAsync(connection, _schemaName, _registryTableName, "U", missing, cancellationToken).ConfigureAwait(false);
             await SqlSchemaProbe.AddMissingAsync(connection, _schemaName, _streamTagsTableName, "U", missing, cancellationToken).ConfigureAwait(false);
+            await SqlSchemaProbe.AddMissingIndexAsync(connection, _schemaName, _registryTableName, "UX_StreamIdBin", missing, cancellationToken).ConfigureAwait(false);
+            await SqlSchemaProbe.AddMissingColumnAsync(connection, _qRegistry, "StreamIdBin", missing, cancellationToken).ConfigureAwait(false);
             var trigger = "TR_" + _schemaName + "_" + _registryTableName + "_StreamTags";
             await SqlSchemaProbe.AddMissingAsync(connection, _schemaName, trigger, "TR", missing, cancellationToken).ConfigureAwait(false);
         }
