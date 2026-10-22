@@ -63,9 +63,10 @@ backends implement it.
 | Method | Role |
 |---|---|
 | `GetStreamAsync(streamId, ct)` | One stream's metadata |
-| `GetStreamsByAggregateTypeAsync(aggregateType, ct)` | Discover by type |
-| `GetStreamsByTagAsync(tag, ct)` | Discover by tag |
-| `EnumerateStreamIdsAsync(prefix = null, ct)` | List stream IDs |
+| `GetStreamsByAggregateTypeAsync(aggregateType, ct)` | Discover by type. The order is undefined. |
+| `GetStreamsByTagAsync(tag, ct)` | Discover by tag. The order is undefined. |
+| `EnumerateStreamIdsAsync(prefix = null, ct)` | List stream ids. The order is undefined. |
+| `ListStreamsAsync(filter = null, pageToken = null, pageSize = 100, ct)` | One page of streams, ordered by stream id |
 | `GetStreamsUpdatedAfterAsync(afterSequencePosition, limit = null, ct)` | Incremental catch-up |
 | `GetStreamCountAsync(prefix = null, ct)` | Count |
 

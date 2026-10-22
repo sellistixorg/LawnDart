@@ -107,6 +107,53 @@ public class CachedStreamRegistryTests
     }
 
     [Fact]
+    public async Task ListStreamsAsync_ForwardsToTheInnerRegistry()
+    {
+        var calls = 0;
+        var inner = new ForwardingRegistry(() => calls++);
+        var cached = new CachedStreamRegistry(inner, _cache, TimeSpan.FromMinutes(5), NullLogger<CachedStreamRegistry>.Instance);
+        var filter = new StreamListFilter { Prefix = "acme:" };
+        var page = await cached.ListStreamsAsync(filter, pageToken: null, pageSize: 2);
+        Assert.Empty(page.Streams);
+        Assert.Equal(1, calls);
+    }
+
+    private sealed class ForwardingRegistry : IStreamRegistry
+    {
+        private readonly Action _onList;
+
+        public ForwardingRegistry(Action onList) => _onList = onList;
+
+        public Task<StreamPage> ListStreamsAsync(
+            StreamListFilter? filter = null,
+            string? pageToken = null,
+            int pageSize = StreamPage.DefaultPageSize,
+            CancellationToken cancellationToken = default)
+        {
+            _onList();
+            return Task.FromResult(new StreamPage { Streams = [] });
+        }
+
+        public Task<StreamMetadata?> GetStreamAsync(string streamId, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<StreamMetadata>> GetStreamsByAggregateTypeAsync(string aggregateType, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<StreamMetadata>> GetStreamsByTagAsync(string tag, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<string>> EnumerateStreamIdsAsync(string? prefix = null, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<StreamMetadata>> GetStreamsUpdatedAfterAsync(long afterSequencePosition, int? limit = null, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<long> GetStreamCountAsync(string? prefix = null, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
+
+    [Fact]
     public async Task EnumerateStreamIdsAsync_CachesResults()
     {
         // Arrange

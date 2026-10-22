@@ -50,7 +50,8 @@ public sealed class PostgresContractBackend : IContractBackend
             CanCorruptDcbSnapshot = true,
             HasInboxStore = false,
             HasProjectionStores = true,
-            PreservesExactViewJson = false
+            PreservesExactViewJson = false,
+            HasStreamTagTable = true
         };
     }
 
@@ -187,6 +188,9 @@ sealed class PostgresContractHooks : IContractHooks
         _connectionString = connectionString;
         _adminConnectionString = adminConnectionString;
     }
+
+    /// <summary>Owner connection. Schema changes such as dropping a table use this.</summary>
+    internal string AdminConnectionString => _adminConnectionString;
 
     public bool CanPauseBeforeCommit => true;
 

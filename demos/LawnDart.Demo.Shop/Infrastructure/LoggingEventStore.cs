@@ -141,6 +141,14 @@ public sealed class LoggingEventStore : IEventStore, IEventLog, IEventStoreSubsc
         => _store.GetStreamCountAsync(prefix, cancellationToken);
 
     /// <inheritdoc />
+    public Task<StreamPage> ListStreamsAsync(
+        StreamListFilter? filter = null,
+        string? pageToken = null,
+        int pageSize = StreamPage.DefaultPageSize,
+        CancellationToken cancellationToken = default)
+        => _store.ListStreamsAsync(filter, pageToken, pageSize, cancellationToken);
+
+    /// <inheritdoc />
     public ISubscriptionHandle Subscribe(
         string subscriberId,
         long fromSequence,

@@ -53,3 +53,35 @@ LawnDart.EventStore.NewEventsSignal.TakeTicket() -> LawnDart.EventStore.NewEvent
 LawnDart.EventStore.NewEventsSignal.WaitAsync(LawnDart.EventStore.NewEventsTicket since, System.TimeSpan timeout, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 LawnDart.EventStore.NewEventsTicket
 LawnDart.EventStore.NewEventsTicket.NewEventsTicket() -> void
+LawnDart.EventStore.StreamListFilter
+LawnDart.EventStore.StreamListFilter.StreamListFilter() -> void
+LawnDart.EventStore.StreamListFilter.AggregateType.get -> string?
+LawnDart.EventStore.StreamListFilter.AggregateType.init -> void
+LawnDart.EventStore.StreamListFilter.Equals(LawnDart.EventStore.StreamListFilter? other) -> bool
+override LawnDart.EventStore.StreamListFilter.Equals(object? obj) -> bool
+override LawnDart.EventStore.StreamListFilter.GetHashCode() -> int
+LawnDart.EventStore.StreamListFilter.Prefix.get -> string?
+LawnDart.EventStore.StreamListFilter.Prefix.init -> void
+LawnDart.EventStore.StreamListFilter.Tag.get -> string?
+LawnDart.EventStore.StreamListFilter.Tag.init -> void
+override LawnDart.EventStore.StreamListFilter.ToString() -> string!
+LawnDart.EventStore.StreamListFilter.<Clone>$() -> LawnDart.EventStore.StreamListFilter!
+static LawnDart.EventStore.StreamListFilter.operator !=(LawnDart.EventStore.StreamListFilter? left, LawnDart.EventStore.StreamListFilter? right) -> bool
+static LawnDart.EventStore.StreamListFilter.operator ==(LawnDart.EventStore.StreamListFilter? left, LawnDart.EventStore.StreamListFilter? right) -> bool
+const LawnDart.EventStore.StreamPage.DefaultPageSize = 100 -> int
+const LawnDart.EventStore.StreamPage.MaxPageSize = 1000 -> int
+LawnDart.EventStore.StreamPage
+LawnDart.EventStore.StreamPage.StreamPage() -> void
+LawnDart.EventStore.StreamPage.Equals(LawnDart.EventStore.StreamPage? other) -> bool
+override LawnDart.EventStore.StreamPage.Equals(object? obj) -> bool
+override LawnDart.EventStore.StreamPage.GetHashCode() -> int
+LawnDart.EventStore.StreamPage.NextPageToken.get -> string?
+LawnDart.EventStore.StreamPage.NextPageToken.init -> void
+LawnDart.EventStore.StreamPage.Streams.get -> System.Collections.Generic.IReadOnlyList<LawnDart.EventStore.StreamMetadata!>!
+LawnDart.EventStore.StreamPage.Streams.init -> void
+override LawnDart.EventStore.StreamPage.ToString() -> string!
+LawnDart.EventStore.StreamPage.<Clone>$() -> LawnDart.EventStore.StreamPage!
+static LawnDart.EventStore.StreamPage.operator !=(LawnDart.EventStore.StreamPage? left, LawnDart.EventStore.StreamPage? right) -> bool
+static LawnDart.EventStore.StreamPage.operator ==(LawnDart.EventStore.StreamPage? left, LawnDart.EventStore.StreamPage? right) -> bool
+LawnDart.EventStore.EventStoreAdapter.ListStreamsAsync(LawnDart.EventStore.StreamListFilter? filter = null, string? pageToken = null, int pageSize = 100, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<LawnDart.EventStore.StreamPage!>!
+LawnDart.EventStore.IStreamRegistry.ListStreamsAsync(LawnDart.EventStore.StreamListFilter? filter = null, string? pageToken = null, int pageSize = 100, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<LawnDart.EventStore.StreamPage!>!

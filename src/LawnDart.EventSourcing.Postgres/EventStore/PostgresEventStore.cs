@@ -118,6 +118,9 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
     /// <summary>Quoted tag table.</summary>
     internal string QualifiedTagsTable => _names.Tags;
 
+    /// <summary>Quoted stream tag table.</summary>
+    internal string QualifiedStreamTagsTable => _names.StreamTags;
+
     /// <summary>Connection string the store uses for reads and appends.</summary>
     internal string ConnectionString => _options.ConnectionString!;
 
@@ -199,11 +202,69 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
         foreach (var statement in PostgresSchema.CreateStatements(_names, _options))
             await ExecuteAsync(connection, transaction, statement, cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(connection, transaction, PostgresSchema.StreamIndexes(_names), cancellationToken).ConfigureAwait(false);
+        await ExecuteAsync(connection, transaction, PostgresSchema.EnsureAggregateIndex(_names), cancellationToken).ConfigureAwait(false);
+        await ExecuteAsync(connection, transaction, PostgresSchema.StreamTagTriggerFunction(_names), cancellationToken).ConfigureAwait(false);
+        await ExecuteAsync(connection, transaction, PostgresSchema.EnsureStreamTagTrigger(_names), cancellationToken).ConfigureAwait(false);
         await Snapshots.PostgresSnapshotSchema.EnsureAsync(
             connection, transaction, _options, cancellationToken).ConfigureAwait(false);
         await GrantAppRoleAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await FillStreamTagsIfNeededAsync(connection, cancellationToken).ConfigureAwait(false);
         await ReloadEventTypeCacheAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Copies tags from existing stream rows once. Later starts see the marker and leave the table alone.
+    /// </summary>
+    private async Task FillStreamTagsIfNeededAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
+    {
+        if (await StreamTagsMarkerExistsAsync(connection, cancellationToken).ConfigureAwait(false))
+            return;
+
+        await using (var acquire = new NpgsqlCommand(
+            "SELECT pg_advisory_lock(hashtextextended(@key, 0))", connection))
+        {
+            acquire.Parameters.AddWithValue("key", _names.Schema + ":stream_tags");
+            await acquire.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        try
+        {
+            if (await StreamTagsMarkerExistsAsync(connection, cancellationToken).ConfigureAwait(false))
+                return;
+
+            var tenant = "";
+            var streamId = "";
+            while (true)
+            {
+                await using var batch = new NpgsqlCommand(PostgresSchema.BackfillStreamTagsBatch(_names), connection);
+                batch.Parameters.Add(new NpgsqlParameter("tenant", NpgsqlDbType.Text) { Value = tenant });
+                batch.Parameters.Add(new NpgsqlParameter("stream", NpgsqlDbType.Text) { Value = streamId });
+                await using var reader = await batch.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                    break;
+                tenant = reader.GetString(0);
+                streamId = reader.GetString(1);
+            }
+
+            await using var marker = new NpgsqlCommand(
+                PostgresSchema.InsertStreamTagsMarker(_names, _options), connection);
+            await marker.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            await using var release = new NpgsqlCommand(
+                "SELECT pg_advisory_unlock(hashtextextended(@key, 0))", connection);
+            release.Parameters.AddWithValue("key", _names.Schema + ":stream_tags");
+            await release.ExecuteNonQueryAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+    }
+
+    private async Task<bool> StreamTagsMarkerExistsAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(PostgresSchema.StreamTagsMarkerExists(_names), connection);
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return result is not null and not DBNull;
     }
 
     /// <inheritdoc />

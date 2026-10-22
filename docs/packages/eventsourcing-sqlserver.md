@@ -163,6 +163,16 @@ multi-context schema setup stay in the SQL Server test project. See
 
 InMemory remains the documented default for local work and Academy.
 
+## Stream pages
+
+`ListStreamsAsync` reads active streams in stream id order. The order uses `Streams.StreamIdBin`, a persisted column defined as `StreamId` with the `Latin1_General_100_BIN2` collation, and a unique index on that column. A page without a tag reads that index from the last stream id. A prefix with no letters matches those exact characters, the same way the in-memory store and Postgres do. A full-width digit (U+FF11) or a superscript (U+00B2) is not a plain digit. That prefix is one range on `StreamIdBin`: the page starts at the later of the token and the prefix, and stops at the end of the range. A prefix that contains letters follows the `StreamId` column collation. A new database is case-insensitive. A case-sensitive database matches case. That prefix is not one range. The first page reads the clustered stream id key for that prefix, then orders those rows by `StreamIdBin`. A later page reads `StreamIdBin` from the token and applies the prefix, with no end bound. A page limited to an aggregate type reads the index on (`AggregateType`, `StreamIdBin`).
+
+Tags for that list live in `StreamTags` (`Tag`, `StreamId`), with `Latin1_General_100_BIN2` on both columns. The primary key is (`Tag`, `StreamId`). A tag page reads that key from the last stream id. A trigger on `Streams` updates `StreamTags` when a row is inserted, when its tags or stream id change, and when the row is deleted. The trigger matches the stored stream id exactly, using `Latin1_General_100_BIN2`, against the old row and the new row. A change of spelling removes the tag rows for the old spelling and writes them for the new one. The trigger runs in the save's transaction, including a save from an older build. The aggregate type index is (`AggregateType`, `StreamIdBin`).
+
+`InitializeSchemaAsync` adds the column, the indexes, `StreamTags`, and the trigger when they are missing. It then copies tags from the JSON in `Streams.Tags`, in batches, after the schema lock is released. That copy is recorded on `StreamTags` and does not run again. Existing rows stay. The events stamp stays at format 4. Call it before listing on a database created by an earlier build. Adding `StreamIdBin` rewrites the stream table, so run that call when other writers can wait. A second call leaves the objects in place.
+
+Several processes starting together take one lock for those objects and commit them together. The tag copy uses a separate lock, so a startup does not fail while another startup is still copying. The events stamp is unchanged.
+
 ## Upgrading from 0.6.0-alpha.2
 
 0.6.0-alpha.2 stamped the events table `LawnDart_SchemaFormat` 2, the

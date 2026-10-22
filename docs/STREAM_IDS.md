@@ -63,11 +63,29 @@ A tenant id uses the same character rule. `default` in any casing is reserved fo
 
 `HandleCommandAsync`, a SQL Server append, and an in-memory append check the tenant id when `RequireTenantId` is true. That option defaults to true on `LawnDartOptions`, `SqlServerEventStoreOptions`, and `InMemoryEventStoreOptions`, including a store constructed with `new InMemoryEventStore()`. A missing tenant id throws. `UseSqlServer` copies `ValidateNames` onto `SqlServerEventStoreOptions.ValidateNames` before the SQL callback runs. `UseInMemory` copies `RequireTenantId` and `ValidateNames` onto the in-memory store when it creates the store. Set `RequireTenantId` to false to append without a tenant id. An append whose stream id and event metadata name two different tenant ids throws. That check also runs when `RequireTenantId` is false.
 
+## Stream pages
+
+`ListStreamsAsync` returns one page of active streams for a network client or an admin tool. The page is ordered by stream id, character by character. Pass `NextPageToken` to the next call. A null token means this page is the last one.
+
+`pageSize` is 1 to 1000. The default is 100. The call reads one extra row so the last page does not come back empty when the count divides evenly.
+
+`StreamListFilter` can set a prefix, a tag, and an aggregate type. A stream must match every value that is set. The tenant id stays in the prefix, the same way it does for `EnumerateStreamIdsAsync` and `GetStreamCountAsync`.
+
+A token is valid only on the store that issued it, and only with the same filter. The token is opaque base64url. The bytes are a version byte, a short hash of the filter, and the last stream id encoded as UTF-8. A token that cannot be read, or that belongs to a different filter, throws `ArgumentException`.
+
+A stream created while you page is included when its id sorts after the last id already returned. Each stream id appears on at most one page. A stream that was stored before the page you just read, and that sorts after that page, is still available on a later page.
+
+`GetStreamsByAggregateTypeAsync`, `GetStreamsByTagAsync`, and `EnumerateStreamIdsAsync` stay. Their order is undefined.
+
 ## Prefix match
 
-`EnumerateStreamIdsAsync` and `GetStreamCountAsync` match a stream id prefix. `_`, `%`, and `[` in the prefix are literal characters. `acme_west:` does not match `acmeXwest:`.
+`EnumerateStreamIdsAsync`, `GetStreamCountAsync`, and `ListStreamsAsync` match a stream id prefix. `_`, `%`, and `[` in the prefix are literal characters. `acme_west:` does not match `acmeXwest:`.
 
-The in-memory store compares with ordinal ignore-case. SQL Server uses the `StreamId` column collation, so `LIKE 'prefix%'` can seek the primary key. A new SQL Server database is case-insensitive. A case-sensitive database matches case.
+The in-memory store compares a prefix with ordinal ignore-case, and `ListStreamsAsync` orders the page character by character.
+
+`EnumerateStreamIdsAsync` and `GetStreamCountAsync` on SQL Server use the `StreamId` column collation for every prefix. A new database is case-insensitive. A case-sensitive database matches case. `ListStreamsAsync` orders by `StreamIdBin` (`Latin1_General_100_BIN2`). A prefix with no letters matches those exact characters, the same way the in-memory store and Postgres do. A full-width digit (U+FF11) or a superscript (U+00B2) is not a plain digit. That prefix is one range on `StreamIdBin`: the page reads that index from the later of the token and the prefix, and stops at the end of the range. A prefix that contains letters follows the `StreamId` column collation. That prefix is not one range. The first page reads the clustered stream id key for that prefix, then orders those rows by `StreamIdBin`. A later page reads `StreamIdBin` from the token and applies the prefix. That later page has no end bound. A tag page reads `StreamTags` from the last stream id. Two stream ids that differ only by case are one stream on a case-insensitive database.
+
+Postgres matches a prefix exactly, including case. When the prefix has three or more colon-separated parts, Postgres also limits the match to the tenant in the first part. A tag page reads `stream_tags` from the last stream id, then loads that stream row.
 
 ## Length
 

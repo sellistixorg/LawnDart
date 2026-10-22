@@ -59,6 +59,24 @@ requires a tenant id unless `RequireTenantId` is false.
 Stream ids and tags use the `C` collation. `acme:Order:1` and `acme:order:1`
 are different streams. Tags compare the same way.
 
+`ListStreamsAsync` returns active streams ordered by stream id. The page
+uses `(tenant_id, stream_id)`. A prefix with three or more colon-separated
+parts, and a non-empty first part, limits the read to that tenant. A shorter
+prefix can match more than one tenant. Prefix match is exact, including
+case. Stream lists and stream counts include rows whose status is `Active`.
+
+The aggregate type index is `(aggregate_type, stream_id)`. Stream tags for
+the page live in `stream_tags` (`tenant_id`, `tag`, `stream_id`). The
+primary key is those three columns, and the table uses the same tenant hash
+buckets as `streams`. A tag page reads `stream_tags` from the last stream id,
+then loads that stream row. A trigger on `streams` updates `stream_tags`
+when a row is inserted, when its tags change, and when the row is deleted.
+Replacing the append function does not remove the trigger, so a save from an
+older build still updates the tag rows. `InitializeSchemaAsync` creates the
+table when it is missing. It copies existing tags in batches after the schema
+lock is released, and records that copy so a later start does not copy them
+again. The format stamp stays at 1.
+
 Event ids are unique per tenant. The same event id on two tenants is two
 rows. A repeated event id in one tenant throws `EventAlreadyAppendedException`.
 

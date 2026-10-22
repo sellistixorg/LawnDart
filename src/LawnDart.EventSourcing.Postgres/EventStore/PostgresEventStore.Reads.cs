@@ -1,6 +1,7 @@
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using System.Security.Authentication;
+using System.Text;
 using System.Threading.Channels;
 using LawnDart.EventStore;
 using Npgsql;
@@ -92,16 +93,16 @@ public sealed partial class PostgresEventStore
 
     /// <inheritdoc />
     public Task<IReadOnlyList<StreamMetadata>> GetStreamsByAggregateTypeAsync(string aggregateType, CancellationToken cancellationToken = default)
-        => QueryStreamsAsync("aggregate_type = @type", command => command.Parameters.Add(new NpgsqlParameter("type", aggregateType)), one: false, cancellationToken);
+        => QueryStreamsAsync("status = 'Active' AND aggregate_type = @type", command => command.Parameters.Add(new NpgsqlParameter("type", aggregateType)), one: false, cancellationToken);
 
     /// <inheritdoc />
     public Task<IReadOnlyList<StreamMetadata>> GetStreamsByTagAsync(string tag, CancellationToken cancellationToken = default)
-        => QueryStreamsAsync("@tag = ANY(tags)", command => command.Parameters.Add(new NpgsqlParameter("tag", tag)), one: false, cancellationToken);
+        => QueryStreamsAsync("status = 'Active' AND @tag = ANY(tags)", command => command.Parameters.Add(new NpgsqlParameter("tag", tag)), one: false, cancellationToken);
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<string>> EnumerateStreamIdsAsync(string? prefix = null, CancellationToken cancellationToken = default)
     {
-        var (where, parameters) = Prefix(prefix);
+        var (where, parameters) = ActivePrefix(prefix);
         var sql = $"SELECT stream_id FROM {_names.Streams} {where} ORDER BY stream_id";
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
@@ -119,7 +120,7 @@ public sealed partial class PostgresEventStore
     {
         var sqlLimit = limit is > 0 ? " LIMIT @lim" : "";
         return QueryStreamsAsync(
-            "last_global_position > @after",
+            "status = 'Active' AND last_global_position > @after",
             command =>
             {
                 command.Parameters.Add(new NpgsqlParameter("after", afterSequencePosition));
@@ -134,7 +135,7 @@ public sealed partial class PostgresEventStore
     /// <inheritdoc />
     public async Task<long> GetStreamCountAsync(string? prefix = null, CancellationToken cancellationToken = default)
     {
-        var (where, parameters) = Prefix(prefix);
+        var (where, parameters) = ActivePrefix(prefix);
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand($"SELECT COUNT(*) FROM {_names.Streams} {where}", connection);
         foreach (var parameter in parameters)
@@ -560,6 +561,112 @@ public sealed partial class PostgresEventStore
 
     private static DateTime AsUtc(DateTime value)
         => value.Kind == DateTimeKind.Utc ? value : DateTime.SpecifyKind(value, DateTimeKind.Utc);
+
+    /// <inheritdoc />
+    public async Task<StreamPage> ListStreamsAsync(
+        StreamListFilter? filter = null,
+        string? pageToken = null,
+        int pageSize = StreamPage.DefaultPageSize,
+        CancellationToken cancellationToken = default)
+    {
+        StreamPageToken.CheckPageSize(pageSize);
+        var after = StreamPageToken.ReadAfter(pageToken, filter);
+        var prefix = StreamPageToken.Normalize(filter?.Prefix);
+        var tag = StreamPageToken.Normalize(filter?.Tag);
+        var aggregateType = StreamPageToken.Normalize(filter?.AggregateType);
+        var tenant = prefix is null ? null : TenantKey.ForPrefix(prefix);
+
+        var sql = new StringBuilder();
+        var parameters = new List<NpgsqlParameter>
+        {
+            new("take", pageSize + 1)
+        };
+        sql.Append("""
+            SELECT s.stream_id, s.aggregate_type, s.aggregate_id, s.current_version, s.last_global_position,
+                   s.created_at, s.last_event_at, s.event_count, s.tags::text[], s.status
+            """);
+
+        if (tag is not null)
+        {
+            sql.Append(" FROM ").Append(_names.StreamTags).Append(" AS t CROSS JOIN LATERAL (SELECT s.stream_id, s.aggregate_type, s.aggregate_id, s.current_version, s.last_global_position, s.created_at, s.last_event_at, s.event_count, s.tags::text[], s.status FROM ").Append(_names.Streams).Append(" AS s WHERE s.tenant_id = t.tenant_id AND s.stream_id = t.stream_id AND s.status = 'Active'");
+            if (prefix is not null)
+            {
+                sql.Append(" AND s.stream_id LIKE @prefix ESCAPE '\\'");
+                parameters.Add(new NpgsqlParameter("prefix", LikePrefix(prefix)));
+            }
+
+            if (aggregateType is not null)
+            {
+                sql.Append(" AND s.aggregate_type = @type");
+                parameters.Add(new NpgsqlParameter("type", aggregateType));
+            }
+
+            sql.Append(" LIMIT 1) AS s WHERE t.tag = @tag");
+            parameters.Add(new NpgsqlParameter("tag", tag));
+            if (tenant is not null)
+            {
+                sql.Append(" AND t.tenant_id = @tenant");
+                parameters.Add(new NpgsqlParameter("tenant", tenant));
+            }
+
+            if (after is not null)
+            {
+                sql.Append(" AND t.stream_id > @after");
+                parameters.Add(new NpgsqlParameter("after", after));
+            }
+
+            sql.Append(" ORDER BY t.stream_id LIMIT @take");
+        }
+        else
+        {
+            sql.Append($" FROM {_names.Streams} AS s WHERE s.status = 'Active'");
+            if (tenant is not null)
+            {
+                sql.Append(" AND s.tenant_id = @tenant");
+                parameters.Add(new NpgsqlParameter("tenant", tenant));
+            }
+
+            if (after is not null)
+            {
+                sql.Append(" AND s.stream_id > @after");
+                parameters.Add(new NpgsqlParameter("after", after));
+            }
+
+            if (prefix is not null)
+            {
+                sql.Append(" AND s.stream_id LIKE @prefix ESCAPE '\\'");
+                parameters.Add(new NpgsqlParameter("prefix", LikePrefix(prefix)));
+            }
+
+            if (aggregateType is not null)
+            {
+                sql.Append(" AND s.aggregate_type = @type");
+                parameters.Add(new NpgsqlParameter("type", aggregateType));
+            }
+
+            sql.Append(" ORDER BY s.stream_id LIMIT @take");
+        }
+
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql.ToString(), connection);
+        foreach (var parameter in parameters)
+            command.Parameters.Add(parameter);
+
+        var rows = new List<StreamMetadata>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            rows.Add(ReadStream(reader));
+
+        return StreamPageToken.ToPage(rows, pageSize, filter);
+    }
+
+    private (string Where, List<NpgsqlParameter> Parameters) ActivePrefix(string? prefix)
+    {
+        var (where, parameters) = Prefix(prefix);
+        if (where.Length == 0)
+            return ("WHERE status = 'Active'", parameters);
+        return (where + " AND status = 'Active'", parameters);
+    }
 
     private (string Where, List<NpgsqlParameter> Parameters) Prefix(string? prefix)
     {

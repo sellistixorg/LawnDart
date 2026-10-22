@@ -41,7 +41,8 @@ public sealed class SqlServerContractBackend : IContractBackend
         CanBreakLiveReads = true,
         CanCorruptDcbSnapshot = true,
         HasReadHorizon = true,
-        UnknownEventNameMarksQueryUnresolved = true
+        UnknownEventNameMarksQueryUnresolved = true,
+        HasStreamTagTable = true
     };
 
     public async Task<ContractEventStore> OpenEventStoreAsync(

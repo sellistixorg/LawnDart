@@ -63,9 +63,10 @@ for the session; the log has `IEventLogSubscriptions`.
 **`IStreamRegistry`** (on every `IEventStore`)
 
 - `GetStreamAsync(string streamId, CancellationToken cancellationToken = default)`
-- `GetStreamsByAggregateTypeAsync(string aggregateType, CancellationToken cancellationToken = default)`
-- `GetStreamsByTagAsync(string tag, CancellationToken cancellationToken = default)`
-- `EnumerateStreamIdsAsync(string? prefix = null, CancellationToken cancellationToken = default)`
+- `GetStreamsByAggregateTypeAsync(string aggregateType, CancellationToken cancellationToken = default)`. Active streams. The order is undefined.
+- `GetStreamsByTagAsync(string tag, CancellationToken cancellationToken = default)`. Active streams. The order is undefined.
+- `EnumerateStreamIdsAsync(string? prefix = null, CancellationToken cancellationToken = default)`. Active stream ids. The order is undefined.
+- `ListStreamsAsync(StreamListFilter? filter = null, string? pageToken = null, int pageSize = 100, CancellationToken cancellationToken = default)`. One page of active streams, ordered by stream id, character by character. See [Stream IDs](../STREAM_IDS.md#stream-pages).
 - `GetStreamsUpdatedAfterAsync(long afterSequencePosition, int? limit = null, CancellationToken cancellationToken = default)`
 - `GetStreamCountAsync(string? prefix = null, CancellationToken cancellationToken = default)`
 

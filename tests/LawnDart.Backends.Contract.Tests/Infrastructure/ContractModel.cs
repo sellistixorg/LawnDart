@@ -101,6 +101,9 @@ public sealed class ContractCapabilities
 
     /// <summary>The backend has view and checkpoint stores.</summary>
     public bool HasProjectionStores { get; init; } = true;
+
+    /// <summary>The store keeps one row per stream tag beside the stream row.</summary>
+    public bool HasStreamTagTable { get; init; }
 }
 
 public sealed class ContractStoreOptions
