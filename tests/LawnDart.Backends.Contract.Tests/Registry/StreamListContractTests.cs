@@ -104,6 +104,58 @@ public abstract class StreamListContractTests : ContractSuite
     }
 
     [Fact]
+    public async Task ListStreams_DigitPrefix_IsTheSameSetOnEveryPageSize()
+    {
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var matching = new[]
+        {
+            "7:Order:2",
+            "7:Order:10",
+            "7:Order:b",
+            "7:Order:01",
+            "7:Order:a",
+            "7:Order:02",
+            "7:Order:c",
+            "7:Order:d",
+        };
+        var digitTag = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "7:Order:01",
+            "7:Order:02",
+            "7:Order:2",
+            "7:Order:b",
+        };
+        foreach (var id in matching)
+            await AppendAsync(store, id, digitTag.Contains(id) ? ["digit"] : []);
+
+        await AppendAsync(store, "70:Order:1", "digit");
+        await AppendAsync(store, "8:Order:1");
+        await AppendAsync(store, "a:Order:1", "digit");
+
+        var expected = matching.OrderBy(id => id, StringComparer.Ordinal).ToArray();
+        foreach (var pageSize in new[] { 1, 3, 100 })
+        {
+            var page = await DrainAsync(store, new StreamListFilter { Prefix = "7:" }, pageSize);
+            Assert.Equal(expected, page.Ids);
+            Assert.Null(page.LastToken);
+            Assert.Equal(page.Ids.Count, page.Ids.Distinct(StringComparer.Ordinal).Count());
+            Assert.DoesNotContain("70:Order:1", page.Ids);
+            Assert.DoesNotContain("8:Order:1", page.Ids);
+            Assert.DoesNotContain("a:Order:1", page.Ids);
+        }
+
+        var tagged = digitTag.OrderBy(id => id, StringComparer.Ordinal).ToArray();
+        foreach (var pageSize in new[] { 1, 2, 50 })
+        {
+            var page = await DrainAsync(store, new StreamListFilter { Prefix = "7:", Tag = "digit" }, pageSize);
+            Assert.Equal(tagged, page.Ids);
+            Assert.Null(page.LastToken);
+            Assert.DoesNotContain("70:Order:1", page.Ids);
+            Assert.DoesNotContain("a:Order:1", page.Ids);
+        }
+    }
+
+    [Fact]
     public async Task ListStreams_TagFilter_PagesEveryMatch()
     {
         var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
