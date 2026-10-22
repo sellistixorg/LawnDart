@@ -67,8 +67,8 @@ fields: [Metadata](../METADATA.md).
 Drop and recreate SQL event, outbox, and inbox tables, then run
 `InitializeSchemaAsync` and, when the inbox is SQL Server,
 `InitializeSqlInboxStoreAsync`, from that same deploy step. Opening an
-older table throws and names drop-and-recreate. There is no in-place
-`ALTER` and no migration tool.
+older table throws and names drop-and-recreate. Setup makes additive
+changes in place, and there is no separate migration tool.
 
 Checklist:
 

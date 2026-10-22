@@ -16,6 +16,8 @@ services.AddSqlProjectionStores("default", connectionString);
 
 Create the tables from a deploy or admin step, once per deploy:
 
+`provider` is the built service provider in your deploy step.
+
 ```csharp
 await provider.InitializeSqlProjectionStoresAsync("default");
 ```

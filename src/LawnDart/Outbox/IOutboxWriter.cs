@@ -106,9 +106,7 @@ public interface IOutboxWriter
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Task representing the async operation.</returns>
     /// <remarks>
-    /// Run this from a deploy job, a migration step, or an admin tool, once per deploy.
-    /// Normal app startup should not call it. An older copy that restarts and runs it
-    /// can change a schema a newer version already upgraded.
+    /// Run this from a deploy step. Normal app startup should not call it.
     /// The in-memory writer completes without a database.
     /// </remarks>
     Task InitializeSchemaAsync(CancellationToken cancellationToken = default);

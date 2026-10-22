@@ -24,6 +24,8 @@ Create the table from a deploy or admin step, once per deploy. Normal app
 startup does not run it. See
 [Schema initialization](../SCHEMA_INITIALIZATION.md).
 
+`provider` is the built service provider in your deploy step.
+
 ```csharp
 await provider.InitializePostgresInboxStoreAsync();
 ```

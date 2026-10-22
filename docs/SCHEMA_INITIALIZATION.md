@@ -45,12 +45,22 @@ snapshot storage. The event store setup creates the snapshot tables.
 `AddPostgresInboxStore`, and `AddSqlInboxStore` register their stores. The
 matching initialize call creates the tables.
 
-`LawnDart.AspNetCore` maps HTTP commands. Schema setup stays in the deploy
+`LawnDart.AspNetCore` maps web request commands. Schema setup stays in the deploy
 step. Startup has no switch for schema setup, because the host does not run
 it.
 
-The setup call reads the format stamp and then writes the objects for the
-version that is running.
+These calls read a format stamp and then write the objects from the version
+that is running: `PostgresEventStore.InitializeSchemaAsync`,
+`PostgresOutboxWriter.InitializeSchemaAsync`,
+`SqlServerOutboxWriter.InitializeSchemaAsync`,
+`PostgresInboxStore.InitializeSchemaAsync`, and
+`SqlServerInboxStore.InitializeSchemaAsync`.
+`SqlServerEventStore.InitializeSchemaAsync` reads the events stamp. A stamp
+the call does not accept stops that call.
+
+Projection setup on Postgres and on SQL Server has no stamp. It creates
+objects that are missing. Postgres projection setup also replaces
+`save_projection_flush`.
 
 ## Calls
 

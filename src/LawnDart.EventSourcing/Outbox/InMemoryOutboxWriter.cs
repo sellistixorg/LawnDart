@@ -27,8 +27,8 @@ public sealed class InMemoryOutboxWriter : IOutboxWriter
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <remarks>
-    /// A durable outbox runs <see cref="IOutboxWriter.InitializeSchemaAsync"/> from a deploy
-    /// or admin step, not on every app startup. This method does not touch a database.
+    /// Run this from a deploy step. Normal app startup should not call it.
+    /// This method does not touch a database.
     /// </remarks>
     public Task InitializeSchemaAsync(CancellationToken cancellationToken = default)
         => Task.CompletedTask;

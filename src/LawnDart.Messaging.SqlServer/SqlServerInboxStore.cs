@@ -142,9 +142,7 @@ public sealed class SqlServerInboxStore : IInboxStore
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <remarks>
-    /// Run this from a deploy job, a migration step, or an admin tool, once per deploy.
-    /// Normal app startup should not call it. An older copy that restarts and runs it
-    /// can change a schema a newer version already upgraded.
+    /// Run this from a deploy step. Normal app startup should not call it.
     /// </remarks>
     public async Task InitializeSchemaAsync(CancellationToken cancellationToken = default)
     {
