@@ -38,12 +38,12 @@ Use this skill first when wiring a new application on LawnDart packages.
 ## Decision tree
 
 1. **Tests only?** → `lawndart-event-store` → `UseInMemory()` on `"default"`, then `lawndart-testing`.
-2. **Durable store?** → `lawndart-event-store` → `UseSqlServer()`. Call `SqlServerEventStore.InitializeSchemaAsync` before the first command. SQL snapshots are opt-in (`WithSnapshots`).
+2. **Durable store?** → `lawndart-event-store` → `UseSqlServer()`. Call `SqlServerEventStore.InitializeSchemaAsync` from a deploy or admin step, not on every app startup. SQL snapshots are opt-in (`WithSnapshots`). See `docs/SCHEMA_INITIALIZATION.md`.
 3. **More than one domain store?** → `lawndart-bounded-context`.
 4. **Domain types?** → `lawndart-domain-model`. DCB entity → the DCB section there.
 5. **GWT proof?** → `lawndart-testing`.
 6. **Process / reaction?** → `lawndart-reactions`.
-7. **Read models?** → `lawndart-lightweight-projections` after the store, then `lawndart-projection-authoring`. SQL Server views: package `LawnDart.Projections.Lightweight.SqlServer`, `using LawnDart.Projections.Lightweight.SqlServer`, then `AddSqlProjectionStores` and `InitializeSqlProjectionStoresAsync`.
+7. **Read models?** → `lawndart-lightweight-projections` after the store, then `lawndart-projection-authoring`. SQL Server views: package `LawnDart.Projections.Lightweight.SqlServer`, `using LawnDart.Projections.Lightweight.SqlServer`, then `AddSqlProjectionStores` and `InitializeSqlProjectionStoresAsync` from a deploy or admin step. See `docs/SCHEMA_INITIALIZATION.md`.
 8. **HTTP?** → `lawndart-aspnet-hosting`.
 
 Bounded context ≠ multi-tenancy. Multiple contexts = separate event stores.

@@ -12,3 +12,6 @@ same table.
 Pair it with `LawnDart.Messaging.InMemory`, `LawnDart.Messaging.RabbitMQ`,
 `LawnDart.Messaging.AzureServiceBus`, or `LawnDart.Messaging.AwsSqs`. This package replaces the inbox.
 The transport you registered stays.
+
+Call `InitializeSqlInboxStoreAsync` from a deploy or admin step. See
+[Schema initialization](https://github.com/sellistixorg/LawnDart/blob/main/docs/SCHEMA_INITIALIZATION.md).

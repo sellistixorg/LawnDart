@@ -34,6 +34,7 @@ app.MapProjectionQueries("default");
 `LawnDart.Projections.Lightweight.SqlServer`. Add
 `using LawnDart.Projections.Lightweight.SqlServer`.
 `InitializeSqlLibraryAsync` creates the event-store, outbox, view, checkpoint,
-and inbox tables before runners start.
+and inbox tables before runners start. Run it from a deploy or admin step,
+not on every app startup. See `docs/SCHEMA_INITIALIZATION.md`.
 
 See `docs/LIGHTWEIGHT_PROJECTIONS.md`.

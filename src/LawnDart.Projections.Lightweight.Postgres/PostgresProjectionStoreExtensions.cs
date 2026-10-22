@@ -24,8 +24,8 @@ public static class PostgresProjectionStoreExtensions
     /// <see cref="PostgresProjectionStoreOptions.MigrationConnectionString"/>, and
     /// <see cref="PostgresProjectionStoreOptions.EnableSingleRunnerLock"/>.
     /// The single-runner lock is on unless that flag is set false.
-    /// After the host is built, call <see cref="InitializePostgresProjectionStoresAsync"/>
-    /// once so the tables exist before runners start.
+    /// Call <see cref="InitializePostgresProjectionStoresAsync"/> from a deploy or admin
+    /// step, once per deploy, so the tables exist before runners start.
     /// </remarks>
     /// <param name="services">The service collection.</param>
     /// <param name="contextName">The bounded context name (dependency injection key).</param>
@@ -90,6 +90,9 @@ public static class PostgresProjectionStoreExtensions
     /// <see cref="AddPostgresProjectionStores"/>.
     /// </summary>
     /// <remarks>
+    /// Run this from a deploy job, a migration step, or an admin tool, once per deploy.
+    /// Normal app startup should not call it. An older copy that restarts and runs it
+    /// can change a schema a newer version already upgraded.
     /// Prefer a connection that can create tables. After the tables exist, a later call
     /// does not create them again. The flush function is replaced with the current body.
     /// </remarks>

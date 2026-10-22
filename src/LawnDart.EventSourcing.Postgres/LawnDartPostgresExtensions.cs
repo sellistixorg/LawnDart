@@ -35,7 +35,8 @@ public static class LawnDartPostgresExtensions
     /// The context named <c>default</c> also gets unkeyed aliases.
     /// The callback must set <see cref="PostgresEventStoreOptions.ConnectionString"/>.
     /// <see cref="PostgresEventStoreOptions.EnableOutbox"/> writes outbox rows in the append.
-    /// Call <c>InitializeSchemaAsync</c> so the outbox table exists before the first append.
+    /// Call <c>InitializeSchemaAsync</c> from a deploy or admin step so the outbox table
+    /// exists before the first append. Normal app startup does not call it.
     /// </remarks>
     public static BoundedContextBuilder UsePostgres(
         this BoundedContextBuilder builder,
@@ -160,8 +161,9 @@ public static class LawnDartPostgresExtensions
     /// </param>
     /// <returns>The same <paramref name="builder"/> for fluent chaining.</returns>
     /// <remarks>
-    /// Call <c>PostgresEventStore.InitializeSchemaAsync</c> so <c>event_snapshots</c> and
-    /// <c>dcb_snapshots</c> exist. State is stored as bytes. A missing snapshot, a bad checksum,
+    /// Call <c>PostgresEventStore.InitializeSchemaAsync</c> from a deploy or admin step so
+    /// <c>event_snapshots</c> and <c>dcb_snapshots</c> exist. Normal app startup does not
+    /// call it. State is stored as bytes. A missing snapshot, a bad checksum,
     /// or a snapshot that cannot be read returns empty and the repository replays the events.
     /// </remarks>
     public static BoundedContextBuilder WithSnapshots(

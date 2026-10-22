@@ -19,10 +19,12 @@ Call `AddSqlProjectionStores` before `WithProjections`. When you omit the
 schema, the SQL Server schema is the bounded context name. Pass
 `schemaName: "dbo"` to keep the `dbo` schema.
 
-After the host is built, create the tables once:
+Create the tables from a deploy or admin step, once per deploy. Normal app
+startup does not run it. See
+[Schema initialization](../SCHEMA_INITIALIZATION.md).
 
 ```csharp
-await app.Services.InitializeSqlProjectionStoresAsync("default");
+await provider.InitializeSqlProjectionStoresAsync("default");
 ```
 
 Run that from a connection that can create tables. After the tables exist,
@@ -38,6 +40,7 @@ a later call does not create them again.
 ## Related
 
 - [Package map](README.md)
+- [Schema initialization](../SCHEMA_INITIALIZATION.md)
 - [Lightweight projections](projections-lightweight.md)
 - [Lightweight projections guide](../LIGHTWEIGHT_PROJECTIONS.md)
 - [Backend selection](../BACKEND_SELECTION.md)

@@ -29,7 +29,7 @@ public sealed class PostgresCheckpointStore : ICheckpointStore, IAtomicProjectio
     /// </summary>
     internal Func<NpgsqlConnection, NpgsqlTransaction, CancellationToken, Task>? BeforeDeletingViews { get; set; }
 
-    /// <summary>Creates a checkpoint store. Call <see cref="InitializeSchemaAsync"/> before the first write.</summary>
+    /// <summary>Creates a checkpoint store. Call <see cref="InitializeSchemaAsync"/> from a deploy or admin step before the first write.</summary>
     public PostgresCheckpointStore(
         PostgresProjectionStoreOptions options,
         IViewStore views,
@@ -51,6 +51,11 @@ public sealed class PostgresCheckpointStore : ICheckpointStore, IAtomicProjectio
     /// Creates the checkpoint table, the lease table, and the flush function when they are missing.
     /// A later call replaces the function and does not drop rows.
     /// </summary>
+    /// <remarks>
+    /// Run this from a deploy job, a migration step, or an admin tool, once per deploy.
+    /// Normal app startup should not call it. An older copy that restarts and runs it
+    /// can change a schema a newer version already upgraded, including <c>save_projection_flush</c>.
+    /// </remarks>
     public async Task InitializeSchemaAsync(CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenMigrationAsync(cancellationToken).ConfigureAwait(false);

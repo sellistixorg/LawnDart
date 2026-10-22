@@ -20,10 +20,12 @@ after the transport registration. The snippet above uses the in-process
 transport. `AddRabbitMqTransport`, `AddAzureServiceBusTransport`, and
 `AddAwsSqsTransport` keep their transport the same way.
 
-After the host is built, create the table once:
+Create the table from a deploy or admin step, once per deploy. Normal app
+startup does not run it. See
+[Schema initialization](../SCHEMA_INITIALIZATION.md).
 
 ```csharp
-await app.Services.InitializePostgresInboxStoreAsync();
+await provider.InitializePostgresInboxStoreAsync();
 ```
 
 ## Table
@@ -67,6 +69,7 @@ and recreate.
 ## Related
 
 - [Package map](README.md)
+- [Schema initialization](../SCHEMA_INITIALIZATION.md)
 - [Messaging](messaging.md)
 - [Postgres event store](eventsourcing-postgres.md)
 - [Outbox](../OUTBOX_PATTERN.md)

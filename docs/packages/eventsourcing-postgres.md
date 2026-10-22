@@ -29,6 +29,8 @@ use the bounded context name. The context named `default` also gets unkeyed
 aliases.
 
 Call `InitializeSchemaAsync` on `PostgresEventStore` before the first append.
+Run that call from a deploy or admin step. Normal app startup does not run
+it. See [Schema initialization](../SCHEMA_INITIALIZATION.md).
 The call creates the schema if it is missing. A second call with the same
 bucket count succeeds. A different bucket count is rejected. Drop and
 recreate the schema to change it. An unknown format number in `schema_info`
@@ -245,8 +247,10 @@ append function and can keep appending. That process does not write outbox
 rows, and the store does not report that.
 
 Deploy this version with `EnableOutbox` false until no 0.7.0-alpha.1 copy can
-run. If your host keeps older versions of the app running, stop them first.
-Then set `EnableOutbox` to true.
+run. An older copy that restarts can run its own schema setup at startup.
+Run schema setup from your deploy step instead, and make sure no older copy
+can start before turning on `EnableOutbox`. See
+[Schema initialization](../SCHEMA_INITIALIZATION.md).
 On a brand-new database during a mixed-version deploy, initialize the event
 store with the new version first, because the 0.7.0-alpha.1 event store cannot
 initialize a schema that the new inbox created first.
@@ -265,4 +269,5 @@ the outbox processor for that context when `EnableOutbox` is true.
 
 The inbox is `LawnDart.Messaging.Postgres`. See
 [Messaging.Postgres](messaging-postgres.md). Projection views are in
-`LawnDart.Projections.Lightweight.Postgres`.
+`LawnDart.Projections.Lightweight.Postgres`. Schema setup is in
+[Schema initialization](../SCHEMA_INITIALIZATION.md).

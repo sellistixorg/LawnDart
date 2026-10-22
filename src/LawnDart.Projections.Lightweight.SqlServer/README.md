@@ -14,11 +14,13 @@ using LawnDart.Projections.Lightweight.SqlServer;
 services.AddSqlProjectionStores("default", connectionString);
 ```
 
-After the host is built, create the tables once:
+Create the tables from a deploy or admin step, once per deploy:
 
 ```csharp
-await app.Services.InitializeSqlProjectionStoresAsync("default");
+await provider.InitializeSqlProjectionStoresAsync("default");
 ```
+
+See [Schema initialization](https://github.com/sellistixorg/LawnDart/blob/main/docs/SCHEMA_INITIALIZATION.md).
 
 When you omit the schema, the SQL Server schema is the bounded context name.
 Pass `schemaName: "dbo"` to keep the `dbo` schema.

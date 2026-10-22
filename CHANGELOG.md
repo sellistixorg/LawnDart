@@ -10,6 +10,10 @@ changes to the public API.
 
 ## [Unreleased]
 
+### Changed
+
+- Schema setup runs once per deploy from a deploy job, a migration step, or an admin tool. Normal app startup does not run it. An older copy that restarts can run its own schema setup at startup and change a schema a newer copy already upgraded. That copy can put an older append function back, or append events with no outbox rows. Upgrade the schema with the new version, make sure no older copy can start, then turn on `EnableOutbox`. See [Schema initialization](docs/SCHEMA_INITIALIZATION.md).
+
 ## [0.7.0-alpha.2] - 2026-10-22
 
 This release adds the Postgres outbox and the `LawnDart.Messaging.Postgres` inbox. The build kit targets LawnDart 0.7.

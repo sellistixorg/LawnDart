@@ -22,7 +22,14 @@ public sealed class InMemoryOutboxWriter : IOutboxWriter
         _claimLease = claimLease ?? TimeSpan.FromSeconds(30);
     }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Completes at once. This writer keeps messages in memory and has no schema to create.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <remarks>
+    /// A durable outbox runs <see cref="IOutboxWriter.InitializeSchemaAsync"/> from a deploy
+    /// or admin step, not on every app startup. This method does not touch a database.
+    /// </remarks>
     public Task InitializeSchemaAsync(CancellationToken cancellationToken = default)
         => Task.CompletedTask;
 

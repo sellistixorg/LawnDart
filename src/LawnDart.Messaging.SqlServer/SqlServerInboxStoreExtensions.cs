@@ -49,6 +49,11 @@ public static class SqlServerInboxStoreExtensions
     /// </summary>
     /// <param name="services">Built service provider.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <remarks>
+    /// Run this from a deploy job, a migration step, or an admin tool, once per deploy.
+    /// Normal app startup should not call it. An older copy that restarts and runs it
+    /// can change a schema a newer version already upgraded.
+    /// </remarks>
     public static async Task InitializeSqlInboxStoreAsync(
         this IServiceProvider services,
         CancellationToken cancellationToken = default)

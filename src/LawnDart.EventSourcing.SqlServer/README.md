@@ -26,3 +26,7 @@ services.AddBoundedContext("default")
         options.ConnectionString = "Server=.;Database=MyApp;Trusted_Connection=True;";
     });
 ```
+
+Call `InitializeSchemaAsync` from a deploy or admin step. Normal app startup
+does not call it. See
+[Schema initialization](https://github.com/sellistixorg/LawnDart/blob/main/docs/SCHEMA_INITIALIZATION.md).

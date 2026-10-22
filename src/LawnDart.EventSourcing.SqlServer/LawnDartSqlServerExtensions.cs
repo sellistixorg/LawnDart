@@ -216,9 +216,9 @@ public static class LawnDartSqlServerExtensions
     /// </param>
     /// <returns>The same <paramref name="builder"/> for fluent chaining.</returns>
     /// <remarks>
-    /// This method does not run DDL. Call <c>SqlServerEventStore.InitializeSchemaAsync</c>
-    /// so <c>DcbSnapshots</c> and <c>EventSnapshots</c> exist in the context
-    /// <see cref="SqlServerEventStoreOptions.SchemaName"/>.
+    /// This method does not run schema setup. Call <c>SqlServerEventStore.InitializeSchemaAsync</c>
+    /// from a deploy or admin step so <c>DcbSnapshots</c> and <c>EventSnapshots</c> exist in the context
+    /// <see cref="SqlServerEventStoreOptions.SchemaName"/>. Normal app startup does not call it.
     /// </remarks>
     public static BoundedContextBuilder WithSnapshots(
         this BoundedContextBuilder builder,
