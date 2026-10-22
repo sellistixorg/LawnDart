@@ -10,7 +10,7 @@ internal static class SqlSchemaProbe
 {
     /// <summary>
     /// Throws when the login cannot read the schema definition.
-    /// A missing schema is left for the object checks when the login could see it.
+    /// A schema that is not visible throws because it does not exist, or the login cannot read it.
     /// </summary>
     internal static async Task RequireViewDefinitionAsync(
         SqlConnection connection,
@@ -20,9 +20,7 @@ internal static class SqlSchemaProbe
         const string sql = """
             SELECT
                 SCHEMA_ID(@schema),
-                HAS_PERMS_BY_NAME(@schema, N'SCHEMA', N'VIEW DEFINITION'),
-                HAS_PERMS_BY_NAME(DB_NAME(), N'DATABASE', N'VIEW DEFINITION'),
-                IS_MEMBER(N'db_owner')
+                HAS_PERMS_BY_NAME(@schema, N'SCHEMA', N'VIEW DEFINITION')
             """;
         var command = new SqlCommand(sql, connection);
         await using var disposal = command.ConfigureAwait(false);
@@ -33,12 +31,10 @@ internal static class SqlSchemaProbe
 
         var schemaVisible = !reader.IsDBNull(0);
         var schemaView = ReadFlag(reader, 1);
-        var databaseView = ReadFlag(reader, 2);
-        var owner = ReadFlag(reader, 3) == 1;
         if (schemaView == 1)
             return;
-        if (!schemaVisible && (owner || databaseView == 1))
-            return;
+        if (!schemaVisible)
+            throw MissingOrUnreadable(schema);
 
         throw Permission(schema);
     }
@@ -47,6 +43,12 @@ internal static class SqlSchemaProbe
         => reader.IsDBNull(ordinal)
             ? null
             : Convert.ToInt32(reader.GetValue(ordinal), System.Globalization.CultureInfo.InvariantCulture);
+
+    private static InvalidOperationException MissingOrUnreadable(string schema)
+        => new(
+            "Schema '" + schema + "' does not exist, or the login cannot read its definition. " +
+            "Create a database user for the login and grant VIEW DEFINITION on schema '" +
+            schema + "'.");
 
     private static InvalidOperationException Permission(string schema)
         => new(

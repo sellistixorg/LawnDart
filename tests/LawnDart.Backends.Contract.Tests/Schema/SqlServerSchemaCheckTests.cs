@@ -113,6 +113,16 @@ public sealed class SqlServerSchemaCheckTests(SqlServerSchemaCheckFixture fixtur
     }
 
     [Fact]
+    public async Task VerifySchemaAsync_SaysWhenTheSchemaDoesNotExist()
+    {
+        var store = fixture.Open(fixture.AdminConnectionString, "chk_absent");
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => store.Store.VerifySchemaAsync());
+
+        Assert.Contains("Schema 'chk_absent' does not exist, or the login cannot read its definition.", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task VerifySchemaAsync_MismatchesOnAnOlderStamp()
     {
         var bundle = await fixture.CreateAsync("chk_stamp");

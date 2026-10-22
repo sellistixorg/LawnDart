@@ -154,6 +154,25 @@ public sealed class PostgresSchemaCheckTests(PostgresSchemaCheckFixture fixture)
     }
 
     [Fact]
+    public async Task VerifySchemaAsync_MismatchesWhenAnExtraOverloadExists()
+    {
+        var bundle = await fixture.CreateAsync("chk_over");
+        var quoted = LawnDart.EventSourcing.Postgres.PgIdentifier.Quote(bundle.Schema);
+        await fixture.ExecuteAsync($"""
+            CREATE FUNCTION {quoted}.append_to_stream(x text) RETURNS void LANGUAGE sql AS 'SELECT 1';
+            CREATE FUNCTION {quoted}.save_projection_flush(x text) RETURNS void LANGUAGE sql AS 'SELECT 1';
+            """);
+
+        var events = await bundle.Store.VerifySchemaAsync();
+        var projections = await bundle.Projections.VerifySchemaAsync();
+
+        Assert.False(events.Matches);
+        Assert.Contains("append_to_stream body", events.Missing);
+        Assert.False(projections.Matches);
+        Assert.Contains("save_projection_flush body", projections.Missing);
+    }
+
+    [Fact]
     public async Task VerifySchemaAsync_MismatchesWhenAPartitionOrUniqueKeyIsMissing()
     {
         var partition = await fixture.CreateAsync("chk_part");

@@ -187,7 +187,8 @@ Postgres setup writes the marker `LawnDart:append_to_stream:1` into
 `save_projection_flush`. The check compares the whole function body with the
 body this version writes, and it reads the marker version as an exact number.
 Version 1 does not match version 2 or version 10. A body that keeps the marker
-and changes anything else does not match. That includes a function an older
+and changes anything else does not match. The schema contains that one
+function. An extra overload does not match. That includes a function an older
 copy put back. The missing list names that function with ` body` after the name.
 
 `InMemoryOutboxWriter.VerifySchemaAsync` returns a match. That writer has no
@@ -226,7 +227,9 @@ need `USAGE` on the schema.
 A login that only reads needs a database user. Grant `VIEW DEFINITION` on
 the schema to that user. That grant shows the objects and the format stamp.
 The check does not read table rows. Without the grant, the check throws and
-says the login lacks permission to read the schema definition.
+says the login lacks permission to read the schema definition. When the
+schema is not there, the message says the schema does not exist, or the
+login cannot read its definition.
 
 ## App startup
 
@@ -240,6 +243,9 @@ using LawnDart.EventStore;
 using LawnDart.Messaging.Postgres;
 using LawnDart.Projections.Lightweight.Postgres;
 
+[EventTypeName("counter-created")]
+public sealed record CounterCreated(Guid Id, DateTime Timestamp, Guid CounterId) : IEvent;
+
 services.AddLawnDart(o => o.RequireTenantId = false);
 services.AddPostgresProjectionStores("default", appConnectionString);
 services.AddPostgresInboxStore(appConnectionString);
@@ -249,7 +255,8 @@ services.AddBoundedContext("default")
         o.ConnectionString = appConnectionString;
         o.RequireTenantId = false;
         o.EnableOutbox = true;
-    });
+    })
+    .WithEventTypes<CounterCreated>();
 ```
 
 `UseSqlServer` is the same registration for SQL Server. It does not call

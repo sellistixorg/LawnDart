@@ -163,18 +163,13 @@ internal static class PostgresSchemaProbe
             return;
 
         var expectedHash = await Md5Async(connection, function.ExpectedBody, cancellationToken).ConfigureAwait(false);
-        var matched = false;
-        foreach (var body in bodies)
-        {
-            if (!MarkerVersionIs(body, function.MarkerPrefix, function.MarkerVersion))
-                continue;
-            var actualHash = await Md5Async(connection, body, cancellationToken).ConfigureAwait(false);
-            if (string.Equals(actualHash, expectedHash, StringComparison.Ordinal))
-            {
-                matched = true;
-                break;
-            }
-        }
+        var only = bodies.Count == 1 ? bodies[0] : null;
+        var matched = only is not null
+            && MarkerVersionIs(only, function.MarkerPrefix, function.MarkerVersion)
+            && string.Equals(
+                await Md5Async(connection, only, cancellationToken).ConfigureAwait(false),
+                expectedHash,
+                StringComparison.Ordinal);
 
         if (!matched)
             missing.Add(function.Name + " body");
