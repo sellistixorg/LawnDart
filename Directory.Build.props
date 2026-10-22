@@ -19,8 +19,9 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <PackageReleaseNotes>https://github.com/sellistixorg/LawnDart/releases</PackageReleaseNotes>
     <!-- Version comes from git tags via MinVer. Do not add <Version>. -->
+    <!-- 0.7 is the line in progress. The v0.7.0-alpha.1 tag is the release. -->
     <MinVerTagPrefix>v</MinVerTagPrefix>
-    <MinVerMinimumMajorMinor>0.1</MinVerMinimumMajorMinor>
+    <MinVerMinimumMajorMinor>0.7</MinVerMinimumMajorMinor>
     <MinVerDefaultPreReleaseIdentifiers>alpha</MinVerDefaultPreReleaseIdentifiers>
     <MinVerAutoIncrement>minor</MinVerAutoIncrement>
   </PropertyGroup>

@@ -8,10 +8,10 @@ skill's frozen surface.
 The kit lives in this repository. Its version **is the git tag**. There is no
 NuGet package and no `dotnet new` template.
 
-Targets LawnDart 0.6
+Targets LawnDart 0.7
 
-CI fails when MinVer's `major.minor` is not `0.6`. Height-suffixed versions
-such as `0.6.0-alpha.1.1` and `0.6.1-alpha.0.7` still match. A `0.7` tag does
+CI fails when MinVer's `major.minor` is not `0.7`. Height-suffixed versions
+such as `0.7.0-alpha.1.1` and `0.7.1-alpha.0.8` still match. A `0.8` tag does
 not. Update this line when the kit is reviewed for that minor.
 
 ## Generic slice spec

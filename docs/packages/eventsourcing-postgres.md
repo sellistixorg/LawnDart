@@ -166,7 +166,8 @@ from their checkpoints.
 between reads while the listener is connected. A wake-up ends the wait
 early. `PollOnlyInterval` (default 100 milliseconds) is the wait when the
 listener is not used. A save in this process also ends the wait early, on
-either interval.
+either interval. The wait is chosen again each time. An outage uses the
+poll-only interval.
 
 At startup the listener opens its connection and sends a probe wake-up.
 If that connection cannot be opened, the listener keeps trying for as long
