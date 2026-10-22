@@ -140,12 +140,15 @@ public sealed partial class PostgresEventStore
         CancellationToken cancellationToken)
     {
         var tenant = TenantKey.ForStream(streamId);
+        var writeOutbox = _options.EnableOutbox;
         var payloads = new string?[envelopes.Count];
         var binaries = new byte[]?[envelopes.Count];
         var metadata = new string?[envelopes.Count];
         var typeIds = new int[envelopes.Count];
         var schemaVersions = new int[envelopes.Count];
         var codecs = new short[envelopes.Count];
+        var eventTypeNames = writeOutbox ? new string[envelopes.Count] : null;
+        var outboxPayloads = writeOutbox ? new byte[envelopes.Count][] : null;
         var tagOrds = new List<int>();
         var tagValues = new List<string>();
         var streamTags = new HashSet<string>(StringComparer.Ordinal);
@@ -162,6 +165,11 @@ public sealed partial class PostgresEventStore
             payloads[i] = json;
             binaries[i] = binary;
             metadata[i] = MetadataJson(envelope.Metadata);
+            if (writeOutbox)
+            {
+                eventTypeNames![i] = envelope.EventType;
+                outboxPayloads![i] = envelope.Payload.IsEmpty ? [] : envelope.Payload.ToArray();
+            }
             foreach (var tag in envelope.Tags)
             {
                 if (string.IsNullOrEmpty(tag))
@@ -175,6 +183,9 @@ public sealed partial class PostgresEventStore
         BuildLocks(envelopes, condition, out var lockTags, out var lockModes, out var lockStore);
         BuildCondition(condition, out var check, out var all, out var after, out var itemCount, out var typeItems, out var typeCond, out var tagItems, out var tagCond, out var itemsWithTypes, out var itemsWithTags);
 
+        var outboxArgs = writeOutbox
+            ? ", @write_outbox, @event_type_names, @outbox_payloads"
+            : "";
         var sql = $"""
             SELECT global_position, version
             FROM {_names.Append}(
@@ -183,7 +194,7 @@ public sealed partial class PostgresEventStore
                 @tag_ords, @tag_values, @stream_tags, @partition_hash, @recorded_at, @notify, @notify_channel,
                 @lock_tags, @lock_modes, @lock_store, @store_lock_key,
                 @check_condition, @condition_all, @condition_after, @item_count,
-                @type_items, @type_ids_cond, @tag_items, @tag_values_cond, @items_with_types, @items_with_tags)
+                @type_items, @type_ids_cond, @tag_items, @tag_values_cond, @items_with_types, @items_with_tags{outboxArgs})
             """;
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.Add(new NpgsqlParameter("stream_id", streamId));
@@ -221,6 +232,12 @@ public sealed partial class PostgresEventStore
         command.Parameters.Add(new NpgsqlParameter("tag_values_cond", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = tagCond });
         command.Parameters.Add(new NpgsqlParameter("items_with_types", NpgsqlDbType.Array | NpgsqlDbType.Integer) { Value = itemsWithTypes });
         command.Parameters.Add(new NpgsqlParameter("items_with_tags", NpgsqlDbType.Array | NpgsqlDbType.Integer) { Value = itemsWithTags });
+        if (writeOutbox)
+        {
+            command.Parameters.Add(new NpgsqlParameter("write_outbox", true));
+            command.Parameters.Add(new NpgsqlParameter("event_type_names", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = eventTypeNames });
+            command.Parameters.Add(new NpgsqlParameter("outbox_payloads", NpgsqlDbType.Array | NpgsqlDbType.Bytea) { Value = outboxPayloads });
+        }
 
         // A closure before any result row means this call did not observe a saved
         // append, so it may be tried once. Postgres commits an autocommit statement

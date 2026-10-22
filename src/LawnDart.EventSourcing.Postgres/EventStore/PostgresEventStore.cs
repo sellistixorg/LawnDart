@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
 using LawnDart.EventSourcing.EventStore;
+using LawnDart.EventSourcing.Postgres.Outbox;
 using LawnDart.EventSourcing.Serialization;
 using LawnDart.EventStore;
 using LawnDart.Serialization;
@@ -207,6 +208,12 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
         await ExecuteAsync(connection, transaction, PostgresSchema.EnsureStreamTagTrigger(_names), cancellationToken).ConfigureAwait(false);
         await Snapshots.PostgresSnapshotSchema.EnsureAsync(
             connection, transaction, _options, cancellationToken).ConfigureAwait(false);
+        await PostgresOutboxSchema.EnsureAsync(
+            connection,
+            transaction,
+            _names.Schema,
+            _options.OutboxTableName,
+            cancellationToken).ConfigureAwait(false);
         await GrantAppRoleAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         await FillStreamTagsIfNeededAsync(connection, cancellationToken).ConfigureAwait(false);
@@ -543,27 +550,17 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
             "Read the stream before sending it again.",
             inner);
 
-    private async Task GrantAppRoleAsync(
+    private Task GrantAppRoleAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         CancellationToken cancellationToken)
-    {
-        var app = new NpgsqlConnectionStringBuilder(_options.ConnectionString).Username;
-        var ownerSource = string.IsNullOrWhiteSpace(_options.MigrationConnectionString)
-            ? _options.ConnectionString
-            : _options.MigrationConnectionString;
-        var owner = new NpgsqlConnectionStringBuilder(ownerSource!).Username;
-        if (string.IsNullOrWhiteSpace(app) || string.Equals(app, owner, StringComparison.Ordinal))
-            return;
-
-        var role = PgIdentifier.Quote(app);
-        var schema = PgIdentifier.Quote(_names.Schema);
-        var sql = $"""
-            GRANT USAGE ON SCHEMA {schema} TO {role};
-            GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA {schema} TO {role};
-            GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA {schema} TO {role};
-            GRANT EXECUTE ON ALL ROUTINES IN SCHEMA {schema} TO {role};
-            """;
-        await ExecuteAsync(connection, transaction, sql, cancellationToken).ConfigureAwait(false);
-    }
+        => PostgresRoleGrant.GrantAppRoleAsync(
+            connection,
+            transaction,
+            _names.Schema,
+            _options.ConnectionString,
+            string.IsNullOrWhiteSpace(_options.MigrationConnectionString)
+                ? _options.ConnectionString
+                : _options.MigrationConnectionString,
+            cancellationToken);
 }

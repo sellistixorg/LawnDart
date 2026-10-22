@@ -13,4 +13,4 @@ Pair with `LawnDart.Messaging.InMemory` for zero-broker delivery.
 Pair with `LawnDart.Messaging.RabbitMQ` for a RabbitMQ broker.
 Pair with `LawnDart.Messaging.AzureServiceBus` for Azure Service Bus.
 Pair with `LawnDart.Messaging.AwsSqs` for Amazon SQS.
-Pair with `LawnDart.Messaging.SqlServer` when inbox dedup must survive a restart.
+Pair with `LawnDart.Messaging.SqlServer` or `LawnDart.Messaging.Postgres` when inbox dedup must survive a restart.

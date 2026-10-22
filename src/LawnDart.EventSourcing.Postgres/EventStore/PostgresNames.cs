@@ -31,6 +31,7 @@ internal sealed class PostgresNames
         TagsShared = PgIdentifier.Qualify(Schema, _tagsTable + "_shared");
         Types = PgIdentifier.Qualify(Schema, options.EventTypesTableName);
         SchemaInfo = PgIdentifier.Qualify(Schema, options.SchemaInfoTableName);
+        Outbox = PgIdentifier.Qualify(Schema, options.OutboxTableName);
         Sequence = PgIdentifier.Qualify(Schema, "event_position");
         Append = PgIdentifier.Qualify(Schema, "append_to_stream");
         ExactText = PgIdentifier.Qualify(Schema, "exact_text");
@@ -96,6 +97,9 @@ internal sealed class PostgresNames
     public string Types { get; }
 
     public string SchemaInfo { get; }
+
+    /// <summary>Quoted outbox table. Not partitioned.</summary>
+    public string Outbox { get; }
 
     public string Sequence { get; }
 

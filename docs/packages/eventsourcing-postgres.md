@@ -90,8 +90,8 @@ change. The decoded event is the same. A JSON payload that contains a null
 character, or that jsonb cannot store, is stored as bytes and comes back
 unchanged. Any other payload-format number is stored as bytes.
 
-Metadata is jsonb. Outbox bytes are not in this release. Snapshot state
-is bytes. See [Snapshots](#snapshots).
+Metadata is jsonb. Outbox payload is the original bytes. Snapshot state
+is bytes. See [Snapshots](#snapshots) and [Outbox](#outbox).
 
 ## Append
 
@@ -212,8 +212,43 @@ hash as on SQL Server. The plaintext load tags are stored beside the hash.
 After a restore, the repository replays events that landed after the
 snapshot.
 
-## Later in the 0.7 line
+## Outbox
 
-The outbox and the inbox ship after this release. `EnableOutbox = true`
-throws when the store is built. Leave it false until that release.
-Projection views are in `LawnDart.Projections.Lightweight.Postgres`.
+`EnableOutbox` writes one outbox row for each appended event inside the append
+function, in that same transaction. A rolled-back append leaves no outbox row.
+The row id is the event id. The payload is the bytes that were appended.
+Metadata is jsonb, the same value stored on the event.
+
+`GetUnprocessedAsync` claims rows in position order. It sets `claimed_until`
+to the current time plus `OutboxClaimLease` (default 30 seconds) and skips a
+row another claim already holds. A claim that has expired can be claimed
+again. `TimeSpan.Zero` lets the next poll claim the row again. Marking a row
+processed, or recording a failure, clears the claim. A dead-lettered row stays
+out of the claim until it is reset. Reset clears the dead-letter time and sets
+attempts to 0.
+
+The table is `outbox` in the context schema. It is not partitioned. An index
+on `sequence_position` covers rows that are not processed and not dead-lettered.
+When the table is created, autovacuum uses a vacuum scale factor of 0.01, a
+vacuum threshold of 1000, an analyze scale factor of 0.02, and an analyze
+threshold of 1000.
+
+`InitializeSchemaAsync` adds the table when it is missing. The events format
+stamp stays at 1. A process still running 0.7.0-alpha.1 calls the original
+append function and can keep appending. That process does not write outbox rows.
+
+```csharp
+services.AddBoundedContext("default")
+    .UsePostgres(o =>
+    {
+        o.ConnectionString = connectionString;
+        o.EnableOutbox = true;
+    });
+```
+
+Register an `IOutboxPublisher` before the host starts. `UsePostgres` starts
+the outbox processor for that context when `EnableOutbox` is true.
+
+The inbox is `LawnDart.Messaging.Postgres`. See
+[Messaging.Postgres](messaging-postgres.md). Projection views are in
+`LawnDart.Projections.Lightweight.Postgres`.

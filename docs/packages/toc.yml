@@ -20,6 +20,8 @@
   href: messaging-awssqs.md
 - name: Messaging.SqlServer
   href: messaging-sqlserver.md
+- name: Messaging.Postgres
+  href: messaging-postgres.md
 - name: Messaging.Testing
   href: messaging-testing.md
 - name: Projections.Lightweight

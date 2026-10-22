@@ -1,11 +1,11 @@
 # Outbox pattern
 
-Use the transactional outbox when the event store is SQL Server and you must
-publish to a message transport without dual-write races.
+Use the transactional outbox when the event store is SQL Server or Postgres
+and you must publish to a message transport in the same transaction as the append.
 
 ## When
 
-- Durable store (`UseSqlServer`)
+- Durable store (`UseSqlServer` or `UsePostgres`)
 - A reactor or downstream consumer lives in another process (or will)
 
 Skip the outbox for Academy InMemory: `InMemoryMessageTransport` is already
@@ -25,12 +25,19 @@ meter when a publish throws, and `outbox.deadlettered` when it parks a row
 that used its attempts. Both are tagged with `outbox.event_type`.
 
 The outbox row id is the event id. `GetUnprocessedAsync` claims each row
-for `OutboxClaimLease` (default 30 seconds) in `ClaimedUntil`, with
-`UPDLOCK, READPAST`, so a second processor does not publish it. Set the
-lease to `TimeSpan.Zero` when the next poll should claim the row again.
-A failed publish clears the claim. Format `1` outbox tables gain
-`ClaimedUntil` when `InitializeSchemaAsync` runs. The in-memory writer
-uses the same option.
+for `OutboxClaimLease` (default 30 seconds). On SQL Server the deadline is
+`ClaimedUntil`, taken with `UPDLOCK, READPAST`. On Postgres the deadline is
+`claimed_until`, taken with `FOR UPDATE SKIP LOCKED`, and the claimed rows
+come back in position order. A second processor does not publish that row.
+Set the lease to `TimeSpan.Zero` when the next poll should claim the row again.
+A failed publish clears the claim. On SQL Server, format `1` outbox tables gain
+`ClaimedUntil` when `InitializeSchemaAsync` runs. On Postgres,
+`InitializeSchemaAsync` adds the `outbox` table when it is missing. The events
+format stamp stays at 1. A process still running 0.7.0-alpha.1 can keep
+appending. It does not write outbox rows. The in-memory writer uses the same
+lease option.
+
+Postgres details are on the [Postgres event store page](packages/eventsourcing-postgres.md#outbox).
 
 The outbox row is a copy of the stored record, written in the same
 transaction: event name, payload **bytes**, metadata as UTF-8 JSON

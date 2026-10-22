@@ -13,6 +13,7 @@
             "src/LawnDart.Messaging.AzureServiceBus/bin/Release/net10.0/LawnDart.Messaging.AzureServiceBus.dll",
             "src/LawnDart.Messaging.AwsSqs/bin/Release/net10.0/LawnDart.Messaging.AwsSqs.dll",
             "src/LawnDart.Messaging.SqlServer/bin/Release/net10.0/LawnDart.Messaging.SqlServer.dll",
+            "src/LawnDart.Messaging.Postgres/bin/Release/net10.0/LawnDart.Messaging.Postgres.dll",
             "src/LawnDart.Messaging.Testing/bin/Release/net10.0/LawnDart.Messaging.Testing.dll",
             "src/LawnDart.EventSourcing.SqlServer/bin/Release/net10.0/LawnDart.EventSourcing.SqlServer.dll",
             "src/LawnDart.EventSourcing.Postgres/bin/Release/net10.0/LawnDart.EventSourcing.Postgres.dll",

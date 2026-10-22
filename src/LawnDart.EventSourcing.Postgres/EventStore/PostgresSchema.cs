@@ -4,7 +4,8 @@ using System.Text;
 namespace LawnDart.EventSourcing.Postgres.EventStore;
 
 /// <summary>
-/// DDL for one context. Format 1. Running it twice is a no-op when the stamp matches.
+/// DDL for one context. The events format stays at 1. Running it twice is a no-op when the stamp matches.
+/// The outbox table is a separate <c>schema_info</c> component and does not change that number.
 /// </summary>
 internal static class PostgresSchema
 {
@@ -46,6 +47,9 @@ internal static class PostgresSchema
         sql.Add(CreatePartitioned(names.Tags, names.TagsShared, names.TagsHash, options, TagsColumns(names), TagsKeys()));
         sql.Add(DropAppendFunction(names));
         sql.Add(PostgresAppendSql.CreateFunction(names, options));
+        // The longer function writes outbox rows. The shorter one stays so a
+        // 0.7.0-alpha.1 process can keep appending after this script commits.
+        sql.Add(PostgresAppendSql.CreateOutboxFunction(names));
         sql.Add(Stamp(names, options));
         return sql;
     }

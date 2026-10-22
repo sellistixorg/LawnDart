@@ -10,6 +10,12 @@ changes to the public API.
 
 ## [Unreleased]
 
+### Added
+
+- Postgres `EnableOutbox` writes one outbox row per appended event in that same transaction. `GetUnprocessedAsync` claims rows in position order and sets `claimed_until` to the current time plus `OutboxClaimLease` (default 30 seconds). A claim that has expired can be claimed again. `TimeSpan.Zero` lets the next poll claim the row. Marking a row processed, or recording a failure, clears the claim. A dead-lettered row stays out of the claim until reset. Reset clears the dead-letter time and sets attempts to 0.
+- `InitializeSchemaAsync` on a database created by 0.7.0-alpha.1 adds the `outbox` table when it is missing. The events format stamp stays at 1. A process still running 0.7.0-alpha.1 calls the original append function and can keep appending. That process does not write outbox rows.
+- `LawnDart.Messaging.Postgres` stores inbox deduplication. `AddPostgresInboxStore` and `InitializePostgresInboxStoreAsync` follow the SQL Server registration. `TryClaimAsync` is one statement. The default schema is `lawndart`. The `public` schema is rejected. The inbox key is at most 256 characters.
+
 ## [0.7.0-alpha.1] - 2026-10-22
 
 This release adds the Postgres event store and paged stream listing. The build kit targets LawnDart 0.7.

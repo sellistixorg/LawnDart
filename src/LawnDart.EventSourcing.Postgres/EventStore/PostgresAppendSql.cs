@@ -268,4 +268,95 @@ internal static class PostgresAppendSql
             $fn$;
             """;
     }
+
+    /// <summary>
+    /// Same append as <see cref="CreateFunction"/>, then outbox rows when
+    /// <paramref name="names"/> is asked to write them. The shorter function
+    /// stays in the database so 0.7.0-alpha.1 can keep calling it.
+    /// </summary>
+    internal static string CreateOutboxFunction(PostgresNames names)
+    {
+        const string emptyJson = "'{}'::jsonb";
+        return $"""
+            CREATE OR REPLACE FUNCTION {names.Append}(
+                p_stream_id text,
+                p_tenant_id text,
+                p_expected bigint,
+                p_is_dcb boolean,
+                p_aggregate_type text,
+                p_aggregate_id uuid,
+                p_event_ids uuid[],
+                p_type_ids int[],
+                p_schema_versions int[],
+                p_codec_ids smallint[],
+                p_data jsonb[],
+                p_bdata bytea[],
+                p_metadata jsonb[],
+                p_tag_ords int[],
+                p_tag_values text[],
+                p_stream_tags text[],
+                p_partition_hash int,
+                p_recorded_at timestamptz,
+                p_notify boolean,
+                p_notify_channel text,
+                p_lock_tags text[],
+                p_lock_modes text[],
+                p_lock_store text,
+                p_store_lock_key text,
+                p_check_condition boolean,
+                p_condition_all boolean,
+                p_condition_after bigint,
+                p_item_count int,
+                p_type_items int[],
+                p_type_ids_cond int[],
+                p_tag_items int[],
+                p_tag_values_cond text[],
+                p_items_with_types int[],
+                p_items_with_tags int[],
+                p_write_outbox boolean,
+                p_event_type_names text[],
+                p_outbox_payloads bytea[]
+            ) RETURNS TABLE (global_position bigint, version bigint)
+            LANGUAGE plpgsql
+            SET search_path = pg_catalog
+            AS $fn$
+            DECLARE
+                rec record;
+                v_i int := 0;
+            BEGIN
+                FOR rec IN
+                    SELECT src.global_position, src.version
+                    FROM {names.Append}(
+                        p_stream_id, p_tenant_id, p_expected, p_is_dcb, p_aggregate_type, p_aggregate_id,
+                        p_event_ids, p_type_ids, p_schema_versions, p_codec_ids, p_data, p_bdata, p_metadata,
+                        p_tag_ords, p_tag_values, p_stream_tags, p_partition_hash, p_recorded_at, p_notify, p_notify_channel,
+                        p_lock_tags, p_lock_modes, p_lock_store, p_store_lock_key,
+                        p_check_condition, p_condition_all, p_condition_after, p_item_count,
+                        p_type_items, p_type_ids_cond, p_tag_items, p_tag_values_cond, p_items_with_types, p_items_with_tags) AS src
+                LOOP
+                    v_i := v_i + 1;
+                    IF p_write_outbox THEN
+                        INSERT INTO {names.Outbox} (
+                            id, event_type, schema_version, codec_id, payload, metadata,
+                            created_at, attempts, stream_id, sequence_position)
+                        VALUES (
+                            p_event_ids[v_i],
+                            p_event_type_names[v_i],
+                            p_schema_versions[v_i],
+                            p_codec_ids[v_i],
+                            p_outbox_payloads[v_i],
+                            coalesce(p_metadata[v_i], {emptyJson}),
+                            p_recorded_at,
+                            0,
+                            p_stream_id,
+                            rec.global_position);
+                    END IF;
+                    global_position := rec.global_position;
+                    version := rec.version;
+                    RETURN NEXT;
+                END LOOP;
+            END;
+            $fn$;
+            """;
+    }
 }

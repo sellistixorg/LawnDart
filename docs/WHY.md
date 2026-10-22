@@ -30,7 +30,7 @@ framework.
 Supported today:
 
 - **Stores:** InMemory and SQL Server. The log (`IEventLog`) is recorded events; `IEventStore` is the typed session. Third-party stores implement the log.
-- **Messaging:** in-process transport (`LawnDart.Messaging.InMemory`), RabbitMQ (`LawnDart.Messaging.RabbitMQ`), Azure Service Bus (`LawnDart.Messaging.AzureServiceBus`), and Amazon SQS (`LawnDart.Messaging.AwsSqs`). Inbox deduplication is in-process or SQL Server (`LawnDart.Messaging.SqlServer`). When the outbox is on, SQL Server rows commit with your events.
+- **Messaging:** in-process transport (`LawnDart.Messaging.InMemory`), RabbitMQ (`LawnDart.Messaging.RabbitMQ`), Azure Service Bus (`LawnDart.Messaging.AzureServiceBus`), and Amazon SQS (`LawnDart.Messaging.AwsSqs`). Inbox deduplication is in-process, SQL Server (`LawnDart.Messaging.SqlServer`), or Postgres (`LawnDart.Messaging.Postgres`). When the outbox is on, SQL Server and Postgres rows commit with your events.
 - **Runtime:** in-process, `net10.0`, your host, your DI.
 - **Modelling:** aggregates and DCB behind one store contract.
 

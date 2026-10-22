@@ -71,6 +71,8 @@ These live on `IAggregateRepository` in Core (not `Add*` extensions). Guid overl
 | `AddAwsSqsTransport` | `LawnDart.Messaging.AwsSqs` | Amazon SQS transport, SNS fan-out, retries, and a per-subscription dead-letter queue |
 | `AddSqlInboxStore` | `LawnDart.Messaging.SqlServer` | Durable inbox. Replaces the in-memory inbox in either call order |
 | `InitializeSqlInboxStoreAsync` | `LawnDart.Messaging.SqlServer` | Create the inbox table |
+| `AddPostgresInboxStore` | `LawnDart.Messaging.Postgres` | Durable Postgres inbox. Replaces the in-memory inbox in either call order |
+| `InitializePostgresInboxStoreAsync` | `LawnDart.Messaging.Postgres` | Create the Postgres inbox table |
 | `AddReactor<TReactor, TEvent>` | `LawnDart.Messaging` | Event → command |
 | `AddEventProcessor<TProcessor, TEvent>` | `LawnDart.Messaging` | Event → event / work |
 | `AddTaskProcessor<TProcessor>` | `LawnDart.Messaging` | State → command |

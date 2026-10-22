@@ -1,10 +1,13 @@
 using System.Collections.Concurrent;
-using LawnDart.EventSourcing.Outbox;
 using LawnDart.EventSourcing.Postgres;
 using LawnDart.EventSourcing.Postgres.EventStore;
+using LawnDart.EventSourcing.Postgres.Outbox;
 using LawnDart.EventSourcing.Postgres.Snapshots;
+using LawnDart.Messaging;
+using LawnDart.Messaging.Postgres;
 using LawnDart.Outbox;
 using LawnDart.Projections.Lightweight.Postgres;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -30,7 +33,7 @@ public sealed class PostgresContractBackend : IContractBackend
             EnforcesEventIdAcrossTenants = false,
             StreamIdsCaseInsensitive = false,
             StreamIdPrefixCaseInsensitive = false,
-            AppendWritesOutboxRows = false,
+            AppendWritesOutboxRows = true,
             SecondInstanceSeesCommittedEvents = true,
             ParallelAppendCanConflict = true,
             DuplicateStreamVersionIncludesDatabaseError = false,
@@ -44,11 +47,14 @@ public sealed class PostgresContractBackend : IContractBackend
             RunsLiveSubscriptionTests = true,
             CanBreakLiveReads = true,
             CommittedAppendMayEchoSignal = !pollOnly,
-            HasOutboxStore = false,
+            HasOutboxStore = true,
+            InboxMarksSurviveASecondInstance = true,
+            ExposesStoredInboxKey = true,
+            CanPurgeExpiredInboxRows = true,
             HasSnapshotStore = true,
             StoresDcbSnapshotLoadTags = true,
             CanCorruptDcbSnapshot = true,
-            HasInboxStore = false,
+            HasInboxStore = true,
             HasProjectionStores = true,
             PreservesExactViewJson = false,
             HasStreamTagTable = true
@@ -63,12 +69,6 @@ public sealed class PostgresContractBackend : IContractBackend
         ContractStoreOptions options,
         CancellationToken cancellationToken = default)
     {
-        if (options.EnableOutbox)
-        {
-            throw new InvalidOperationException(
-                "EnableOutbox is not available on the Postgres event store yet. Leave EnableOutbox false.");
-        }
-
         var logger = new ListLogger<PostgresEventStore>();
         var storeOptions = new PostgresEventStoreOptions
         {
@@ -78,6 +78,7 @@ public sealed class PostgresContractBackend : IContractBackend
             ContextName = options.SchemaName,
             RequireTenantId = options.RequireTenantId,
             ValidateNames = options.ValidateNames,
+            EnableOutbox = options.EnableOutbox,
             EnableStreamRegistry = options.EnableRegistry,
             BackupPollInterval = options.SubscriptionPollInterval
                 ?? (_pollOnly ? TimeSpan.FromMilliseconds(50) : TimeSpan.FromSeconds(30)),
@@ -87,6 +88,8 @@ public sealed class PostgresContractBackend : IContractBackend
         };
         if (options.ReadHorizonGracePeriod is { } grace)
             storeOptions.ReadHorizonGracePeriod = grace;
+        if (options.OutboxClaimLease is { } lease)
+            storeOptions.OutboxClaimLease = lease;
 
         var store = new PostgresEventStore(_connectionString, serializer: null, storeOptions, logger);
         store.PublishNewEventsSignal = options.PublishNewEventsSignal;
@@ -103,17 +106,45 @@ public sealed class PostgresContractBackend : IContractBackend
             Subscriptions = store,
             Signals = store,
             Hooks = new PostgresContractHooks(store, _connectionString, _migrationConnectionString ?? _connectionString),
-            Outbox = new InMemoryOutboxWriter(options.OutboxClaimLease),
+            Outbox = CreateOutbox(options.SchemaName, options.OutboxClaimLease),
             ReadLogEntries = () => logger.Entries,
             SetPublishNewEventsSignal = value => store.PublishNewEventsSignal = value
         };
     }
 
-    public Task<IOutboxWriter> OpenOutboxAsync(ContractStoreOptions options, CancellationToken cancellationToken = default)
-        => throw new InvalidOperationException("The Postgres outbox is a later release.");
+    public async Task<IOutboxWriter> OpenOutboxAsync(ContractStoreOptions options, CancellationToken cancellationToken = default)
+    {
+        var writer = CreateOutbox(options.SchemaName, options.OutboxClaimLease);
+        await _ready.GetOrAdd(
+            _connectionString + "|outbox|" + options.SchemaName,
+            _ => writer.InitializeSchemaAsync(cancellationToken)).ConfigureAwait(false);
+        return writer;
+    }
 
-    public Task<ContractInbox> OpenInboxAsync(ContractStoreOptions options, CancellationToken cancellationToken = default)
-        => throw new InvalidOperationException("The Postgres inbox is a later release.");
+    public async Task<ContractInbox> OpenInboxAsync(ContractStoreOptions options, CancellationToken cancellationToken = default)
+    {
+        var messaging = new MessagingOptions
+        {
+            InboxClaimLease = options.InboxClaimLease ?? TimeSpan.FromSeconds(30),
+            InboxDeduplicationWindow = options.InboxDeduplicationWindow ?? TimeSpan.FromHours(24)
+        };
+        var store = CreateInbox(options.SchemaName, messaging);
+        await store.InitializeSchemaAsync(cancellationToken).ConfigureAwait(false);
+        var table = store.QualifiedTableName;
+        return new ContractInbox
+        {
+            Store = store,
+            PurgeExpiredAsync = store.PurgeExpiredAsync,
+            CountRowsAsync = ct => CountRowsAsync(table, ct),
+            ReadSingleKeyAsync = ct => ReadSingleKeyAsync(table, ct),
+            OpenSecondInstanceAsync = async ct =>
+            {
+                var second = CreateInbox(options.SchemaName, messaging);
+                await second.InitializeSchemaAsync(ct).ConfigureAwait(false);
+                return second;
+            }
+        };
+    }
 
     public async Task<ContractSnapshots> OpenSnapshotsAsync(
         ContractStoreOptions options,
@@ -160,6 +191,43 @@ public sealed class PostgresContractBackend : IContractBackend
             Views = views,
             Checkpoints = checkpoints
         };
+    }
+
+    private PostgresOutboxWriter CreateOutbox(string schema, TimeSpan? claimLease)
+        => new(
+            _connectionString,
+            schemaName: schema,
+            claimLease: claimLease,
+            migrationConnectionString: _migrationConnectionString ?? _connectionString);
+
+    private PostgresInboxStore CreateInbox(string schema, MessagingOptions messaging)
+        => new(
+            Options.Create(new PostgresInboxStoreOptions
+            {
+                ConnectionString = _connectionString,
+                MigrationConnectionString = _migrationConnectionString ?? _connectionString,
+                SchemaName = schema,
+                TableName = "inbox"
+            }),
+            Options.Create(messaging));
+
+    private async Task<int> CountRowsAsync(string qualifiedTable, CancellationToken cancellationToken)
+    {
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand($"SELECT COUNT(*) FROM {qualifiedTable}", connection);
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false));
+    }
+
+    private async Task<string?> ReadSingleKeyAsync(string qualifiedTable, CancellationToken cancellationToken)
+    {
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(
+            $"SELECT message_id FROM {qualifiedTable} LIMIT 1",
+            connection);
+        var value = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return value is null or DBNull ? null : (string)value;
     }
 
     private async Task<int> CorruptSnapshotAsync(string qualifiedTable, string dcbId, CancellationToken cancellationToken)

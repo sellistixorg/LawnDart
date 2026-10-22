@@ -38,6 +38,7 @@ app.MapLawnDartCommands();
 | `LawnDart.Messaging.AzureServiceBus` | Azure Service Bus transport |
 | `LawnDart.Messaging.AwsSqs` | Amazon SQS transport. SNS fans each topic out to one queue per subscription. |
 | `LawnDart.Messaging.SqlServer` | Durable inbox deduplication |
+| `LawnDart.Messaging.Postgres` | Durable Postgres inbox deduplication |
 | `LawnDart.Messaging.Testing` | Transport conformance tests |
 | `LawnDart.Projections.Lightweight` | Read-model host (in-memory stores) |
 | `LawnDart.Projections.Lightweight.SqlServer` | SQL Server view and checkpoint stores |
