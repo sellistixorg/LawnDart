@@ -257,11 +257,10 @@ public abstract class StreamListContractTests : ContractSuite
             return;
 
         var otherCase = streamId.Replace(":Ab", ":aB", StringComparison.Ordinal);
-        await InsertTagRowAsync(opened, otherCase, "beta");
-        await ReplaceTagsAsync(opened, streamId, "beta", "gamma");
+        await SetStreamIdAsync(opened, streamId, otherCase);
         var rows = await ReadStreamTagsAsync(opened);
-        Assert.Equal(["beta", "gamma"], TagsFor(rows, streamId));
-        Assert.DoesNotContain(rows, row => row.StreamId == otherCase);
+        Assert.Equal(["beta"], TagsFor(rows, otherCase));
+        Assert.DoesNotContain(rows, row => row.StreamId == streamId);
     }
 
     [ContractFact]
@@ -408,18 +407,18 @@ public abstract class StreamListContractTests : ContractSuite
         Assert.Equal(1, await query.ExecuteNonQueryAsync());
     }
 
-    private static async Task InsertTagRowAsync(ContractEventStore opened, string streamId, string tag)
+    private static async Task SetStreamIdAsync(ContractEventStore opened, string fromId, string toId)
     {
         var sql = (SqlServerEventStore)opened.Store;
         var hooks = (SqlServerContractHooks)opened.Hooks;
         await using var connection = new SqlConnection(hooks.ConnectionString);
         await connection.OpenAsync();
         await using var command = new SqlCommand(
-            $"INSERT INTO {sql.QualifiedStreamTagsTable} (Tag, StreamId) VALUES (@Tag, @StreamId)",
+            $"UPDATE {sql.QualifiedRegistryTable} SET StreamId = @ToId WHERE StreamId = @FromId",
             connection);
-        command.Parameters.AddWithValue("@Tag", tag);
-        command.Parameters.AddWithValue("@StreamId", streamId);
-        await command.ExecuteNonQueryAsync();
+        command.Parameters.AddWithValue("@ToId", toId);
+        command.Parameters.AddWithValue("@FromId", fromId);
+        Assert.Equal(1, await command.ExecuteNonQueryAsync());
     }
 
     private static async Task DropStreamTagTableAsync(ContractEventStore opened)

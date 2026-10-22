@@ -128,8 +128,7 @@ public partial class SqlServerEventStore
     private string EnsureStreamTagTriggerSql()
     {
         var trigger = SqlIdentifier.Qualify(_schemaName, "TR_" + _schemaName + "_" + _registryTableName + "_StreamTags");
-        // A different case spelling of the same stream id matches under the database collation,
-        // so those tag rows are removed and written again for the stored spelling.
+        // Match the tag row's stream id exactly. Deleted carries the old spelling and inserted carries the new one.
         return $"""
             CREATE OR ALTER TRIGGER {trigger} ON {_qRegistry}
             AFTER INSERT, UPDATE, DELETE
@@ -144,10 +143,10 @@ public partial class SqlServerEventStore
                 FROM {_qStreamTags} AS t
                 WHERE EXISTS (
                         SELECT 1 FROM deleted AS d
-                        WHERE t.[StreamId] COLLATE DATABASE_DEFAULT = d.[StreamId])
+                        WHERE t.[StreamId] = CONVERT(NVARCHAR(255), d.[StreamId]) COLLATE {TagCollation})
                    OR EXISTS (
                         SELECT 1 FROM inserted AS i
-                        WHERE t.[StreamId] COLLATE DATABASE_DEFAULT = i.[StreamId]);
+                        WHERE t.[StreamId] = CONVERT(NVARCHAR(255), i.[StreamId]) COLLATE {TagCollation});
 
                 INSERT INTO {_qStreamTags} ([Tag], [StreamId])
                 SELECT DISTINCT
@@ -291,6 +290,8 @@ public partial class SqlServerEventStore
         var prefix = StreamPageToken.Normalize(filter?.Prefix);
         var tag = StreamPageToken.Normalize(filter?.Tag);
         var aggregateType = StreamPageToken.Normalize(filter?.AggregateType);
+        var binaryPrefix = prefix is not null && PrefixIsBinaryRange(prefix);
+        var prefixUpper = binaryPrefix ? ExclusiveUpperBound(prefix!) : null;
 
         var connection = new SqlConnection(_connectionString);
         await using var connectionDisposal = connection.ConfigureAwait(false);
@@ -311,6 +312,10 @@ public partial class SqlServerEventStore
         {
             sql.Append("FROM ").Append(_qRegistry).Append(" AS s WITH (INDEX([IX_AggregateType])) WHERE s.Status = 'Active'");
         }
+        else if (prefix is not null && after is null && !binaryPrefix)
+        {
+            sql.Append("FROM ").Append(_qRegistry).Append(" AS s WHERE s.Status = 'Active'");
+        }
         else
         {
             sql.Append("FROM ").Append(_qRegistry).Append(" AS s WITH (INDEX([UX_StreamIdBin])) WHERE s.Status = 'Active'");
@@ -324,6 +329,12 @@ public partial class SqlServerEventStore
 
         if (prefix is not null)
             sql.Append(" AND ").Append(StreamIdPrefixSql.Predicate("s.StreamId"));
+        if (prefixUpper is not null)
+        {
+            var column = tag is not null ? "t.StreamId" : "s.StreamIdBin";
+            sql.Append(" AND ").Append(column).Append(" >= @BinFrom COLLATE ").Append(TagCollation);
+            sql.Append(" AND ").Append(column).Append(" < @BinTo COLLATE ").Append(TagCollation);
+        }
         if (aggregateType is not null)
             sql.Append(" AND s.AggregateType = @AggregateType");
 
@@ -336,6 +347,11 @@ public partial class SqlServerEventStore
             command.Parameters.Add("@After", SqlDbType.NVarChar, 255).Value = after;
         if (prefix is not null)
             command.Parameters.Add("@Prefix", SqlDbType.NVarChar, 512).Value = StreamIdPrefixSql.LikeParameter(prefix);
+        if (prefixUpper is not null)
+        {
+            command.Parameters.Add("@BinFrom", SqlDbType.NVarChar, 255).Value = prefix;
+            command.Parameters.Add("@BinTo", SqlDbType.NVarChar, 255).Value = prefixUpper;
+        }
         if (tag is not null)
             command.Parameters.Add("@Tag", SqlDbType.NVarChar, 256).Value = tag;
         if (aggregateType is not null)
@@ -348,6 +364,39 @@ public partial class SqlServerEventStore
             streams.Add(ReadStreamMetadata(reader));
 
         return StreamPageToken.ToPage(streams, pageSize, filter);
+    }
+
+    /// <summary>
+    /// A prefix with no letters is one range of stream ids. A letter can match another case, so those prefixes are not one range.
+    /// </summary>
+    private static bool PrefixIsBinaryRange(string prefix)
+    {
+        foreach (var c in prefix)
+        {
+            if (char.IsLetter(c))
+                return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Smallest string after every id that starts with <paramref name="prefix"/>.
+    /// Null when <paramref name="prefix"/> is all U+FFFF.
+    /// </summary>
+    private static string? ExclusiveUpperBound(string prefix)
+    {
+        var chars = prefix.ToCharArray();
+        for (var i = chars.Length - 1; i >= 0; i--)
+        {
+            if (chars[i] != char.MaxValue)
+            {
+                chars[i]++;
+                return new string(chars, 0, i + 1);
+            }
+        }
+
+        return null;
     }
 
     private static async Task ExecuteListingAsync(

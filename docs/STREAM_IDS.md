@@ -83,7 +83,7 @@ A stream created while you page is included when its id sorts after the last id 
 
 The in-memory store compares a prefix with ordinal ignore-case, and `ListStreamsAsync` orders the page character by character.
 
-SQL Server matches a prefix with the `StreamId` column collation. A new database is case-insensitive. A case-sensitive database matches case. `ListStreamsAsync` still orders by `StreamIdBin` (`Latin1_General_100_BIN2`). A page reads that index from the last stream id, and applies the prefix with the column collation. A tag page reads `StreamTags` from the last stream id. Two stream ids that differ only by case are one stream on a case-insensitive database.
+SQL Server matches a prefix with the `StreamId` column collation. A new database is case-insensitive. A case-sensitive database matches case. `ListStreamsAsync` still orders by `StreamIdBin` (`Latin1_General_100_BIN2`). A prefix with no letters is one range on that column: the page reads `StreamIdBin` from the later of the token and the prefix, and stops at the end of the range. A prefix that contains letters is not one range. The first page reads the clustered stream id key for that prefix, then orders those rows by `StreamIdBin`. A later page reads `StreamIdBin` from the token and applies the prefix. That later page has no end bound. A tag page reads `StreamTags` from the last stream id. Two stream ids that differ only by case are one stream on a case-insensitive database.
 
 Postgres matches a prefix exactly, including case. When the prefix has three or more colon-separated parts, Postgres also limits the match to the tenant in the first part. A tag page reads `stream_tags` from the last stream id, then loads that stream row.
 
