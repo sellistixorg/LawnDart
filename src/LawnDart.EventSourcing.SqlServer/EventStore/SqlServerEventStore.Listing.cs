@@ -127,7 +127,7 @@ public partial class SqlServerEventStore
 
     private string EnsureStreamTagTriggerSql()
     {
-        var trigger = SqlIdentifier.Quote("TR_" + _registryTableName + "_StreamTags");
+        var trigger = SqlIdentifier.Qualify(_schemaName, "TR_" + _schemaName + "_" + _registryTableName + "_StreamTags");
         // A different case spelling of the same stream id matches under the database collation,
         // so those tag rows are removed and written again for the stored spelling.
         return $"""

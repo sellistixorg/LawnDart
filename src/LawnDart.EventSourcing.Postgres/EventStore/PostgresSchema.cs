@@ -263,15 +263,14 @@ internal static class PostgresSchema
     }
 
     /// <summary>
-    /// Copies tags for the next batch of streams after <c>@tenant</c>, <c>@stream</c>.
-    /// Returns the last stream in that batch. No row means the copy is finished.
+    /// Copies tags for the next batch of streams after <c>@tenant</c> and <c>@stream</c>.
+    /// An empty pair is before every stored tenant. Returns the last stream in that batch. No row means the copy is finished.
     /// </summary>
     internal static string BackfillStreamTagsBatch(PostgresNames names) => $"""
         WITH batch AS (
             SELECT s.tenant_id, s.stream_id, s.tags
             FROM {names.Streams} AS s
-            WHERE @tenant IS NULL
-               OR s.tenant_id > @tenant
+            WHERE s.tenant_id > @tenant
                OR (s.tenant_id = @tenant AND s.stream_id > @stream)
             ORDER BY s.tenant_id, s.stream_id
             LIMIT {StreamTagBatchSize.ToString(CultureInfo.InvariantCulture)}

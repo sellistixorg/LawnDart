@@ -233,13 +233,13 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
             if (await StreamTagsMarkerExistsAsync(connection, cancellationToken).ConfigureAwait(false))
                 return;
 
-            string? tenant = null;
-            string? streamId = null;
+            var tenant = "";
+            var streamId = "";
             while (true)
             {
                 await using var batch = new NpgsqlCommand(PostgresSchema.BackfillStreamTagsBatch(_names), connection);
-                batch.Parameters.AddWithValue("tenant", (object?)tenant ?? DBNull.Value);
-                batch.Parameters.AddWithValue("stream", (object?)streamId ?? DBNull.Value);
+                batch.Parameters.Add(new NpgsqlParameter("tenant", NpgsqlDbType.Text) { Value = tenant });
+                batch.Parameters.Add(new NpgsqlParameter("stream", NpgsqlDbType.Text) { Value = streamId });
                 await using var reader = await batch.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
                 if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
                     break;
