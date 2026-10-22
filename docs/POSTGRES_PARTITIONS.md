@@ -5,7 +5,7 @@ when the schema is created. Snapshots, the outbox, the inbox, projection
 views, checkpoints, and the runner lease table are not partitioned.
 Snapshot rows still store `tenant_id`.
 
-Postgres 15 or newer. The `C` collation compares raw bytes, so stream ids
+These tables run on Postgres 15 or newer. The `C` collation compares raw bytes, so stream ids
 and tags match exactly, including case. See
 [Backend differences](BACKEND_DIFFERENCES.md).
 

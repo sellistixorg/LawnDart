@@ -5,7 +5,7 @@ LawnDart is the .NET runtime that event-modeled systems compile into.
 You model slices in Eventhesis, in prooph board, in eventmodelers.ai, or on a
 whiteboard, and LawnDart is what they become: commands, events, state,
 projections, with a production path that swaps the event store, views, and
-checkpoints to SQL Server or Postgres by DI.
+checkpoints to SQL Server or Postgres by dependency injection.
 
 That is a different product from the ones readers usually compare first.
 

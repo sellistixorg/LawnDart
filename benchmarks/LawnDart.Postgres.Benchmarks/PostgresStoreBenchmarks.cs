@@ -5,6 +5,7 @@ using LawnDart.EventStore;
 using LawnDart.TestUtilities;
 using Npgsql;
 using Testcontainers.PostgreSql;
+using Xunit.Abstractions;
 
 namespace LawnDart.Postgres.Benchmarks;
 
@@ -14,7 +15,7 @@ namespace LawnDart.Postgres.Benchmarks;
 /// The container starts with fsync, synchronous_commit, and full_page_writes on.
 /// </summary>
 [Trait("Category", "Benchmark")]
-public sealed class PostgresStoreBenchmarks
+public sealed class PostgresStoreBenchmarks(ITestOutputHelper output)
 {
     private static readonly TimeSpan Warmup = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan Window = TimeSpan.FromSeconds(3);
@@ -38,11 +39,11 @@ public sealed class PostgresStoreBenchmarks
         {
             var connectionString = postgres.GetConnectionString();
 
-            await RequireAppendsAsync(connectionString, "append1", partitionCount: 8, notify: true, batchSize: 1, Warmup, Window);
-            await RequireAppendsAsync(connectionString, "append10", partitionCount: 8, notify: true, batchSize: 10, Warmup, Window);
+            await RequireAppendsAsync(connectionString, "append1", partitionCount: 8, notify: true, batchSize: 1, Warmup, Window, "single event, 8 buckets");
+            await RequireAppendsAsync(connectionString, "append10", partitionCount: 8, notify: true, batchSize: 10, Warmup, Window, "10 events, 8 buckets");
 
-            await RequireAppendsAsync(connectionString, "notifyon", partitionCount: 8, notify: true, batchSize: 1, Warmup, Window);
-            await RequireAppendsAsync(connectionString, "notifyoff", partitionCount: 8, notify: false, batchSize: 1, Warmup, Window);
+            await RequireAppendsAsync(connectionString, "notifyon", partitionCount: 8, notify: true, batchSize: 1, Warmup, Window, "wake-up on");
+            await RequireAppendsAsync(connectionString, "notifyoff", partitionCount: 8, notify: false, batchSize: 1, Warmup, Window, "wake-up off");
 
             await RequireSubscriptionDelayAsync(connectionString);
 
@@ -56,32 +57,34 @@ public sealed class PostgresStoreBenchmarks
         }
     }
 
-    private static async Task RequirePartitionCountAsync(string connectionString, string schema, int partitionCount)
+    private async Task RequirePartitionCountAsync(string connectionString, string schema, int partitionCount)
     {
         var store = await OpenAsync(connectionString, schema, partitionCount, notify: true);
         var buckets = await CountHashBucketsAsync(connectionString, schema);
         Assert.Equal(partitionCount, buckets);
-        await RequireAppendsOnStoreAsync(store, batchSize: 1, PartitionWarmup, PartitionWindow);
+        await RequireAppendsOnStoreAsync(store, batchSize: 1, PartitionWarmup, PartitionWindow, $"{partitionCount} buckets");
     }
 
-    private static async Task RequireAppendsAsync(
+    private async Task RequireAppendsAsync(
         string connectionString,
         string schema,
         int partitionCount,
         bool notify,
         int batchSize,
         TimeSpan warmup,
-        TimeSpan window)
+        TimeSpan window,
+        string label)
     {
         var store = await OpenAsync(connectionString, schema, partitionCount, notify);
-        await RequireAppendsOnStoreAsync(store, batchSize, warmup, window);
+        await RequireAppendsOnStoreAsync(store, batchSize, warmup, window, label);
     }
 
-    private static async Task RequireAppendsOnStoreAsync(
+    private async Task RequireAppendsOnStoreAsync(
         PostgresEventStore store,
         int batchSize,
         TimeSpan warmup,
-        TimeSpan window)
+        TimeSpan window,
+        string label)
     {
         var payload = "{}"u8.ToArray();
         AppendEvent[] Fresh()
@@ -103,9 +106,10 @@ public sealed class PostgresStoreBenchmarks
 
         var rate = count / clock.Elapsed.TotalSeconds;
         Assert.True(count > 0 && double.IsFinite(rate) && rate > 0);
+        output.WriteLine($"{label}: {rate:F1} appends per second");
     }
 
-    private static async Task RequireSubscriptionDelayAsync(string connectionString)
+    private async Task RequireSubscriptionDelayAsync(string connectionString)
     {
         var store = await OpenAsync(connectionString, "subdelay", partitionCount: 8, notify: true);
         var payload = "{}"u8.ToArray();
@@ -128,6 +132,8 @@ public sealed class PostgresStoreBenchmarks
         }
 
         Assert.True(ticks > 0);
+        var averageMs = ticks / (double)Stopwatch.Frequency / samples * 1000d;
+        output.WriteLine($"subscription delay: {averageMs:F1} milliseconds average over {samples} samples");
     }
 
     private static async Task<PostgresEventStore> OpenAsync(

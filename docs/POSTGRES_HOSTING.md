@@ -107,7 +107,6 @@ services.AddPostgresProjectionStores("default", pooledConnectionString, configur
 {
     o.ListenConnectionString = directConnectionString;
     o.MigrationConnectionString = adminConnectionString;
-    o.RunnerLockMode = PostgresRunnerLockMode.Lease;
 });
 ```
 

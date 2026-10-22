@@ -1,9 +1,8 @@
 # Backend differences
 
 In-memory, SQL Server, and Postgres share one store contract. A few
-behaviors differ. The shared tests record those differences as capability
-flags on `ContractCapabilities`, so a test shows the difference instead of
-hiding it.
+behaviors differ. The shared contract tests record those differences as
+capability flags, so a test shows the difference instead of hiding it.
 
 Two flags change what an append means.
 
