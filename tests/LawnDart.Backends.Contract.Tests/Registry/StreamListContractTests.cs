@@ -436,7 +436,8 @@ public abstract class StreamListContractTests : ContractSuite
 
         var postgres = (PostgresEventStore)opened.Store;
         var schemaInfo = PgIdentifier.Qualify(postgres.SchemaName, "schema_info");
-        await using var pg = new NpgsqlConnection(postgres.ConnectionString);
+        var admin = ((PostgresContractHooks)opened.Hooks).AdminConnectionString;
+        await using var pg = new NpgsqlConnection(admin);
         await pg.OpenAsync();
         await using var clear = new NpgsqlCommand(
             $"DELETE FROM {schemaInfo} WHERE component = 'stream_tags'",

@@ -189,6 +189,9 @@ sealed class PostgresContractHooks : IContractHooks
         _adminConnectionString = adminConnectionString;
     }
 
+    /// <summary>Owner connection. Schema changes such as dropping a table use this.</summary>
+    internal string AdminConnectionString => _adminConnectionString;
+
     public bool CanPauseBeforeCommit => true;
 
     public bool CanDropCommitReply => true;
