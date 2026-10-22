@@ -257,28 +257,6 @@ internal static class PostgresAppendSql
                     )
                 WHERE s.tenant_id = p_tenant_id AND s.stream_id = p_stream_id;
 
-                DELETE FROM {names.StreamTags} AS st
-                WHERE st.tenant_id = p_tenant_id
-                  AND st.stream_id = p_stream_id
-                  AND st.tag <> ALL (
-                      SELECT u.tag
-                      FROM {names.Streams} AS s
-                      CROSS JOIN LATERAL unnest(coalesce(s.tags, ARRAY[]::text[])) AS u(tag)
-                      WHERE s.tenant_id = p_tenant_id
-                        AND s.stream_id = p_stream_id
-                        AND u.tag IS NOT NULL
-                  );
-
-                INSERT INTO {names.StreamTags} (tenant_id, tag, stream_id)
-                SELECT p_tenant_id, u.tag, p_stream_id
-                FROM {names.Streams} AS s
-                CROSS JOIN LATERAL unnest(coalesce(s.tags, ARRAY[]::text[])) AS u(tag)
-                WHERE s.tenant_id = p_tenant_id
-                  AND s.stream_id = p_stream_id
-                  AND u.tag IS NOT NULL
-                  AND length(u.tag) > 0
-                ON CONFLICT DO NOTHING;
-
                 IF p_notify THEN
                     PERFORM pg_notify(p_notify_channel, v_positions[v_n]::text);
                 END IF;

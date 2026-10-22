@@ -1,6 +1,5 @@
 using System.Data;
 using System.Text;
-using System.Text.Json;
 using Microsoft.Data.SqlClient;
 using LawnDart.EventStore;
 using LawnDart.Sql;
@@ -9,10 +8,12 @@ namespace LawnDart.EventSourcing.SqlServer.EventStore;
 
 public partial class SqlServerEventStore
 {
+    private const string StreamTagsFilledProperty = "LawnDart_StreamTagsFilled";
+    private const int StreamTagBatchSize = 2000;
+
     /// <summary>
-    /// Adds the binary stream id column, its indexes, and <c>StreamTags</c> when they are missing.
-    /// Fills <c>StreamTags</c> from existing <c>Streams.Tags</c> values.
-    /// The events format stamp stays at <see cref="CurrentSchemaFormat"/>.
+    /// Adds the binary stream id column, its indexes, <c>StreamTags</c>, and the trigger when they are missing.
+    /// Copies existing tags once, after that lock is released. The events format stamp stays at <see cref="CurrentSchemaFormat"/>.
     /// </summary>
     private async Task EnsureStreamListingSchemaAsync(SqlConnection connection, CancellationToken cancellationToken)
     {
@@ -25,7 +26,7 @@ public partial class SqlServerEventStore
             await ExecuteListingAsync(connection, transaction, EnsureStreamIdBinIndexSql(), cancellationToken).ConfigureAwait(false);
             await ExecuteListingAsync(connection, transaction, EnsureAggregateIndexSql(), cancellationToken).ConfigureAwait(false);
             await ExecuteListingAsync(connection, transaction, EnsureStreamTagsTableSql(), cancellationToken).ConfigureAwait(false);
-            await ExecuteListingAsync(connection, transaction, BackfillStreamTagsSql(), cancellationToken).ConfigureAwait(false);
+            await ExecuteListingAsync(connection, transaction, EnsureStreamTagTriggerSql(), cancellationToken).ConfigureAwait(false);
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
         catch
@@ -44,6 +45,8 @@ public partial class SqlServerEventStore
 
             throw;
         }
+
+        await FillStreamTagsOnceAsync(connection, cancellationToken).ConfigureAwait(false);
     }
 
     private string ApplockSql()
@@ -122,60 +125,155 @@ public partial class SqlServerEventStore
             """;
     }
 
-    private string BackfillStreamTagsSql() => $"""
+    private string EnsureStreamTagTriggerSql()
+    {
+        var trigger = SqlIdentifier.Quote("TR_" + _registryTableName + "_StreamTags");
+        // A different case spelling of the same stream id matches under the database collation,
+        // so those tag rows are removed and written again for the stored spelling.
+        return $"""
+            CREATE OR ALTER TRIGGER {trigger} ON {_qRegistry}
+            AFTER INSERT, UPDATE, DELETE
+            AS
+            BEGIN
+                SET NOCOUNT ON;
+                IF EXISTS (SELECT 1 FROM inserted) AND EXISTS (SELECT 1 FROM deleted)
+                   AND NOT (UPDATE([Tags]) OR UPDATE([StreamId]))
+                    RETURN;
+
+                DELETE t
+                FROM {_qStreamTags} AS t
+                WHERE EXISTS (
+                        SELECT 1 FROM deleted AS d
+                        WHERE t.[StreamId] COLLATE DATABASE_DEFAULT = d.[StreamId])
+                   OR EXISTS (
+                        SELECT 1 FROM inserted AS i
+                        WHERE t.[StreamId] COLLATE DATABASE_DEFAULT = i.[StreamId]);
+
+                INSERT INTO {_qStreamTags} ([Tag], [StreamId])
+                SELECT DISTINCT
+                    CONVERT(NVARCHAR(256), j.[value]) COLLATE {TagCollation},
+                    CONVERT(NVARCHAR(255), i.[StreamId]) COLLATE {TagCollation}
+                FROM inserted AS i
+                CROSS APPLY OPENJSON(CASE WHEN ISJSON(i.[Tags]) = 1 THEN i.[Tags] ELSE N'[]' END) AS j
+                WHERE j.[value] IS NOT NULL AND j.[value] <> N'';
+            END
+            """;
+    }
+
+    private string FillStreamTagsBatchSql() => $"""
+        SET NOCOUNT ON;
+        DECLARE @ids TABLE ([StreamId] NVARCHAR(255) COLLATE {TagCollation} NOT NULL PRIMARY KEY);
+        INSERT INTO @ids ([StreamId])
+        SELECT TOP ({StreamTagBatchSize}) CONVERT(NVARCHAR(255), s.[StreamId]) COLLATE {TagCollation}
+        FROM {_qRegistry} AS s
+        WHERE (@After IS NULL OR s.[StreamIdBin] > @After COLLATE {TagCollation})
+        ORDER BY s.[StreamIdBin];
+
         INSERT INTO {_qStreamTags} ([Tag], [StreamId])
         SELECT DISTINCT
             CONVERT(NVARCHAR(256), j.[value]) COLLATE {TagCollation},
-            CONVERT(NVARCHAR(255), s.[StreamId]) COLLATE {TagCollation}
-        FROM {_qRegistry} AS s
+            i.[StreamId]
+        FROM @ids AS i
+        INNER JOIN {_qRegistry} AS s ON s.[StreamIdBin] = i.[StreamId]
         CROSS APPLY OPENJSON(CASE WHEN ISJSON(s.[Tags]) = 1 THEN s.[Tags] ELSE N'[]' END) AS j
-        WHERE j.[value] IS NOT NULL
-          AND j.[value] <> N''
+        WHERE j.[value] IS NOT NULL AND j.[value] <> N''
           AND NOT EXISTS (
-              SELECT 1
-              FROM {_qStreamTags} AS t
+              SELECT 1 FROM {_qStreamTags} AS t
               WHERE t.[Tag] = CONVERT(NVARCHAR(256), j.[value]) COLLATE {TagCollation}
-                AND t.[StreamId] = CONVERT(NVARCHAR(255), s.[StreamId]) COLLATE {TagCollation}
-          );
+                AND t.[StreamId] = i.[StreamId]);
+
+        SELECT MAX([StreamId]) FROM @ids;
         """;
 
-    private async Task SyncStreamTagsAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
-        string streamId,
-        IReadOnlyList<string> tags,
-        CancellationToken cancellationToken)
+    private async Task FillStreamTagsOnceAsync(SqlConnection connection, CancellationToken cancellationToken)
     {
-        var tagsJson = JsonSerializer.Serialize(tags, _jsonOptions);
-        var sql = $"""
-            DELETE t
-            FROM {_qStreamTags} AS t
-            WHERE t.[StreamId] = @StreamId COLLATE {TagCollation}
-              AND NOT EXISTS (
-                  SELECT 1
-                  FROM OPENJSON(@Tags) AS j
-                  WHERE CONVERT(NVARCHAR(256), j.[value]) COLLATE {TagCollation} = t.[Tag]
-              );
+        if (await StreamTagsFilledAsync(connection, cancellationToken).ConfigureAwait(false))
+            return;
 
-            INSERT INTO {_qStreamTags} ([Tag], [StreamId])
-            SELECT DISTINCT
-                CONVERT(NVARCHAR(256), j.[value]) COLLATE {TagCollation},
-                @StreamId COLLATE {TagCollation}
-            FROM OPENJSON(@Tags) AS j
-            WHERE j.[value] IS NOT NULL
-              AND j.[value] <> N''
-              AND NOT EXISTS (
-                  SELECT 1
-                  FROM {_qStreamTags} AS t
-                  WHERE t.[Tag] = CONVERT(NVARCHAR(256), j.[value]) COLLATE {TagCollation}
-                    AND t.[StreamId] = @StreamId COLLATE {TagCollation}
-              );
+        await ExecuteListingAsync(connection, transaction: null, FillLockSql(acquire: true), cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (await StreamTagsFilledAsync(connection, cancellationToken).ConfigureAwait(false))
+                return;
+
+            string? after = null;
+            while (true)
+            {
+                var command = new SqlCommand(FillStreamTagsBatchSql(), connection) { CommandTimeout = 120 };
+                await using var commandDisposal = command.ConfigureAwait(false);
+                command.Parameters.Add("@After", SqlDbType.NVarChar, 255).Value = (object?)after ?? DBNull.Value;
+                var next = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+                if (next is null or DBNull)
+                    break;
+                after = Convert.ToString(next);
+            }
+
+            await ExecuteListingAsync(connection, transaction: null, MarkStreamTagsFilledSql(), cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            await ExecuteListingAsync(connection, transaction: null, FillLockSql(acquire: false), CancellationToken.None).ConfigureAwait(false);
+        }
+    }
+
+    private async Task<bool> StreamTagsFilledAsync(SqlConnection connection, CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT 1
+            FROM sys.extended_properties
+            WHERE major_id = OBJECT_ID(@Table)
+              AND name = @Name
+              AND minor_id = 0
             """;
-        var command = new SqlCommand(sql, connection, transaction);
+        var command = new SqlCommand(sql, connection);
         await using var commandDisposal = command.ConfigureAwait(false);
-        command.Parameters.Add("@StreamId", SqlDbType.NVarChar, 255).Value = streamId;
-        command.Parameters.Add("@Tags", SqlDbType.NVarChar, -1).Value = tagsJson;
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        command.Parameters.Add("@Table", SqlDbType.NVarChar, 256).Value = _qStreamTags;
+        command.Parameters.Add("@Name", SqlDbType.NVarChar, 128).Value = StreamTagsFilledProperty;
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return result is not null and not DBNull;
+    }
+
+    private string MarkStreamTagsFilledSql() => $"""
+        IF NOT EXISTS (
+            SELECT 1 FROM sys.extended_properties
+            WHERE major_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qStreamTags)}')
+              AND name = N'{StreamTagsFilledProperty}'
+              AND minor_id = 0)
+            EXEC sys.sp_addextendedproperty
+                @name = N'{StreamTagsFilledProperty}',
+                @value = N'1',
+                @level0type = N'SCHEMA', @level0name = N'{SqlIdentifier.Literal(_schemaName)}',
+                @level1type = N'TABLE', @level1name = N'{SqlIdentifier.Literal(_streamTagsTableName)}';
+        """;
+
+    private string FillLockSql(bool acquire)
+    {
+        var resource = FillLockResource();
+        if (acquire)
+        {
+            return $"""
+                DECLARE @result int;
+                EXEC @result = sp_getapplock
+                    @Resource = N'{SqlIdentifier.Literal(resource)}',
+                    @LockMode = N'Exclusive',
+                    @LockOwner = N'Session',
+                    @LockTimeout = -1;
+                IF @result < 0
+                    THROW 50001, N'Could not lock the stream tag copy.', 1;
+                """;
+        }
+
+        return $"""
+            EXEC sp_releaseapplock
+                @Resource = N'{SqlIdentifier.Literal(resource)}',
+                @LockOwner = N'Session';
+            """;
+    }
+
+    private string FillLockResource()
+    {
+        var resource = "LawnDartStreamTagsFill:" + _schemaName + ":" + _registryTableName;
+        return resource.Length <= 255 ? resource : resource[..255];
     }
 
     /// <inheritdoc />
@@ -204,13 +302,18 @@ public partial class SqlServerEventStore
         sql.Append("s.CreatedAt, s.LastEventAt, s.EventCount, s.Tags, s.Status ");
         if (tag is not null)
         {
-            sql.Append("FROM ").Append(_qStreamTags).Append(" AS t ");
+            var tagKey = SqlIdentifier.Quote("PK_" + _streamTagsTableName);
+            sql.Append("FROM ").Append(_qStreamTags).Append(" AS t WITH (INDEX(").Append(tagKey).Append(")) ");
             sql.Append("INNER JOIN ").Append(_qRegistry).Append(" AS s ON s.StreamIdBin = t.StreamId ");
             sql.Append("WHERE t.Tag = @Tag COLLATE ").Append(TagCollation).Append(" AND s.Status = 'Active'");
         }
+        else if (aggregateType is not null)
+        {
+            sql.Append("FROM ").Append(_qRegistry).Append(" AS s WITH (INDEX([IX_AggregateType])) WHERE s.Status = 'Active'");
+        }
         else
         {
-            sql.Append("FROM ").Append(_qRegistry).Append(" AS s WHERE s.Status = 'Active'");
+            sql.Append("FROM ").Append(_qRegistry).Append(" AS s WITH (INDEX([UX_StreamIdBin])) WHERE s.Status = 'Active'");
         }
 
         if (after is not null)
@@ -249,14 +352,12 @@ public partial class SqlServerEventStore
 
     private static async Task ExecuteListingAsync(
         SqlConnection connection,
-        SqlTransaction transaction,
+        SqlTransaction? transaction,
         string sql,
         CancellationToken cancellationToken)
     {
-        var command = new SqlCommand(sql, connection, transaction)
-        {
-            CommandTimeout = 120
-        };
+        var command = transaction is null ? new SqlCommand(sql, connection) : new SqlCommand(sql, connection, transaction);
+        command.CommandTimeout = 120;
         await using var commandDisposal = command.ConfigureAwait(false);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }

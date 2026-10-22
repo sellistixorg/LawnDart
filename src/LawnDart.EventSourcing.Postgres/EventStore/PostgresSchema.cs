@@ -188,17 +188,123 @@ internal static class PostgresSchema
             """;
     }
 
+    internal const string StreamTagsComponent = "stream_tags";
+    internal const int StreamTagBatchSize = 2000;
+
     /// <summary>
-    /// Copies tags from existing stream rows. A second run leaves rows that are already present.
+    /// Keeps <c>stream_tags</c> aligned with <c>streams.tags</c> on insert, tag update, and delete.
+    /// Replacing the append function does not remove this trigger.
     /// </summary>
-    internal static string BackfillStreamTags(PostgresNames names) => $"""
-        INSERT INTO {names.StreamTags} (tenant_id, tag, stream_id)
-        SELECT s.tenant_id, u.tag, s.stream_id
-        FROM {names.Streams} AS s
-        CROSS JOIN LATERAL unnest(coalesce(s.tags, ARRAY[]::text[])) AS u(tag)
-        WHERE u.tag IS NOT NULL AND length(u.tag) > 0
-        ON CONFLICT DO NOTHING
+    internal static string StreamTagTriggerFunction(PostgresNames names) => $"""
+        CREATE OR REPLACE FUNCTION {PgIdentifier.Qualify(names.Schema, "sync_stream_tags")}()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        SET search_path = pg_catalog
+        AS $fn$
+        BEGIN
+            IF TG_OP = 'DELETE' THEN
+                DELETE FROM {names.StreamTags}
+                WHERE tenant_id = OLD.tenant_id AND stream_id = OLD.stream_id;
+                RETURN OLD;
+            END IF;
+
+            IF TG_OP = 'UPDATE'
+               AND (OLD.tenant_id IS DISTINCT FROM NEW.tenant_id OR OLD.stream_id IS DISTINCT FROM NEW.stream_id) THEN
+                DELETE FROM {names.StreamTags}
+                WHERE tenant_id = OLD.tenant_id AND stream_id = OLD.stream_id;
+            END IF;
+
+            DELETE FROM {names.StreamTags} AS st
+            WHERE st.tenant_id = NEW.tenant_id
+              AND st.stream_id = NEW.stream_id
+              AND st.tag <> ALL (
+                  SELECT u.tag
+                  FROM unnest(coalesce(NEW.tags, ARRAY[]::text[])) AS u(tag)
+                  WHERE u.tag IS NOT NULL
+              );
+
+            INSERT INTO {names.StreamTags} (tenant_id, tag, stream_id)
+            SELECT NEW.tenant_id, u.tag, NEW.stream_id
+            FROM unnest(coalesce(NEW.tags, ARRAY[]::text[])) AS u(tag)
+            WHERE u.tag IS NOT NULL AND length(u.tag) > 0
+            ON CONFLICT DO NOTHING;
+
+            RETURN NEW;
+        END;
+        $fn$;
         """;
+
+    internal static string EnsureStreamTagTrigger(PostgresNames names)
+    {
+        var function = PgIdentifier.Qualify(names.Schema, "sync_stream_tags");
+        var relation = names.Streams.Replace("'", "''", StringComparison.Ordinal);
+        var create = $"""
+            CREATE TRIGGER streams_sync_tags
+            AFTER INSERT OR DELETE OR UPDATE OF tags
+            ON {names.Streams}
+            FOR EACH ROW
+            EXECUTE FUNCTION {function}()
+            """.Replace("'", "''", StringComparison.Ordinal);
+        return $"""
+            DO $trg$
+            BEGIN
+                IF to_regclass('{relation}') IS NOT NULL
+                   AND NOT EXISTS (
+                        SELECT 1
+                        FROM pg_trigger
+                        WHERE NOT tgisinternal
+                          AND tgname = 'streams_sync_tags'
+                          AND tgrelid = to_regclass('{relation}')) THEN
+                    EXECUTE '{create}';
+                END IF;
+            END
+            $trg$;
+            """;
+    }
+
+    /// <summary>
+    /// Copies tags for the next batch of streams after <c>@tenant</c>, <c>@stream</c>.
+    /// Returns the last stream in that batch. No row means the copy is finished.
+    /// </summary>
+    internal static string BackfillStreamTagsBatch(PostgresNames names) => $"""
+        WITH batch AS (
+            SELECT s.tenant_id, s.stream_id, s.tags
+            FROM {names.Streams} AS s
+            WHERE @tenant IS NULL
+               OR s.tenant_id > @tenant
+               OR (s.tenant_id = @tenant AND s.stream_id > @stream)
+            ORDER BY s.tenant_id, s.stream_id
+            LIMIT {StreamTagBatchSize.ToString(CultureInfo.InvariantCulture)}
+        ),
+        copied AS (
+            INSERT INTO {names.StreamTags} (tenant_id, tag, stream_id)
+            SELECT b.tenant_id, u.tag, b.stream_id
+            FROM batch AS b
+            CROSS JOIN LATERAL unnest(coalesce(b.tags, ARRAY[]::text[])) AS u(tag)
+            WHERE u.tag IS NOT NULL AND length(u.tag) > 0
+            ON CONFLICT DO NOTHING
+            RETURNING 1
+        )
+        SELECT tenant_id, stream_id
+        FROM batch
+        WHERE (SELECT count(*) FROM copied) >= 0
+        ORDER BY tenant_id DESC, stream_id DESC
+        LIMIT 1
+        """;
+
+    internal static string StreamTagsMarkerExists(PostgresNames names) =>
+        $"SELECT 1 FROM {names.SchemaInfo} WHERE component = '{StreamTagsComponent}'";
+
+    internal static string InsertStreamTagsMarker(PostgresNames names, PostgresEventStoreOptions options)
+    {
+        var count = options.PartitionCount.ToString(CultureInfo.InvariantCulture);
+        var partitioning = options.Partitioning ? "true" : "false";
+        return $"""
+            INSERT INTO {names.SchemaInfo} (component, format, partition_count, partitioning, updated_at)
+            VALUES ('{StreamTagsComponent}', 1, {count}, {partitioning}, clock_timestamp())
+            ON CONFLICT (component) DO NOTHING
+            """;
+    }
 
     private static string Stamp(PostgresNames names, PostgresEventStoreOptions options)
     {

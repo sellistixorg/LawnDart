@@ -1834,7 +1834,6 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
             command.Parameters.AddWithValue("@Status", "Active");
 
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-            await SyncStreamTagsAsync(connection, transaction, streamId, tags, cancellationToken).ConfigureAwait(false);
         }
         else
         {
@@ -1861,7 +1860,6 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
             command.Parameters.AddWithValue("@Tags", mergedTagsJson);
 
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-            await SyncStreamTagsAsync(connection, transaction, streamId, mergedTags, cancellationToken).ConfigureAwait(false);
         }
     }
 

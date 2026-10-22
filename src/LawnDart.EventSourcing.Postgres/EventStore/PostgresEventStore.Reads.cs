@@ -588,8 +588,20 @@ public sealed partial class PostgresEventStore
 
         if (tag is not null)
         {
-            sql.Append($" FROM {_names.StreamTags} AS t INNER JOIN {_names.Streams} AS s ON s.tenant_id = t.tenant_id AND s.stream_id = t.stream_id");
-            sql.Append(" WHERE t.tag = @tag AND s.status = 'Active'");
+            sql.Append(" FROM ").Append(_names.StreamTags).Append(" AS t CROSS JOIN LATERAL (SELECT s.stream_id, s.aggregate_type, s.aggregate_id, s.current_version, s.last_global_position, s.created_at, s.last_event_at, s.event_count, s.tags::text[], s.status FROM ").Append(_names.Streams).Append(" AS s WHERE s.tenant_id = t.tenant_id AND s.stream_id = t.stream_id AND s.status = 'Active'");
+            if (prefix is not null)
+            {
+                sql.Append(" AND s.stream_id LIKE @prefix ESCAPE '\\'");
+                parameters.Add(new NpgsqlParameter("prefix", LikePrefix(prefix)));
+            }
+
+            if (aggregateType is not null)
+            {
+                sql.Append(" AND s.aggregate_type = @type");
+                parameters.Add(new NpgsqlParameter("type", aggregateType));
+            }
+
+            sql.Append(" LIMIT 1) AS s WHERE t.tag = @tag");
             parameters.Add(new NpgsqlParameter("tag", tag));
             if (tenant is not null)
             {
@@ -602,6 +614,8 @@ public sealed partial class PostgresEventStore
                 sql.Append(" AND t.stream_id > @after");
                 parameters.Add(new NpgsqlParameter("after", after));
             }
+
+            sql.Append(" ORDER BY t.stream_id LIMIT @take");
         }
         else
         {
@@ -617,22 +631,21 @@ public sealed partial class PostgresEventStore
                 sql.Append(" AND s.stream_id > @after");
                 parameters.Add(new NpgsqlParameter("after", after));
             }
-        }
 
-        if (prefix is not null)
-        {
-            sql.Append(" AND s.stream_id LIKE @prefix ESCAPE '\\'");
-            parameters.Add(new NpgsqlParameter("prefix", LikePrefix(prefix)));
-        }
+            if (prefix is not null)
+            {
+                sql.Append(" AND s.stream_id LIKE @prefix ESCAPE '\\'");
+                parameters.Add(new NpgsqlParameter("prefix", LikePrefix(prefix)));
+            }
 
-        if (aggregateType is not null)
-        {
-            sql.Append(" AND s.aggregate_type = @type");
-            parameters.Add(new NpgsqlParameter("type", aggregateType));
-        }
+            if (aggregateType is not null)
+            {
+                sql.Append(" AND s.aggregate_type = @type");
+                parameters.Add(new NpgsqlParameter("type", aggregateType));
+            }
 
-        sql.Append(tag is not null ? " ORDER BY t.stream_id" : " ORDER BY s.stream_id");
-        sql.Append(" LIMIT @take");
+            sql.Append(" ORDER BY s.stream_id LIMIT @take");
+        }
 
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql.ToString(), connection);

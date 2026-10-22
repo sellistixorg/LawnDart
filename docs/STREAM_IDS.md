@@ -81,7 +81,11 @@ A stream created while you page is included when its id sorts after the last id 
 
 `EnumerateStreamIdsAsync`, `GetStreamCountAsync`, and `ListStreamsAsync` match a stream id prefix. `_`, `%`, and `[` in the prefix are literal characters. `acme_west:` does not match `acmeXwest:`.
 
-The in-memory store compares with ordinal ignore-case. SQL Server uses the `StreamId` column collation, so `LIKE 'prefix%'` can seek the primary key. A new SQL Server database is case-insensitive. A case-sensitive database matches case. Postgres matches the prefix exactly, including case. When the prefix has three or more colon-separated parts, Postgres also limits the match to the tenant in the first part.
+The in-memory store compares a prefix with ordinal ignore-case, and `ListStreamsAsync` orders the page character by character.
+
+SQL Server matches a prefix with the `StreamId` column collation. A new database is case-insensitive. A case-sensitive database matches case. `ListStreamsAsync` still orders by `StreamIdBin` (`Latin1_General_100_BIN2`). A page reads that index from the last stream id, and applies the prefix with the column collation. A tag page reads `StreamTags` from the last stream id. Two stream ids that differ only by case are one stream on a case-insensitive database.
+
+Postgres matches a prefix exactly, including case. When the prefix has three or more colon-separated parts, Postgres also limits the match to the tenant in the first part. A tag page reads `stream_tags` from the last stream id, then loads that stream row.
 
 ## Length
 
