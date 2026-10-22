@@ -10,12 +10,19 @@ changes to the public API.
 
 ## [Unreleased]
 
+## [0.7.0-alpha.2] - 2026-10-22
+
+This release adds the Postgres outbox and the `LawnDart.Messaging.Postgres` inbox. The build kit targets LawnDart 0.7.
+
+Deploy with `EnableOutbox` false until no 0.7.0-alpha.1 copy can run. Then set `EnableOutbox` to true. On a brand-new database, initialize the event store with this version first. The 0.7.0-alpha.1 event store cannot initialize a schema that this inbox created first.
+
+`InitializeSchemaAsync` on a database created by 0.7.0-alpha.1 adds the `outbox` table when it is missing. The events format stays at 1. A process still running 0.7.0-alpha.1 calls the original append function and can keep appending. That process does not write outbox rows, and the store does not report that. An inbox or outbox table created first in a schema does not block `InitializeSchemaAsync` for the event store.
+
 ### Added
 
-- Postgres `EnableOutbox` writes one outbox row per appended event in that same transaction. `GetUnprocessedAsync` claims rows in position order and sets `claimed_until` to the current time plus `OutboxClaimLease` (default 30 seconds). A claim that has expired can be claimed again. `TimeSpan.Zero` lets the next poll claim the row. Marking a row processed, or recording a failure, clears the claim. A dead-lettered row stays out of the claim until reset. Reset clears the dead-letter time and sets attempts to 0.
-- `InitializeSchemaAsync` on a database created by 0.7.0-alpha.1 adds the `outbox` table when it is missing. The events format stamp stays at 1. A process still running 0.7.0-alpha.1 calls the original append function and can keep appending. That process does not write outbox rows, and the store does not report that. Deploy this version with `EnableOutbox` false until no 0.7.0-alpha.1 copy can run. On a host that keeps old revisions, such as Azure Container Apps, deactivate the old revisions first. Then set `EnableOutbox` to true. On a brand-new database during a mixed-version deploy, initialize the event store with the new version first, because the 0.7.0-alpha.1 event store cannot initialize a schema that the new inbox created first.
-- With the Postgres outbox on, the same event id on two tenants throws `EventAlreadyAppendedException`. The outbox row id is the event id, so it is unique in the schema. With the outbox off, event ids stay unique per tenant. An inbox or outbox table created first in a schema does not block `InitializeSchemaAsync` for the event store.
-- `LawnDart.Messaging.Postgres` stores inbox deduplication. `AddPostgresInboxStore` and `InitializePostgresInboxStoreAsync` follow the SQL Server registration. `TryClaimAsync` is one statement. The default schema is `lawndart`. The `public` schema is rejected. The inbox key is at most 256 characters.
+- Postgres `EnableOutbox` writes one outbox row per appended event in the same statement as the append. `GetUnprocessedAsync` claims rows in position order and sets `claimed_until` to the current time plus `OutboxClaimLease` (default 30 seconds). A claim that has expired can be claimed again. `TimeSpan.Zero` lets the next poll claim the row. Marking a row processed, or recording a failure, clears the claim. A dead-lettered row stays out of the claim until reset. Reset clears the dead-letter time and sets attempts to 0.
+- With the Postgres outbox on, the same event id on two tenants throws `EventAlreadyAppendedException`. The outbox row id is the event id, so it is unique in the schema. With the outbox off, event ids stay unique per tenant.
+- `LawnDart.Messaging.Postgres` stores inbox deduplication. `AddPostgresInboxStore` and `InitializePostgresInboxStoreAsync` follow the same registration as `AddSqlInboxStore`. `TryClaimAsync` is one statement. The default schema is `lawndart`. The `public` schema is rejected. The inbox key is at most 256 characters.
 
 ## [0.7.0-alpha.1] - 2026-10-22
 
