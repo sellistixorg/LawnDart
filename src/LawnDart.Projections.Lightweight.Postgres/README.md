@@ -35,3 +35,5 @@ Point `ListenConnectionString` at Postgres directly, or at a session pooler, whe
 transaction pooler sits in front of `ConnectionString`.
 
 See [the package page](https://github.com/sellistixorg/LawnDart/blob/main/docs/packages/projections-lightweight-postgres.md).
+Which connection string goes where is in
+[Postgres hosting](https://github.com/sellistixorg/LawnDart/blob/main/docs/POSTGRES_HOSTING.md).

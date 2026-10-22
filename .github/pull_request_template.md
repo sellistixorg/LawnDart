@@ -5,8 +5,8 @@
 ## Validation
 
 - [ ] `dotnet build --configuration Release`
-- [ ] `dotnet test --filter "Category!=Integration" --configuration Release` (no Docker)
-- [ ] CI also runs `Category=Integration` (SQL Server, RabbitMQ, Azure Service Bus, and Amazon SQS / Testcontainers)
+- [ ] `dotnet test --filter "Category!=Integration&Category!=Benchmark" --configuration Release` (no Docker)
+- [ ] CI also runs `Category=Integration` (SQL Server, Postgres, RabbitMQ, Azure Service Bus, and Amazon SQS / Testcontainers). `Category=Benchmark` stays out of that run.
 - [ ] If docs changed: `dotnet docfx metadata docfx.json` (when API DLLs exist)
 - [ ] If docs changed: `dotnet docfx build docfx.json`
 - [ ] Public and protected members have XML `<summary>` docs

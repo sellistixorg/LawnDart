@@ -17,9 +17,10 @@ namespace LawnDart.EventStore;
 /// </para>
 /// <para>
 /// This is the portable push contract, kept separate from <see cref="IEventStore"/> so
-/// that stores without continuous-read support can omit it. Both shipped stores —
-/// in-memory and SQL Server — implement it. Test for the interface before relying on
-/// push delivery with a third-party store, and fall back to polling when absent.
+/// that stores without continuous-read support can omit it. The in-memory store,
+/// the SQL Server store, and the Postgres store implement it. Test for the interface
+/// before relying on push delivery with a third-party store, and fall back to polling
+/// when it is absent.
 /// </para>
 /// </remarks>
 public interface IEventStoreSubscriptions

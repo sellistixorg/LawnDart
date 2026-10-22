@@ -27,9 +27,9 @@ are always welcome without prior discussion.
 ### Prerequisites
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) or later
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) — required
-  for SQL Server, RabbitMQ, Azure Service Bus, and Amazon SQS integration
-  tests (Testcontainers)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) is required
+  for SQL Server, Postgres, RabbitMQ, Azure Service Bus, and Amazon SQS
+  integration tests (Testcontainers)
 - PowerShell 7+ or bash
 
 ### First build
@@ -45,11 +45,11 @@ dotnet build
 ### Running tests
 
 ```bash
-# Unit tests only (no Docker)
-dotnet test --filter "Category!=Integration"
+# Unit tests only (no Docker). Skips integration tests and benchmarks.
+dotnet test --filter "Category!=Integration&Category!=Benchmark"
 
-# All tests (unit + SQL Server integration — requires Docker)
-dotnet test
+# All tests except benchmarks (unit, SQL Server, and Postgres integration). Requires Docker.
+dotnet test --filter "Category!=Benchmark"
 ```
 
 ### Running the Academy demo
@@ -115,7 +115,7 @@ generated diffs that the author cannot walk through will be closed.
 | Checklist | Requirement |
 |---|---|
 | Build | `dotnet build` passes |
-| Tests | Unit tests cover the new code. SQL integration tests use `Category=Integration`. The InMemory → SQL swap and event-log contract use `Category=Contract` (SQL legs also `Integration`) |
+| Tests | Unit tests cover the new code. SQL Server and Postgres integration tests use `Category=Integration`. The in-memory, SQL Server, and Postgres swap, and the event-log contract, use `Category=Contract` (database legs also `Integration`). Benchmarks use `Category=Benchmark` and stay out of the unit run. |
 | XML docs | Public and protected members have `<summary>` documentation |
 | Demo | User-facing features are reachable from Academy when relevant |
 | Docs | A `docs/` guide is created or updated |

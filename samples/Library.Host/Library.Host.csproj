@@ -3,6 +3,7 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <IsPackable>false</IsPackable>
+    <OutputType>Exe</OutputType>
     <RootNamespace>Library.Host</RootNamespace>
   </PropertyGroup>
 
@@ -14,13 +15,16 @@
     <ProjectReference Include="..\Library.Domain\Library.Domain.csproj" />
     <ProjectReference Include="..\..\src\LawnDart.EventSourcing\LawnDart.EventSourcing.csproj" />
     <ProjectReference Include="..\..\src\LawnDart.EventSourcing.SqlServer\LawnDart.EventSourcing.SqlServer.csproj" />
+    <ProjectReference Include="..\..\src\LawnDart.EventSourcing.Postgres\LawnDart.EventSourcing.Postgres.csproj" />
     <ProjectReference Include="..\..\src\LawnDart.AspNetCore\LawnDart.AspNetCore.csproj" />
     <ProjectReference Include="..\..\src\LawnDart.Authorization.AspNetCore\LawnDart.Authorization.AspNetCore.csproj" />
     <ProjectReference Include="..\..\src\LawnDart.Projections.Lightweight\LawnDart.Projections.Lightweight.csproj" />
     <ProjectReference Include="..\..\src\LawnDart.Projections.Lightweight.SqlServer\LawnDart.Projections.Lightweight.SqlServer.csproj" />
+    <ProjectReference Include="..\..\src\LawnDart.Projections.Lightweight.Postgres\LawnDart.Projections.Lightweight.Postgres.csproj" />
     <ProjectReference Include="..\..\src\LawnDart.Messaging\LawnDart.Messaging.csproj" />
     <ProjectReference Include="..\..\src\LawnDart.Messaging.InMemory\LawnDart.Messaging.InMemory.csproj" />
     <ProjectReference Include="..\..\src\LawnDart.Messaging.SqlServer\LawnDart.Messaging.SqlServer.csproj" />
+    <ProjectReference Include="..\..\src\LawnDart.Messaging.Postgres\LawnDart.Messaging.Postgres.csproj" />
   </ItemGroup>
 
 </Project>

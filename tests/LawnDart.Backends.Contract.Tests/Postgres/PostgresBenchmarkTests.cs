@@ -67,17 +67,7 @@ public sealed class PostgresBenchmarkTests
             var singleSql = await MeasureAsync(sqlStore, 1, window);
             var batchSql = await MeasureAsync(sqlStore, 10, window);
 
-            var text = $"""
-                durable settings: {PostgresDurabilityCommand}
-                window: 30 seconds after warmup
-                single-event Postgres {singlePg:F0} appends/s
-                single-event SQL Server {singleSql:F0} appends/s
-                10-event Postgres {batchPg:F0} appends/s
-                10-event SQL Server {batchSql:F0} appends/s
-                """;
-            Directory.CreateDirectory("/tmp/lawndart-bench");
-            await File.WriteAllTextAsync("/tmp/lawndart-bench/result.txt", text);
-            Assert.True(singlePg > 0 && batchPg > 0 && singleSql > 0 && batchSql > 0, text);
+            Assert.True(singlePg > 0 && batchPg > 0 && singleSql > 0 && batchSql > 0);
         }
         finally
         {

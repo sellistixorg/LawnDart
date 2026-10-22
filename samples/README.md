@@ -4,8 +4,9 @@
 aggregate whose decision state (`BookState`) is not the catalog read model
 (`BookCatalogView`), command handlers, `LibraryProjector`, and
 `LoanNoticeReactor`.
-`Library.Host` is the compiled host grammar (InMemory, SQL, HTTP, Lightweight,
-in-memory messaging).
+`Library.Host` is the compiled host grammar (InMemory, SQL Server, Postgres,
+HTTP, Lightweight, in-memory messaging). Postgres schema setup is a separate
+`setup` command. See [Library host](Library.Host/README.md).
 `Library.Domain.Tests` holds the given / when / then specs, including `AndView`.
 
 `Library.Dcb.Domain` is the same library intents as a DCB entity (`BookLoan`)

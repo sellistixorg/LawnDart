@@ -2,15 +2,20 @@ using LawnDart;
 using LawnDart.AspNetCore;
 using LawnDart.Authorization.AspNetCore;
 using LawnDart.EventSourcing;
+using LawnDart.EventSourcing.Postgres;
+using LawnDart.EventSourcing.Postgres.EventStore;
+using Npgsql;
 using LawnDart.EventSourcing.SqlServer;
 using LawnDart.EventSourcing.SqlServer.EventStore;
 using LawnDart.EventStore;
 using LawnDart.Messaging;
 using LawnDart.Messaging.InMemory;
 using LawnDart.Messaging.Outbox;
+using LawnDart.Messaging.Postgres;
 using LawnDart.Messaging.SqlServer;
 using LawnDart.Outbox;
 using LawnDart.Projections.Lightweight;
+using LawnDart.Projections.Lightweight.Postgres;
 using LawnDart.Projections.Lightweight.SqlServer;
 using Library.Domain;
 using Microsoft.AspNetCore.Builder;
@@ -99,6 +104,93 @@ public static class LibraryHost
             .ConfigureAwait(false);
         await services.InitializeSqlProjectionStoresAsync("default", cancellationToken).ConfigureAwait(false);
         await services.InitializeSqlInboxStoreAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Registers the Library host on Postgres: event store, projection stores,
+    /// in-memory transport, Postgres inbox, loan-notice reactor, and transactional outbox.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="connectionString">Postgres connection string for reads and appends.</param>
+    /// <returns>The same service collection.</returns>
+    public static IServiceCollection AddPostgresLibrary(IServiceCollection services, string connectionString)
+    {
+        services.AddLawnDart(o => o.RequireTenantId = false);
+        services.AddInMemoryMessaging();
+        services.AddPostgresInboxStore(connectionString);
+        services.AddMessageTransportOutboxPublisher();
+        services.AddReactor<LoanNoticeReactor, BookBorrowed>();
+        services.AddPostgresProjectionStores("default", connectionString);
+        var ctx = services.AddBoundedContext("default");
+        ctx.UsePostgres(o =>
+        {
+            o.ConnectionString = connectionString;
+            o.RequireTenantId = false;
+            o.EnableOutbox = true;
+        });
+        ctx.WithCommandHandlers<BorrowBookHandler>();
+        ctx.WithEventTypes<BookAdded>();
+        ctx.WithProjections(
+            [typeof(LibraryCatalogProjection).Assembly],
+            opts =>
+            {
+                opts.PollInterval = TimeSpan.FromMilliseconds(200);
+                opts.CheckpointInterval = 100;
+            });
+        return services;
+    }
+
+    /// <summary>
+    /// Creates event-store, outbox, projection, and inbox tables for <see cref="AddPostgresLibrary"/>.
+    /// Call this from a deploy or admin step, after the provider is built and before the first command.
+    /// The running app does not call it.
+    /// </summary>
+    /// <param name="services">The built provider from <see cref="AddPostgresLibrary"/>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public static async Task InitializePostgresLibraryAsync(
+        IServiceProvider services,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        var store = services.GetRequiredKeyedService<IEventStore>("default");
+        if (store is not PostgresEventStore postgres)
+        {
+            throw new InvalidOperationException(
+                "AddPostgresLibrary did not resolve PostgresEventStore for context 'default'.");
+        }
+
+        await postgres.InitializeSchemaAsync(cancellationToken).ConfigureAwait(false);
+        await EnsureLibraryEventNamesAsync(services, cancellationToken).ConfigureAwait(false);
+        await services.GetRequiredKeyedService<IOutboxWriter>("default")
+            .InitializeSchemaAsync(cancellationToken)
+            .ConfigureAwait(false);
+        await services.InitializePostgresProjectionStoresAsync("default", cancellationToken).ConfigureAwait(false);
+        await services.InitializePostgresInboxStoreAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Records the library event names in the type table.
+    /// A projection read that names an event which has never been stored stays unresolved,
+    /// so setup records each name the catalog projection handles.
+    /// </summary>
+    private static async Task EnsureLibraryEventNamesAsync(
+        IServiceProvider services,
+        CancellationToken cancellationToken)
+    {
+        var options = services.GetRequiredKeyedService<PostgresEventStoreOptions>("default");
+        var schema = options.SchemaName.Replace("\"", "\"\"", StringComparison.Ordinal);
+        var table = options.EventTypesTableName.Replace("\"", "\"\"", StringComparison.Ordinal);
+        await using var connection = new NpgsqlConnection(options.ConnectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(
+            $"""
+            INSERT INTO "{schema}"."{table}" (token)
+            VALUES ('book-added'), ('book-borrowed'), ('book-returned')
+            ON CONFLICT (token) DO NOTHING
+            """,
+            connection);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public static void AddTwoContexts(IServiceCollection services)
