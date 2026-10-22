@@ -3,7 +3,7 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <PackageId>LawnDart.Projections.Lightweight.Postgres</PackageId>
-    <Description>Postgres view store, checkpoint store, and single-runner lock for LawnDart.Projections.Lightweight.</Description>
+    <Description>Postgres view and checkpoint stores, and a single-runner lock, for LawnDart.Projections.Lightweight.</Description>
     <IsPackable>true</IsPackable>
   </PropertyGroup>
 
