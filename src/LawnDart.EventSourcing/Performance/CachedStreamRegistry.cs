@@ -143,8 +143,16 @@ public class CachedStreamRegistry : IStreamRegistry
 
     /// <inheritdoc/>
     public Task<long> GetStreamCountAsync(string? prefix = null, CancellationToken cancellationToken = default)
-        // Not cached — admin/diagnostic query that should always return a current value
+        // Not cached. An admin query should return a current value.
         => _inner.GetStreamCountAsync(prefix, cancellationToken);
+
+    /// <inheritdoc/>
+    public Task<StreamPage> ListStreamsAsync(
+        StreamListFilter? filter = null,
+        string? pageToken = null,
+        int pageSize = StreamPage.DefaultPageSize,
+        CancellationToken cancellationToken = default)
+        => _inner.ListStreamsAsync(filter, pageToken, pageSize, cancellationToken);
     
     /// <summary>
     /// Clears all cached stream registry entries.

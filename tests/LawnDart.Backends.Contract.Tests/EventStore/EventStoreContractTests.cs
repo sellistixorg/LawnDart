@@ -481,5 +481,49 @@ public abstract class EventStoreContractTests : ContractSuite
         Assert.Equal(catalogEvents[0].SequencePosition + 1, catalogEvents[1].SequencePosition);
     }
 
+    [Fact]
+    public async Task ExpectedVersion_NegativeOne_CreatesAStream()
+    {
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var streamId = "acme:Order:" + Guid.NewGuid().ToString("N");
+        var result = await store.AppendAsync(
+            streamId,
+            [ContractEvent.Tick()],
+            expectedVersion: -1,
+            metadata: new EventMetadata { TenantId = "acme" });
+        Assert.Equal(1, result.LastStreamVersion);
+        var metadata = await store.GetStreamAsync(streamId);
+        Assert.NotNull(metadata);
+        Assert.Equal(1, metadata!.CurrentVersion);
+    }
+
+    [Fact]
+    public async Task ExpectedVersion_NegativeOne_OnExistingStream_Throws()
+    {
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var streamId = "acme:Order:" + Guid.NewGuid().ToString("N");
+        var metadata = new EventMetadata { TenantId = "acme" };
+        await store.AppendAsync(streamId, [ContractEvent.Tick()], expectedVersion: -1, metadata: metadata);
+        var ex = await Assert.ThrowsAsync<ConcurrencyException>(() =>
+            store.AppendAsync(streamId, [ContractEvent.Tick()], expectedVersion: -1, metadata: metadata));
+        Assert.Equal(-1, ex.ExpectedPosition);
+        Assert.Equal(1, ex.ActualPosition);
+    }
+
+    [Fact]
+    public async Task ExpectedVersion_Zero_OnNewStream_Throws()
+    {
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var streamId = "acme:Order:" + Guid.NewGuid().ToString("N");
+        var ex = await Assert.ThrowsAsync<ConcurrencyException>(() =>
+            store.AppendAsync(
+                streamId,
+                [ContractEvent.Tick()],
+                expectedVersion: 0,
+                metadata: new EventMetadata { TenantId = "acme" }));
+        Assert.Equal(0, ex.ExpectedPosition);
+        Assert.Equal(-1, ex.ActualPosition);
+    }
+
     private static string Stream() => "test-tenant:TestAggregate:" + Guid.NewGuid().ToString("N");
 }

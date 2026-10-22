@@ -94,6 +94,29 @@ public sealed class PostgresStreamRegistryContractTests : StreamRegistryContract
 
 [Collection(InMemoryContractCollection.Name)]
 [Trait("Category", "Contract")]
+public sealed class InMemoryStreamListContractTests : StreamListContractTests
+{
+    public InMemoryStreamListContractTests(InMemoryContractFixture fixture) : base(fixture.Backend) { }
+}
+
+[Collection("SqlServerContract")]
+[Trait("Category", "Integration")]
+[Trait("Category", "Contract")]
+public sealed class SqlServerStreamListContractTests : StreamListContractTests
+{
+    public SqlServerStreamListContractTests(SqlServerContractFixture fixture) : base(fixture.Backend) { }
+}
+
+[Collection("PostgresContract")]
+[Trait("Category", "Integration")]
+[Trait("Category", "Contract")]
+public sealed class PostgresStreamListContractTests : StreamListContractTests
+{
+    public PostgresStreamListContractTests(PostgresContractFixture fixture) : base(fixture.Backend) { }
+}
+
+[Collection(InMemoryContractCollection.Name)]
+[Trait("Category", "Contract")]
 public sealed class InMemorySubscriptionContractTests : SubscriptionContractTests
 {
     public InMemorySubscriptionContractTests(InMemoryContractFixture fixture) : base(fixture.Backend) { }

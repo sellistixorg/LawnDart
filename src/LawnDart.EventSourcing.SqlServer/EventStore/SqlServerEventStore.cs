@@ -22,7 +22,7 @@ namespace LawnDart.EventSourcing.SqlServer.EventStore;
 /// SQL Server <see cref="IEventLog"/>. Typed <see cref="IEventStore"/> methods
 /// forward to <see cref="EventStoreAdapter"/>.
 /// </summary>
-public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEventLog, IEventLogSubscriptions, ISignalsNewEvents
+public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEventLog, IEventLogSubscriptions, ISignalsNewEvents
 {
     internal const string StreamEventColumns =
         "StreamId, Version, SequencePosition, EventTypeId, EventData, SchemaVersion, CodecId, Tags, Metadata, Timestamp";
@@ -87,6 +87,8 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
     private readonly string _schemaName;
     private readonly string _qTable;
     private readonly string _qRegistry;
+    private readonly string _qStreamTags;
+    private readonly string _streamTagsTableName;
     private readonly string _qTags;
     private readonly string _qTypes;
     private readonly string _qSequence;
@@ -106,6 +108,8 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
     internal string QualifiedEventsTable => _qTable;
 
     internal string QualifiedRegistryTable => _qRegistry;
+
+    internal string QualifiedStreamTagsTable => _qStreamTags;
 
     internal string QualifiedTagsTable => _qTags;
 
@@ -151,6 +155,10 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
         ContextName  = string.IsNullOrWhiteSpace(_options.ContextName) ? "default" : _options.ContextName;
         _qTable      = SqlIdentifier.Qualify(_schemaName, _tableName);
         _qRegistry  = SqlIdentifier.Qualify(_schemaName, _registryTableName);
+        _streamTagsTableName = string.Equals(_registryTableName, "Streams", StringComparison.OrdinalIgnoreCase)
+            ? "StreamTags"
+            : "StreamTags_" + _registryTableName;
+        _qStreamTags = SqlIdentifier.Qualify(_schemaName, _streamTagsTableName);
         _qTags      = SqlIdentifier.Qualify(_schemaName, _tagsTableName);
         _qTypes     = SqlIdentifier.Qualify(_schemaName, _typesTableName);
         _qSequence  = SqlIdentifier.Qualify(_schemaName, "EventSequencePosition");
@@ -1004,11 +1012,14 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                         [LastEventAt] DATETIME2 NOT NULL,
                         [EventCount] BIGINT NOT NULL,
                         [Tags] NVARCHAR(MAX) NULL,
-                        [Status] NVARCHAR(20) NOT NULL DEFAULT 'Active'
+                        [Status] NVARCHAR(20) NOT NULL DEFAULT 'Active',
+                        [StreamIdBin] AS ([StreamId] COLLATE {TagCollation}) PERSISTED
                     );
                     
                     IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_AggregateType' AND object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qRegistry)}'))
-                        CREATE INDEX [IX_AggregateType] ON {_qRegistry} ([AggregateType]);
+                        CREATE INDEX [IX_AggregateType] ON {_qRegistry} ([AggregateType], [StreamIdBin]);
+                    IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'UX_StreamIdBin' AND object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qRegistry)}'))
+                        CREATE UNIQUE INDEX [UX_StreamIdBin] ON {_qRegistry} ([StreamIdBin]);
                     IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_TenantId' AND object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qRegistry)}'))
                         CREATE INDEX [IX_TenantId] ON {_qRegistry} ([TenantId]);
                     IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_LastSequencePosition' AND object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qRegistry)}'))
@@ -1043,6 +1054,8 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
                 // This can happen in race conditions with multiple nodes initializing simultaneously
                 _logger?.LogDebug("Stream registry schema already exists (idempotent check): {Message}", ex.Message);
             }
+
+            await EnsureStreamListingSchemaAsync(connection, cancellationToken).ConfigureAwait(false);
         }
 
         var dcbSnapTable = SqlServerSnapshotSchema.ResolveTableName(
@@ -1821,6 +1834,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
             command.Parameters.AddWithValue("@Status", "Active");
 
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            await SyncStreamTagsAsync(connection, transaction, streamId, tags, cancellationToken).ConfigureAwait(false);
         }
         else
         {
@@ -1847,6 +1861,7 @@ public class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEvent
             command.Parameters.AddWithValue("@Tags", mergedTagsJson);
 
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            await SyncStreamTagsAsync(connection, transaction, streamId, mergedTags, cancellationToken).ConfigureAwait(false);
         }
     }
 

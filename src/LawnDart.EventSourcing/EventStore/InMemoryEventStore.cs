@@ -478,8 +478,8 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
                 .Where(s => s.Status == StreamStatus.Active)
                 .Select(s => s.StreamId)
                 .Where(id => prefix == null || id.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                // Ordinal ignore-case. SQL Server prefix queries follow the StreamId column collation.
-                .OrderBy(id => id)
+                // Prefix match is ordinal ignore-case. SQL Server prefix queries follow the StreamId column collation.
+                .OrderBy(id => id, StringComparer.Ordinal)
                 .ToList();
             return Task.FromResult<IReadOnlyList<string>>(streamIds.AsReadOnly());
         }
@@ -507,6 +507,58 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
 
             return Task.FromResult<IReadOnlyList<StreamMetadata>>(streams.AsReadOnly());
         }
+    }
+
+    /// <inheritdoc />
+    public Task<StreamPage> ListStreamsAsync(
+        StreamListFilter? filter = null,
+        string? pageToken = null,
+        int pageSize = StreamPage.DefaultPageSize,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_enableRegistry)
+            throw new InvalidOperationException("Stream registry is not enabled");
+
+        StreamPageToken.CheckPageSize(pageSize);
+        var after = StreamPageToken.ReadAfter(pageToken, filter);
+        var prefix = StreamPageToken.Normalize(filter?.Prefix);
+        var tag = StreamPageToken.Normalize(filter?.Tag);
+        var aggregateType = StreamPageToken.Normalize(filter?.AggregateType);
+
+        lock (_lock)
+        {
+            var rows = new List<StreamMetadata>();
+            foreach (var metadata in _streamRegistry.Values)
+            {
+                if (metadata.Status != StreamStatus.Active)
+                    continue;
+                if (prefix is not null && !metadata.StreamId.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (aggregateType is not null && !string.Equals(metadata.AggregateType, aggregateType, StringComparison.Ordinal))
+                    continue;
+                if (tag is not null && !HasTag(metadata, tag))
+                    continue;
+                if (after is not null && string.CompareOrdinal(metadata.StreamId, after) <= 0)
+                    continue;
+                rows.Add(metadata);
+            }
+
+            rows.Sort(static (left, right) => string.CompareOrdinal(left.StreamId, right.StreamId));
+            if (rows.Count > pageSize + 1)
+                rows.RemoveRange(pageSize + 1, rows.Count - (pageSize + 1));
+            return Task.FromResult(StreamPageToken.ToPage(rows, pageSize, filter));
+        }
+    }
+
+    private static bool HasTag(StreamMetadata metadata, string tag)
+    {
+        foreach (var candidate in metadata.Tags)
+        {
+            if (string.Equals(candidate, tag, StringComparison.Ordinal))
+                return true;
+        }
+
+        return false;
     }
 
     /// <inheritdoc />

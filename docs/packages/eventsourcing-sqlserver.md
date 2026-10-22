@@ -163,6 +163,16 @@ multi-context schema setup stay in the SQL Server test project. See
 
 InMemory remains the documented default for local work and Academy.
 
+## Stream pages
+
+`ListStreamsAsync` reads active streams in stream id order. The order uses `Streams.StreamIdBin`, a persisted column defined as `StreamId` with the `Latin1_General_100_BIN2` collation, and a unique index on that column. A prefix still uses the `StreamId` column collation, so a new database matches a prefix without regard to case.
+
+Tags for that list live in `StreamTags` (`Tag`, `StreamId`), with `Latin1_General_100_BIN2` on both columns. The primary key is (`Tag`, `StreamId`). An append updates `StreamTags` in the same transaction as `Streams`. The aggregate type index is (`AggregateType`, `StreamIdBin`).
+
+`InitializeSchemaAsync` adds the column, the indexes, and `StreamTags` when they are missing, and fills `StreamTags` from the JSON in `Streams.Tags`. Existing rows stay. The events stamp stays at format 4. Call it before listing on a database created by an earlier build. Adding `StreamIdBin` rewrites the stream table, so run that call when other writers can wait. A second call leaves the objects in place.
+
+Two processes starting together take one lock for those objects and commit them together. The events stamp is unchanged, so this call does not write a new stamp.
+
 ## Upgrading from 0.6.0-alpha.2
 
 0.6.0-alpha.2 stamped the events table `LawnDart_SchemaFormat` 2, the

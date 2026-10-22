@@ -118,6 +118,9 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
     /// <summary>Quoted tag table.</summary>
     internal string QualifiedTagsTable => _names.Tags;
 
+    /// <summary>Quoted stream tag table.</summary>
+    internal string QualifiedStreamTagsTable => _names.StreamTags;
+
     /// <summary>Connection string the store uses for reads and appends.</summary>
     internal string ConnectionString => _options.ConnectionString!;
 
@@ -199,6 +202,8 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
         foreach (var statement in PostgresSchema.CreateStatements(_names, _options))
             await ExecuteAsync(connection, transaction, statement, cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(connection, transaction, PostgresSchema.StreamIndexes(_names), cancellationToken).ConfigureAwait(false);
+        await ExecuteAsync(connection, transaction, PostgresSchema.EnsureAggregateIndex(_names), cancellationToken).ConfigureAwait(false);
+        await ExecuteAsync(connection, transaction, PostgresSchema.BackfillStreamTags(_names), cancellationToken).ConfigureAwait(false);
         await Snapshots.PostgresSnapshotSchema.EnsureAsync(
             connection, transaction, _options, cancellationToken).ConfigureAwait(false);
         await GrantAppRoleAsync(connection, transaction, cancellationToken).ConfigureAwait(false);

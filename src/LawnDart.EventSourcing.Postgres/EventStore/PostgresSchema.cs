@@ -42,6 +42,7 @@ internal static class PostgresSchema
 
         sql.Add(CreatePartitioned(names.Events, names.EventsShared, names.EventsHash, options, EventsColumns(names), EventsKeys()));
         sql.Add(CreatePartitioned(names.Streams, names.StreamsShared, names.StreamsHash, options, StreamsColumns(names), StreamsKeys()));
+        sql.Add(CreatePartitioned(names.StreamTags, names.StreamTagsShared, names.StreamTagsHash, options, StreamTagsColumns(names), StreamTagsKeys()));
         sql.Add(CreatePartitioned(names.Tags, names.TagsShared, names.TagsHash, options, TagsColumns(names), TagsKeys()));
         sql.Add(DropAppendFunction(names));
         sql.Add(PostgresAppendSql.CreateFunction(names, options));
@@ -88,6 +89,14 @@ internal static class PostgresSchema
         """;
 
     private static string StreamsKeys() => "PRIMARY KEY (tenant_id, stream_id)";
+
+    private static string StreamTagsColumns(PostgresNames names) => $"""
+        tenant_id {names.ExactText} NOT NULL CHECK (tenant_id <> ''),
+        tag {names.ExactText} NOT NULL CHECK (tag <> ''),
+        stream_id {names.ExactText} NOT NULL
+        """;
+
+    private static string StreamTagsKeys() => "PRIMARY KEY (tenant_id, tag, stream_id)";
 
     private static string TagsColumns(PostgresNames names) => $"""
         tag {names.ExactText} NOT NULL,
@@ -145,10 +154,50 @@ internal static class PostgresSchema
         """;
 
     internal static string StreamIndexes(PostgresNames names) => $"""
-        CREATE INDEX IF NOT EXISTS ix_streams_aggregate_type ON {names.Streams} (aggregate_type);
+        CREATE INDEX IF NOT EXISTS ix_streams_aggregate_type ON {names.Streams} (aggregate_type, stream_id);
         CREATE INDEX IF NOT EXISTS ix_streams_last_position ON {names.Streams} (last_global_position);
         CREATE INDEX IF NOT EXISTS ix_streams_stream_id ON {names.Streams} (stream_id);
         CREATE INDEX IF NOT EXISTS ix_streams_tags ON {names.Streams} USING GIN (tags);
+        CREATE INDEX IF NOT EXISTS ix_stream_tags_tag_stream ON {names.StreamTags} (tag, stream_id);
+        """;
+
+    /// <summary>
+    /// Replaces an aggregate type index that does not include <c>stream_id</c>.
+    /// A new database already has the two-column index, so this is a no-op there.
+    /// </summary>
+    internal static string EnsureAggregateIndex(PostgresNames names)
+    {
+        var schema = names.Schema.Replace("'", "''", StringComparison.Ordinal);
+        var drop = ("DROP INDEX IF EXISTS " + PgIdentifier.Qualify(names.Schema, "ix_streams_aggregate_type"))
+            .Replace("'", "''", StringComparison.Ordinal);
+        var create = ("CREATE INDEX ix_streams_aggregate_type ON " + names.Streams + " (aggregate_type, stream_id)")
+            .Replace("'", "''", StringComparison.Ordinal);
+        return $"""
+            DO $idx$
+            DECLARE def text;
+            BEGIN
+                SELECT indexdef INTO def
+                FROM pg_indexes
+                WHERE schemaname = '{schema}' AND indexname = 'ix_streams_aggregate_type';
+                IF def IS NULL OR position('stream_id' in def) = 0 THEN
+                    EXECUTE '{drop}';
+                    EXECUTE '{create}';
+                END IF;
+            END
+            $idx$;
+            """;
+    }
+
+    /// <summary>
+    /// Copies tags from existing stream rows. A second run leaves rows that are already present.
+    /// </summary>
+    internal static string BackfillStreamTags(PostgresNames names) => $"""
+        INSERT INTO {names.StreamTags} (tenant_id, tag, stream_id)
+        SELECT s.tenant_id, u.tag, s.stream_id
+        FROM {names.Streams} AS s
+        CROSS JOIN LATERAL unnest(coalesce(s.tags, ARRAY[]::text[])) AS u(tag)
+        WHERE u.tag IS NOT NULL AND length(u.tag) > 0
+        ON CONFLICT DO NOTHING
         """;
 
     private static string Stamp(PostgresNames names, PostgresEventStoreOptions options)

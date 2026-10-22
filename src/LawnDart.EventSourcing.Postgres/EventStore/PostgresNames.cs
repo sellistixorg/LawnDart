@@ -12,6 +12,7 @@ internal sealed class PostgresNames
     private readonly string _eventsTable;
     private readonly string _streamsTable;
     private readonly string _tagsTable;
+    private readonly string _streamTagsTable;
 
     public PostgresNames(PostgresEventStoreOptions options)
     {
@@ -19,10 +20,13 @@ internal sealed class PostgresNames
         _eventsTable = options.EventsTableName;
         _streamsTable = options.StreamsTableName;
         _tagsTable = options.EventTagsTableName;
+        _streamTagsTable = StreamTagsName(_streamsTable);
         Events = PgIdentifier.Qualify(Schema, _eventsTable);
         EventsShared = PgIdentifier.Qualify(Schema, _eventsTable + "_shared");
         Streams = PgIdentifier.Qualify(Schema, _streamsTable);
         StreamsShared = PgIdentifier.Qualify(Schema, _streamsTable + "_shared");
+        StreamTags = PgIdentifier.Qualify(Schema, _streamTagsTable);
+        StreamTagsShared = PgIdentifier.Qualify(Schema, _streamTagsTable + "_shared");
         Tags = PgIdentifier.Qualify(Schema, _tagsTable);
         TagsShared = PgIdentifier.Qualify(Schema, _tagsTable + "_shared");
         Types = PgIdentifier.Qualify(Schema, options.EventTypesTableName);
@@ -80,6 +84,11 @@ internal sealed class PostgresNames
 
     public string StreamsShared { get; }
 
+    /// <summary>One row per stream tag. The primary key is (tenant_id, tag, stream_id).</summary>
+    public string StreamTags { get; }
+
+    public string StreamTagsShared { get; }
+
     public string Tags { get; }
 
     public string TagsShared { get; }
@@ -101,7 +110,14 @@ internal sealed class PostgresNames
 
     public string StreamsHash(int remainder) => Hash(_streamsTable, remainder);
 
+    public string StreamTagsHash(int remainder) => Hash(_streamTagsTable, remainder);
+
     public string TagsHash(int remainder) => Hash(_tagsTable, remainder);
+
+    private static string StreamTagsName(string streamsTable)
+        => string.Equals(streamsTable, "streams", StringComparison.Ordinal)
+            ? "stream_tags"
+            : streamsTable + "_tags";
 
     private string Hash(string table, int remainder)
         => PgIdentifier.Qualify(Schema, table + "_shared_h" + remainder.ToString(CultureInfo.InvariantCulture));

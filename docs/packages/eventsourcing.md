@@ -104,7 +104,7 @@ stores implement the log. The shipped session still exposes:
   DCB `AppendAsync`, `GetCurrentSequenceAsync`, `GetMaxSequencePositionAsync`
 - **`IStreamRegistry`:** `GetStreamAsync`, `GetStreamsByAggregateTypeAsync`,
   `GetStreamsByTagAsync`, `EnumerateStreamIdsAsync`,
-  `GetStreamsUpdatedAfterAsync`, `GetStreamCountAsync`
+  `GetStreamsUpdatedAfterAsync`, `GetStreamCountAsync`, `ListStreamsAsync`
 - **`IEventStoreSubscriptions`:** `Subscribe`
 
 Full signatures: [core.md](core.md#portable-store-contract) and

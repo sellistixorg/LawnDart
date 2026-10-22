@@ -50,7 +50,8 @@ public sealed class PostgresContractBackend : IContractBackend
             CanCorruptDcbSnapshot = true,
             HasInboxStore = false,
             HasProjectionStores = true,
-            PreservesExactViewJson = false
+            PreservesExactViewJson = false,
+            HasStreamTagTable = true
         };
     }
 
