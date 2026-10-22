@@ -14,7 +14,7 @@ changes to the public API.
 
 This release adds the Postgres outbox and the `LawnDart.Messaging.Postgres` inbox. The build kit targets LawnDart 0.7.
 
-Deploy with `EnableOutbox` false until no 0.7.0-alpha.1 copy can run. On a host that keeps old revisions, such as Azure Container Apps, deactivate the old revisions first. Then set `EnableOutbox` to true. On a brand-new database, initialize the event store with this version first. The 0.7.0-alpha.1 event store cannot initialize a schema that this inbox created first.
+Deploy with `EnableOutbox` false until no 0.7.0-alpha.1 copy can run. If your host keeps older versions of the app running, stop them first. Then set `EnableOutbox` to true. On a brand-new database, initialize the event store with this version first. The 0.7.0-alpha.1 event store cannot initialize a schema that this inbox created first.
 
 `InitializeSchemaAsync` on a database created by 0.7.0-alpha.1 adds the `outbox` table when it is missing. The events format stays at 1. A process still running 0.7.0-alpha.1 calls the original append function and can keep appending. That process does not write outbox rows, and the store does not report that. An inbox or outbox table created first in a schema does not block `InitializeSchemaAsync` for the event store.
 
