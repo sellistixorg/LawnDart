@@ -12,7 +12,7 @@ using LawnDart.Testing;
 namespace LawnDart.Backends.Contract.Tests;
 
 /// <summary>
-/// Shared assertions for the InMemory → SQL Server DI swap. One body, two hosts.
+/// Shared assertions for the in-memory, SQL Server, and Postgres swap. One body, three hosts.
 /// Covers command dispatch, event persistence, aggregate reload, projection
 /// materialisation, and read-back. Outbox and subscriptions are not in this contract.
 /// </summary>

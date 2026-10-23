@@ -108,4 +108,17 @@ public sealed class LibraryBookTests
             "SqlServerEventStore",
             sp.GetRequiredKeyedService<IEventStore>("default").GetType().Name);
     }
+
+    [Fact]
+    public void add_postgres_library_registers()
+    {
+        var services = new ServiceCollection();
+        LibraryHost.AddPostgresLibrary(services, "Host=127.0.0.1;Database=unused;Username=library;Password=library");
+        using var sp = services.BuildServiceProvider();
+        Assert.NotNull(sp.GetService<IAggregateRepository>());
+        Assert.NotNull(sp.GetService<ICommandHandler<BorrowBookCommand>>());
+        Assert.Equal(
+            "PostgresEventStore",
+            sp.GetRequiredKeyedService<IEventStore>("default").GetType().Name);
+    }
 }

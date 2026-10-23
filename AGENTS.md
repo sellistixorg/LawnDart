@@ -24,11 +24,12 @@ Bug fixes, tests, docs, and work behind existing abstractions do not.
 Default check is unit tests, with no Docker:
 
 ```bash
-dotnet test --filter "Category!=Integration"
+dotnet test --filter "Category!=Integration&Category!=Benchmark"
 ```
 
-SQL tests are `Category=Integration` and need Docker.
-The InMemory-to-SQL swap and the event-log contract are `Category=Contract`.
+SQL Server and Postgres tests are `Category=Integration` and need Docker.
+The in-memory, SQL Server, and Postgres swap, and the event-log contract, are `Category=Contract`.
+Benchmarks are `Category=Benchmark` and are not part of that unit run.
 Public and protected members need a `<summary>`.
 A user-facing change gets a bullet under `## [Unreleased]` in `CHANGELOG.md`.
 Do not add a version heading.

@@ -2,7 +2,7 @@
 
 **Previous:** [Testing EDA](07-testing-eda.md)
 
-Swap InMemory for SQL Server. Keep the same bounded-context name.
+Swap InMemory for SQL Server or Postgres. Keep the same bounded-context name.
 
 The verified swap is command dispatch, event persistence, aggregate reload,
 projection materialisation, and read-back. Outbox and subscriptions have
@@ -47,6 +47,10 @@ services.AddHttpAuthorizationContext();
 app.MapLawnDartCommands();
 app.MapProjectionQueries("default");
 ```
+
+Postgres is the same swap. `UsePostgres`, `AddPostgresProjectionStores`, and
+`InitializePostgresProjectionStoresAsync` are the calls. Schema setup stays
+in the deploy step. See [Postgres hosting](../POSTGRES_HOSTING.md).
 
 ## Schema deploy
 

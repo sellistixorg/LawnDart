@@ -124,9 +124,17 @@ The lock connection sends a keepalive after `LockKeepAliveSeconds` (default
 connection is dropped. A dropped connection releases the lock. The copy that
 held it tries to take the lead again.
 
+View, checkpoint, and lease tables are not partitioned. The event store
+partition layout is in
+[Postgres partitions and tenants](../POSTGRES_PARTITIONS.md).
+
+Which connection string is the app connection, which is the lock, and which
+is schema setup, is in [Postgres hosting](../POSTGRES_HOSTING.md).
+
 ## Related
 
 - [Package map](README.md)
 - [Schema initialization](../SCHEMA_INITIALIZATION.md)
+- [Postgres hosting](../POSTGRES_HOSTING.md)
 - [Lightweight projections](projections-lightweight.md)
 - [Postgres event store](eventsourcing-postgres.md)

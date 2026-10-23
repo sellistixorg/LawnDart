@@ -5,7 +5,7 @@ LawnDart is the .NET runtime that event-modeled systems compile into.
 You model slices in Eventhesis, in prooph board, in eventmodelers.ai, or on a
 whiteboard, and LawnDart is what they become: commands, events, state,
 projections, with a production path that swaps the event store, views, and
-checkpoints to SQL Server by DI.
+checkpoints to SQL Server or Postgres by dependency injection.
 
 That is a different product from the ones readers usually compare first.
 
@@ -29,7 +29,7 @@ framework.
 
 Supported today:
 
-- **Stores:** InMemory and SQL Server. The log (`IEventLog`) is recorded events; `IEventStore` is the typed session. Third-party stores implement the log.
+- **Stores:** InMemory, SQL Server, and Postgres. The log (`IEventLog`) is recorded events; `IEventStore` is the typed session. Third-party stores implement the log.
 - **Messaging:** in-process transport (`LawnDart.Messaging.InMemory`), RabbitMQ (`LawnDart.Messaging.RabbitMQ`), Azure Service Bus (`LawnDart.Messaging.AzureServiceBus`), and Amazon SQS (`LawnDart.Messaging.AwsSqs`). Inbox deduplication is in-process, SQL Server (`LawnDart.Messaging.SqlServer`), or Postgres (`LawnDart.Messaging.Postgres`). When the outbox is on, SQL Server and Postgres rows commit with your events.
 - **Runtime:** in-process, `net10.0`, your host, your DI.
 - **Modelling:** aggregates and DCB behind one store contract.

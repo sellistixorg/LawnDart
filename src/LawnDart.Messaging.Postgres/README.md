@@ -19,3 +19,5 @@ Call `InitializePostgresInboxStoreAsync` from a deploy or admin step. See
 [Schema initialization](https://github.com/sellistixorg/LawnDart/blob/main/docs/SCHEMA_INITIALIZATION.md).
 
 See [the package page](https://github.com/sellistixorg/LawnDart/blob/main/docs/packages/messaging-postgres.md).
+Which connection string goes where is in
+[Postgres hosting](https://github.com/sellistixorg/LawnDart/blob/main/docs/POSTGRES_HOSTING.md).

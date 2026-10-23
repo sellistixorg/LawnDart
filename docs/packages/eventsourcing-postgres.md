@@ -36,6 +36,13 @@ bucket count succeeds. A different bucket count is rejected. Drop and
 recreate the schema to change it. An unknown format number in `schema_info`
 is rejected the same way.
 
+`ConnectionString` is the app connection. A pooled connection is fine.
+`ListenConnectionString` is the wake-up listener. Point it at Postgres
+directly, or at a session pooler, when the app connection goes through a
+transaction pooler. `MigrationConnectionString` creates and upgrades tables.
+Point that one at Postgres directly. Which string goes where, and what the
+pooler warning means, is in [Postgres hosting](../POSTGRES_HOSTING.md).
+
 ## Schema
 
 Tables live in `SchemaName`. `UsePostgres` sets that to `lawndart` for the
@@ -45,7 +52,10 @@ callback can change it. The name `public` is rejected.
 Events, streams, and tags are partitioned two ways. The top level is a list
 on `tenant_id` with one default partition. That partition is hashed into
 `PartitionCount` buckets. The default is 8. The allowed range is 1 to 64,
-chosen when the schema is created.
+chosen when the schema is created. The tenant key and the bucket layout are
+in [Postgres partitions and tenants](../POSTGRES_PARTITIONS.md). Event ids
+are unique per tenant, and stream ids match exactly, including case. See
+[Backend differences](../BACKEND_DIFFERENCES.md).
 
 A stream id with three or more colon-separated parts stores the first part
 as the tenant key. Any other stream id stores the tenant key `default`.
@@ -270,4 +280,7 @@ the outbox processor for that context when `EnableOutbox` is true.
 The inbox is `LawnDart.Messaging.Postgres`. See
 [Messaging.Postgres](messaging-postgres.md). Projection views are in
 `LawnDart.Projections.Lightweight.Postgres`. Schema setup is in
-[Schema initialization](../SCHEMA_INITIALIZATION.md).
+[Schema initialization](../SCHEMA_INITIALIZATION.md). Hosting, including
+PgBouncer, is in [Postgres hosting](../POSTGRES_HOSTING.md). Partitions and
+tenants are in [Postgres partitions and tenants](../POSTGRES_PARTITIONS.md).
+Backend differences are in [Backend differences](../BACKEND_DIFFERENCES.md).
