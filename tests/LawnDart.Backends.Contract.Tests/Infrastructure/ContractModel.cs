@@ -1,3 +1,4 @@
+using LawnDart.EventSourcing.Serialization;
 using LawnDart.EventStore;
 using LawnDart.Outbox;
 using LawnDart.Projections.Checkpoints;
@@ -141,6 +142,23 @@ public sealed class ContractStoreOptions
     public TimeSpan? InboxClaimLease { get; init; }
 
     public TimeSpan? InboxDeduplicationWindow { get; init; }
+
+    /// <summary>
+    /// Event types passed to the store before schema setup.
+    /// Null keeps the store's default catalog.
+    /// </summary>
+    public IReadOnlyList<Type>? EventTypes { get; init; }
+
+    /// <summary>
+    /// Builds a session for <see cref="EventTypes"/>.
+    /// Null when no types were given.
+    /// </summary>
+    public EventSession? CreateSession()
+    {
+        if (EventTypes is not { Count: > 0 })
+            return null;
+        return new EventSession(new JsonEventSerializer(), EventTypeCatalog.Materialize(EventTypes));
+    }
 }
 
 public interface IContractHooks
@@ -254,7 +272,8 @@ public static class ContractStores
         bool validateNames = true,
         TimeSpan? outboxClaimLease = null,
         TimeSpan? inboxClaimLease = null,
-        TimeSpan? inboxDeduplicationWindow = null)
+        TimeSpan? inboxDeduplicationWindow = null,
+        IReadOnlyList<Type>? eventTypes = null)
         => new()
         {
             SchemaName = "c" + Guid.NewGuid().ToString("N"),
@@ -270,7 +289,8 @@ public static class ContractStores
             ReadCommittedSnapshot = readCommittedSnapshot,
             OutboxClaimLease = outboxClaimLease,
             InboxClaimLease = inboxClaimLease,
-            InboxDeduplicationWindow = inboxDeduplicationWindow
+            InboxDeduplicationWindow = inboxDeduplicationWindow,
+            EventTypes = eventTypes
         };
 }
 

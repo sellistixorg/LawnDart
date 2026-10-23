@@ -10,6 +10,10 @@ changes to the public API.
 
 ## [Unreleased]
 
+### Fixed
+
+- A Postgres or SQL Server read that names several event types returns the events whose names are already stored when another requested name is not in the event name table yet. Postgres `InitializeSchemaAsync` records each catalog event name. Running it again leaves one row per name and does not assign that name a new id. A name that is still absent matches no rows. Events up to the last one returned are delivered. The position does not move past them to the current end until every requested name is stored.
+
 ### Changed
 
 - Schema setup runs once per deploy from a deploy job, a migration step, or an admin tool. Normal app startup does not run it. An older copy that restarts can run its own schema setup at startup and change a schema a newer copy already upgraded. That copy can put an older append function back, or append events with no outbox rows. Upgrade the schema with the new version, make sure no older copy can start, then turn on `EnableOutbox`. See [Schema initialization](docs/SCHEMA_INITIALIZATION.md).
