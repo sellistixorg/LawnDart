@@ -40,10 +40,10 @@ it is. Two calls at the same time still leave one row per name.
 
 A read that asks for several event names returns the events whose names
 are already recorded. A name that is not recorded matches no rows.
-`TypesResolved` is false when any requested name is still absent. Do not
-checkpoint past that range. A subscription delivers the events that were
-returned and does not move its cursor to the head. A projection reads the
-range again on the next poll.
+`TypesResolved` is false when any requested name is still absent. Events
+up to the last one returned are delivered. The position does not move past
+them to the current end until every requested name is stored. A projection
+reads the range again on the next poll.
 
 ## Schema
 

@@ -2517,13 +2517,14 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         DateTime? toCommitTimestamp,
         CancellationToken cancellationToken)
     {
-        var typesResolved = await EnsureQueryTypesResolvedAsync(query, cancellationToken).ConfigureAwait(false);
+        var resolution = await EnsureQueryTypesResolvedAsync(query, cancellationToken).ConfigureAwait(false);
+        var to = CapUnresolvedRead(toSequencePosition, resolution);
 
         var connection = new SqlConnection(_connectionString);
         await using var connectionDisposal = connection.ConfigureAwait(false);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         var window = await ApplyReadHorizonAsync(
-            connection, LateWatch.Read(fromSequencePosition), toSequencePosition, cancellationToken)
+            connection, LateWatch.Read(fromSequencePosition), to, cancellationToken)
             .ConfigureAwait(false);
 
         var built = DcbQuerySql.Build(
@@ -2539,7 +2540,7 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
             window.ApplyStableHorizon);
 
         if (built.ShortCircuited)
-            return new QueryRead([], typesResolved);
+            return new QueryRead([], resolution.Resolved);
 
         var command = new SqlCommand(built.Sql, connection);
         await using var commandDisposal = command.ConfigureAwait(false);
@@ -2553,25 +2554,28 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
                 rows.Add(ReadEventRow(reader));
         }
 
-        return new QueryRead(await MaterializeAsync(rows, cancellationToken).ConfigureAwait(false), typesResolved);
+        return new QueryRead(await MaterializeAsync(rows, cancellationToken).ConfigureAwait(false), resolution.Resolved);
     }
 
     /// <summary>
     /// Reloads the event name map when a requested name is missing.
-    /// False means a name is still absent. That name matches no rows.
-    /// Names the store already has are still read.
+    /// When a name is missing, the current end is taken before that reload.
+    /// If the name is still absent, <see cref="TypeResolution.HeadBeforeReload"/>
+    /// is that end and this read stops there.
     /// </summary>
-    private async Task<bool> EnsureQueryTypesResolvedAsync(Query query, CancellationToken cancellationToken)
+    private async Task<TypeResolution> EnsureQueryTypesResolvedAsync(Query query, CancellationToken cancellationToken)
     {
         var tokens = QueryTypeTokens(query);
         if (tokens.Count == 0 || tokens.All(token => _eventTypes.FindId(token) is not null))
-            return true;
+            return new TypeResolution(true, null);
+
+        var headBeforeReload = await GetCurrentSequenceAsync(cancellationToken).ConfigureAwait(false);
 
         await _typeCacheRefresh.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             if (tokens.All(token => _eventTypes.FindId(token) is not null))
-                return true;
+                return new TypeResolution(true, null);
 
             var connection = new SqlConnection(_connectionString);
             await using var connectionDisposal = connection.ConfigureAwait(false);
@@ -2583,8 +2587,22 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
             _typeCacheRefresh.Release();
         }
 
-        return tokens.All(token => _eventTypes.FindId(token) is not null);
+        var resolved = tokens.All(token => _eventTypes.FindId(token) is not null);
+        return new TypeResolution(resolved, resolved ? null : headBeforeReload);
     }
+
+    /// <summary>
+    /// Stops the read at the end recorded before the name reload when a name is still absent.
+    /// An event stored after that end is left for the next read.
+    /// </summary>
+    private static long? CapUnresolvedRead(long? toSequencePosition, TypeResolution resolution)
+    {
+        if (resolution.Resolved || resolution.HeadBeforeReload is not long head)
+            return toSequencePosition;
+        return toSequencePosition is null ? head : Math.Min(toSequencePosition.Value, head);
+    }
+
+    private readonly record struct TypeResolution(bool Resolved, long? HeadBeforeReload);
 
     private static List<string> QueryTypeTokens(Query query)
     {
@@ -2629,13 +2647,14 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         DateTime? toCommitTimestamp,
         CancellationToken cancellationToken)
     {
-        await EnsureQueryTypesResolvedAsync(query, cancellationToken).ConfigureAwait(false);
+        var resolution = await EnsureQueryTypesResolvedAsync(query, cancellationToken).ConfigureAwait(false);
+        var to = CapUnresolvedRead(toSequencePosition, resolution);
 
         var connection = new SqlConnection(_connectionString);
         await using var connectionDisposal = connection.ConfigureAwait(false);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         var window = await ApplyReadHorizonAsync(
-            connection, LateWatch.None, toSequencePosition, cancellationToken)
+            connection, LateWatch.None, to, cancellationToken)
             .ConfigureAwait(false);
 
         var built = DcbQuerySql.Build(

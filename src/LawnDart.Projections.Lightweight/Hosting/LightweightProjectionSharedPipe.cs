@@ -396,8 +396,8 @@ internal sealed class LightweightProjectionSharedPipe : IAsyncDisposable
             batchCount++;
         }
 
-        // An absent name matches nothing. The events above were delivered.
-        // The caught-up position stays put until every requested name is known.
+        // Events up to the last one returned are delivered. The position does not
+        // move past them to the current end until every requested name is stored.
         if (!result.TypesResolved)
             return;
 

@@ -12,7 +12,7 @@ changes to the public API.
 
 ### Fixed
 
-- A Postgres read that names several event types returns the events whose names are already stored when another requested name is not in `event_types` yet. `InitializeSchemaAsync` records each catalog event name. Running it again leaves one row per name. A name that is still absent matches no rows, and `TypesResolved` stays false so a checkpoint does not move through that range. SQL Server reads follow the same rule.
+- A Postgres or SQL Server read that names several event types returns the events whose names are already stored when another requested name is not in the event name table yet. Postgres `InitializeSchemaAsync` records each catalog event name. Running it again leaves one row per name and does not assign that name a new id. A name that is still absent matches no rows. Events up to the last one returned are delivered. The position does not move past them to the current end until every requested name is stored.
 
 ### Changed
 

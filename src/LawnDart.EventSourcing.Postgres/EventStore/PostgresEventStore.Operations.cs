@@ -825,8 +825,9 @@ public sealed partial class PostgresEventStore
 
     /// <summary>
     /// Writes each catalog event name into the event name table.
-    /// A name that is already there is left as it is. A second setup, or two
-    /// setups at the same time, still leaves one row per name.
+    /// A name that is already stored is left out of the insert, so a second
+    /// setup does not assign it a new id. Two setups at the same time still
+    /// leave one row per name.
     /// </summary>
     private async Task RecordRegisteredEventNamesAsync(
         NpgsqlConnection connection,
@@ -841,7 +842,15 @@ public sealed partial class PostgresEventStore
             return;
 
         await using var insert = new NpgsqlCommand(
-            $"INSERT INTO {_names.Types} (token) SELECT unnest(@tokens) ON CONFLICT (token) DO NOTHING",
+            $"""
+            INSERT INTO {_names.Types} (token)
+            SELECT incoming.token
+            FROM unnest(@tokens) AS incoming(token)
+            WHERE NOT EXISTS (
+                SELECT 1 FROM {_names.Types} existing WHERE existing.token = incoming.token
+            )
+            ON CONFLICT (token) DO NOTHING
+            """,
             connection,
             transaction);
         insert.Parameters.Add(new NpgsqlParameter("tokens", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = tokens });

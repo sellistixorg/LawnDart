@@ -62,11 +62,12 @@ public sealed partial class PostgresEventStore
         Query query, long? fromSequencePosition, long? toSequencePosition, DateTime? toCommitTimestamp, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(query);
-        await EnsureQueryTypesResolvedAsync(query, cancellationToken).ConfigureAwait(false);
-
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        // The limit comes first. A name stored after it is not part of this read,
+        // so a later event cannot hide an earlier one whose name was not loaded yet.
         var head = await _horizon.ResolveAsync(connection, cancellationToken).ConfigureAwait(false);
         var to = Cap(toSequencePosition, head);
+        await EnsureQueryTypesResolvedAsync(query, cancellationToken).ConfigureAwait(false);
         var built = PostgresQuerySql.Build(
             _names, query, _eventTypes.FindId, fromSequencePosition, to, toCommitTimestamp, limit: null, PostgresQuerySql.Mode.MaxSequence);
         if (built.ShortCircuited)
@@ -432,11 +433,12 @@ public sealed partial class PostgresEventStore
         DateTime? toCommitTimestamp,
         CancellationToken cancellationToken)
     {
-        var typesResolved = await EnsureQueryTypesResolvedAsync(query, cancellationToken).ConfigureAwait(false);
-
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        // The limit comes first. A name stored after it is not part of this read,
+        // so a later event cannot hide an earlier one whose name was not loaded yet.
         var head = await _horizon.ResolveAsync(connection, cancellationToken).ConfigureAwait(false);
         var to = Cap(toSequencePosition, head);
+        var typesResolved = await EnsureQueryTypesResolvedAsync(query, cancellationToken).ConfigureAwait(false);
         var built = PostgresQuerySql.Build(
             _names, query, _eventTypes.FindId, fromSequencePosition, to, toCommitTimestamp, limit, PostgresQuerySql.Mode.Events);
         if (built.ShortCircuited)

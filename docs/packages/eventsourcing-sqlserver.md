@@ -52,11 +52,13 @@ A save from another process is still picked up on the poll interval. A
 listener outside the store can raise the same signal.
 
 A type filter reloads `EventTypes` when a name is missing from the
-process cache. A name that is still absent matches no rows. Events for
+process cache. The current end is taken before that reload. A name that is
+still absent matches no rows, and this read stops at that end. Events for
 the other names are still returned. `TypesResolved` is false when any
-requested name is still absent. Do not checkpoint past that range. A
-subscription delivers the events that were returned and does not move its
-cursor to the head. A projection reads the range again on the next poll.
+requested name is still absent. Events up to the last one returned are
+delivered. The position does not move past them to the current end until
+every requested name is stored. A projection reads the range again on the
+next poll.
 
 Each appended record has an `EventId` (`UNIQUEIDENTIFIER`, unique). A typed
 append stores `IEvent.Id`, including when several appends share one

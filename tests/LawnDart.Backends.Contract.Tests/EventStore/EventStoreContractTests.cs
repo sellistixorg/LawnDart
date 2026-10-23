@@ -380,6 +380,81 @@ public abstract class EventStoreContractTests : ContractSuite
     }
 
     [ContractFact]
+    public async Task ReadByQuery_NameStoredDuringTheRead_DoesNotSkipTheEarlierEvent()
+    {
+        SkipUnless(
+            Cap.UnknownEventNameMarksQueryUnresolved,
+            "This store has no event-name table.");
+
+        var schema = "c" + Guid.NewGuid().ToString("N");
+        var options = new ContractStoreOptions { SchemaName = schema, RequireTenantId = false };
+        var writer = await Backend.OpenEventStoreAsync(options);
+        var reader = await Backend.OpenEventStoreAsync(options);
+        const string known = "race.known";
+        await writer.Log.AppendAsync(Stream(), [new AppendEvent(known, "{}"u8.ToArray())]);
+        var primed = await reader.Log.ReadByQueryAsync(Query.FromItems(QueryItem.ByType(known)));
+        var cursor = Assert.Single(primed.Events).SequencePosition;
+
+        // A few hundred rounds is enough to catch a read that returns the later
+        // event and skips the earlier one. SQL Server needs a longer loop.
+        const int rounds = 1000;
+        for (var round = 0; round < rounds; round++)
+        {
+            var fresh = "race.new." + round.ToString("D4") + "." + Guid.NewGuid().ToString("N");
+            var query = Query.FromItems(QueryItem.ByType(known, fresh));
+            var readsStarted = 0;
+            var writesFinished = 0;
+            long freshPosition = 0;
+            long knownPosition = 0;
+            var seen = new Dictionary<long, string>();
+
+            var reading = Task.Run(async () =>
+            {
+                var local = cursor;
+                var deadline = 0L;
+                while (deadline == 0 || Environment.TickCount64 < deadline)
+                {
+                    Interlocked.Increment(ref readsStarted);
+                    var read = await reader.Log.ReadByQueryAsync(
+                        query,
+                        fromSequencePosition: local + 1);
+                    foreach (var recorded in read.Events)
+                    {
+                        seen[recorded.SequencePosition] = recorded.EventType;
+                        if (recorded.SequencePosition > local)
+                            local = recorded.SequencePosition;
+                    }
+
+                    var wantFresh = Volatile.Read(ref freshPosition);
+                    var wantKnown = Volatile.Read(ref knownPosition);
+                    if (wantFresh != 0 && seen.ContainsKey(wantFresh) && seen.ContainsKey(wantKnown))
+                        break;
+                    if (Volatile.Read(ref writesFinished) == 1 && deadline == 0)
+                        deadline = Environment.TickCount64 + 5000;
+                }
+
+                return local;
+            });
+
+            while (Volatile.Read(ref readsStarted) == 0)
+                await Task.Yield();
+
+            var freshAppend = await writer.Log.AppendAsync(Stream(), [new AppendEvent(fresh, "{}"u8.ToArray())]);
+            var knownAppend = await writer.Log.AppendAsync(Stream(), [new AppendEvent(known, "{}"u8.ToArray())]);
+            Volatile.Write(ref freshPosition, freshAppend.SequencePositions[0]);
+            Volatile.Write(ref knownPosition, knownAppend.SequencePositions[0]);
+            Volatile.Write(ref writesFinished, 1);
+
+            cursor = await reading;
+            Assert.True(
+                seen.ContainsKey(freshPosition),
+                $"Round {round} returned {known} at {knownPosition} and skipped {fresh} at {freshPosition}.");
+            Assert.True(seen.ContainsKey(knownPosition), $"Round {round} did not return {known} at {knownPosition}.");
+            Assert.True(freshPosition < knownPosition);
+        }
+    }
+
+    [ContractFact]
     public async Task UnknownType_ReturnsNoRows_AndDoesNotClaimTheRangeWasScanned()
     {
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
