@@ -34,7 +34,16 @@ it. See [Schema initialization](../SCHEMA_INITIALIZATION.md).
 The call creates the schema if it is missing. A second call with the same
 bucket count succeeds. A different bucket count is rejected. Drop and
 recreate the schema to change it. An unknown format number in `schema_info`
-is rejected the same way.
+is rejected the same way. The same call records each event name from the
+context catalog in `event_types`. A name that is already there is left as
+it is. Two calls at the same time still leave one row per name.
+
+A read that asks for several event names returns the events whose names
+are already recorded. A name that is not recorded matches no rows.
+`TypesResolved` is false when any requested name is still absent. Do not
+checkpoint past that range. A subscription delivers the events that were
+returned and does not move its cursor to the head. A projection reads the
+range again on the next poll.
 
 ## Schema
 

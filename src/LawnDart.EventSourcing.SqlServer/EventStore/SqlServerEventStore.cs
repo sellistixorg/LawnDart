@@ -2098,20 +2098,6 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
                     toCommitTimestamp: null,
                     cancellationToken: ct).ConfigureAwait(false);
 
-                if (!page.TypesResolved)
-                {
-                    try
-                    {
-                        await _newEvents.WaitAsync(ticket, pollInterval, ct).ConfigureAwait(false);
-                    }
-                    catch (OperationCanceledException) when (ct.IsCancellationRequested)
-                    {
-                        break;
-                    }
-
-                    continue;
-                }
-
                 foreach (var frame in page.Events)
                 {
                     if (ct.IsCancellationRequested || handle.IsDisposed)
@@ -2129,6 +2115,25 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
                     lastDelivered = frame.SequencePosition;
                     if (delivered >= batchSize)
                         break;
+                }
+
+                // An absent name matches nothing. Keep the events that were
+                // returned, and do not move the cursor to the head.
+                if (!page.TypesResolved)
+                {
+                    if (page.Events.Count < batchSize)
+                    {
+                        try
+                        {
+                            await _newEvents.WaitAsync(ticket, pollInterval, ct).ConfigureAwait(false);
+                        }
+                        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                        {
+                            break;
+                        }
+                    }
+
+                    continue;
                 }
 
                 if (page.Events.Count < batchSize && head > lastDelivered)
@@ -2512,8 +2517,7 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         DateTime? toCommitTimestamp,
         CancellationToken cancellationToken)
     {
-        if (!await EnsureQueryTypesResolvedAsync(query, cancellationToken).ConfigureAwait(false))
-            return new QueryRead([], false);
+        var typesResolved = await EnsureQueryTypesResolvedAsync(query, cancellationToken).ConfigureAwait(false);
 
         var connection = new SqlConnection(_connectionString);
         await using var connectionDisposal = connection.ConfigureAwait(false);
@@ -2535,7 +2539,7 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
             window.ApplyStableHorizon);
 
         if (built.ShortCircuited)
-            return new QueryRead([], true);
+            return new QueryRead([], typesResolved);
 
         var command = new SqlCommand(built.Sql, connection);
         await using var commandDisposal = command.ConfigureAwait(false);
@@ -2549,9 +2553,14 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
                 rows.Add(ReadEventRow(reader));
         }
 
-        return new QueryRead(await MaterializeAsync(rows, cancellationToken).ConfigureAwait(false), true);
+        return new QueryRead(await MaterializeAsync(rows, cancellationToken).ConfigureAwait(false), typesResolved);
     }
 
+    /// <summary>
+    /// Reloads the event name map when a requested name is missing.
+    /// False means a name is still absent. That name matches no rows.
+    /// Names the store already has are still read.
+    /// </summary>
     private async Task<bool> EnsureQueryTypesResolvedAsync(Query query, CancellationToken cancellationToken)
     {
         var tokens = QueryTypeTokens(query);
@@ -2620,8 +2629,7 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         DateTime? toCommitTimestamp,
         CancellationToken cancellationToken)
     {
-        if (!await EnsureQueryTypesResolvedAsync(query, cancellationToken).ConfigureAwait(false))
-            return 0L;
+        await EnsureQueryTypesResolvedAsync(query, cancellationToken).ConfigureAwait(false);
 
         var connection = new SqlConnection(_connectionString);
         await using var connectionDisposal = connection.ConfigureAwait(false);

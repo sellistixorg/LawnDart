@@ -62,8 +62,7 @@ public sealed partial class PostgresEventStore
         Query query, long? fromSequencePosition, long? toSequencePosition, DateTime? toCommitTimestamp, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(query);
-        if (!await EnsureQueryTypesResolvedAsync(query, cancellationToken).ConfigureAwait(false))
-            return 0L;
+        await EnsureQueryTypesResolvedAsync(query, cancellationToken).ConfigureAwait(false);
 
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         var head = await _horizon.ResolveAsync(connection, cancellationToken).ConfigureAwait(false);
@@ -214,12 +213,6 @@ public sealed partial class PostgresEventStore
                     }
 
                     hadSuccessfulRead = true;
-                    if (!page.TypesResolved)
-                    {
-                        await WaitPollAsync(ticket, CurrentPoll(), cancellation).ConfigureAwait(false);
-                        continue;
-                    }
-
                     foreach (var frame in page.Events)
                     {
                         if (cancellation.IsCancellationRequested || handle.IsDisposed)
@@ -235,6 +228,15 @@ public sealed partial class PostgresEventStore
                         lastDelivered = frame.SequencePosition;
                         if (delivered >= batch)
                             break;
+                    }
+
+                    // An absent name matches nothing. Keep the events that were
+                    // returned, and do not move the cursor to the head.
+                    if (!page.TypesResolved)
+                    {
+                        if (page.Events.Count < batch)
+                            await WaitPollAsync(ticket, CurrentPoll(), cancellation).ConfigureAwait(false);
+                        continue;
                     }
 
                     if (page.Events.Count < batch && head > lastDelivered)
@@ -430,8 +432,7 @@ public sealed partial class PostgresEventStore
         DateTime? toCommitTimestamp,
         CancellationToken cancellationToken)
     {
-        if (!await EnsureQueryTypesResolvedAsync(query, cancellationToken).ConfigureAwait(false))
-            return new QueryRead([], false);
+        var typesResolved = await EnsureQueryTypesResolvedAsync(query, cancellationToken).ConfigureAwait(false);
 
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         var head = await _horizon.ResolveAsync(connection, cancellationToken).ConfigureAwait(false);
@@ -439,13 +440,13 @@ public sealed partial class PostgresEventStore
         var built = PostgresQuerySql.Build(
             _names, query, _eventTypes.FindId, fromSequencePosition, to, toCommitTimestamp, limit, PostgresQuerySql.Mode.Events);
         if (built.ShortCircuited)
-            return new QueryRead([], true);
+            return new QueryRead([], typesResolved);
 
         await using var command = new NpgsqlCommand(built.Sql, connection);
         foreach (var parameter in built.Parameters)
             command.Parameters.Add(parameter);
         var rows = await ReadRowsAsync(command, cancellationToken).ConfigureAwait(false);
-        return new QueryRead(await MaterializeAsync(rows, cancellationToken).ConfigureAwait(false), true);
+        return new QueryRead(await MaterializeAsync(rows, cancellationToken).ConfigureAwait(false), typesResolved);
     }
 
     private static long? Cap(long? requested, long head)

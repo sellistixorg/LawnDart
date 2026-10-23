@@ -1,7 +1,10 @@
 using System.Text;
+using LawnDart.EventSourcing.Postgres.EventStore;
+using LawnDart.EventSourcing.SqlServer.EventStore;
 using LawnDart.EventStore;
 using LawnDart.Metadata;
 using Microsoft.Data.SqlClient;
+using Npgsql;
 
 namespace LawnDart.Backends.Contract.Tests;
 
@@ -327,6 +330,55 @@ public abstract class EventStoreContractTests : ContractSuite
         Assert.Contains(token, ex.Message);
     }
 
+    [Fact]
+    public async Task ReadByQuery_KnownTypeBesideAnUnknownName_ReturnsTheKnownEvents()
+    {
+        var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
+        var streamId = Stream();
+        await opened.Store.AppendAsync(streamId, [ContractEvent.Tick()]);
+        var known = EventTypeCatalog.TryGetDeclaredName(typeof(ContractTestEvent))!;
+        var query = Query.FromItems(QueryItem.ByType(known, "no.such.event." + Guid.NewGuid().ToString("N")));
+        var read = await opened.Store.ReadByQueryAsync(query);
+        var sequenced = Assert.Single(read.Events);
+        Assert.IsType<ContractTestEvent>(sequenced.Event);
+        if (Cap.UnknownEventNameMarksQueryUnresolved)
+            Assert.False(read.TypesResolved);
+        else
+            Assert.True(read.TypesResolved);
+    }
+
+    [ContractFact]
+    public async Task SchemaInit_RecordsCatalogEventNames_AndASecondCallIsHarmless()
+    {
+        SkipUnless(
+            Cap.UnknownEventNameMarksQueryUnresolved,
+            "This store has no event-name table.");
+
+        var storedName = EventTypeCatalog.TryGetDeclaredName(typeof(ContractTestEvent))!;
+        var otherName = EventTypeCatalog.TryGetDeclaredName(typeof(ContractAnotherEvent))!;
+        var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(
+            eventTypes: [typeof(ContractTestEvent), typeof(ContractAnotherEvent)]));
+
+        Assert.Equal(1, await CountEventNamesAsync(opened, storedName));
+        Assert.Equal(1, await CountEventNamesAsync(opened, otherName));
+
+        await opened.Store.AppendAsync(Stream(), [ContractEvent.Tick()]);
+        var query = Query.FromItems(QueryItem.ByType(storedName, otherName));
+        var read = await opened.Store.ReadByQueryAsync(query);
+        var sequenced = Assert.Single(read.Events);
+        Assert.IsType<ContractTestEvent>(sequenced.Event);
+        Assert.True(read.TypesResolved);
+
+        await InitializeSchemaAsync(opened);
+        await Task.WhenAll(InitializeSchemaAsync(opened), InitializeSchemaAsync(opened));
+
+        Assert.Equal(1, await CountEventNamesAsync(opened, storedName));
+        Assert.Equal(1, await CountEventNamesAsync(opened, otherName));
+        var again = await opened.Store.ReadByQueryAsync(query);
+        Assert.Single(again.Events);
+        Assert.True(again.TypesResolved);
+    }
+
     [ContractFact]
     public async Task UnknownType_ReturnsNoRows_AndDoesNotClaimTheRangeWasScanned()
     {
@@ -526,4 +578,35 @@ public abstract class EventStoreContractTests : ContractSuite
     }
 
     private static string Stream() => "test-tenant:TestAggregate:" + Guid.NewGuid().ToString("N");
+
+    private static Task InitializeSchemaAsync(ContractEventStore opened)
+    {
+        if (opened.Store is SqlServerEventStore sql)
+            return sql.InitializeSchemaAsync();
+        return ((PostgresEventStore)opened.Store).InitializeSchemaAsync();
+    }
+
+    private static async Task<int> CountEventNamesAsync(ContractEventStore opened, string name)
+    {
+        if (opened.Store is SqlServerEventStore sql)
+        {
+            var hooks = (SqlServerContractHooks)opened.Hooks;
+            await using var connection = new SqlConnection(hooks.ConnectionString);
+            await connection.OpenAsync();
+            await using var command = new SqlCommand(
+                $"SELECT COUNT(*) FROM {sql.QualifiedTypesTable} WHERE Token = @Token",
+                connection);
+            command.Parameters.AddWithValue("@Token", name);
+            return (int)(await command.ExecuteScalarAsync())!;
+        }
+
+        var postgres = (PostgresEventStore)opened.Store;
+        await using var pg = new NpgsqlConnection(postgres.ConnectionString);
+        await pg.OpenAsync();
+        await using var query = new NpgsqlCommand(
+            $"SELECT COUNT(*) FROM {postgres.QualifiedTypesTable} WHERE token = @token",
+            pg);
+        query.Parameters.AddWithValue("token", name);
+        return Convert.ToInt32(await query.ExecuteScalarAsync());
+    }
 }

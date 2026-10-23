@@ -387,8 +387,6 @@ internal sealed class LightweightProjectionSharedPipe : IAsyncDisposable
         var batchCount = 0;
         var result = await _eventStore.ReadByQueryAsync(
             query, from, toSequencePosition: to, cancellationToken: ct).ConfigureAwait(false);
-        if (!result.TypesResolved)
-            return;
 
         foreach (var se in result.Events)
         {
@@ -397,6 +395,11 @@ internal sealed class LightweightProjectionSharedPipe : IAsyncDisposable
             await FanoutAsync(se, ct).ConfigureAwait(false);
             batchCount++;
         }
+
+        // An absent name matches nothing. The events above were delivered.
+        // The caught-up position stays put until every requested name is known.
+        if (!result.TypesResolved)
+            return;
 
         if (batchCount == 0 && queriedThroughHead)
         {

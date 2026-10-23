@@ -89,7 +89,8 @@ public sealed class SqlServerContractBackend : IContractBackend
             enableRegistry: options.EnableRegistry,
             options: storeOptions,
             outboxWriter: options.EnableOutbox ? outbox : null,
-            logger: logger);
+            logger: logger,
+            session: options.CreateSession());
         store.PublishNewEventsSignal = options.PublishNewEventsSignal;
 
         await _ready.GetOrAdd(

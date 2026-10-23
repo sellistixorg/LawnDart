@@ -19,9 +19,9 @@ public record QueryResult(
     byte[]? ConsistencyMarker = null)
 {
     /// <summary>
-    /// False when a type token in the query is still absent after the store
-    /// reloads its type map. An empty <see cref="Events"/> list then does not
-    /// prove the range has no match. A checkpoint must not advance through it.
+    /// False when an event name in the query is still absent after the store
+    /// reloads its type map. Events for names the store already has are still
+    /// returned. A checkpoint must not advance through that range.
     /// </summary>
     public bool TypesResolved { get; init; } = true;
 }

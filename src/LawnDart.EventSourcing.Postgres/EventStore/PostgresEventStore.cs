@@ -122,6 +122,9 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
     /// <summary>Quoted stream tag table.</summary>
     internal string QualifiedStreamTagsTable => _names.StreamTags;
 
+    /// <summary>Quoted event name table.</summary>
+    internal string QualifiedTypesTable => _names.Types;
+
     /// <summary>Connection string the store uses for reads and appends.</summary>
     internal string ConnectionString => _options.ConnectionString!;
 
@@ -229,6 +232,7 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
             _options.OutboxTableName,
             cancellationToken).ConfigureAwait(false);
         await GrantAppRoleAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+        await RecordRegisteredEventNamesAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         await FillStreamTagsIfNeededAsync(connection, cancellationToken).ConfigureAwait(false);
         await ReloadEventTypeCacheAsync(cancellationToken).ConfigureAwait(false);
