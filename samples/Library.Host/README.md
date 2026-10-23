@@ -19,9 +19,7 @@ Start Postgres:
 docker compose -f samples/Library.Host/docker-compose.yml up -d --wait
 ```
 
-Create the tables. That command also records the catalog event names
-(`book-added`, `book-borrowed`, `book-returned`) so the projection can run
-before every one of those events has been stored.
+Create the tables:
 
 ```bash
 dotnet run --project samples/Library.Host -- setup

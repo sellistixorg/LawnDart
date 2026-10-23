@@ -4,7 +4,6 @@ using LawnDart.Authorization.AspNetCore;
 using LawnDart.EventSourcing;
 using LawnDart.EventSourcing.Postgres;
 using LawnDart.EventSourcing.Postgres.EventStore;
-using Npgsql;
 using LawnDart.EventSourcing.SqlServer;
 using LawnDart.EventSourcing.SqlServer.EventStore;
 using LawnDart.EventStore;
@@ -161,36 +160,11 @@ public static class LibraryHost
         }
 
         await postgres.InitializeSchemaAsync(cancellationToken).ConfigureAwait(false);
-        await EnsureLibraryEventNamesAsync(services, cancellationToken).ConfigureAwait(false);
         await services.GetRequiredKeyedService<IOutboxWriter>("default")
             .InitializeSchemaAsync(cancellationToken)
             .ConfigureAwait(false);
         await services.InitializePostgresProjectionStoresAsync("default", cancellationToken).ConfigureAwait(false);
         await services.InitializePostgresInboxStoreAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Records the library event names in the type table.
-    /// A projection read that names an event which has never been stored stays unresolved,
-    /// so setup records each name the catalog projection handles.
-    /// </summary>
-    private static async Task EnsureLibraryEventNamesAsync(
-        IServiceProvider services,
-        CancellationToken cancellationToken)
-    {
-        var options = services.GetRequiredKeyedService<PostgresEventStoreOptions>("default");
-        var schema = options.SchemaName.Replace("\"", "\"\"", StringComparison.Ordinal);
-        var table = options.EventTypesTableName.Replace("\"", "\"\"", StringComparison.Ordinal);
-        await using var connection = new NpgsqlConnection(options.ConnectionString);
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(
-            $"""
-            INSERT INTO "{schema}"."{table}" (token)
-            VALUES ('book-added'), ('book-borrowed'), ('book-returned')
-            ON CONFLICT (token) DO NOTHING
-            """,
-            connection);
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public static void AddTwoContexts(IServiceCollection services)

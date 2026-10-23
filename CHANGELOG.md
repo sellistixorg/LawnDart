@@ -15,7 +15,7 @@ changes to the public API.
 - A hosting guide covers a direct Postgres connection and PgBouncer. It names which connection string is the app connection, which is the listener, and which is schema setup, and it explains the pooler warning. Facts are dated and linked to the Postgres and PgBouncer docs.
 - Partition and tenant notes cover the hash buckets and the tenant key.
 - A backend differences page records the contract flags. On Postgres an event id is unique per tenant unless the outbox is on. Stream ids match exactly, including case. The in-memory store and SQL Server reject that same event id on a second tenant. SQL Server stream ids follow the database collation.
-- The Library host can run on Postgres. `AddPostgresLibrary` registers the host. `InitializePostgresLibraryAsync` creates the tables from a separate command and records the catalog event names. A compose file starts Postgres for that sample.
+- The Library host can run on Postgres. `AddPostgresLibrary` registers the host. `InitializePostgresLibraryAsync` creates the tables from a separate command. A compose file starts Postgres for that sample.
 
 ### Changed
 

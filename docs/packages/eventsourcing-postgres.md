@@ -91,12 +91,6 @@ again. The format stamp stays at 1.
 
 Event ids are unique per tenant. The same event id on two tenants is two
 rows. A repeated event id in one tenant throws `EventAlreadyAppendedException`.
-
-A read that names an event which has never been stored returns no rows until
-that name is in `event_types`. A projection that handles several events waits
-until each of those names has been stored once. Schema setup can insert the
-names. The Library host does that for `book-added`, `book-borrowed`, and
-`book-returned`.
 With the outbox on, the same event id on two tenants also throws that
 exception. See [Outbox](#outbox).
 
