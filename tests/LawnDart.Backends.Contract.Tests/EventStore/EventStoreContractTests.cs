@@ -390,6 +390,15 @@ public abstract class EventStoreContractTests : ContractSuite
         var options = new ContractStoreOptions { SchemaName = schema, RequireTenantId = false };
         var writer = await Backend.OpenEventStoreAsync(options);
         var reader = await Backend.OpenEventStoreAsync(options);
+        var reloadGate = new ReloadGate();
+        if (reader.Store is PostgresEventStore postgres)
+        {
+            // A pooled connection reopens too quickly for the writer to land
+            // between the name reload and the read limit. Wait here, after the
+            // reload has released its lock, until this round's writes commit.
+            postgres.AfterEventNameReload = _ => reloadGate.Current?.Task ?? Task.CompletedTask;
+        }
+
         const string known = "race.known";
         await writer.Log.AppendAsync(Stream(), [new AppendEvent(known, "{}"u8.ToArray())]);
         var primed = await reader.Log.ReadByQueryAsync(Query.FromItems(QueryItem.ByType(known)));
@@ -407,6 +416,8 @@ public abstract class EventStoreContractTests : ContractSuite
             long freshPosition = 0;
             long knownPosition = 0;
             var seen = new Dictionary<long, string>();
+            var roundWrites = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            reloadGate.Current = roundWrites;
 
             var reading = Task.Run(async () =>
             {
@@ -444,6 +455,7 @@ public abstract class EventStoreContractTests : ContractSuite
             Volatile.Write(ref freshPosition, freshAppend.SequencePositions[0]);
             Volatile.Write(ref knownPosition, knownAppend.SequencePositions[0]);
             Volatile.Write(ref writesFinished, 1);
+            roundWrites.TrySetResult();
 
             cursor = await reading;
             Assert.True(
@@ -653,6 +665,11 @@ public abstract class EventStoreContractTests : ContractSuite
     }
 
     private static string Stream() => "test-tenant:TestAggregate:" + Guid.NewGuid().ToString("N");
+
+    private sealed class ReloadGate
+    {
+        public volatile TaskCompletionSource? Current;
+    }
 
     private static Task InitializeSchemaAsync(ContractEventStore opened)
     {

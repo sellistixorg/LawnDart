@@ -105,6 +105,12 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
     internal Func<CancellationToken, Task>? AfterAppendStatement { get; set; }
 
     /// <summary>
+    /// Test seam. Runs after an event name reload, once that reload has released
+    /// its lock, and only when a requested name is still absent.
+    /// </summary>
+    internal Func<CancellationToken, Task>? AfterEventNameReload { get; set; }
+
+    /// <summary>
     /// Test seam. The follow-up read of event ids throws, so the caller sees
     /// <see cref="AppendOutcomeUnknownException"/> and the statement is not sent again.
     /// </summary>

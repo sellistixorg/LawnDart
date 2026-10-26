@@ -877,19 +877,24 @@ public sealed partial class PostgresEventStore
         if (tokens.Count == 0 || tokens.All(token => _eventTypes.FindId(token) is not null))
             return true;
 
+        var reloaded = false;
         await _typeCacheRefresh.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             if (tokens.All(token => _eventTypes.FindId(token) is not null))
                 return true;
             await ReloadEventTypeCacheAsync(cancellationToken).ConfigureAwait(false);
+            reloaded = true;
         }
         finally
         {
             _typeCacheRefresh.Release();
         }
 
-        return tokens.All(token => _eventTypes.FindId(token) is not null);
+        var resolved = tokens.All(token => _eventTypes.FindId(token) is not null);
+        if (reloaded && !resolved && AfterEventNameReload is { } afterReload)
+            await afterReload(cancellationToken).ConfigureAwait(false);
+        return resolved;
     }
 
     private static List<string> QueryTypeTokens(Query query)
