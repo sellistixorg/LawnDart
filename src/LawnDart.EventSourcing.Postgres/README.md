@@ -24,3 +24,5 @@ event in that same transaction. See
 [Schema initialization](https://github.com/sellistixorg/LawnDart/blob/main/docs/SCHEMA_INITIALIZATION.md).
 
 See [the package page](https://github.com/sellistixorg/LawnDart/blob/main/docs/packages/eventsourcing-postgres.md).
+Hosting, including PgBouncer, is in
+[Postgres hosting](https://github.com/sellistixorg/LawnDart/blob/main/docs/POSTGRES_HOSTING.md).

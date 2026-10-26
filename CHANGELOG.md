@@ -12,6 +12,10 @@ changes to the public API.
 
 ### Added
 
+- A hosting guide covers a direct Postgres connection and PgBouncer. It names which connection string is the app connection, which is the listener, and which is schema setup, and it explains the pooler warning. Facts are dated and linked to the Postgres and PgBouncer docs.
+- Partition and tenant notes cover the hash buckets and the tenant key.
+- A backend differences page records the contract flags. On Postgres an event id is unique per tenant unless the outbox is on. Stream ids match exactly, including case. The in-memory store and SQL Server reject that same event id on a second tenant. SQL Server stream ids follow the database collation.
+- The Library host can run on Postgres. `AddPostgresLibrary` registers the host. `InitializePostgresLibraryAsync` creates the tables from a separate command. A compose file starts Postgres for that sample.
 - `VerifySchemaAsync` reads the format stamp and the required tables, functions, triggers, partitions, and key indexes. It returns `SchemaCheckResult` and does not create or change objects. Call it at startup. `ThrowIfMismatch` throws `SchemaMismatchException` when the schema does not match. The Postgres check compares the whole body of `append_to_stream` and `save_projection_flush`. The schema has that one function, and the marker version must be the exact number this version writes. An extra overload does not match. A custom `IOutboxWriter` returns a match until it overrides `VerifySchemaAsync`. `InMemoryOutboxWriter.VerifySchemaAsync` returns a match. See [Schema initialization](docs/SCHEMA_INITIALIZATION.md).
 
 ### Fixed

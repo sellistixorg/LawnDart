@@ -289,6 +289,7 @@ and `VerifySqlInboxStoreAsync`.
 
 ## Related
 
+- [Postgres hosting](POSTGRES_HOSTING.md)
 - [Outbox](OUTBOX_PATTERN.md)
 - [Postgres event store](packages/eventsourcing-postgres.md)
 - [SQL Server event store](packages/eventsourcing-sqlserver.md)

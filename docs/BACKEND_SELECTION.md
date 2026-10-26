@@ -8,16 +8,16 @@ LawnDart ships three event-store backends.
 | **SQL Server** | Durable apps, transactional outbox | SQL Server | Durable |
 | **Postgres** | Durable apps on Postgres 15 or newer | Postgres | Durable |
 
-Both register through the same `AddBoundedContext` grammar. The verified swap is
+All three register through the same `AddBoundedContext` grammar. The verified swap is
 **command dispatch, event persistence, aggregate reload, projection materialisation,
-and read-back**: one application body, two registrations. Additional backends
-implement `IEventLog` (the typed `IEventStore` session is shipped). A
-third-party store must construct repositories with `EventSourcingRepositories`
-and call `AddSnapshotWriteInfrastructure` (see [SNAPSHOTS.md](SNAPSHOTS.md));
-the public repository constructors omit the write queue.
+and read-back**: one application body, three registrations (in-memory, SQL Server,
+and Postgres). Additional backends implement `IEventLog` (the typed `IEventStore`
+session is shipped). A third-party store must construct repositories with
+`EventSourcingRepositories` and call `AddSnapshotWriteInfrastructure` (see
+[SNAPSHOTS.md](SNAPSHOTS.md)). The public repository constructors omit the write queue.
 
 Subscriptions run on in-memory, SQL Server, and Postgres. The outbox runs on
-in-memory and SQL Server. Those paths have their own tests. A green swap
+in-memory, SQL Server, and Postgres. Those paths have their own tests. A green swap
 contract does not prove they behave identically.
 
 Leaving InMemory also means:
@@ -42,8 +42,8 @@ Leaving InMemory also means:
 
 `IEventStore` inherits `IStreamRegistry`. Changing a method
 signature here breaks InMemory, SQL Server, and any third-party store.
-`IEventStoreSubscriptions` is optional for a custom store; both shipped
-backends implement it.
+`IEventStoreSubscriptions` is optional for a custom store. The in-memory
+store, the SQL Server store, and the Postgres store implement it.
 
 **`IEventStore`**
 
@@ -204,7 +204,15 @@ The shared contract suite runs on Postgres in
 `tests/LawnDart.Backends.Contract.Tests`, including live subscriptions in
 listener mode and poll-only mode, the outbox, and the inbox. One Postgres
 container serves the run. A test that needs a behavior this backend does not
-have is skipped with a reason.
+have is skipped with a reason. The swap test covers in-memory, SQL Server,
+and Postgres. Event ids are unique per tenant, and stream ids match exactly,
+including case. See [Backend differences](BACKEND_DIFFERENCES.md).
+
+Hosting, including PgBouncer, is in [Postgres hosting](POSTGRES_HOSTING.md).
+Partitions and the tenant key are in
+[Postgres partitions and tenants](POSTGRES_PARTITIONS.md). The Library host
+can run on Postgres. Schema setup is a separate command. The steps are in
+`samples/Library.Host/README.md`.
 
 ## Switching
 

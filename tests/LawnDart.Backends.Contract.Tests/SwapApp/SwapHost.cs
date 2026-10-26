@@ -3,11 +3,14 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using LawnDart;
 using LawnDart.EventSourcing;
+using LawnDart.EventSourcing.Postgres;
+using LawnDart.EventSourcing.Postgres.EventStore;
 using LawnDart.EventSourcing.SqlServer;
 using LawnDart.EventSourcing.SqlServer.EventStore;
 using LawnDart.EventStore;
 using LawnDart.Metadata;
 using LawnDart.Projections.Lightweight;
+using LawnDart.Projections.Lightweight.Postgres;
 using LawnDart.Projections.Lightweight.SqlServer;
 using LawnDart.Snapshots;
 using LawnDart.TestUtilities;
@@ -15,8 +18,8 @@ using LawnDart.TestUtilities;
 namespace LawnDart.Backends.Contract.Tests.SwapApp;
 
 /// <summary>
-/// Same application registrations on both backends. Only the store and projection-store
-/// calls differ — that is the swap the contract test proves.
+/// Same application registrations on each backend. Only the store and projection-store
+/// calls differ. That is the swap the contract test proves.
 /// </summary>
 internal sealed class SwapHost : IAsyncDisposable
 {
@@ -67,13 +70,14 @@ internal sealed class SwapHost : IAsyncDisposable
         services.AddSqlProjectionStores(ContextName, connectionString, schemaName: "contract");
 
         var ctx = AddApplication(services);
-        ctx.UseSqlServer(o =>
+        LawnDartSqlServerExtensions.WithSnapshots(
+            ctx.UseSqlServer(o =>
             {
                 o.ConnectionString = connectionString;
                 o.RequireTenantId = false;
                 o.SchemaName = "contract";
-            })
-            .WithSnapshots(r => r.RegisterForAggregate<Student>(new EventCountSnapshotStrategy(1)))
+            }),
+            r => r.RegisterForAggregate<Student>(new EventCountSnapshotStrategy(1)))
             .WithProjections(
                 [typeof(StudentRosterProjection).Assembly],
                 o =>
@@ -89,6 +93,45 @@ internal sealed class SwapHost : IAsyncDisposable
 
         await sql.InitializeSchemaAsync().ConfigureAwait(false);
         await built.InitializeSqlProjectionStoresAsync(ContextName).ConfigureAwait(false);
+
+        var host = new SwapHost(built);
+        await host.StartAsync().ConfigureAwait(false);
+        return host;
+    }
+
+    public static async Task<SwapHost> StartPostgresAsync(string connectionString, string schemaName)
+    {
+        var services = CreateBaseServices();
+        services.AddPostgresProjectionStores(
+            ContextName,
+            connectionString,
+            schemaName,
+            o => o.EnableSingleRunnerLock = false);
+
+        var ctx = AddApplication(services);
+        LawnDartPostgresExtensions.WithSnapshots(
+            ctx.UsePostgres(o =>
+            {
+                o.ConnectionString = connectionString;
+                o.RequireTenantId = false;
+                o.SchemaName = schemaName;
+            }),
+            r => r.RegisterForAggregate<Student>(new EventCountSnapshotStrategy(1)))
+            .WithProjections(
+                [typeof(StudentRosterProjection).Assembly],
+                o =>
+                {
+                    o.PollInterval = TimeSpan.FromMilliseconds(50);
+                    o.CheckpointInterval = 1;
+                });
+
+        var built = services.BuildServiceProvider();
+        var store = built.GetRequiredKeyedService<IEventStore>(ContextName);
+        if (store is not PostgresEventStore postgres)
+            throw new InvalidOperationException("Postgres swap host did not resolve PostgresEventStore.");
+
+        await postgres.InitializeSchemaAsync().ConfigureAwait(false);
+        await built.InitializePostgresProjectionStoresAsync(ContextName).ConfigureAwait(false);
 
         var host = new SwapHost(built);
         await host.StartAsync().ConfigureAwait(false);

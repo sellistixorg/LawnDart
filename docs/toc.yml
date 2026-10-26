@@ -22,8 +22,14 @@
   href: EVENT_SCHEMA_VERSIONING.md
 - name: Backend selection
   href: BACKEND_SELECTION.md
+- name: Backend differences
+  href: BACKEND_DIFFERENCES.md
 - name: Schema initialization
   href: SCHEMA_INITIALIZATION.md
+- name: Postgres hosting
+  href: POSTGRES_HOSTING.md
+- name: Postgres partitions and tenants
+  href: POSTGRES_PARTITIONS.md
 - name: Stream IDs
   href: STREAM_IDS.md
 - name: Tagging

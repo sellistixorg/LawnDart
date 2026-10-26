@@ -56,6 +56,9 @@ window and returns the count.
 
 `TryClaimAsync` is one statement, so it runs through PgBouncer in transaction
 mode. PgBouncer is a connection pooler that can sit in front of Postgres.
+The inbox has no listener. `ConnectionString` is the app connection.
+`MigrationConnectionString` creates the table. Point that one at Postgres
+directly. See [Postgres hosting](../POSTGRES_HOSTING.md).
 
 Hosted reactors store `reactor:{hash}:{message id}`. Hosted processors
 store `processor:{hash}:{message id}`. `hash` is 32 hexadecimal characters
@@ -75,6 +78,7 @@ and recreate.
 
 - [Package map](README.md)
 - [Schema initialization](../SCHEMA_INITIALIZATION.md)
+- [Postgres hosting](../POSTGRES_HOSTING.md)
 - [Messaging](messaging.md)
 - [Postgres event store](eventsourcing-postgres.md)
 - [Outbox](../OUTBOX_PATTERN.md)
