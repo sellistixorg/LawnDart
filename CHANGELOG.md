@@ -17,6 +17,7 @@ changes to the public API.
 ### Fixed
 
 - A Postgres or SQL Server read that names several event types returns the events whose names are already stored when another requested name is not in the event name table yet. Postgres `InitializeSchemaAsync` records each catalog event name. Running it again leaves one row per name and does not assign that name a new id. A name that is still absent matches no rows. Events up to the last one returned are delivered. The position does not move past them to the current end until every requested name is stored.
+- A Postgres subscription tries again when the connection closes while it is opening. That happens when the database is restarting.
 
 ### Changed
 

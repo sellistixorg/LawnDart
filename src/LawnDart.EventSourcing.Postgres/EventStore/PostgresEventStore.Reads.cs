@@ -353,6 +353,9 @@ public sealed partial class PostgresEventStore
                     or SocketError.NetworkReset)
                 return true;
             // A dropped socket sometimes arrives as a plain IOException with no socket error code.
+            // A restart can also close the socket while the connection is still opening.
+            if (current is EndOfStreamException)
+                return true;
             if (current is IOException && current is not SocketException
                 && (current.Message.Contains("forcibly closed", StringComparison.OrdinalIgnoreCase)
                     || current.Message.Contains("broken pipe", StringComparison.OrdinalIgnoreCase)
