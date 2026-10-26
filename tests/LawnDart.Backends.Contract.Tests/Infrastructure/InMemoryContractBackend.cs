@@ -50,7 +50,8 @@ public sealed class InMemoryContractBackend : IContractBackend
         var store = new InMemoryEventStore(
             enableRegistry: options.EnableRegistry,
             contextName: options.SchemaName,
-            options: storeOptions);
+            options: storeOptions,
+            session: options.CreateSession());
         store.PublishNewEventsSignal = options.PublishNewEventsSignal;
         var opened = new ContractEventStore
         {

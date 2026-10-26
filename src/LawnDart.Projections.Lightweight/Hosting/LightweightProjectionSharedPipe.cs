@@ -387,8 +387,6 @@ internal sealed class LightweightProjectionSharedPipe : IAsyncDisposable
         var batchCount = 0;
         var result = await _eventStore.ReadByQueryAsync(
             query, from, toSequencePosition: to, cancellationToken: ct).ConfigureAwait(false);
-        if (!result.TypesResolved)
-            return;
 
         foreach (var se in result.Events)
         {
@@ -397,6 +395,11 @@ internal sealed class LightweightProjectionSharedPipe : IAsyncDisposable
             await FanoutAsync(se, ct).ConfigureAwait(false);
             batchCount++;
         }
+
+        // Events up to the last one returned are delivered. The position does not
+        // move past them to the current end until every requested name is stored.
+        if (!result.TypesResolved)
+            return;
 
         if (batchCount == 0 && queriedThroughHead)
         {

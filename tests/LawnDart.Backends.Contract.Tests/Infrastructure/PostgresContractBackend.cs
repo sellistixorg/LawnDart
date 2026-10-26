@@ -91,7 +91,7 @@ public sealed class PostgresContractBackend : IContractBackend
         if (options.OutboxClaimLease is { } lease)
             storeOptions.OutboxClaimLease = lease;
 
-        var store = new PostgresEventStore(_connectionString, serializer: null, storeOptions, logger);
+        var store = new PostgresEventStore(_connectionString, serializer: null, storeOptions, logger, options.CreateSession());
         store.PublishNewEventsSignal = options.PublishNewEventsSignal;
         store.ForcePollOnly = _pollOnly;
         await _ready.GetOrAdd(
