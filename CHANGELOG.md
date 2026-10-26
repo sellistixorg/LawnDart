@@ -10,6 +10,10 @@ changes to the public API.
 
 ## [Unreleased]
 
+## [0.7.0-alpha.3] - 2026-10-26
+
+This release adds a read-only schema check, Postgres hosting notes, and a Library sample on Postgres. The build kit targets LawnDart 0.7.
+
 ### Added
 
 - A hosting guide covers a direct Postgres connection and PgBouncer. It names which connection string is the app connection, which is the listener, and which is schema setup, and it explains the pooler warning. Facts are dated and linked to the Postgres and PgBouncer docs.
