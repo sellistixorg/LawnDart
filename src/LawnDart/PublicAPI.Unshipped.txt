@@ -83,5 +83,17 @@ override LawnDart.EventStore.StreamPage.ToString() -> string!
 LawnDart.EventStore.StreamPage.<Clone>$() -> LawnDart.EventStore.StreamPage!
 static LawnDart.EventStore.StreamPage.operator !=(LawnDart.EventStore.StreamPage? left, LawnDart.EventStore.StreamPage? right) -> bool
 static LawnDart.EventStore.StreamPage.operator ==(LawnDart.EventStore.StreamPage? left, LawnDart.EventStore.StreamPage? right) -> bool
+LawnDart.Outbox.IOutboxWriter.VerifySchemaAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<LawnDart.SchemaCheckResult!>!
+LawnDart.SchemaCheckResult
+LawnDart.SchemaCheckResult.SchemaCheckResult(bool matches, string? expectedFormat, string? foundFormat, System.Collections.Generic.IReadOnlyList<string!>! missing) -> void
+LawnDart.SchemaCheckResult.ExpectedFormat.get -> string?
+LawnDart.SchemaCheckResult.FoundFormat.get -> string?
+LawnDart.SchemaCheckResult.Matches.get -> bool
+LawnDart.SchemaCheckResult.Missing.get -> System.Collections.Generic.IReadOnlyList<string!>!
+static LawnDart.SchemaCheckResult.Match(string? expectedFormat = null) -> LawnDart.SchemaCheckResult!
+LawnDart.SchemaCheckResult.ThrowIfMismatch() -> void
+LawnDart.SchemaMismatchException
+LawnDart.SchemaMismatchException.SchemaMismatchException(LawnDart.SchemaCheckResult! result) -> void
+LawnDart.SchemaMismatchException.Result.get -> LawnDart.SchemaCheckResult!
 LawnDart.EventStore.EventStoreAdapter.ListStreamsAsync(LawnDart.EventStore.StreamListFilter? filter = null, string? pageToken = null, int pageSize = 100, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<LawnDart.EventStore.StreamPage!>!
 LawnDart.EventStore.IStreamRegistry.ListStreamsAsync(LawnDart.EventStore.StreamListFilter? filter = null, string? pageToken = null, int pageSize = 100, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<LawnDart.EventStore.StreamPage!>!

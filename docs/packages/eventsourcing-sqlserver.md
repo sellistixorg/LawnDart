@@ -187,9 +187,11 @@ and inbox 2.
 
 Call `InitializeSchemaAsync` on the SQL event store once on each database
 before the new process reads. Run that call from a deploy or admin step.
-Normal app startup does not run it. See
+Normal app startup does not run it. At startup, call `VerifySchemaAsync` on
+the event store, the outbox writer, and the snapshot store. It reads the
+stamp and the objects. It does not create or change them. See
 [Schema initialization](../SCHEMA_INITIALIZATION.md).
-Call it on the outbox writer when
+Call `InitializeSchemaAsync` on the outbox writer when
 `EnableOutbox` is on. Call `InitializeSqlInboxStoreAsync` when the inbox
 is SQL Server. A second call on a table that is already current returns.
 

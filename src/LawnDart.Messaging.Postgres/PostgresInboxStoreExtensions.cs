@@ -1,3 +1,4 @@
+using LawnDart;
 using LawnDart.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -68,5 +69,33 @@ public static class PostgresInboxStoreExtensions
         }
 
         await postgres.InitializeSchemaAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Reads the inbox schema for the <see cref="PostgresInboxStore"/> registered by
+    /// <see cref="AddPostgresInboxStore"/>.
+    /// </summary>
+    /// <param name="services">Built service provider.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Whether the inbox schema matches this version.</returns>
+    /// <remarks>
+    /// This method does not create or change objects. Call it at startup.
+    /// <see cref="SchemaCheckResult.ThrowIfMismatch"/> throws when the result does not match.
+    /// </remarks>
+    public static async Task<SchemaCheckResult> VerifyPostgresInboxStoreAsync(
+        this IServiceProvider services,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        var store = services.GetRequiredService<IInboxStore>();
+        if (store is not PostgresInboxStore postgres)
+        {
+            throw new InvalidOperationException(
+                $"IInboxStore is {store.GetType().Name}, not PostgresInboxStore. " +
+                "Call AddPostgresInboxStore(connectionString) before VerifyPostgresInboxStoreAsync.");
+        }
+
+        return await postgres.VerifySchemaAsync(cancellationToken).ConfigureAwait(false);
     }
 }

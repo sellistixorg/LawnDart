@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
+using LawnDart;
 using LawnDart.Projections.Storage;
 using LawnDart.Sql;
 
@@ -458,5 +459,26 @@ public class SqlViewStore : IViewStore
             // This can happen in race conditions with multiple nodes initializing simultaneously
             _logger?.LogDebug("View store schema already exists (idempotent check): {Message}", ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Reads whether <c>ProjectionViews</c> is present.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A match when the table exists. This store has no format stamp.</returns>
+    /// <remarks>
+    /// This method does not create or change objects. Call it at startup.
+    /// <see cref="SchemaCheckResult.ThrowIfMismatch"/> throws when the result does not match.
+    /// </remarks>
+    public async Task<SchemaCheckResult> VerifySchemaAsync(CancellationToken cancellationToken = default)
+    {
+        var connection = new SqlConnection(_connectionString);
+        await using var disposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await SqlSchemaProbe.RequireViewDefinitionAsync(connection, _schemaName, cancellationToken).ConfigureAwait(false);
+
+        var missing = new List<string>();
+        await SqlSchemaProbe.AddMissingAsync(connection, _schemaName, _tableName, "U", missing, cancellationToken).ConfigureAwait(false);
+        return SqlSchemaProbe.Finish(expected: null, found: null, missing);
     }
 }

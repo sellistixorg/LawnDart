@@ -29,6 +29,9 @@ startup does not run it. See
 await provider.InitializeSqlProjectionStoresAsync("default");
 ```
 
+At startup, call `VerifySqlProjectionStoresAsync`. It reads `ProjectionViews`
+and `ProjectionCheckpoints`. It does not create or change them.
+
 Run that from a connection that can create tables. After the tables exist,
 a later call does not create them again.
 
