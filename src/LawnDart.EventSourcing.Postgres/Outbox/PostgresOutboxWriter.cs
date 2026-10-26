@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Text.Json;
+using LawnDart;
 using LawnDart.EventSourcing.Postgres;
 using LawnDart.Outbox;
 using Microsoft.Extensions.Logging;
@@ -267,6 +269,38 @@ public sealed class PostgresOutboxWriter : IOutboxWriter
             cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         _logger?.LogInformation("Outbox schema initialized");
+    }
+
+    /// <summary>
+    /// Reads the outbox format stamp, the outbox table, and the pending index.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Whether the outbox schema matches, which stamp was found, and any missing objects.</returns>
+    /// <remarks>
+    /// This method does not create or change objects. It uses the connection passed to the constructor,
+    /// not <c>migrationConnectionString</c>.
+    /// Call it at startup. <see cref="SchemaCheckResult.ThrowIfMismatch"/> throws when the result does not match.
+    /// </remarks>
+    public async Task<SchemaCheckResult> VerifySchemaAsync(CancellationToken cancellationToken = default)
+    {
+        var schemaInfo = PgIdentifier.Qualify(_schemaName, "schema_info");
+        var pending = "ix_" + _tableName + "_pending";
+        using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        return await PostgresSchemaProbe.CheckAsync(
+            connection,
+            PostgresOutboxSchema.CurrentFormat.ToString(CultureInfo.InvariantCulture),
+            _schemaName,
+            schemaInfo,
+            PostgresOutboxSchema.Component,
+            [
+                new(_tableName, _qualifiedTableName),
+                new("schema_info", schemaInfo),
+                new(pending, PgIdentifier.Qualify(_schemaName, pending))
+            ],
+            [],
+            [],
+            [],
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<int> ExecuteAsync(string sql, Guid messageId, CancellationToken cancellationToken)

@@ -1,3 +1,4 @@
+using LawnDart;
 using LawnDart.Projections;
 using LawnDart.Projections.Checkpoints;
 using LawnDart.Projections.Storage;
@@ -39,6 +40,34 @@ public sealed class PostgresProjectionStore : IViewStore, ICheckpointStore, IAto
     {
         await _views.InitializeSchemaAsync(cancellationToken).ConfigureAwait(false);
         await _checkpoints.InitializeSchemaAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Reads the projection tables and <c>save_projection_flush</c> for the view store and the checkpoint store.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A match when both stores match. This store has no format stamp.</returns>
+    /// <remarks>
+    /// This method does not create or change objects. Call it at startup.
+    /// <see cref="SchemaCheckResult.ThrowIfMismatch"/> throws when the result does not match.
+    /// </remarks>
+    public async Task<SchemaCheckResult> VerifySchemaAsync(CancellationToken cancellationToken = default)
+    {
+        var views = await _views.VerifySchemaAsync(cancellationToken).ConfigureAwait(false);
+        var checkpoints = await _checkpoints.VerifySchemaAsync(cancellationToken).ConfigureAwait(false);
+        if (views.Matches && checkpoints.Matches)
+            return views;
+
+        var missing = new List<string>(views.Missing.Count + checkpoints.Missing.Count);
+        foreach (var name in views.Missing)
+            missing.Add(name);
+        foreach (var name in checkpoints.Missing)
+        {
+            if (!missing.Contains(name, StringComparer.Ordinal))
+                missing.Add(name);
+        }
+
+        return new SchemaCheckResult(false, null, null, missing);
     }
 
     /// <inheritdoc/>

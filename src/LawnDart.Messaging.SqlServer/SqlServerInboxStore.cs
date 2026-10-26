@@ -2,6 +2,7 @@ using System.Data;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using LawnDart;
 using LawnDart.Sql;
 
 namespace LawnDart.Messaging.SqlServer;
@@ -202,6 +203,31 @@ public sealed class SqlServerInboxStore : IInboxStore
         using var command = new SqlCommand(sql, connection);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         _logger?.LogInformation("Inbox schema initialized for {Table}", _qualifiedTableName);
+    }
+
+    /// <summary>
+    /// Reads the inbox format stamp and the inbox table.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Whether the inbox schema matches, which stamp was found, and any missing objects.</returns>
+    /// <remarks>
+    /// This method does not create or change objects. Call it at startup.
+    /// <see cref="SchemaCheckResult.ThrowIfMismatch"/> throws when the result does not match.
+    /// </remarks>
+    public async Task<SchemaCheckResult> VerifySchemaAsync(CancellationToken cancellationToken = default)
+    {
+        using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await SqlSchemaProbe.RequireViewDefinitionAsync(connection, _schemaName, cancellationToken).ConfigureAwait(false);
+
+        var missing = new List<string>();
+        string? found = null;
+        if (await SqlSchemaProbe.ExistsAsync(connection, _schemaName, _tableName, "U", cancellationToken).ConfigureAwait(false))
+            found = await SqlSchemaProbe.ReadStampAsync(connection, _schemaName, _tableName, SchemaFormatPropertyName, cancellationToken).ConfigureAwait(false);
+        else
+            missing.Add(_tableName);
+
+        return SqlSchemaProbe.Finish(CurrentSchemaFormat, found, missing);
     }
 
     /// <summary>

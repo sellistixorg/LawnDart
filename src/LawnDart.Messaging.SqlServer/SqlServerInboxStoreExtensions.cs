@@ -1,3 +1,4 @@
+using LawnDart;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -67,5 +68,33 @@ public static class SqlServerInboxStoreExtensions
         }
 
         await sql.InitializeSchemaAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Reads the inbox schema for the <see cref="SqlServerInboxStore"/> registered by
+    /// <see cref="AddSqlInboxStore"/>.
+    /// </summary>
+    /// <param name="services">Built service provider.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Whether the inbox schema matches this version.</returns>
+    /// <remarks>
+    /// This method does not create or change objects. Call it at startup.
+    /// <see cref="SchemaCheckResult.ThrowIfMismatch"/> throws when the result does not match.
+    /// </remarks>
+    public static async Task<SchemaCheckResult> VerifySqlInboxStoreAsync(
+        this IServiceProvider services,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        var store = services.GetRequiredService<IInboxStore>();
+        if (store is not SqlServerInboxStore sql)
+        {
+            throw new InvalidOperationException(
+                $"IInboxStore is {store.GetType().Name}, not SqlServerInboxStore. " +
+                "Call AddSqlInboxStore(connectionString) before VerifySqlInboxStoreAsync.");
+        }
+
+        return await sql.VerifySchemaAsync(cancellationToken).ConfigureAwait(false);
     }
 }

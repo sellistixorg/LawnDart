@@ -17,7 +17,8 @@ services.AddBoundedContext("default")
 ```
 
 Call `InitializeSchemaAsync` from a deploy or admin step before the first
-append. Normal app startup does not call it. `WithSnapshots` stores
+append. Normal app startup calls `VerifySchemaAsync` instead. That call only
+reads. `WithSnapshots` stores
 snapshot state as bytes. `EnableOutbox = true` writes one outbox row per
 event in that same transaction. See
 [Schema initialization](https://github.com/sellistixorg/LawnDart/blob/main/docs/SCHEMA_INITIALIZATION.md).

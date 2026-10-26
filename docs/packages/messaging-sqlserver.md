@@ -30,6 +30,9 @@ startup does not run it. See
 await provider.InitializeSqlInboxStoreAsync();
 ```
 
+At startup, call `VerifySqlInboxStoreAsync`. It reads the stamp and the
+table. It does not create or change them.
+
 ## Table
 
 `MessageId` is `NVARCHAR(256)`, the primary key. `ProcessedAt` is

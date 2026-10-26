@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using LawnDart;
 using LawnDart.Projections.Checkpoints;
 using LawnDart.Projections.Storage;
 
@@ -98,5 +99,58 @@ public static class SqlProjectionStoreExtensions
 
         await sqlViewStore.InitializeSchemaAsync(cancellationToken).ConfigureAwait(false);
         await sqlCheckpointStore.InitializeSchemaAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Reads the keyed SQL Server view and checkpoint tables registered by <see cref="AddSqlProjectionStores"/>.
+    /// </summary>
+    /// <param name="services">Built service provider.</param>
+    /// <param name="contextName">Bounded context dependency injection key.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A match when both tables exist. These stores have no format stamp.</returns>
+    /// <remarks>
+    /// This method does not create or change objects. Call it at startup.
+    /// <see cref="SchemaCheckResult.ThrowIfMismatch"/> throws when the result does not match.
+    /// </remarks>
+    public static async Task<SchemaCheckResult> VerifySqlProjectionStoresAsync(
+        this IServiceProvider services,
+        string contextName,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(contextName))
+            throw new ArgumentException("Context name must not be null or whitespace.", nameof(contextName));
+
+        var viewStore = services.GetRequiredKeyedService<IViewStore>(contextName);
+        var checkpointStore = services.GetRequiredKeyedService<ICheckpointStore>(contextName);
+
+        if (viewStore is not SqlViewStore sqlViewStore)
+        {
+            throw new InvalidOperationException(
+                $"Keyed IViewStore '{contextName}' is {viewStore.GetType().Name}, not SqlViewStore. " +
+                "Call AddSqlProjectionStores(contextName, connectionString) before VerifySqlProjectionStoresAsync.");
+        }
+
+        if (checkpointStore is not SqlCheckpointStore sqlCheckpointStore)
+        {
+            throw new InvalidOperationException(
+                $"Keyed ICheckpointStore '{contextName}' is {checkpointStore.GetType().Name}, not SqlCheckpointStore. " +
+                "Call AddSqlProjectionStores(contextName, connectionString) before VerifySqlProjectionStoresAsync.");
+        }
+
+        var views = await sqlViewStore.VerifySchemaAsync(cancellationToken).ConfigureAwait(false);
+        var checkpoints = await sqlCheckpointStore.VerifySchemaAsync(cancellationToken).ConfigureAwait(false);
+        if (views.Matches && checkpoints.Matches)
+            return views;
+
+        var missing = new List<string>(views.Missing.Count + checkpoints.Missing.Count);
+        foreach (var name in views.Missing)
+            missing.Add(name);
+        foreach (var name in checkpoints.Missing)
+        {
+            if (!missing.Contains(name, StringComparer.Ordinal))
+                missing.Add(name);
+        }
+
+        return new SchemaCheckResult(false, null, null, missing);
     }
 }

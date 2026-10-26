@@ -102,6 +102,12 @@ public sealed class PostgresSubscriptionRulesTests
         Assert.False(PostgresEventStore.IsRetryableReadFailure(password, hadSuccessfulRead: false));
         Assert.False(PostgresEventStore.IsRetryableReadFailure(password, hadSuccessfulRead: true));
 
+        var closedWhileOpening = new NpgsqlException(
+            "Exception while reading from stream",
+            new EndOfStreamException("Attempted to read past the end of the stream."));
+        Assert.True(PostgresEventStore.IsRetryableReadFailure(closedWhileOpening, hadSuccessfulRead: false));
+        Assert.True(PostgresEventStore.IsRetryableReadFailure(closedWhileOpening, hadSuccessfulRead: true));
+
         static void AssertConfiguration(SocketError error)
         {
             Assert.False(Retryable(error, hadSuccessfulRead: false));

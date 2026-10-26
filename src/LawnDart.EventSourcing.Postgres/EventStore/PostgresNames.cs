@@ -21,6 +21,7 @@ internal sealed class PostgresNames
         _streamsTable = options.StreamsTableName;
         _tagsTable = options.EventTagsTableName;
         _streamTagsTable = StreamTagsName(_streamsTable);
+        StreamTagsTable = _streamTagsTable;
         Events = PgIdentifier.Qualify(Schema, _eventsTable);
         EventsShared = PgIdentifier.Qualify(Schema, _eventsTable + "_shared");
         Streams = PgIdentifier.Qualify(Schema, _streamsTable);
@@ -87,6 +88,9 @@ internal sealed class PostgresNames
 
     /// <summary>One row per stream tag. The primary key is (tenant_id, tag, stream_id).</summary>
     public string StreamTags { get; }
+
+    /// <summary>Unqualified stream tag table name.</summary>
+    internal string StreamTagsTable { get; }
 
     public string StreamTagsShared { get; }
 

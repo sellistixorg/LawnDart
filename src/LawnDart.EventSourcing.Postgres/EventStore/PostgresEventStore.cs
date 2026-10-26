@@ -105,6 +105,12 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
     internal Func<CancellationToken, Task>? AfterAppendStatement { get; set; }
 
     /// <summary>
+    /// Test seam. Runs after an event name reload, once that reload has released
+    /// its lock, and only when a requested name is still absent.
+    /// </summary>
+    internal Func<CancellationToken, Task>? AfterEventNameReload { get; set; }
+
+    /// <summary>
     /// Test seam. The follow-up read of event ids throws, so the caller sees
     /// <see cref="AppendOutcomeUnknownException"/> and the statement is not sent again.
     /// </summary>
@@ -121,6 +127,9 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
 
     /// <summary>Quoted stream tag table.</summary>
     internal string QualifiedStreamTagsTable => _names.StreamTags;
+
+    /// <summary>Quoted event name table.</summary>
+    internal string QualifiedTypesTable => _names.Types;
 
     /// <summary>Connection string the store uses for reads and appends.</summary>
     internal string ConnectionString => _options.ConnectionString!;
@@ -229,6 +238,7 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
             _options.OutboxTableName,
             cancellationToken).ConfigureAwait(false);
         await GrantAppRoleAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+        await RecordRegisteredEventNamesAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         await FillStreamTagsIfNeededAsync(connection, cancellationToken).ConfigureAwait(false);
         await ReloadEventTypeCacheAsync(cancellationToken).ConfigureAwait(false);

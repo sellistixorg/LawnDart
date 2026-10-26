@@ -8,3 +8,9 @@ namespace LawnDart.TestUtilities;
 /// </summary>
 [EventTypeName("test-utilities.catalog-placeholder")]
 public sealed record CatalogPlaceholderEvent(Guid Id, DateTime Timestamp) : IEvent;
+
+/// <summary>
+/// The counter event from the quickstart. Schema startup samples register this type.
+/// </summary>
+[EventTypeName("counter-created")]
+public sealed record CounterCreated(Guid Id, DateTime Timestamp, Guid CounterId) : IEvent;
