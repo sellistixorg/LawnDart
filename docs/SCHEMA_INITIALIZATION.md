@@ -243,9 +243,6 @@ using LawnDart.EventStore;
 using LawnDart.Messaging.Postgres;
 using LawnDart.Projections.Lightweight.Postgres;
 
-[EventTypeName("counter-created")]
-public sealed record CounterCreated(Guid Id, DateTime Timestamp, Guid CounterId) : IEvent;
-
 services.AddLawnDart(o => o.RequireTenantId = false);
 services.AddPostgresProjectionStores("default", appConnectionString);
 services.AddPostgresInboxStore(appConnectionString);
@@ -257,6 +254,9 @@ services.AddBoundedContext("default")
         o.EnableOutbox = true;
     })
     .WithEventTypes<CounterCreated>();
+
+[EventTypeName("counter-created")]
+public sealed record CounterCreated(Guid Id, DateTime Timestamp, Guid CounterId) : IEvent;
 ```
 
 `UseSqlServer` is the same registration for SQL Server. It does not call
