@@ -10,13 +10,17 @@ changes to the public API.
 
 ## [Unreleased]
 
-### Changed
-
-- Schema setup runs once per deploy from a deploy job, a migration step, or an admin tool. Normal app startup does not run it. An older copy that restarts can run its own schema setup at startup and change a schema a newer copy already upgraded. That copy can put an older append function back, or append events with no outbox rows. Upgrade the schema with the new version, make sure no older copy can start, then turn on `EnableOutbox`. See [Schema initialization](docs/SCHEMA_INITIALIZATION.md).
-
 ### Added
 
 - `VerifySchemaAsync` reads the format stamp and the required tables, functions, triggers, partitions, and key indexes. It returns `SchemaCheckResult` and does not create or change objects. Call it at startup. `ThrowIfMismatch` throws `SchemaMismatchException` when the schema does not match. The Postgres check compares the whole body of `append_to_stream` and `save_projection_flush`. The schema has that one function, and the marker version must be the exact number this version writes. An extra overload does not match. A custom `IOutboxWriter` returns a match until it overrides `VerifySchemaAsync`. `InMemoryOutboxWriter.VerifySchemaAsync` returns a match. See [Schema initialization](docs/SCHEMA_INITIALIZATION.md).
+
+### Fixed
+
+- A Postgres or SQL Server read that names several event types returns the events whose names are already stored when another requested name is not in the event name table yet. Postgres `InitializeSchemaAsync` records each catalog event name. Running it again leaves one row per name and does not assign that name a new id. A name that is still absent matches no rows. Events up to the last one returned are delivered. The position does not move past them to the current end until every requested name is stored.
+
+### Changed
+
+- Schema setup runs once per deploy from a deploy job, a migration step, or an admin tool. Normal app startup does not run it. An older copy that restarts can run its own schema setup at startup and change a schema a newer copy already upgraded. That copy can put an older append function back, or append events with no outbox rows. Upgrade the schema with the new version, make sure no older copy can start, then turn on `EnableOutbox`. See [Schema initialization](docs/SCHEMA_INITIALIZATION.md).
 
 ## [0.7.0-alpha.2] - 2026-10-22
 

@@ -66,8 +66,9 @@ release when the handler throws.
 `IEventStore` and `IEventLog` have the same members as 0.6.0-alpha.2.
 `QueryResult.TypesResolved` and `EventLogQueryResult.TypesResolved`
 default to true. An existing constructor call still compiles. A custom log
-that leaves a type unresolved sets `TypesResolved` to false so a caller
-does not checkpoint past that range.
+that leaves a type unresolved sets `TypesResolved` to false. Events up
+to the last one returned are delivered. The position does not move past
+them to the current end until every requested name is stored.
 
 ## Meter
 

@@ -62,12 +62,12 @@ public sealed partial class PostgresEventStore
         Query query, long? fromSequencePosition, long? toSequencePosition, DateTime? toCommitTimestamp, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(query);
-        if (!await EnsureQueryTypesResolvedAsync(query, cancellationToken).ConfigureAwait(false))
-            return 0L;
-
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        // The limit comes first. A name stored after it is not part of this read,
+        // so a later event cannot hide an earlier one whose name was not loaded yet.
         var head = await _horizon.ResolveAsync(connection, cancellationToken).ConfigureAwait(false);
         var to = Cap(toSequencePosition, head);
+        await EnsureQueryTypesResolvedAsync(query, cancellationToken).ConfigureAwait(false);
         var built = PostgresQuerySql.Build(
             _names, query, _eventTypes.FindId, fromSequencePosition, to, toCommitTimestamp, limit: null, PostgresQuerySql.Mode.MaxSequence);
         if (built.ShortCircuited)
@@ -214,12 +214,6 @@ public sealed partial class PostgresEventStore
                     }
 
                     hadSuccessfulRead = true;
-                    if (!page.TypesResolved)
-                    {
-                        await WaitPollAsync(ticket, CurrentPoll(), cancellation).ConfigureAwait(false);
-                        continue;
-                    }
-
                     foreach (var frame in page.Events)
                     {
                         if (cancellation.IsCancellationRequested || handle.IsDisposed)
@@ -235,6 +229,15 @@ public sealed partial class PostgresEventStore
                         lastDelivered = frame.SequencePosition;
                         if (delivered >= batch)
                             break;
+                    }
+
+                    // An absent name matches nothing. Keep the events that were
+                    // returned, and do not move the cursor to the head.
+                    if (!page.TypesResolved)
+                    {
+                        if (page.Events.Count < batch)
+                            await WaitPollAsync(ticket, CurrentPoll(), cancellation).ConfigureAwait(false);
+                        continue;
                     }
 
                     if (page.Events.Count < batch && head > lastDelivered)
@@ -430,22 +433,22 @@ public sealed partial class PostgresEventStore
         DateTime? toCommitTimestamp,
         CancellationToken cancellationToken)
     {
-        if (!await EnsureQueryTypesResolvedAsync(query, cancellationToken).ConfigureAwait(false))
-            return new QueryRead([], false);
-
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        // The limit comes first. A name stored after it is not part of this read,
+        // so a later event cannot hide an earlier one whose name was not loaded yet.
         var head = await _horizon.ResolveAsync(connection, cancellationToken).ConfigureAwait(false);
         var to = Cap(toSequencePosition, head);
+        var typesResolved = await EnsureQueryTypesResolvedAsync(query, cancellationToken).ConfigureAwait(false);
         var built = PostgresQuerySql.Build(
             _names, query, _eventTypes.FindId, fromSequencePosition, to, toCommitTimestamp, limit, PostgresQuerySql.Mode.Events);
         if (built.ShortCircuited)
-            return new QueryRead([], true);
+            return new QueryRead([], typesResolved);
 
         await using var command = new NpgsqlCommand(built.Sql, connection);
         foreach (var parameter in built.Parameters)
             command.Parameters.Add(parameter);
         var rows = await ReadRowsAsync(command, cancellationToken).ConfigureAwait(false);
-        return new QueryRead(await MaterializeAsync(rows, cancellationToken).ConfigureAwait(false), true);
+        return new QueryRead(await MaterializeAsync(rows, cancellationToken).ConfigureAwait(false), typesResolved);
     }
 
     private static long? Cap(long? requested, long head)

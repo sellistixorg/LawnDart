@@ -823,25 +823,78 @@ public sealed partial class PostgresEventStore
         }
     }
 
+    /// <summary>
+    /// Writes each catalog event name into the event name table.
+    /// A name that is already stored is left out of the insert, so a second
+    /// setup does not assign it a new id. Two setups at the same time still
+    /// leave one row per name.
+    /// </summary>
+    private async Task RecordRegisteredEventNamesAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        var tokens = CatalogFamilyTokens()
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(token => token, StringComparer.Ordinal)
+            .ToArray();
+        if (tokens.Length == 0)
+            return;
+
+        await using var insert = new NpgsqlCommand(
+            $"""
+            INSERT INTO {_names.Types} (token)
+            SELECT incoming.token
+            FROM unnest(@tokens) AS incoming(token)
+            WHERE NOT EXISTS (
+                SELECT 1 FROM {_names.Types} existing WHERE existing.token = incoming.token
+            )
+            ON CONFLICT (token) DO NOTHING
+            """,
+            connection,
+            transaction);
+        insert.Parameters.Add(new NpgsqlParameter("tokens", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = tokens });
+        await insert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private IEnumerable<string> CatalogFamilyTokens()
+    {
+        if (_session.Catalog is EventTypeCatalog catalog)
+        {
+            foreach (var family in catalog.EnumerateFamilies())
+                yield return family.Token;
+        }
+    }
+
+    /// <summary>
+    /// Reloads the event name map when a requested name is missing.
+    /// False means a name is still absent. That name matches no rows.
+    /// Names the store already has are still read.
+    /// </summary>
     private async Task<bool> EnsureQueryTypesResolvedAsync(Query query, CancellationToken cancellationToken)
     {
         var tokens = QueryTypeTokens(query);
         if (tokens.Count == 0 || tokens.All(token => _eventTypes.FindId(token) is not null))
             return true;
 
+        var reloaded = false;
         await _typeCacheRefresh.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             if (tokens.All(token => _eventTypes.FindId(token) is not null))
                 return true;
             await ReloadEventTypeCacheAsync(cancellationToken).ConfigureAwait(false);
+            reloaded = true;
         }
         finally
         {
             _typeCacheRefresh.Release();
         }
 
-        return tokens.All(token => _eventTypes.FindId(token) is not null);
+        var resolved = tokens.All(token => _eventTypes.FindId(token) is not null);
+        if (reloaded && !resolved && AfterEventNameReload is { } afterReload)
+            await afterReload(cancellationToken).ConfigureAwait(false);
+        return resolved;
     }
 
     private static List<string> QueryTypeTokens(Query query)

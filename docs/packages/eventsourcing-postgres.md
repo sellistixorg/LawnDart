@@ -33,10 +33,21 @@ Run that call from a deploy or admin step. Normal app startup does not run
 it. The call creates the schema if it is missing. A second call with the same
 bucket count succeeds. A different bucket count is rejected. Drop and
 recreate the schema to change it. An unknown format number in `schema_info`
-is rejected the same way. At startup, call `VerifySchemaAsync`. It reads the
-stamp and the objects. It does not create or change them. `ThrowIfMismatch`
-throws when they do not match. The outbox writer and the snapshot store have
-the same call. See [Schema initialization](../SCHEMA_INITIALIZATION.md).
+is rejected the same way. The same call records each event name from the
+context catalog in `event_types`. A name that is already there is left as
+it is. Two calls at the same time still leave one row per name.
+
+A read that asks for several event names returns the events whose names
+are already recorded. A name that is not recorded matches no rows.
+`TypesResolved` is false when any requested name is still absent. Events
+up to the last one returned are delivered. The position does not move past
+them to the current end until every requested name is stored. A projection
+reads the range again on the next poll.
+
+At startup, call `VerifySchemaAsync`. It reads the stamp and the objects.
+It does not create or change them. `ThrowIfMismatch` throws when they do
+not match. The outbox writer and the snapshot store have the same call. See
+[Schema initialization](../SCHEMA_INITIALIZATION.md).
 
 ## Schema
 

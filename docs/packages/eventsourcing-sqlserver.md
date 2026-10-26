@@ -22,7 +22,8 @@ missing, the read throws and names drop-and-recreate. It does not invent
 an event name.
 
 Type filters are `EventTypeId IN (...)`. A queried event name that is not in
-the cache matches zero rows and does not emit SQL. `IEventLog.AppendAsync`
+the cache matches zero rows. A query whose names are all absent does not
+emit SQL. `IEventLog.AppendAsync`
 still accepts an event name that is not in the lookup yet: get-or-insert runs in its
 own short transaction and commits before the append transaction opens.
 An orphan `EventTypes` row is harmless.
@@ -50,10 +51,14 @@ commits after the ticket wakes it at once. The signal carries no events.
 A save from another process is still picked up on the poll interval. A
 listener outside the store can raise the same signal.
 
-A type filter reloads `EventTypes` when the token is missing from the
-process cache. If the token is still absent, the read returns no rows and
-`TypesResolved` is false. Do not checkpoint past that range. A projection
-reads the range again on the next poll.
+A type filter reloads `EventTypes` when a name is missing from the
+process cache. The current end is taken before that reload. A name that is
+still absent matches no rows, and this read stops at that end. Events for
+the other names are still returned. `TypesResolved` is false when any
+requested name is still absent. Events up to the last one returned are
+delivered. The position does not move past them to the current end until
+every requested name is stored. A projection reads the range again on the
+next poll.
 
 Each appended record has an `EventId` (`UNIQUEIDENTIFIER`, unique). A typed
 append stores `IEvent.Id`, including when several appends share one
