@@ -330,18 +330,36 @@ public class AggregateRepository : IAggregateRepository
         // existing store convention for AppendAsync(expectedVersion: -1)) and by GetAsync / a prior
         // SaveAsync (N ≥ 0 = "stream must be at version N").
         long? expectedVersion = aggregate.CommittedVersion;
-        var allTags = enrichedEvents.SelectMany(e => e.Tags).Distinct().ToList();
 
         // Use first event's metadata (they should all be similar)
         var metadata = enrichedEvents.First().Metadata;
 
-        var appendResult = await _eventStore.AppendAsync(
-            aggregate.StreamId,
-            enrichedEvents.Select(e => e.Event),
-            expectedVersion,
-            metadata,
-            allTags,
-            cancellationToken).ConfigureAwait(false);
+        AppendResult appendResult;
+        if (_eventStore is IPerEventTagAppend perEvent)
+        {
+            // Shipped stores: one append, each event written with its own tags only.
+            var tagged = enrichedEvents
+                .Select(e => new TaggedEvent(e.Event, e.Tags.Distinct(StringComparer.Ordinal).ToArray()))
+                .ToList();
+            appendResult = await perEvent.AppendWithEventTagsAsync(
+                aggregate.StreamId,
+                tagged,
+                expectedVersion,
+                metadata,
+                cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            // Other stores take one tag list per batch.
+            var allTags = enrichedEvents.SelectMany(e => e.Tags).Distinct().ToList();
+            appendResult = await _eventStore.AppendAsync(
+                aggregate.StreamId,
+                enrichedEvents.Select(e => e.Event),
+                expectedVersion,
+                metadata,
+                allTags,
+                cancellationToken).ConfigureAwait(false);
+        }
 
         // Clear pending events
         aggregate.ClearPendingEvents();

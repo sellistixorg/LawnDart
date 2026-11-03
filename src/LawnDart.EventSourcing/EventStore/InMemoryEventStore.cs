@@ -12,7 +12,7 @@ namespace LawnDart.EventSourcing.EventStore;
 /// In-memory <see cref="IEventLog"/>. Typed <see cref="IEventStore"/> methods
 /// forward to <see cref="EventStoreAdapter"/>.
 /// </summary>
-public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventLog, IEventLogSubscriptions, ISignalsNewEvents
+public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventLog, IEventLogSubscriptions, ISignalsNewEvents, IPerEventTagAppend
 {
     private readonly ILogger<InMemoryEventStore>? _logger;
     private readonly EventSession _session;
@@ -148,6 +148,23 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         IEnumerable<string>? tags = null,
         CancellationToken cancellationToken = default)
         => _adapter.AppendAsync(events, condition, metadata, tags, cancellationToken);
+
+    /// <inheritdoc />
+    Task<AppendResult> IPerEventTagAppend.AppendWithEventTagsAsync(
+        string streamId,
+        IReadOnlyList<TaggedEvent> events,
+        long? expectedVersion,
+        LawnDart.Metadata.EventMetadata? metadata,
+        CancellationToken cancellationToken)
+        => ((IPerEventTagAppend)_adapter).AppendWithEventTagsAsync(streamId, events, expectedVersion, metadata, cancellationToken);
+
+    /// <inheritdoc />
+    Task<AppendResult> IPerEventTagAppend.AppendWithEventTagsAsync(
+        IReadOnlyList<TaggedEvent> events,
+        AppendCondition condition,
+        LawnDart.Metadata.EventMetadata? metadata,
+        CancellationToken cancellationToken)
+        => ((IPerEventTagAppend)_adapter).AppendWithEventTagsAsync(events, condition, metadata, cancellationToken);
 
     public Task<AppendResult> AppendAsync(
         string streamId,

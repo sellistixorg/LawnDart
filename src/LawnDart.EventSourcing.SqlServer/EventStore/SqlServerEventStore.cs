@@ -22,7 +22,7 @@ namespace LawnDart.EventSourcing.SqlServer.EventStore;
 /// SQL Server <see cref="IEventLog"/>. Typed <see cref="IEventStore"/> methods
 /// forward to <see cref="EventStoreAdapter"/>.
 /// </summary>
-public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEventLog, IEventLogSubscriptions, ISignalsNewEvents
+public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions, IEventLog, IEventLogSubscriptions, ISignalsNewEvents, IPerEventTagAppend
 {
     internal const string StreamEventColumns =
         "StreamId, Version, SequencePosition, EventTypeId, EventData, SchemaVersion, CodecId, Tags, Metadata, Timestamp";
@@ -250,6 +250,23 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         IEnumerable<string>? tags = null,
         CancellationToken cancellationToken = default)
         => _adapter.AppendAsync(events, condition, metadata, tags, cancellationToken);
+
+    /// <inheritdoc />
+    Task<AppendResult> IPerEventTagAppend.AppendWithEventTagsAsync(
+        string streamId,
+        IReadOnlyList<TaggedEvent> events,
+        long? expectedVersion,
+        LawnDart.Metadata.EventMetadata? metadata,
+        CancellationToken cancellationToken)
+        => ((IPerEventTagAppend)_adapter).AppendWithEventTagsAsync(streamId, events, expectedVersion, metadata, cancellationToken);
+
+    /// <inheritdoc />
+    Task<AppendResult> IPerEventTagAppend.AppendWithEventTagsAsync(
+        IReadOnlyList<TaggedEvent> events,
+        AppendCondition condition,
+        LawnDart.Metadata.EventMetadata? metadata,
+        CancellationToken cancellationToken)
+        => ((IPerEventTagAppend)_adapter).AppendWithEventTagsAsync(events, condition, metadata, cancellationToken);
 
     private async Task<long> GetCurrentVersionAsync(
         SqlConnection connection,

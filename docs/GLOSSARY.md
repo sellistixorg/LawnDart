@@ -9,7 +9,7 @@ stable. They are not a pending rename.
 
 | Concept | Aggregate / broker | DCB | Why they differ |
 |---|---|---|---|
-| Record a pending event | `Apply(event)` | `Emit(event, tags)` | `Emit` attaches payload tags for the tag query. `Apply` is stream-scoped and has no tags. |
+| Record a pending event | `Apply(event)` | `Emit(event, tags)` | `Emit` attaches the tags for that event only: what it is about. `Apply` is stream-scoped and has no tags. |
 | Fold an event into state | `ApplyEventToState` | `ApplyEventToState` | Same name on both bases. |
 | Author command logic | `Handle(TCommand)` | `Handle(TCommand)` | Same authoring. `HandleAsync<TCommand>` is obsolete. |
 | Persist and dispatch | `IAggregateRepository.HandleCommandAsync` | `IDcbRepository.HandleCommandAsync` | Repository verb. Not the same as entity `Handle`. |

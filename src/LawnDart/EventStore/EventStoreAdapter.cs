@@ -15,7 +15,7 @@ namespace LawnDart.EventStore;
 /// This adapter reads them into objects. A typed read that throws does not advance the typed cursor.
 /// </para>
 /// </remarks>
-public sealed class EventStoreAdapter : IEventStore, IEventStoreSubscriptions
+public sealed class EventStoreAdapter : IEventStore, IEventStoreSubscriptions, IPerEventTagAppend
 {
     /// <summary>
     /// Default per-handle bounded channel capacity when the caller does not
@@ -161,6 +161,52 @@ public sealed class EventStoreAdapter : IEventStore, IEventStoreSubscriptions
         var tagsList = tags?.ToList() ?? [];
         var envelopes = eventsList.ConvertAll(e => _session.ToAppendEvent(e, metadata, tagsList));
         return _log.AppendAsync(envelopes, condition, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    Task<AppendResult> IPerEventTagAppend.AppendWithEventTagsAsync(
+        string streamId,
+        IReadOnlyList<TaggedEvent> events,
+        long? expectedVersion,
+        EventMetadata? metadata,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(streamId))
+            throw new ArgumentException("Stream ID cannot be null or empty", nameof(streamId));
+        ArgumentNullException.ThrowIfNull(events);
+        if (events.Count == 0)
+            throw new ArgumentException("At least one event is required", nameof(events));
+
+        var envelopes = ToTaggedEnvelopes(events, metadata);
+        return _log.AppendAsync(streamId, envelopes, expectedVersion, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    Task<AppendResult> IPerEventTagAppend.AppendWithEventTagsAsync(
+        IReadOnlyList<TaggedEvent> events,
+        AppendCondition condition,
+        EventMetadata? metadata,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(events);
+        if (events.Count == 0)
+            throw new ArgumentException("At least one event is required", nameof(events));
+        ArgumentNullException.ThrowIfNull(condition);
+
+        var envelopes = ToTaggedEnvelopes(events, metadata);
+        return _log.AppendAsync(envelopes, condition, cancellationToken);
+    }
+
+    private List<AppendEvent> ToTaggedEnvelopes(IReadOnlyList<TaggedEvent> events, EventMetadata? metadata)
+    {
+        var envelopes = new List<AppendEvent>(events.Count);
+        foreach (var tagged in events)
+        {
+            ArgumentNullException.ThrowIfNull(tagged.Event);
+            envelopes.Add(_session.ToAppendEvent(tagged.Event, metadata, tagged.Tags ?? []));
+        }
+
+        return envelopes;
     }
 
     /// <inheritdoc />

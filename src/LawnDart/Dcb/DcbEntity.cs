@@ -11,6 +11,7 @@ namespace LawnDart.Dcb;
 public abstract class DcbEntity
 {
     private readonly List<IEvent> _pendingEvents = new();
+    private readonly List<string[]> _pendingEventTags = new();
     private readonly List<string> _tags = new();
     private readonly List<string> _consistencyTags = new();
 
@@ -52,10 +53,15 @@ public abstract class DcbEntity
     public long? LastSnapshotGlobalSequence { get; private set; }
 
     /// <summary>
-    /// Tags attached to this entity's events (load tags plus tags collected from
-    /// <see cref="ReplayEvents"/> and <see cref="Emit{TEvent}"/>). Used as payload tags
-    /// on persist. Not the consistency fence — see <see cref="ConsistencyTags"/>.
+    /// The entity's load tags plus every tag passed to <see cref="Emit{TEvent}"/> since load.
     /// </summary>
+    /// <remarks>
+    /// Tags on events read during <see cref="ReplayEvents"/> are not added here. The repository
+    /// does not write this combined list. Each new event is written with only the tags passed to
+    /// <see cref="Emit{TEvent}"/> for that event: what that event is about. Pass every tag the
+    /// event should be found by, including the entity tag. This is not the append condition;
+    /// see <see cref="ConsistencyTags"/>.
+    /// </remarks>
     [JsonIgnore]
     public IReadOnlyList<string> Tags => _tags.AsReadOnly();
 
@@ -102,17 +108,24 @@ public abstract class DcbEntity
     /// </summary>
     /// <typeparam name="TEvent">Event type.</typeparam>
     /// <param name="event">Event to emit.</param>
-    /// <param name="tags">Tags to apply to this event.</param>
+    /// <param name="tags">
+    /// Tags for this event only: the subjects it is about, for example <c>course:c1</c> and
+    /// <c>student:s1</c>. They are the only tags the repository writes on this event (with any
+    /// tag provider tags for it). They are not written on other events in the same command.
+    /// </param>
     protected void Emit<TEvent>(TEvent @event, params string[] tags) where TEvent : IEvent
     {
         if (@event == null)
             throw new ArgumentNullException(nameof(@event));
 
+        tags ??= [];
+
         // Apply to state
         ApplyEventToState(@event);
 
-        // Track pending event
+        // Track pending event with its own tags
         _pendingEvents.Add(@event);
+        _pendingEventTags.Add(tags.Distinct(StringComparer.Ordinal).ToArray());
 
         // Add tags (distinct)
         foreach (var tag in tags)
@@ -150,14 +163,8 @@ public abstract class DcbEntity
             LastSequencePosition = sequencedEvent.SequencePosition;
             count++;
 
-            // Collect payload tags (does not change ConsistencyTags)
-            foreach (var tag in sequencedEvent.Tags)
-            {
-                if (!_tags.Contains(tag))
-                {
-                    _tags.Add(tag);
-                }
-            }
+            // Tags on replayed events describe those past events. They are not
+            // copied onto this entity's new events.
         }
 
         EventsSinceLastSnapshot += count;
@@ -169,10 +176,17 @@ public abstract class DcbEntity
     internal void ClearPendingEvents()
     {
         _pendingEvents.Clear();
+        _pendingEventTags.Clear();
     }
-    
+
     /// <summary>
-    /// Sets the payload tags for this entity. Used internally by the repository.
+    /// Tags passed to <see cref="Emit{TEvent}"/> for each pending event, in the same order as
+    /// <see cref="PendingEvents"/>. Repeated tags on one event are removed.
+    /// </summary>
+    internal IReadOnlyList<IReadOnlyList<string>> PendingEventTags => _pendingEventTags;
+
+    /// <summary>
+    /// Sets the load tags for this entity. Used internally by the repository.
     /// Does not change <see cref="ConsistencyTags"/>.
     /// </summary>
     /// <param name="tags">Tags to set.</param>

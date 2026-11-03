@@ -185,7 +185,7 @@ public class DcbRepositoryTests
 
         Assert.Equal(loadTags, entity.ConsistencyTags);
         Assert.Contains("product:sku-1", entity.Tags);
-        Assert.Contains("order:order-9", entity.Tags);
+        Assert.DoesNotContain("order:order-9", entity.Tags);
         Assert.Equal(1, entity.State.EventCount);
     }
 

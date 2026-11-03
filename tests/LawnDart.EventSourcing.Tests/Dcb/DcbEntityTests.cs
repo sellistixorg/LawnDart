@@ -138,8 +138,10 @@ public class DcbEntityTests
         Assert.Contains("event1", entity.State.Values);
         Assert.Contains("event2", entity.State.Values);
         Assert.Equal(2, entity.LastSequencePosition);
-        Assert.Contains("tag1", entity.Tags);
-        Assert.Contains("tag2", entity.Tags);
+
+        // Tags on replayed events describe those past events and are not written again.
+        Assert.DoesNotContain("tag1", entity.Tags);
+        Assert.DoesNotContain("tag2", entity.Tags);
     }
 
     [Fact]
@@ -190,8 +192,24 @@ public class DcbEntityTests
         });
 
         Assert.Equal(new[] { "product:sku-1" }, entity.ConsistencyTags);
-        Assert.Contains("product:sku-1", entity.Tags);
-        Assert.Contains("order:order-9", entity.Tags);
+        Assert.DoesNotContain("order:order-9", entity.Tags);
+    }
+
+    [Fact]
+    public void Emit_KeepsEachEventPairedWithItsOwnTags()
+    {
+        var entity = new TestDcbEntityForEntityTests();
+        entity.SetTags("course:c1");
+
+        entity.Handle(new TestCommand { Value = "first" });
+        entity.Handle(new TestCommand { Value = "second" });
+
+        Assert.Equal(2, entity.PendingEventTags.Count);
+        Assert.Equal(new[] { "order:123" }, entity.PendingEventTags[0]);
+        Assert.Equal(new[] { "order:123" }, entity.PendingEventTags[1]);
+
+        entity.ClearPendingEvents();
+        Assert.Empty(entity.PendingEventTags);
     }
 
     [Fact]
