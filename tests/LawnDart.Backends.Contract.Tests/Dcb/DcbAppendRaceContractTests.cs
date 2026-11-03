@@ -239,7 +239,17 @@ public abstract class DcbAppendRaceContractTests : ContractSuite
             var tags = Enumerable.Range(0, 70).Select(i => Tag("many" + i)).ToArray();
             var head = await log.GetCurrentSequenceAsync();
             var query = Query.FromItems(QueryItem.ByTags(tags));
-            await RaceAsync(log, query, _ => head, _ => Event(TypeName("many"), tags));
+
+            // Every racer writes all 70 tags, and they are new this round, so one tag
+            // finds the events that landed. This test is about the append locks. A read
+            // with 70 tags in one item is left out: on Postgres it takes many seconds
+            // to plan.
+            await RaceAsync(
+                log,
+                _ => query,
+                _ => head,
+                _ => Event(TypeName("many"), tags),
+                verify: Query.FromItems(QueryItem.ByTags(tags[0])));
         }
     }
 
