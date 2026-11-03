@@ -14,14 +14,32 @@ internal static class EventLogBuffers
         return source.ToArray();
     }
 
+    /// <summary>
+    /// Copies <paramref name="tags"/> and drops repeats. The first copy of each tag
+    /// stays, in its original order. Tags compare exactly (ordinal): <c>A:1</c> and
+    /// <c>a:1</c> are two tags, and no spaces are trimmed.
+    /// </summary>
     internal static IReadOnlyList<string> SnapshotTags(IEnumerable<string>? tags)
     {
         if (tags is null)
             return [];
 
-        return tags as string[] is { } array
-            ? [.. array]
-            : [.. tags];
+        var copy = new List<string>(tags is ICollection<string> collection ? collection.Count : 4);
+        HashSet<string>? seen = null;
+        foreach (var tag in tags)
+        {
+            if (copy.Count == 0)
+            {
+                copy.Add(tag);
+                continue;
+            }
+
+            seen ??= new HashSet<string>(copy, StringComparer.Ordinal);
+            if (seen.Add(tag))
+                copy.Add(tag);
+        }
+
+        return copy.ToArray();
     }
 
     internal static int NormalizeSchemaVersion(int schemaVersion)

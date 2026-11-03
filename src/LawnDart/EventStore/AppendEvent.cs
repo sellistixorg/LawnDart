@@ -42,7 +42,7 @@ public sealed class AppendEvent
     /// </summary>
     public ReadOnlyMemory<byte> Metadata { get; }
 
-    /// <summary>Tags supplied with this append.</summary>
+    /// <summary>Tags supplied with this append, each one once.</summary>
     public IReadOnlyList<string> Tags { get; }
 
     /// <param name="eventType">Event name.</param>
@@ -50,7 +50,7 @@ public sealed class AppendEvent
     /// <param name="metadata">UTF-8 JSON metadata bytes. Copied on construct. Empty is valid.</param>
     /// <param name="schemaVersion">Frame schema version. Default <c>1</c>; <c>0</c> becomes <c>1</c>.</param>
     /// <param name="codecId">Payload-format number. Default <see cref="EventCodec.Json"/>. <c>0</c> is rejected.</param>
-    /// <param name="tags">Tags as supplied. Copied on construct.</param>
+    /// <param name="tags">Tags as supplied. Copied on construct. A repeated tag is kept once (the first copy, in order). Tags compare exactly.</param>
     public AppendEvent(
         string eventType,
         ReadOnlyMemory<byte> payload,
