@@ -6,13 +6,14 @@ namespace LawnDart.EventStore;
 public record AppendCondition
 {
     /// <summary>
-    /// Query that must not match any new events. If any events matching this query exist, append will fail.
+    /// Query that must not match any event after <see cref="After"/>. If a matching event exists, the append fails.
     /// </summary>
     public required Query FailIfEventsMatch { get; init; }
 
     /// <summary>
-    /// Sequence position to ignore. Events before this position are ignored when checking the condition.
-    /// Typically represents the highest position the client was aware of while building the decision model.
+    /// Events at or before this sequence position are ignored when checking the condition.
+    /// Only events after it can make the append fail. Null checks every event.
+    /// Typically the highest position the client was aware of while building the decision model.
     /// </summary>
     public long? After { get; init; }
 

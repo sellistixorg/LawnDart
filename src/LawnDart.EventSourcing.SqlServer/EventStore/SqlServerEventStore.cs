@@ -132,6 +132,13 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
             serializer ?? new JsonEventSerializer(),
             new WriteThroughEventTypeCatalog());
         _options = options ?? new SqlServerEventStoreOptions();
+        if (_options.AppendLockTagThreshold < 1)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(options),
+                _options.AppendLockTagThreshold,
+                "AppendLockTagThreshold must be at least 1.");
+        }
         _adapter = new EventStoreAdapter(this, _session, this, _options.SubscriptionChannelCapacity);
         _tableName = tableName ?? throw new ArgumentNullException(nameof(tableName));
         _registryTableName = registryTableName ?? throw new ArgumentNullException(nameof(registryTableName));
@@ -530,78 +537,8 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         => envelopes.SelectMany(e => e.Tags).Distinct(StringComparer.Ordinal).ToList();
 
     /// <summary>
-    /// Takes <c>UPDLOCK, HOLDLOCK</c> on each condition tag (sorted) in
-    /// <c>EventTags</c> so a concurrent insert of the same tag cannot sneak in
-    /// between the existence check and commit. Tagless conditions lock
-    /// <c>Events</c> the same way.
-    /// </summary>
-    private async Task AcquireDcbFenceLocksAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
-        AppendCondition condition,
-        CancellationToken cancellationToken)
-    {
-        var tags = CollectFenceTags(condition);
-        if (tags.Count == 0)
-        {
-            var eventsSql = $@"
-                SELECT TOP 1 1
-                FROM {_qTable} WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
-                WHERE 1 = 1";
-            var eventsParams = new List<SqlParameter>();
-            if (condition.After.HasValue)
-            {
-                eventsSql += " AND SequencePosition > @After";
-                eventsParams.Add(new SqlParameter("@After", condition.After.Value));
-            }
-
-            var eventsCmd = new SqlCommand(eventsSql, connection, transaction);
-            await using var eventsCmdDisposal = eventsCmd.ConfigureAwait(false);
-            eventsCmd.Parameters.AddRange(eventsParams.ToArray());
-            await eventsCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-            return;
-        }
-
-        foreach (var tag in tags)
-        {
-            var sql = $@"
-                SELECT TOP 1 1
-                FROM {_qTags} WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
-                WHERE Tag = @Tag";
-            var command = new SqlCommand(sql, connection, transaction);
-            await using var commandDisposal = command.ConfigureAwait(false);
-            command.Parameters.Add(new SqlParameter("@Tag", tag));
-            if (condition.After.HasValue)
-            {
-                command.CommandText += " AND GlobalSequencePosition > @After";
-                command.Parameters.Add(new SqlParameter("@After", condition.After.Value));
-            }
-
-            await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        }
-    }
-
-    private static List<string> CollectFenceTags(AppendCondition condition)
-    {
-        var tags = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var item in condition.FailIfEventsMatch.Items)
-        {
-            if (item.Tags is not { Count: > 0 })
-                continue;
-            foreach (var tag in item.Tags)
-            {
-                if (!string.IsNullOrEmpty(tag))
-                    tags.Add(tag);
-            }
-        }
-
-        var sorted = tags.ToList();
-        sorted.Sort(StringComparer.Ordinal);
-        return sorted;
-    }
-
-    /// <summary>
     /// Existence-only condition check: no event payload deserialize.
+    /// Runs after <see cref="AcquireAppendLocksAsync"/>, so it needs no lock hints.
     /// </summary>
     private async Task<bool> AppendConditionMatchesAsync(
         SqlConnection connection,
@@ -888,8 +825,9 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
 
     private static bool IsTransientSqlError(SqlException ex)
     {
-        // 1205 = deadlock victim, -2 = timeout, -1 = connection failure, 20 = general network
-        return ex.Number is 1205 or -2 or -1 or 20;
+        // 1205 = deadlock victim, -2 = timeout, -1 = connection failure, 20 = general network,
+        // AppendLockNotGrantedError = an append lock was not granted (timeout or deadlock).
+        return ex.Number is 1205 or -2 or -1 or 20 or AppendLockNotGrantedError;
     }
 
     private static bool IsDuplicateKey(SqlException ex)
@@ -2309,6 +2247,9 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
 
             try
             {
+                await AcquireAppendLocksAsync(connection, transaction, AppendLockPlan(envelopes, null), ct)
+                    .ConfigureAwait(false);
+
                 if (expectedVersion.HasValue)
                 {
                     var currentVersion = await GetCurrentVersionAsync(connection, transaction, streamId, ct).ConfigureAwait(false);
@@ -2407,6 +2348,8 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
 
             await EnsureEventTypeIdsAsync(envelopes, ct).ConfigureAwait(false);
             await EnsureQueryTypesResolvedAsync(condition.FailIfEventsMatch, ct).ConfigureAwait(false);
+            if (BeforeAppendLocks is { } beforeLocks)
+                await beforeLocks(ct).ConfigureAwait(false);
 
             var connection = new SqlConnection(_connectionString);
             await using var connectionDisposal = connection.ConfigureAwait(false);
@@ -2416,7 +2359,9 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
 
             try
             {
-                await AcquireDcbFenceLocksAsync(connection, transaction, condition, ct).ConfigureAwait(false);
+                await AcquireAppendLocksAsync(connection, transaction, AppendLockPlan(envelopes, condition), ct)
+                    .ConfigureAwait(false);
+                await ResolveConditionTypesUnderLockAsync(connection, transaction, condition, ct).ConfigureAwait(false);
 
                 if (await AppendConditionMatchesAsync(connection, transaction, condition, ct).ConfigureAwait(false))
                 {

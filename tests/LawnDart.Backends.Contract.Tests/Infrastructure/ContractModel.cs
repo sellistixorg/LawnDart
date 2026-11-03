@@ -46,6 +46,12 @@ public sealed class ContractCapabilities
 
     public bool CanPauseBeforeCommit { get; init; }
 
+    /// <summary>
+    /// Appends lock per tag, so a paused append does not hold up an append on other tags.
+    /// A store with one lock around every append leaves this false.
+    /// </summary>
+    public bool AppendLocksPerTag { get; init; }
+
     public bool CanDropCommitReply { get; init; }
 
     public bool CanFailCommit { get; init; }
