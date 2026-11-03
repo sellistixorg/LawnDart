@@ -124,6 +124,12 @@ public class SqlServerEventStoreOptions : EventSourcingOptions
     public TimeSpan RetryDelay { get; set; } = TimeSpan.FromMilliseconds(200);
 
     /// <summary>
+    /// An append that writes or checks more distinct tags than this takes one
+    /// store-wide lock instead of one lock per tag. Default: 64. Must be at least 1.
+    /// </summary>
+    public int AppendLockTagThreshold { get; set; } = 64;
+
+    /// <summary>
     /// Outbox table name.
     /// Default: "Outbox"
     /// </summary>

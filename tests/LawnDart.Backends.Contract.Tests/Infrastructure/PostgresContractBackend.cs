@@ -38,6 +38,7 @@ public sealed class PostgresContractBackend : IContractBackend
             ParallelAppendCanConflict = true,
             DuplicateStreamVersionIncludesDatabaseError = false,
             CanPauseBeforeCommit = true,
+            AppendLocksPerTag = true,
             CanDropCommitReply = true,
             CanFailCommit = true,
             CanKillConnection = true,

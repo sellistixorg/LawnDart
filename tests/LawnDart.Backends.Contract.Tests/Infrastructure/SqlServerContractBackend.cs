@@ -35,6 +35,7 @@ public sealed class SqlServerContractBackend : IContractBackend
         ParallelAppendCanConflict = true,
         DuplicateStreamVersionIncludesDatabaseError = true,
         CanPauseBeforeCommit = true,
+        AppendLocksPerTag = true,
         CanDropCommitReply = true,
         CanFailCommit = true,
         CanKillConnection = true,

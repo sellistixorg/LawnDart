@@ -29,7 +29,7 @@ own short transaction and commits before the append transaction opens.
 An orphan `EventTypes` row is harmless.
 
 `Tags` is `NVARCHAR(4000)` and is a read projection only. DCB queries
-and append-condition fences use the `EventTags` side table (clustered on
+and append-condition checks use the `EventTags` side table (clustered on
 `(Tag, GlobalSequencePosition)`, collation `Latin1_General_100_BIN2`).
 Tag equality is ordinal. `student:{id}` and `Student:{id}` are different
 tags. That table is always created and always written. See
@@ -71,6 +71,31 @@ uses that same id.
 The store does not retry an append after `Commit` has been attempted. When
 the commit reply is lost, it reads those event ids. If they are present, the
 append result is the row that landed.
+
+Every append takes named SQL Server locks (`sp_getapplock`, owned by the
+transaction) before it reads or writes anything, and holds them until it
+commits or rolls back. They live only in SQL Server's lock memory and read
+no table pages:
+
+- One store lock per events table. Every append takes it shared.
+- One lock per tag. An append takes a shared lock on each tag it writes.
+- An append with an `AppendCondition` takes an exclusive lock on each tag in
+  the condition. When the condition has no items, or any item has no tags
+  (event types only, or `Query.All()`), it takes the store lock exclusive.
+  That append waits for every append in progress, and new appends wait for
+  it, the same as on Postgres. The DCB repository never builds that shape.
+- An append with more distinct tags than `AppendLockTagThreshold` (default
+  64) takes the store lock exclusive and no tag locks.
+
+The store lock comes first, then the tag locks sorted by name, so appends
+always ask in the same order. Lock names are a short prefix and a hash of
+the schema, the events table and the tag, so any tag length fits. Two names
+with the same hash only make two appends wait for each other. A lock that is
+not granted is retried like a deadlock (`MaxRetryCount`). The condition
+check runs after the locks as a plain read. Any event that matches it was
+committed before the locks were granted, or its append is still waiting for
+them. After the locks, the check also looks up its event type names again,
+so an event whose type was stored for the first time just before is seen.
 
 Init writes an extended property `LawnDart_SchemaFormat` on the events
 table (current format `4`). Formats `2` and `3` are upgraded in place.
