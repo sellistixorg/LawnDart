@@ -18,6 +18,7 @@ changes to the public API.
 - A Dynamic Consistency Boundary entity writes each emitted event with only that event's tags: the tags passed to `Emit` for it and the tag provider's tags for it. Before, every event in the command got the load tags, the tags of every replayed event, and the tags of the other events in the command. A query for one student then returned events about the course only, and an unrelated decision could fail with a conflict. The append condition is unchanged. It is still built from the load tags.
 - `AggregateRepository.SaveAsync` writes each event with its own tags. Before, every event in a save got the tags of all events in that save.
 - `DcbEntity.Tags` no longer collects tags from replayed events.
+- A tag repeated on one event is written once, on every store. The first copy of each tag stays, in the order given. Tags compare exactly, so `Course:1` and `course:1` are two tags and spaces are not trimmed. Before, a repeated tag stopped the append on SQL Server with a primary key error, stopped it on Postgres with a `ConcurrencyException` that read like a version clash, and was kept twice by the in-memory store. A query item that names a tag twice still matches the same events as naming it once.
 
 ### Changed
 

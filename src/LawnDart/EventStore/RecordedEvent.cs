@@ -61,7 +61,7 @@ public sealed class RecordedEvent
     /// <param name="metadata">UTF-8 JSON metadata bytes. Copied on construct.</param>
     /// <param name="schemaVersion">Stored schema version. Default <c>1</c>; <c>0</c> becomes <c>1</c>.</param>
     /// <param name="codecId">Payload-format number. Default <see cref="EventCodec.Json"/>. <c>0</c> is rejected.</param>
-    /// <param name="tags">Tags as stored. Copied on construct.</param>
+    /// <param name="tags">Tags as stored. Copied on construct. A repeated tag is kept once (the first copy, in order). Tags compare exactly.</param>
     public RecordedEvent(
         string eventType,
         ReadOnlyMemory<byte> payload,

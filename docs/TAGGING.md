@@ -50,6 +50,11 @@ load tags (`ConsistencyTags`). An event written with a different
 spelling is absent from the decision, and it does not trip the fence.
 Two decisions can both commit.
 
+A tag repeated on one event is written once. The first copy stays, in
+the order given, on every store. The same exact comparison decides what
+a repeat is, so `Student:1` and `student:1` are both kept. A query item
+that names a tag twice matches the same events as naming it once.
+
 ## Casing
 
 Write a lowercase type, a colon, and the id.
