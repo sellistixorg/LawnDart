@@ -9,6 +9,29 @@ loads, and they are the fence on `AppendCondition`. They are also the
 key a later search or index uses. The string is data. A second spelling
 misses the event and misses the fence.
 
+## What a tag means
+
+A tag says what one event is about: its subjects. `CourseCreated` is
+about `course:c1`. `StudentSubscribed` is about `course:c1` and
+`student:s1`. Each event carries its own tags and no others.
+
+The append condition is a separate thing. It is the query the decision
+read, and it guards that decision. The load tags you pass to
+`GetOrCreateEntityAsync` are that query. They are not written on the
+events the decision emits.
+
+A decision that loads `course:c1`, replays two earlier subscriptions,
+and emits `CourseCreated` and `StudentSubscribed` writes:
+
+| Event | Tags written |
+|---|---|
+| `CourseCreated` | `course:c1` |
+| `StudentSubscribed` | `course:c1`, `student:s1` |
+
+A query for `student:s1` returns `StudentSubscribed` only. Tags on the
+replayed events are not copied onto the new events, so a later decision
+about an earlier student does not conflict with this one.
+
 ## Exact match
 
 A load, a fence, and an index compare the whole string.
@@ -138,12 +161,28 @@ that replay matches any of them. `GetTagsForProjection` and
 Pass `ForEnrollment` on the bootstrap append as well as on the load.
 `GetTags` for `StudentRegistered` returns `student:{id}` only. A load
 of `student:{id}` and `section:{id}` still requires both on the stored
-event. `AppendWithContextAsync` unions `GetTags` onto the tags you
-passed, then the store writes that one list on every event in the call.
+event.
+
+Each event is written with its own tags:
+
+- `HandleCommandAsync` writes each emitted event with the tags passed
+  to `Emit` for that event, plus `GetTags` for that event. The load
+  tags, tags on replayed events, and tags of other events in the same
+  command are not added. Pass every tag the event is about to `Emit`,
+  including the tags a later load will ask for.
+- `AppendWithContextAsync` writes the tags you passed on every event in
+  the call, plus `GetTags` for each event on that event only.
+- `AggregateRepository.SaveAsync` writes each event with its own
+  `[Tag]` values, `GetTags` for that event, and the aggregate tag.
+
 On the DCB path the provider is called with a null context. On the
 aggregate path the context is the aggregate. The fence stays the tags
 you passed to `GetOrCreateEntityAsync`. Tags the provider adds do not
 change the load and do not change the fence.
+
+The typed `IEventStore.AppendAsync` still takes one tag list and writes
+it on every event in the call. Use it for a batch whose events share
+the same subjects, or call it once per event.
 
 `AggregateRepository` also copies `[Tag]` values. When no tag starts
 with `{AggregateType}:`, it adds `{AggregateType}:{id}` from the .NET

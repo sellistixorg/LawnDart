@@ -10,6 +10,16 @@ changes to the public API.
 
 ## [Unreleased]
 
+### Fixed
+
+- A Dynamic Consistency Boundary entity writes each emitted event with only that event's tags: the tags passed to `Emit` for it and the tag provider's tags for it. Before, every event in the command got the load tags, the tags of every replayed event, and the tags of the other events in the command. A query for one student then returned events about the course only, and an unrelated decision could fail with a conflict. The append condition is unchanged. It is still built from the load tags.
+- `AggregateRepository.SaveAsync` writes each event with its own tags. Before, every event in a save got the tags of all events in that save.
+- `DcbEntity.Tags` no longer collects tags from replayed events.
+
+### Changed
+
+- `AppendWithContextAsync` writes the tag provider's tags for an event on that event only. The tags you pass are still written on every event in the call.
+
 ## [0.7.0-alpha.3] - 2026-10-26
 
 This release adds a read-only schema check, Postgres hosting notes, and a Library sample on Postgres. The build kit targets LawnDart 0.7.

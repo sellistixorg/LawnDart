@@ -71,6 +71,52 @@ public sealed class PostgresDcbContractTests : DcbContractTests
 
 [Collection(InMemoryContractCollection.Name)]
 [Trait("Category", "Contract")]
+public sealed class InMemoryDcbEntityTagContractTests : DcbEntityTagContractTests
+{
+    public InMemoryDcbEntityTagContractTests(InMemoryContractFixture fixture) : base(fixture.Backend) { }
+}
+
+[Collection("SqlServerContract")]
+[Trait("Category", "Integration")]
+[Trait("Category", "Contract")]
+public sealed class SqlServerDcbEntityTagContractTests : DcbEntityTagContractTests
+{
+    public SqlServerDcbEntityTagContractTests(SqlServerContractFixture fixture) : base(fixture.Backend) { }
+}
+
+[Collection("PostgresContract")]
+[Trait("Category", "Integration")]
+[Trait("Category", "Contract")]
+public sealed class PostgresDcbEntityTagContractTests : DcbEntityTagContractTests
+{
+    public PostgresDcbEntityTagContractTests(PostgresContractFixture fixture) : base(fixture.Backend) { }
+}
+
+[Collection(InMemoryContractCollection.Name)]
+[Trait("Category", "Contract")]
+public sealed class InMemoryAggregateEventTagContractTests : AggregateEventTagContractTests
+{
+    public InMemoryAggregateEventTagContractTests(InMemoryContractFixture fixture) : base(fixture.Backend) { }
+}
+
+[Collection("SqlServerContract")]
+[Trait("Category", "Integration")]
+[Trait("Category", "Contract")]
+public sealed class SqlServerAggregateEventTagContractTests : AggregateEventTagContractTests
+{
+    public SqlServerAggregateEventTagContractTests(SqlServerContractFixture fixture) : base(fixture.Backend) { }
+}
+
+[Collection("PostgresContract")]
+[Trait("Category", "Integration")]
+[Trait("Category", "Contract")]
+public sealed class PostgresAggregateEventTagContractTests : AggregateEventTagContractTests
+{
+    public PostgresAggregateEventTagContractTests(PostgresContractFixture fixture) : base(fixture.Backend) { }
+}
+
+[Collection(InMemoryContractCollection.Name)]
+[Trait("Category", "Contract")]
 public sealed class InMemoryStreamRegistryContractTests : StreamRegistryContractTests
 {
     public InMemoryStreamRegistryContractTests(InMemoryContractFixture fixture) : base(fixture.Backend) { }
