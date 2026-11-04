@@ -10,6 +10,10 @@ changes to the public API.
 
 ## [Unreleased]
 
+### Added
+
+- `LawnDart.EventSourcing.Testing` ships LawnDart's event store contract suite as abstract xUnit tests. Any `IEventStore` and `IEventLog` implementation can run it by implementing `IContractBackend`, which opens a fresh store for each test. It covers stream and log appends and reads, each event's own tags, repeated tags, Dynamic Consistency Boundary appends and races, the stream registry, and live subscriptions when the store has them. The in-memory, SQL Server and Postgres stores run the same suite. The package uses only public LawnDart API. See [EventSourcing.Testing](docs/packages/eventsourcing-testing.md).
+
 ### Fixed
 
 - SQL Server: concurrent appends with an append condition now let exactly one through when they conflict. Before, more than one could succeed when a condition had an item with event types and no tags, mixed such an item with tagged items, or matched by type and tag while other events with that tag sat after the `after` position. Every SQL Server append, plain stream appends included, now takes named SQL Server locks (`sp_getapplock`) held until commit: one store lock, shared, plus a shared lock on each tag it writes. An append with a condition takes an exclusive lock on each condition tag, and takes the store lock exclusive when any condition item has no tags. Such a condition waits for every append in progress and holds up new appends until it finishes, as on Postgres. An append with more distinct tags than the new `SqlServerEventStoreOptions.AppendLockTagThreshold` (default 64) takes the store lock exclusive instead of one lock per tag.

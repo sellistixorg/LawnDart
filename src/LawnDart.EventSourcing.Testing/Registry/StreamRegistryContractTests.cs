@@ -1,7 +1,7 @@
 using LawnDart.EventStore;
 using LawnDart.Metadata;
 
-namespace LawnDart.Backends.Contract.Tests;
+namespace LawnDart.EventSourcing.Testing;
 
 public abstract class StreamRegistryContractTests : ContractSuite
 {
@@ -95,7 +95,7 @@ public abstract class StreamRegistryContractTests : ContractSuite
         }
         else
         {
-            Assert.Equal(1, underscore.Count);
+            Assert.Single(underscore);
             Assert.DoesNotContain($"ACME_WEST{suffix}:Order:2", underscore);
             Assert.Equal(1L, await store.GetStreamCountAsync($"acme_west{suffix}:"));
         }

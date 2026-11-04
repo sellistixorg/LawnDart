@@ -6,10 +6,11 @@ using LawnDart.EventSourcing.Dcb;
 using LawnDart.EventStore;
 using LawnDart.Metadata;
 using LawnDart.Tagging;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace LawnDart.Backends.Contract.Tests;
+namespace LawnDart.EventSourcing.Testing;
 
 public abstract class TagContractTests : ContractSuite
 {
@@ -94,45 +95,39 @@ public abstract class TagContractTests : ContractSuite
         Assert.Empty(logger.Warnings);
     }
 
-    private static DcbRepository Dcb(IEventStore store, TagListLogger logger, bool warn)
-        => new(
-            store,
-            new DefaultMetadataProvider(),
-            new NullTenant(),
-            Options.Create(new LawnDartOptions { RequireTenantId = false }),
-            tagProvider: null,
-            authorizationService: null,
-            logger,
-            Options.Create(new EventSourcing.EventSourcingOptions { WarnOnUnknownTag = warn }),
-            dcbSnapshotStore: null,
-            strategyResolver: null,
-            snapshotWriteQueue: null,
-            tagFormat: LowercaseTagFormat.Instance);
+    private const string ContextKey = "tag-contract";
+
+    // EventSourcingRepositories is the public way to build a repository with a tag format.
+    private static IDcbRepository Dcb(IEventStore store, TagListLogger logger, bool warn)
+        => EventSourcingRepositories.CreateDcbRepository(
+            Services(store, new EventSourcingOptions { WarnOnUnknownTag = warn }, logger),
+            ContextKey);
 
     private static async Task SaveAsync(IEventStore store, Guid id, bool formatFallback)
     {
-        var repository = new AggregateRepository(
-            store,
-            new DefaultMetadataProvider(),
-            new NullTenant(),
-            Options.Create(new LawnDartOptions { RequireTenantId = false }),
-            tagProvider: null,
-            authorizationService: null,
-            logger: null,
-            snapshotStore: null,
-            strategyResolver: null,
-            snapshotWriteQueue: null,
-            tagFormat: LowercaseTagFormat.Instance,
-            eventSourcingOptions: Options.Create(new EventSourcing.EventSourcingOptions
-            {
-                FormatAggregateFallbackTag = formatFallback
-            }));
+        var repository = EventSourcingRepositories.CreateAggregateRepository(
+            Services(store, new EventSourcingOptions { FormatAggregateFallbackTag = formatFallback }, logger: null),
+            ContextKey);
         var aggregate = await repository.CreateAsync<ProbeAggregate>(Stream(id));
         aggregate.Raise(new ProbeEvent(Guid.NewGuid(), DateTime.UtcNow));
         await repository.SaveAsync(aggregate, new CommandMetadata());
     }
 
     private static string Stream(Guid id) => $"acct:ProbeAggregate:{id:D}";
+
+    private static IServiceProvider Services(IEventStore store, EventSourcingOptions eventSourcingOptions, TagListLogger? logger)
+    {
+        var services = new ServiceCollection();
+        services.AddKeyedSingleton(ContextKey, store);
+        services.AddSingleton<IMetadataProvider>(new DefaultMetadataProvider());
+        services.AddSingleton<ITenantContextProvider>(new NullTenant());
+        services.AddSingleton(Options.Create(new LawnDartOptions { RequireTenantId = false }));
+        services.AddSingleton(Options.Create(eventSourcingOptions));
+        services.AddKeyedSingleton<ITagFormat>(ContextKey, LowercaseTagFormat.Instance);
+        if (logger is not null)
+            services.AddSingleton<ILogger<DcbRepository>>(logger);
+        return services.BuildServiceProvider();
+    }
 
     private sealed class NullTenant : ITenantContextProvider
     {

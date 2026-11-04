@@ -5,7 +5,7 @@ using LawnDart.EventSourcing.Serialization;
 using LawnDart.EventStore;
 using LawnDart.Serialization;
 
-namespace LawnDart.Backends.Contract.Tests;
+namespace LawnDart.EventSourcing.Testing;
 
 /// <summary>
 /// Log checks that do not need a .NET event type, plus the typed adapter on top of that log.

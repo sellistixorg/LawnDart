@@ -1,7 +1,7 @@
 using LawnDart;
 using LawnDart.EventStore;
 
-namespace LawnDart.Backends.Contract.Tests;
+namespace LawnDart.EventSourcing.Testing;
 
 [EventTypeName("backend-contract.tick")]
 public sealed record ContractTick(Guid Id, DateTime Timestamp, string Name) : IEvent;

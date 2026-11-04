@@ -8,7 +8,7 @@ public sealed class SqlServerContractFixture : IAsyncLifetime
 
     public string ConnectionString { get; private set; } = string.Empty;
 
-    public IContractBackend Backend { get; private set; } = null!;
+    public IFullContractBackend Backend { get; private set; } = null!;
 
     public async Task InitializeAsync()
     {

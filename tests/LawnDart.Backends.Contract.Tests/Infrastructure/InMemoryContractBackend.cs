@@ -1,6 +1,7 @@
 using LawnDart.EventSourcing.EventStore;
 using LawnDart.EventSourcing.Outbox;
 using LawnDart.EventSourcing.Snapshots;
+using LawnDart.EventStore;
 using LawnDart.Outbox;
 using LawnDart.Messaging;
 using LawnDart.Messaging.InMemory;
@@ -10,12 +11,13 @@ using Microsoft.Extensions.Options;
 
 namespace LawnDart.Backends.Contract.Tests;
 
-public sealed class InMemoryContractBackend : IContractBackend
+public sealed class InMemoryContractBackend : IFullContractBackend
 {
     public string Name => "in-memory";
 
     public ContractCapabilities Capabilities { get; } = new()
     {
+        CanTurnOffNewEventsSignal = true,
         EnforcesEventIdAcrossTenants = true,
         StreamIdsCaseInsensitive = false,
         AppendWritesOutboxRows = false,
@@ -60,12 +62,24 @@ public sealed class InMemoryContractBackend : IContractBackend
             Log = store,
             Subscriptions = store,
             Signals = store,
+            SignalCounters = new NewEventsSignalCounters(store.NewEvents),
             Hooks = UnavailableHooks.Instance,
             Outbox = new InMemoryOutboxWriter(options.OutboxClaimLease),
             ReadLogEntries = () => [],
-            SetPublishNewEventsSignal = value => store.PublishNewEventsSignal = value
+            SetPublishNewEventsSignal = value => store.PublishNewEventsSignal = value,
+            MarkStreamArchivedAsync = (streamId, ct) => MarkArchivedAsync(store, streamId, ct)
         };
         return Task.FromResult(opened);
+    }
+
+    private static async Task MarkArchivedAsync(
+        InMemoryEventStore store,
+        string streamId,
+        CancellationToken cancellationToken)
+    {
+        var metadata = await store.GetStreamAsync(streamId, cancellationToken).ConfigureAwait(false);
+        Assert.NotNull(metadata);
+        metadata!.Status = StreamStatus.Archived;
     }
 
     public Task<IOutboxWriter> OpenOutboxAsync(
@@ -121,7 +135,7 @@ public sealed class InMemoryContractBackend : IContractBackend
 
 public sealed class InMemoryContractFixture
 {
-    public IContractBackend Backend { get; } = new InMemoryContractBackend();
+    public IFullContractBackend Backend { get; } = new InMemoryContractBackend();
 }
 
 [CollectionDefinition(Name)]

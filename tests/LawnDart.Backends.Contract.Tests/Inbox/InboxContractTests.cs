@@ -8,9 +8,9 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace LawnDart.Backends.Contract.Tests;
 
-public abstract class InboxContractTests : ContractSuite
+public abstract class InboxContractTests : BackendContractSuite
 {
-    protected InboxContractTests(IContractBackend backend)
+    protected InboxContractTests(IFullContractBackend backend)
         : base(backend)
     {
     }

@@ -8,6 +8,8 @@
   href: eventsourcing-sqlserver.md
 - name: EventSourcing.Postgres
   href: eventsourcing-postgres.md
+- name: EventSourcing.Testing
+  href: eventsourcing-testing.md
 - name: Messaging
   href: messaging.md
 - name: Messaging.InMemory

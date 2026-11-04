@@ -1,7 +1,7 @@
 using System.Text;
 using LawnDart.EventStore;
 
-namespace LawnDart.Backends.Contract.Tests;
+namespace LawnDart.EventSourcing.Testing;
 
 /// <summary>
 /// Concurrent conditional appends. Each race starts 16 appends at the same moment.
@@ -480,27 +480,4 @@ public abstract class DcbAppendRaceContractTests : ContractSuite
     private static string Stream() => "race:" + Guid.NewGuid().ToString("N");
 
     private static string Tag(string kind) => kind + ":" + Guid.NewGuid().ToString("N");
-}
-
-[Collection(InMemoryContractCollection.Name)]
-[Trait("Category", "Contract")]
-public sealed class InMemoryDcbAppendRaceContractTests : DcbAppendRaceContractTests
-{
-    public InMemoryDcbAppendRaceContractTests(InMemoryContractFixture fixture) : base(fixture.Backend) { }
-}
-
-[Collection("SqlServerContract")]
-[Trait("Category", "Integration")]
-[Trait("Category", "Contract")]
-public sealed class SqlServerDcbAppendRaceContractTests : DcbAppendRaceContractTests
-{
-    public SqlServerDcbAppendRaceContractTests(SqlServerContractFixture fixture) : base(fixture.Backend) { }
-}
-
-[Collection("PostgresContract")]
-[Trait("Category", "Integration")]
-[Trait("Category", "Contract")]
-public sealed class PostgresDcbAppendRaceContractTests : DcbAppendRaceContractTests
-{
-    public PostgresDcbAppendRaceContractTests(PostgresContractFixture fixture) : base(fixture.Backend) { }
 }

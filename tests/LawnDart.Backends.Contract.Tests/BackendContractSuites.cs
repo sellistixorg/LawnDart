@@ -398,3 +398,81 @@ public sealed class PostgresPerEventTagContractTests : PerEventTagContractTests
 {
     public PostgresPerEventTagContractTests(PostgresContractFixture fixture) : base(fixture.Backend) { }
 }
+
+[Collection(InMemoryContractCollection.Name)]
+[Trait("Category", "Contract")]
+public sealed class InMemoryRepeatedTagContractTests : RepeatedTagContractTests
+{
+    public InMemoryRepeatedTagContractTests(InMemoryContractFixture fixture) : base(fixture.Backend) { }
+}
+
+[Collection("SqlServerContract")]
+[Trait("Category", "Integration")]
+[Trait("Category", "Contract")]
+public sealed class SqlServerRepeatedTagContractTests : RepeatedTagContractTests
+{
+    public SqlServerRepeatedTagContractTests(SqlServerContractFixture fixture) : base(fixture.Backend) { }
+}
+
+[Collection("PostgresContract")]
+[Trait("Category", "Integration")]
+[Trait("Category", "Contract")]
+public sealed class PostgresRepeatedTagContractTests : RepeatedTagContractTests
+{
+    public PostgresRepeatedTagContractTests(PostgresContractFixture fixture) : base(fixture.Backend) { }
+}
+
+[Collection(InMemoryContractCollection.Name)]
+[Trait("Category", "Contract")]
+public sealed class InMemoryDcbAppendRaceContractTests : DcbAppendRaceContractTests
+{
+    public InMemoryDcbAppendRaceContractTests(InMemoryContractFixture fixture) : base(fixture.Backend) { }
+}
+
+[Collection("SqlServerContract")]
+[Trait("Category", "Integration")]
+[Trait("Category", "Contract")]
+public sealed class SqlServerDcbAppendRaceContractTests : DcbAppendRaceContractTests
+{
+    public SqlServerDcbAppendRaceContractTests(SqlServerContractFixture fixture) : base(fixture.Backend) { }
+}
+
+[Collection("PostgresContract")]
+[Trait("Category", "Integration")]
+[Trait("Category", "Contract")]
+public sealed class PostgresDcbAppendRaceContractTests : DcbAppendRaceContractTests
+{
+    public PostgresDcbAppendRaceContractTests(PostgresContractFixture fixture) : base(fixture.Backend) { }
+}
+
+[Collection("SqlServerContract")]
+[Trait("Category", "Integration")]
+[Trait("Category", "Contract")]
+public sealed class SqlServerEventNameTableContractTests : EventNameTableContractTests
+{
+    public SqlServerEventNameTableContractTests(SqlServerContractFixture fixture) : base(fixture.Backend) { }
+}
+
+[Collection("PostgresContract")]
+[Trait("Category", "Integration")]
+[Trait("Category", "Contract")]
+public sealed class PostgresEventNameTableContractTests : EventNameTableContractTests
+{
+    public PostgresEventNameTableContractTests(PostgresContractFixture fixture) : base(fixture.Backend) { }
+}
+
+[Collection("SqlServerContract")]
+[Trait("Category", "Integration")]
+[Trait("Category", "Contract")]
+public sealed class SqlServerStreamTagTableContractTests : StreamTagTableContractTests
+{
+    public SqlServerStreamTagTableContractTests(SqlServerContractFixture fixture) : base(fixture.Backend) { }
+}
+
+[Collection("PostgresContract")]
+[Trait("Category", "Integration")]
+[Trait("Category", "Contract")]
+public sealed class PostgresStreamTagTableContractTests : StreamTagTableContractTests
+{
+    public PostgresStreamTagTableContractTests(PostgresContractFixture fixture) : base(fixture.Backend) { }
+}

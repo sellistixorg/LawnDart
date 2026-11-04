@@ -1,8 +1,12 @@
 using System.Text.Json.Nodes;
 using LawnDart.EventStore;
 
-namespace LawnDart.Backends.Contract.Tests;
+namespace LawnDart.EventSourcing.Testing;
 
+/// <summary>
+/// Base class for every contract suite. A store's test project inherits a suite,
+/// passes its <see cref="IContractBackend"/> to the constructor, and xUnit runs the tests.
+/// </summary>
 public abstract class ContractSuite
 {
     protected ContractSuite(IContractBackend backend) => Backend = backend;
@@ -12,6 +16,20 @@ public abstract class ContractSuite
     protected ContractCapabilities Cap => Backend.Capabilities;
 
     protected static void SkipUnless(bool available, string reason) => ContractSkip.Unless(available, reason);
+
+    /// <summary>The store's live subscriptions, or a skip when the backend has none.</summary>
+    protected static IEventStoreSubscriptions SubscriptionsOf(ContractEventStore opened)
+    {
+        SkipUnless(opened.Subscriptions is not null, "This backend has no live subscriptions.");
+        return opened.Subscriptions!;
+    }
+
+    /// <summary>The store's new-events signal, or a skip when the backend has none.</summary>
+    protected static ISignalsNewEvents SignalsOf(ContractEventStore opened)
+    {
+        SkipUnless(opened.Signals is not null, "This backend has no new-events signal.");
+        return opened.Signals!;
+    }
 
     protected static async Task<List<SequencedEvent>> ReadExactlyAsync(
         ISubscriptionHandle handle,
@@ -131,10 +149,17 @@ public abstract class ContractSuite
         Assert.True(JsonNode.DeepEquals(JsonNode.Parse(expected), JsonNode.Parse(actual)));
     }
 
-    protected static async Task WaitForWaitersAsync(NewEventsSignal signal, int count)
+    /// <summary>The store's signal counters, or a skip when the backend has none.</summary>
+    protected static IContractSignalCounters SignalCountersOf(ContractEventStore opened)
+    {
+        SkipUnless(opened.SignalCounters is not null, "This backend does not supply signal counters.");
+        return opened.SignalCounters!;
+    }
+
+    protected static async Task WaitForWaitersAsync(IContractSignalCounters counters, int count)
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-        while (signal.WaitingCount < count)
+        while (counters.WaiterCount < count)
             await Task.Delay(10, cts.Token).ConfigureAwait(false);
     }
 }

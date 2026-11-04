@@ -12,10 +12,10 @@ public sealed class PostgresContractFixture : IAsyncLifetime
     /// <summary>Owner connection. Used only to create schemas.</summary>
     public string AdminConnectionString { get; private set; } = string.Empty;
 
-    public IContractBackend Backend { get; private set; } = null!;
+    public IFullContractBackend Backend { get; private set; } = null!;
 
     /// <summary>Same database. Subscriptions poll and do not open a listen connection.</summary>
-    public IContractBackend PollOnlyBackend { get; private set; } = null!;
+    public IFullContractBackend PollOnlyBackend { get; private set; } = null!;
 
     public async Task InitializeAsync()
     {

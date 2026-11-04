@@ -22,6 +22,7 @@ Host grammar: [DI Grammar](../DI_GRAMMAR.md). Envelope fields:
 | [`LawnDart.EventSourcing`](eventsourcing.md) | You need a runtime and an in-memory store. | `UseInMemory()` |
 | [`LawnDart.EventSourcing.SqlServer`](eventsourcing-sqlserver.md) | You need a durable SQL Server store. | `UseSqlServer(...)` |
 | [`LawnDart.EventSourcing.Postgres`](eventsourcing-postgres.md) | You need a durable Postgres store. | `UsePostgres(...)` |
+| [`LawnDart.EventSourcing.Testing`](eventsourcing-testing.md) | You are writing an event store and want the contract suite. | Implement `IContractBackend`, inherit the suites |
 | [`LawnDart.Projections.Lightweight`](projections-lightweight.md) | You need read models. | `WithProjections` / `MapProjectionQueries` |
 | [`LawnDart.Projections.Lightweight.SqlServer`](projections-lightweight-sqlserver.md) | Read models must survive a restart on SQL Server. | `AddSqlProjectionStores` |
 | [`LawnDart.Projections.Lightweight.Postgres`](projections-lightweight-postgres.md) | Read models must survive a restart on Postgres. | `AddPostgresProjectionStores` |
