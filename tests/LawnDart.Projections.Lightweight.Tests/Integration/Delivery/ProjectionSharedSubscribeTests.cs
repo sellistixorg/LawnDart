@@ -9,6 +9,7 @@ using LawnDart.Projections.Lightweight;
 using LawnDart.Projections.Lightweight.Hosting;
 using LawnDart.Projections.Lightweight.Tests.Helpers;
 using LawnDart.Projections.Storage;
+using LawnDart.EventStore;
 
 namespace LawnDart.Projections.Lightweight.Tests.Integration.Delivery;
 

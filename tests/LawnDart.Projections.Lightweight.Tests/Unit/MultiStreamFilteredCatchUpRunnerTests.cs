@@ -7,6 +7,7 @@ using LawnDart.Projections.Lightweight.Tests.Helpers;
 using LawnDart.Projections.Lightweight.TimeTravelQuery;
 using LawnDart.Projections.Storage;
 using LawnDart.Projections.Checkpoints;
+using LawnDart.EventStore;
 
 namespace LawnDart.Projections.Lightweight.Tests.Unit;
 

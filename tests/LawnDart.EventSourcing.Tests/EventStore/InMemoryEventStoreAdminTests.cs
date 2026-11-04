@@ -47,9 +47,9 @@ public class InMemoryEventStoreAdminTests
     public async Task GetMaxSequencePositionAsync_WithTag_ReturnsMaxMatchingSequence()
     {
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
-        await store.AppendAsync("Order:other", OneEvent(), tags: ["other"]);
-        var first = await store.AppendAsync("Order:1", OneEvent(), tags: ["order:1"]);
-        var last = await store.AppendAsync("Order:2", OneEvent(), tags: ["order:1"]);
+        await store.AppendAsync("Order:other", OneEvent().Select(e => new TaggedEvent(e, ["other"])).ToList());
+        var first = await store.AppendAsync("Order:1", OneEvent().Select(e => new TaggedEvent(e, ["order:1"])).ToList());
+        var last = await store.AppendAsync("Order:2", OneEvent().Select(e => new TaggedEvent(e, ["order:1"])).ToList());
 
         var query = Query.FromItems(QueryItem.ByTags("order:1"));
         Assert.Equal(last.SequencePositions[0], await store.GetMaxSequencePositionAsync(query));
@@ -64,9 +64,9 @@ public class InMemoryEventStoreAdminTests
     public async Task GetMaxSequencePositionAsync_AndTags_ReturnsIntersectionMax()
     {
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
-        await store.AppendAsync("Order:1", OneEvent(), tags: ["a", "only-a"]);
-        var both = await store.AppendAsync("Order:2", OneEvent(), tags: ["a", "b"]);
-        await store.AppendAsync("Order:3", OneEvent(), tags: ["b"]);
+        await store.AppendAsync("Order:1", OneEvent().Select(e => new TaggedEvent(e, ["a", "only-a"])).ToList());
+        var both = await store.AppendAsync("Order:2", OneEvent().Select(e => new TaggedEvent(e, ["a", "b"])).ToList());
+        await store.AppendAsync("Order:3", OneEvent().Select(e => new TaggedEvent(e, ["b"])).ToList());
 
         var max = await store.GetMaxSequencePositionAsync(Query.FromItems(QueryItem.ByTags("a", "b")));
         Assert.Equal(both.SequencePositions[0], max);

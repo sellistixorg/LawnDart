@@ -194,9 +194,8 @@ public sealed class PostgresAppendClosureTests
 
         var tag = "own-" + Guid.NewGuid().ToString("N");
         var appended = await opened.Store.AppendAsync(
-            [ContractEvent.Tick()],
-            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(tag))),
-            tags: [tag]);
+            [new TaggedEvent(ContractEvent.Tick(), [tag])],
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(tag))));
         var read = await opened.Store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(tag)));
         Assert.Single(read.Events);
         Assert.Equal(appended.SequencePositions[0], read.Events[0].SequencePosition);

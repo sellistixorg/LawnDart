@@ -55,10 +55,12 @@ for the session; the log has `IEventLogSubscriptions`.
 - `ReadStreamEnumerableAsync(string streamId, long fromVersion = 0, long? toVersion = null, DateTime? toTimestamp = null, CancellationToken cancellationToken = default)`
 - `ReadByQueryAsync(Query query, long? fromSequencePosition = null, int? limit = null, long? toSequencePosition = null, DateTime? toTimestamp = null, CancellationToken cancellationToken = default)`
 - `ReadByQueryStreamAsync(Query query, long? fromSequencePosition = null, long? toSequencePosition = null, DateTime? toTimestamp = null, CancellationToken cancellationToken = default)`
-- `AppendAsync(string streamId, IEnumerable<IEvent> events, long? expectedVersion = null, EventMetadata? metadata = null, IEnumerable<string>? tags = null, CancellationToken cancellationToken = default)`
-- `AppendAsync(IEnumerable<IEvent> events, AppendCondition condition, EventMetadata? metadata = null, IEnumerable<string>? tags = null, CancellationToken cancellationToken = default)`
+- `AppendAsync(string streamId, IEnumerable<TaggedEvent> events, long? expectedVersion = null, EventMetadata? metadata = null, CancellationToken cancellationToken = default)`. Each `TaggedEvent` is one event and its own tags.
+- `AppendAsync(IEnumerable<TaggedEvent> events, AppendCondition condition, EventMetadata? metadata = null, CancellationToken cancellationToken = default)`
 - `GetCurrentSequenceAsync(CancellationToken cancellationToken = default)`
 - `GetMaxSequencePositionAsync(Query query, long? fromSequencePosition = null, long? toSequencePosition = null, DateTime? toTimestamp = null, CancellationToken cancellationToken = default)`
+
+`TaggedEvent(IEvent Event, params IReadOnlyList<string> Tags)` is one event and the tags written on that event only. A repeated tag is kept once. For events with no tags, `EventStoreAppendExtensions` adds `AppendAsync(streamId, IEnumerable<IEvent> events, ...)` and `AppendAsync(IEnumerable<IEvent> events, condition, ...)`. They wrap each event in a `TaggedEvent` with no tags and call the interface.
 
 **`IStreamRegistry`** (on every `IEventStore`)
 

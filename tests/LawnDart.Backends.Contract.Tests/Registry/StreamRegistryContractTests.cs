@@ -50,8 +50,8 @@ public abstract class StreamRegistryContractTests : ContractSuite
         var high = "high-" + Guid.NewGuid().ToString("N");
         var low = "low-" + Guid.NewGuid().ToString("N");
         var match = "test-tenant:Order:" + Guid.NewGuid().ToString("N");
-        await store.AppendAsync(match, [ContractEvent.Tick()], metadata: metadata, tags: [high]);
-        await store.AppendAsync("test-tenant:Order:" + Guid.NewGuid().ToString("N"), [ContractEvent.Tick()], metadata: metadata, tags: [low]);
+        await store.AppendAsync(match, [new TaggedEvent(ContractEvent.Tick(), [high])], metadata: metadata);
+        await store.AppendAsync("test-tenant:Order:" + Guid.NewGuid().ToString("N"), [new TaggedEvent(ContractEvent.Tick(), [low])], metadata: metadata);
         var found = await store.GetStreamsByTagAsync(high);
         Assert.Single(found);
         Assert.Contains(high, found[0].Tags);

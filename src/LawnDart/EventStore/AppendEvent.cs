@@ -42,7 +42,7 @@ public sealed class AppendEvent
     /// </summary>
     public ReadOnlyMemory<byte> Metadata { get; }
 
-    /// <summary>Tags supplied with this append, each one once.</summary>
+    /// <summary>Tags for this event, each one once.</summary>
     public IReadOnlyList<string> Tags { get; }
 
     /// <param name="eventType">Event name.</param>

@@ -275,12 +275,11 @@ public sealed class PostgresPhase1Tests
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         opened.Hooks.PauseNextAppendBeforeCommit(entered, release);
-        var normal = opened.Store.AppendAsync("held", [ContractEvent.Tick()], tags: [tag]);
+        var normal = opened.Store.AppendAsync("held", [new TaggedEvent(ContractEvent.Tick(), [tag])]);
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
         var dcb = opened.Store.AppendAsync(
-            [ContractEvent.Tick()],
-            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(tag))),
-            tags: [tag]);
+            [new TaggedEvent(ContractEvent.Tick(), [tag])],
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(tag))));
         await Task.Delay(200);
         Assert.False(dcb.IsCompleted);
         release.TrySetResult();
@@ -451,9 +450,8 @@ public sealed class PostgresPhase1Tests
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         opened.Hooks.PauseNextAppendBeforeCommit(entered, release);
         var typesOnly = opened.Store.AppendAsync(
-            [ContractEvent.Tick()],
-            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByType(typeName))),
-            tags: [writtenByTypesOnly]);
+            [new TaggedEvent(ContractEvent.Tick(), [writtenByTypesOnly])],
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByType(typeName))));
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
         var tagged = opened.Store.AppendAsync(
             [ContractEvent.Tick()],
@@ -492,11 +490,10 @@ public sealed class PostgresPhase1Tests
         var normal = opened.Store.AppendAsync("held", [ContractEvent.Tick()]);
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
         var dcb = opened.Store.AppendAsync(
-            [ContractEvent.Tick()],
+            [new TaggedEvent(ContractEvent.Tick(), [tag])],
             AppendCondition.FailIfMatches(Query.FromItems(
                 QueryItem.ByType("backend-contract.test-event"),
-                QueryItem.ByTags(tag))),
-            tags: [tag]);
+                QueryItem.ByTags(tag))));
         await Task.Delay(200);
         Assert.False(dcb.IsCompleted);
         release.TrySetResult();
@@ -652,14 +649,12 @@ public sealed class PostgresPhase1Tests
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         opened.Hooks.PauseNextAppendBeforeCommit(entered, release);
         var held = opened.Store.AppendAsync(
-            [ContractEvent.Tick()],
-            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(checkTag))),
-            tags: [writeTag]);
+            [new TaggedEvent(ContractEvent.Tick(), [writeTag])],
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(checkTag))));
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
         var waiter = opened.Store.AppendAsync(
-            [ContractEvent.Tick()],
-            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(writeTag))),
-            tags: [checkTag]);
+            [new TaggedEvent(ContractEvent.Tick(), [checkTag])],
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(writeTag))));
         await Task.Delay(200);
         Assert.False(waiter.IsCompleted);
         release.TrySetResult();

@@ -50,10 +50,9 @@ public class DcbOrderService
         var operationTag = $"operation:{operationId}";
 
         await _eventStore.AppendAsync(
-            new[] { @event },
+            [new TaggedEvent(@event, operationTag, $"order:{orderId}", $"cart:{cartId}", $"customer:{customerId}")],
             condition,
-            metadata,
-            tags: new[] { operationTag, $"order:{orderId}", $"cart:{cartId}", $"customer:{customerId}" });
+            metadata);
     }
 
     public async Task AddOrderItemAsync(Guid orderId, string productId, int quantity, decimal unitPrice)
@@ -73,10 +72,9 @@ public class DcbOrderService
         var operationTag = $"operation:{operationId}";
 
         await _eventStore.AppendAsync(
-            new[] { @event },
+            [new TaggedEvent(@event, operationTag, $"order:{orderId}", $"product:{productId}")],
             condition,
-            metadata,
-            tags: new[] { operationTag, $"order:{orderId}", $"product:{productId}" });
+            metadata);
     }
 
     public async Task CompleteOrderAsync(Guid orderId)
@@ -96,10 +94,9 @@ public class DcbOrderService
         var operationTag = $"operation:{operationId}";
 
         await _eventStore.AppendAsync(
-            new[] { @event },
+            [new TaggedEvent(@event, operationTag, $"order:{orderId}")],
             condition,
-            metadata,
-            tags: new[] { operationTag, $"order:{orderId}" });
+            metadata);
     }
 
     private async Task<long> GetLastSequencePositionAsync(string tag)

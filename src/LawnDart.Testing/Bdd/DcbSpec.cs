@@ -215,8 +215,7 @@ public sealed class DcbSpecBuilder<TEntity, TCommand>
             var seedStream = $"bdd-seed:{Guid.NewGuid():N}";
             await _context.EventStore.AppendAsync(
                     seedStream,
-                    [item.Event],
-                    tags: item.Tags,
+                    [new TaggedEvent(item.Event, item.Tags)],
                     cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
         }

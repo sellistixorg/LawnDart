@@ -114,10 +114,9 @@ public class DcbOrderFulfillmentWorkflow
         {
             // One append: all three events, or none.
             var appendResult = await _eventStore.AppendAsync(
-                workflowEvents,
+                workflowEvents.Select(e => new TaggedEvent(e, workflowTag, orderTag, paymentTag, productTag)).ToList(),
                 condition,
-                eventMetadata,
-                tags: new[] { workflowTag, orderTag, paymentTag, productTag });
+                eventMetadata);
 
             Console.WriteLine();
             Console.WriteLine("[ok] Workflow events appended in one write.");
@@ -186,7 +185,7 @@ public class DcbOrderFulfillmentWorkflow
 
         Console.WriteLine("\nWorkflow 1: Appending fulfillment started event...");
         // Use workflow tag first to avoid streamId conflicts
-        var appendResult1 = await _eventStore.AppendAsync(events1, condition1, tags: new[] { workflow1Tag, orderTag });
+        var appendResult1 = await _eventStore.AppendAsync(events1.Select(e => new TaggedEvent(e, workflow1Tag, orderTag)).ToList(), condition1);
         Console.WriteLine($"[ok] Workflow 1 succeeded at position {appendResult1.SequencePositions[0]}");
 
         // Second workflow tries to start (should fail)
@@ -207,7 +206,7 @@ public class DcbOrderFulfillmentWorkflow
         Console.WriteLine("The condition matches the order tag, so the second append fails.");
         try
         {
-            await _eventStore.AppendAsync(events2, condition2, tags: new[] { workflow2Tag, orderTag });
+            await _eventStore.AppendAsync(events2.Select(e => new TaggedEvent(e, workflow2Tag, orderTag)).ToList(), condition2);
             throw new InvalidOperationException("Workflow 2 should have failed the append condition.");
         }
         catch (ConcurrencyException)

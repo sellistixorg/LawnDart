@@ -50,8 +50,7 @@ public abstract class RepositoryTenantContractTests : ContractSuite
         var repository = DcbRepo(store, "default", validateNames: true);
 
         var ex = await Assert.ThrowsAsync<ArgumentException>(() => repository.AppendWithContextAsync(
-            [ContractEvent.Tick()],
-            ["order:absent"],
+            [new TaggedEvent(ContractEvent.Tick(), ["order:absent"])],
             AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags("order:absent"))),
             new CommandMetadata { TenantId = "default" }));
         Assert.Contains("reserved", ex.Message);
@@ -64,8 +63,7 @@ public abstract class RepositoryTenantContractTests : ContractSuite
         var repository = DcbRepo(store, "default", validateNames: false);
 
         var positions = await repository.AppendWithContextAsync(
-            [ContractEvent.Tick()],
-            ["order:kept"],
+            [new TaggedEvent(ContractEvent.Tick(), ["order:kept"])],
             AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags("order:kept"))),
             new CommandMetadata { TenantId = "default" });
 
@@ -81,8 +79,7 @@ public abstract class RepositoryTenantContractTests : ContractSuite
         var repository = DcbRepo(store, tenantId: null, validateNames: true);
 
         var ex = await Assert.ThrowsAsync<ArgumentException>(() => repository.AppendWithContextAsync(
-            [ContractEvent.Tick()],
-            ["order:absent"],
+            [new TaggedEvent(ContractEvent.Tick(), ["order:absent"])],
             AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags("order:absent")))));
         Assert.Contains("TenantId is required in event metadata", ex.Message);
     }

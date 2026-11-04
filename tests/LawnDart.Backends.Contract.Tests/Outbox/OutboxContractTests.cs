@@ -341,7 +341,7 @@ public abstract class OutboxContractTests : ContractSuite
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(enableOutbox: true));
         var streamId = "test-tenant:TestAggregate:" + Guid.NewGuid().ToString("N");
         var @event = new ContractOutboxEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow, Value = "test" };
-        await opened.Store.AppendAsync(streamId, [@event], metadata: new EventMetadata(), tags: ["test-tag"]);
+        await opened.Store.AppendAsync(streamId, [new TaggedEvent(@event, ["test-tag"])], metadata: new EventMetadata());
         Assert.Equal(@event.Id, Assert.Single(await opened.Store.ReadStreamAsync(streamId)).Event.Id);
         Assert.Equal(streamId, Assert.Single(await opened.Outbox.GetUnprocessedAsync(10)).StreamId);
     }
@@ -356,9 +356,8 @@ public abstract class OutboxContractTests : ContractSuite
         var @event = new ContractOutboxEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow, Value = "frame-copy" };
         await opened.Store.AppendAsync(
             streamId,
-            [@event],
-            metadata: new EventMetadata { UserId = "outbox-user" },
-            tags: ["test-tag"]);
+            [new TaggedEvent(@event, ["test-tag"])],
+            metadata: new EventMetadata { UserId = "outbox-user" });
         var recorded = Assert.Single(await opened.Log.ReadStreamAsync(streamId));
         var outbox = Assert.Single(await opened.Outbox.GetUnprocessedAsync(10));
         Assert.Equal(recorded.EventType, outbox.EventType);

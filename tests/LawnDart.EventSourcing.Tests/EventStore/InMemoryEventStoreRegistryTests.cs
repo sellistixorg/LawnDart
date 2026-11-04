@@ -49,8 +49,8 @@ public class InMemoryEventStoreRegistryTests
     {
         // Arrange
         var eventStore = new InMemoryEventStore(enableRegistry: true, options: new InMemoryEventStoreOptions { RequireTenantId = false });
-        await eventStore.AppendAsync("Order:12345", new IEvent[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) }, tags: new[] { "high-priority" });
-        await eventStore.AppendAsync("Order:67890", new IEvent[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) }, tags: new[] { "low-priority" });
+        await eventStore.AppendAsync("Order:12345", [new TaggedEvent(new TestEvent(Guid.NewGuid(), DateTime.UtcNow), new[] { "high-priority" })]);
+        await eventStore.AppendAsync("Order:67890", [new TaggedEvent(new TestEvent(Guid.NewGuid(), DateTime.UtcNow), new[] { "low-priority" })]);
 
         // Act
         var highPriorityStreams = await eventStore.GetStreamsByTagAsync("high-priority");

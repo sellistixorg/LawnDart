@@ -375,3 +375,26 @@ public sealed class PostgresProjectionHostContractTests : ProjectionHostContract
 {
     public PostgresProjectionHostContractTests(PostgresContractFixture fixture) : base(fixture.Backend) { }
 }
+
+[Collection(InMemoryContractCollection.Name)]
+[Trait("Category", "Contract")]
+public sealed class InMemoryPerEventTagContractTests : PerEventTagContractTests
+{
+    public InMemoryPerEventTagContractTests(InMemoryContractFixture fixture) : base(fixture.Backend) { }
+}
+
+[Collection("SqlServerContract")]
+[Trait("Category", "Integration")]
+[Trait("Category", "Contract")]
+public sealed class SqlServerPerEventTagContractTests : PerEventTagContractTests
+{
+    public SqlServerPerEventTagContractTests(SqlServerContractFixture fixture) : base(fixture.Backend) { }
+}
+
+[Collection("PostgresContract")]
+[Trait("Category", "Integration")]
+[Trait("Category", "Contract")]
+public sealed class PostgresPerEventTagContractTests : PerEventTagContractTests
+{
+    public PostgresPerEventTagContractTests(PostgresContractFixture fixture) : base(fixture.Backend) { }
+}

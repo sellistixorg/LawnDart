@@ -31,10 +31,9 @@ public class CachedStreamRegistryTests
         var streamId = "test-stream";
         await _innerRegistry.AppendAsync(
             streamId,
-            new[] { new TestCacheEvent() },
+            [new TaggedEvent(new TestCacheEvent())],
             null,
-            new Metadata.EventMetadata(),
-            Array.Empty<string>());
+            new Metadata.EventMetadata());
 
         // Act
         var result = await _cachedRegistry.GetStreamAsync(streamId);
@@ -51,10 +50,9 @@ public class CachedStreamRegistryTests
         var streamId = "test-stream";
         await _innerRegistry.AppendAsync(
             streamId,
-            new[] { new TestCacheEvent() },
+            [new TaggedEvent(new TestCacheEvent())],
             null,
-            new Metadata.EventMetadata(),
-            Array.Empty<string>());
+            new Metadata.EventMetadata());
 
         // Act
         var result1 = await _cachedRegistry.GetStreamAsync(streamId);
@@ -72,10 +70,9 @@ public class CachedStreamRegistryTests
         // Arrange
         await _innerRegistry.AppendAsync(
             "Order:1",
-            new[] { new TestCacheEvent() },
+            [new TaggedEvent(new TestCacheEvent())],
             null,
-            new Metadata.EventMetadata(),
-            Array.Empty<string>());
+            new Metadata.EventMetadata());
 
         // Act
         var result1 = await _cachedRegistry.GetStreamsByAggregateTypeAsync("Order");
@@ -92,10 +89,9 @@ public class CachedStreamRegistryTests
         // Arrange
         await _innerRegistry.AppendAsync(
             "stream1",
-            new[] { new TestCacheEvent() },
+            [new TaggedEvent(new TestCacheEvent(), "test-tag")],
             null,
-            new Metadata.EventMetadata(),
-            new[] { "test-tag" });
+            new Metadata.EventMetadata());
 
         // Act
         var result1 = await _cachedRegistry.GetStreamsByTagAsync("test-tag");
@@ -159,10 +155,9 @@ public class CachedStreamRegistryTests
         // Arrange
         await _innerRegistry.AppendAsync(
             "Order:1",
-            new[] { new TestCacheEvent() },
+            [new TaggedEvent(new TestCacheEvent())],
             null,
-            new Metadata.EventMetadata(),
-            Array.Empty<string>());
+            new Metadata.EventMetadata());
 
         // Act
         var result1 = await _cachedRegistry.EnumerateStreamIdsAsync("Order");
@@ -179,10 +174,9 @@ public class CachedStreamRegistryTests
         // Arrange
         await _innerRegistry.AppendAsync(
             "stream1",
-            new[] { new TestCacheEvent() },
+            [new TaggedEvent(new TestCacheEvent())],
             null,
-            new Metadata.EventMetadata(),
-            Array.Empty<string>());
+            new Metadata.EventMetadata());
 
         // Act
         var result1 = await _cachedRegistry.GetStreamsUpdatedAfterAsync(0);

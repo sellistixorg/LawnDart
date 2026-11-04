@@ -51,15 +51,14 @@ public abstract class RepeatedTagContractTests : ContractSuite
         var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
         var (a, b) = (Tag("a"), Tag("b"));
         var stream = Stream();
-        await store.AppendAsync(stream, [ContractEvent.Tick(), ContractEvent.Tick()], tags: [a, b, a]);
+        await store.AppendAsync(stream, [new TaggedEvent(ContractEvent.Tick(), [a, b, a]), new TaggedEvent(ContractEvent.Tick(), [a, b, a])]);
         var events = await store.ReadStreamAsync(stream);
         Assert.Equal(2, events.Count);
         Assert.All(events, e => Assert.Equal([a, b], e.Tags));
 
         var conditional = await store.AppendAsync(
-            [ContractEvent.Tick()],
-            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(b)), events[^1].SequencePosition),
-            tags: [b, b]);
+            [new TaggedEvent(ContractEvent.Tick(), [b, b])],
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(b)), events[^1].SequencePosition));
         var landed = await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(b)), fromSequencePosition: conditional.SequencePositions[0]);
         Assert.Equal([b], Assert.Single(landed.Events).Tags);
     }
@@ -77,7 +76,7 @@ public abstract class RepeatedTagContractTests : ContractSuite
             null,
             null);
         var (a, b) = (Tag("a"), Tag("b"));
-        await repository.AppendWithContextAsync([new ContractDcbEvent(Guid.NewGuid(), DateTime.UtcNow, 1)], [a, b, a, b]);
+        await repository.AppendWithContextAsync([new TaggedEvent(new ContractDcbEvent(Guid.NewGuid(), DateTime.UtcNow, 1), [a, b, a, b])]);
         var read = await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(a)));
         var evt = Assert.Single(read.Events);
         Assert.Equal(evt.Tags.Count, evt.Tags.Distinct(StringComparer.Ordinal).Count());

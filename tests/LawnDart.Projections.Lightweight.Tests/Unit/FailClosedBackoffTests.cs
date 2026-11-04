@@ -91,18 +91,16 @@ public sealed class FailClosedBackoffTests
 
         public Task<AppendResult> AppendAsync(
             string streamId,
-            IEnumerable<IEvent> events,
+            IEnumerable<TaggedEvent> events,
             long? expectedVersion = null,
             EventMetadata? metadata = null,
-            IEnumerable<string>? tags = null,
             CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
         public Task<AppendResult> AppendAsync(
-            IEnumerable<IEvent> events,
+            IEnumerable<TaggedEvent> events,
             AppendCondition condition,
             EventMetadata? metadata = null,
-            IEnumerable<string>? tags = null,
             CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
