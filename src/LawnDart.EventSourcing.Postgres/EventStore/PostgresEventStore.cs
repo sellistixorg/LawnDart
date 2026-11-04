@@ -19,7 +19,7 @@ namespace LawnDart.EventSourcing.Postgres.EventStore;
 /// Postgres <see cref="IEventLog"/>. Typed <see cref="IEventStore"/> methods
 /// forward to <see cref="EventStoreAdapter"/>.
 /// </summary>
-public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscriptions, IEventLog, IEventLogSubscriptions, ISignalsNewEvents, IPerEventTagAppend
+public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscriptions, IEventLog, IEventLogSubscriptions, ISignalsNewEvents
 {
     /// <summary>Format written into <c>schema_info</c>. Any other number is a drop and recreate.</summary>
     public const int CurrentSchemaFormat = PostgresSchema.CurrentFormat;
@@ -159,30 +159,13 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
 
     /// <inheritdoc />
     public Task<AppendResult> AppendAsync(
-        string streamId, IEnumerable<IEvent> events, long? expectedVersion = null, LawnDart.Metadata.EventMetadata? metadata = null, IEnumerable<string>? tags = null, CancellationToken cancellationToken = default)
-        => _adapter.AppendAsync(streamId, events, expectedVersion, metadata, tags, cancellationToken);
+        string streamId, IEnumerable<TaggedEvent> events, long? expectedVersion = null, LawnDart.Metadata.EventMetadata? metadata = null, CancellationToken cancellationToken = default)
+        => _adapter.AppendAsync(streamId, events, expectedVersion, metadata, cancellationToken);
 
     /// <inheritdoc />
     public Task<AppendResult> AppendAsync(
-        IEnumerable<IEvent> events, AppendCondition condition, LawnDart.Metadata.EventMetadata? metadata = null, IEnumerable<string>? tags = null, CancellationToken cancellationToken = default)
-        => _adapter.AppendAsync(events, condition, metadata, tags, cancellationToken);
-
-    /// <inheritdoc />
-    Task<AppendResult> IPerEventTagAppend.AppendWithEventTagsAsync(
-        string streamId,
-        IReadOnlyList<TaggedEvent> events,
-        long? expectedVersion,
-        LawnDart.Metadata.EventMetadata? metadata,
-        CancellationToken cancellationToken)
-        => ((IPerEventTagAppend)_adapter).AppendWithEventTagsAsync(streamId, events, expectedVersion, metadata, cancellationToken);
-
-    /// <inheritdoc />
-    Task<AppendResult> IPerEventTagAppend.AppendWithEventTagsAsync(
-        IReadOnlyList<TaggedEvent> events,
-        AppendCondition condition,
-        LawnDart.Metadata.EventMetadata? metadata,
-        CancellationToken cancellationToken)
-        => ((IPerEventTagAppend)_adapter).AppendWithEventTagsAsync(events, condition, metadata, cancellationToken);
+        IEnumerable<TaggedEvent> events, AppendCondition condition, LawnDart.Metadata.EventMetadata? metadata = null, CancellationToken cancellationToken = default)
+        => _adapter.AppendAsync(events, condition, metadata, cancellationToken);
 
     /// <inheritdoc />
     public Task<long> GetMaxSequencePositionAsync(

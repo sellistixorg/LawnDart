@@ -15,7 +15,7 @@ namespace LawnDart.EventStore;
 /// This adapter reads them into objects. A typed read that throws does not advance the typed cursor.
 /// </para>
 /// </remarks>
-public sealed class EventStoreAdapter : IEventStore, IEventStoreSubscriptions, IPerEventTagAppend
+public sealed class EventStoreAdapter : IEventStore, IEventStoreSubscriptions
 {
     /// <summary>
     /// Default per-handle bounded channel capacity when the caller does not
@@ -125,86 +125,47 @@ public sealed class EventStoreAdapter : IEventStore, IEventStoreSubscriptions, I
     }
 
     /// <inheritdoc />
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("ApiDesign", "RS0026:Do not add multiple public overloads with optional parameters", Justification = "The two appends take different required parameters (a stream id or an append condition), so a call always picks one.")]
     public Task<AppendResult> AppendAsync(
         string streamId,
-        IEnumerable<IEvent> events,
+        IEnumerable<TaggedEvent> events,
         long? expectedVersion = null,
         EventMetadata? metadata = null,
-        IEnumerable<string>? tags = null,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(streamId))
             throw new ArgumentException("Stream ID cannot be null or empty", nameof(streamId));
 
-        var eventsList = events?.ToList() ?? throw new ArgumentNullException(nameof(events));
-        if (eventsList.Count == 0)
-            throw new ArgumentException("At least one event is required", nameof(events));
-
-        var tagsList = tags?.ToList() ?? [];
-        var envelopes = eventsList.ConvertAll(e => _session.ToAppendEvent(e, metadata, tagsList));
+        var envelopes = ToEnvelopes(events, metadata);
         return _log.AppendAsync(streamId, envelopes, expectedVersion, cancellationToken);
     }
 
     /// <inheritdoc />
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("ApiDesign", "RS0026:Do not add multiple public overloads with optional parameters", Justification = "The two appends take different required parameters (a stream id or an append condition), so a call always picks one.")]
     public Task<AppendResult> AppendAsync(
-        IEnumerable<IEvent> events,
+        IEnumerable<TaggedEvent> events,
         AppendCondition condition,
         EventMetadata? metadata = null,
-        IEnumerable<string>? tags = null,
         CancellationToken cancellationToken = default)
     {
-        var eventsList = events?.ToList() ?? throw new ArgumentNullException(nameof(events));
-        if (eventsList.Count == 0)
-            throw new ArgumentException("At least one event is required", nameof(events));
+        var envelopes = ToEnvelopes(events, metadata);
         ArgumentNullException.ThrowIfNull(condition);
-
-        var tagsList = tags?.ToList() ?? [];
-        var envelopes = eventsList.ConvertAll(e => _session.ToAppendEvent(e, metadata, tagsList));
         return _log.AppendAsync(envelopes, condition, cancellationToken);
     }
 
-    /// <inheritdoc />
-    Task<AppendResult> IPerEventTagAppend.AppendWithEventTagsAsync(
-        string streamId,
-        IReadOnlyList<TaggedEvent> events,
-        long? expectedVersion,
-        EventMetadata? metadata,
-        CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(streamId))
-            throw new ArgumentException("Stream ID cannot be null or empty", nameof(streamId));
-        ArgumentNullException.ThrowIfNull(events);
-        if (events.Count == 0)
-            throw new ArgumentException("At least one event is required", nameof(events));
-
-        var envelopes = ToTaggedEnvelopes(events, metadata);
-        return _log.AppendAsync(streamId, envelopes, expectedVersion, cancellationToken);
-    }
-
-    /// <inheritdoc />
-    Task<AppendResult> IPerEventTagAppend.AppendWithEventTagsAsync(
-        IReadOnlyList<TaggedEvent> events,
-        AppendCondition condition,
-        EventMetadata? metadata,
-        CancellationToken cancellationToken)
+    private List<AppendEvent> ToEnvelopes(IEnumerable<TaggedEvent> events, EventMetadata? metadata)
     {
         ArgumentNullException.ThrowIfNull(events);
-        if (events.Count == 0)
-            throw new ArgumentException("At least one event is required", nameof(events));
-        ArgumentNullException.ThrowIfNull(condition);
-
-        var envelopes = ToTaggedEnvelopes(events, metadata);
-        return _log.AppendAsync(envelopes, condition, cancellationToken);
-    }
-
-    private List<AppendEvent> ToTaggedEnvelopes(IReadOnlyList<TaggedEvent> events, EventMetadata? metadata)
-    {
-        var envelopes = new List<AppendEvent>(events.Count);
+        var envelopes = new List<AppendEvent>(events is ICollection<TaggedEvent> c ? c.Count : 4);
         foreach (var tagged in events)
         {
-            ArgumentNullException.ThrowIfNull(tagged.Event);
-            envelopes.Add(_session.ToAppendEvent(tagged.Event, metadata, tagged.Tags ?? []));
+            if (tagged is null)
+                throw new ArgumentException("Events cannot contain null items", nameof(events));
+            envelopes.Add(_session.ToAppendEvent(tagged.Event, metadata, tagged.Tags));
         }
+
+        if (envelopes.Count == 0)
+            throw new ArgumentException("At least one event is required", nameof(events));
 
         return envelopes;
     }

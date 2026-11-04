@@ -255,76 +255,76 @@ public class DcbRepository : IDcbRepository
     
     /// <inheritdoc/>
     public Task<IReadOnlyList<long>> AppendWithContextAsync(
-        IEnumerable<IEvent> events,
-        IEnumerable<string> tags,
+        IEnumerable<TaggedEvent> events,
         AppendCondition? condition = null,
         CommandMetadata? commandMetadata = null,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(events);
         var eventsList = events.ToList();
-        var noOwnTags = new IReadOnlyList<string>[eventsList.Count];
-        Array.Fill(noOwnTags, Array.Empty<string>());
-        return AppendEventsAsync(eventsList, noOwnTags, tags, condition, commandMetadata, cancellationToken);
+        if (eventsList.Any(e => e is null))
+            throw new ArgumentException("Events cannot contain null items", nameof(events));
+        return AppendEventsAsync(eventsList, condition, commandMetadata, cancellationToken);
     }
 
     /// <summary>
-    /// Appends events so each event is written with the shared tags plus its own tags.
+    /// Appends events so each event is written with only its own tags, plus the tag
+    /// provider's tags for that event and the tenant tag when tenant isolation is on.
     /// </summary>
-    /// <param name="eventsList">Events to append.</param>
-    /// <param name="ownTags">Tags for each event only, in the same order as <paramref name="eventsList"/>.</param>
-    /// <param name="sharedTags">Tags written on every event in this append.</param>
+    /// <param name="callerEvents">Events to append, each with the tags the caller gave for it.</param>
     /// <param name="condition">Append condition, or <c>null</c> for an unconditional append.</param>
     /// <param name="commandMetadata">Command metadata, captured when <c>null</c>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     private async Task<IReadOnlyList<long>> AppendEventsAsync(
-        IReadOnlyList<IEvent> eventsList,
-        IReadOnlyList<IReadOnlyList<string>> ownTags,
-        IEnumerable<string> sharedTags,
+        IReadOnlyList<TaggedEvent> callerEvents,
         AppendCondition? condition,
         CommandMetadata? commandMetadata,
         CancellationToken cancellationToken)
     {
-        using var activity = DcbTelemetry.StartAppendActivity(eventsList.Count);
+        using var activity = DcbTelemetry.StartAppendActivity(callerEvents.Count);
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         
         try
         {
-            if (eventsList.Count == 0)
+            if (callerEvents.Count == 0)
                 throw new ArgumentException("At least one event is required", "events");
 
             WarnOnCondition(condition);
 
-            var sharedList = sharedTags.ToList();
-            
-            // Enforce tenant isolation if enabled
-            if (_eventSourcingOptions.EnforceDcbTenantIsolation)
-            {
-                EnsureTenantTag(sharedList);
-            }
-
             // Get or create command metadata
             var metadata = commandMetadata ?? _metadataProvider.CaptureCommandMetadata();
 
-            // Build each event's tags: the shared tags, that event's own tags, and the
-            // tag provider's tags for that event. Tags from other events in the batch
-            // are not added.
-            var tagged = new List<TaggedEvent>(eventsList.Count);
-            for (var i = 0; i < eventsList.Count; i++)
+            // Build each event's tags: that event's own tags, the tag provider's tags for
+            // that event, and the tenant tag when tenant isolation is on. Tags from other
+            // events in the batch are not added.
+            string? tenantTag = null;
+            var tagged = new List<TaggedEvent>(callerEvents.Count);
+            foreach (var item in callerEvents)
             {
-                var @event = eventsList[i];
-                var eventTags = new List<string>(sharedList);
-                if (i < ownTags.Count && ownTags[i] is { } own)
-                    eventTags.AddRange(own);
+                var eventTags = new List<string>(item.Tags);
+                if (_eventSourcingOptions.EnforceDcbTenantIsolation
+                    && !eventTags.Any(t => t.StartsWith("tenant:", StringComparison.OrdinalIgnoreCase)))
+                {
+                    if (tenantTag is null)
+                    {
+                        var injected = new List<string>();
+                        EnsureTenantTag(injected);
+                        tenantTag = injected[0];
+                    }
+
+                    eventTags.Add(tenantTag);
+                }
+
                 if (_tagProvider != null)
-                    eventTags.AddRange(_tagProvider.GetTags(@event, null));
-                tagged.Add(new TaggedEvent(@event, eventTags.Distinct(StringComparer.Ordinal).ToArray()));
+                    eventTags.AddRange(_tagProvider.GetTags(item.Event, null));
+                tagged.Add(new TaggedEvent(item.Event, eventTags));
             }
             
             // Enrich event metadata
             var eventMetadata = _metadataProvider.EnrichEventMetadata(
                 new EventMetadata(),
                 metadata,
-                eventsList[0]);
+                tagged[0].Event);
 
             if (_options.RequireTenantId)
             {
@@ -344,32 +344,18 @@ public class DcbRepository : IDcbRepository
             }
 
             // Append to event store
-            AppendResult appendResult;
-            if (_eventStore is IPerEventTagAppend perEvent)
-            {
-                // Shipped stores: one atomic append, each event with its own tags.
-                appendResult = condition != null
-                    ? await perEvent.AppendWithEventTagsAsync(tagged, condition, eventMetadata, cancellationToken).ConfigureAwait(false)
-                    : await perEvent.AppendWithEventTagsAsync(streamId!, tagged, null, eventMetadata, cancellationToken).ConfigureAwait(false);
-            }
-            else
-            {
-                // Other stores take one tag list per batch. Write the tags of this append
-                // only (never tags read during replay). Events with different tags then
-                // share the combined list until those stores support per-event tags.
-                var batchTags = tagged.SelectMany(t => t.Tags).Distinct(StringComparer.Ordinal).ToList();
-                appendResult = condition != null
-                    ? await _eventStore.AppendAsync(eventsList, condition, eventMetadata, batchTags, cancellationToken).ConfigureAwait(false)
-                    : await _eventStore.AppendAsync(streamId!, eventsList, null, eventMetadata, batchTags, cancellationToken).ConfigureAwait(false);
-            }
+            // One atomic append; each event carries only its own tags.
+            var appendResult = condition != null
+                ? await _eventStore.AppendAsync(tagged, condition, eventMetadata, cancellationToken).ConfigureAwait(false)
+                : await _eventStore.AppendAsync(streamId!, tagged, null, eventMetadata, cancellationToken).ConfigureAwait(false);
 
             var sequencePositions = appendResult.SequencePositions;
             
-            DcbTelemetry.RecordAppend(eventsList.Count, stopwatch.Elapsed);
+            DcbTelemetry.RecordAppend(tagged.Count, stopwatch.Elapsed);
             if (_logger is not null)
             {
                 var distinctTagCount = tagged.SelectMany(t => t.Tags).Distinct(StringComparer.Ordinal).Count();
-                DcbRepositoryLog.EventsAppended(_logger, eventsList.Count, distinctTagCount);
+                DcbRepositoryLog.EventsAppended(_logger, tagged.Count, distinctTagCount);
             }
             
             return sequencePositions;
@@ -547,10 +533,13 @@ public class DcbRepository : IDcbRepository
             // the tag provider's tags for that event, and the tenant tag when tenant isolation
             // is on). The load tags, tags read during replay, and tags of other events in
             // this command are not written. The load tags still form the append condition.
+            var pendingEvents = entity.PendingEvents.ToList();
+            var pendingTags = entity.PendingEventTags;
+            var pendingTagged = new List<TaggedEvent>(pendingEvents.Count);
+            for (var i = 0; i < pendingEvents.Count; i++)
+                pendingTagged.Add(new TaggedEvent(pendingEvents[i], i < pendingTags.Count ? pendingTags[i] : []));
             var sequencePositions = await AppendEventsAsync(
-                entity.PendingEvents.ToList(),
-                entity.PendingEventTags,
-                Array.Empty<string>(),
+                pendingTagged,
                 condition,
                 commandMetadata,
                 cancellationToken).ConfigureAwait(false);

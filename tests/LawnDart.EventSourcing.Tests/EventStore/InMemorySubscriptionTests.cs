@@ -58,9 +58,9 @@ public class InMemorySubscriptionTests
     public async Task Query_Scope_Matches_ReadByQuery()
     {
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
-        await store.AppendAsync("s1", [Evt()], tags: ["order:1"]);
-        await store.AppendAsync("s1", [Evt()], tags: ["other"]);
-        await store.AppendAsync("s1", [Evt()], tags: ["order:1"]);
+        await store.AppendAsync("s1", [new TaggedEvent(Evt(), ["order:1"])]);
+        await store.AppendAsync("s1", [new TaggedEvent(Evt(), ["other"])]);
+        await store.AppendAsync("s1", [new TaggedEvent(Evt(), ["order:1"])]);
 
         var query = Query.FromItems(QueryItem.ByTags("order:1"));
         var expected = (await store.ReadByQueryAsync(query)).Events

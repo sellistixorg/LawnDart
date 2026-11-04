@@ -50,16 +50,16 @@ public interface IDcbRepository
     
     /// <summary>
     /// Appends events with automatic tag generation, metadata enrichment, and authorization.
+    /// Each event is written with only its own tags, plus the tag provider's tags for that
+    /// event and the tenant tag when tenant isolation is on.
     /// </summary>
-    /// <param name="events">Events to append.</param>
-    /// <param name="tags">Tags to apply to the events.</param>
+    /// <param name="events">Events to append, each with its own tags.</param>
     /// <param name="condition">Optional append condition for optimistic concurrency.</param>
     /// <param name="commandMetadata">Optional command metadata for enrichment and authorization.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Sequence positions assigned to the events.</returns>
     Task<IReadOnlyList<long>> AppendWithContextAsync(
-        IEnumerable<IEvent> events,
-        IEnumerable<string> tags,
+        IEnumerable<TaggedEvent> events,
         AppendCondition? condition = null,
         CommandMetadata? commandMetadata = null,
         CancellationToken cancellationToken = default);

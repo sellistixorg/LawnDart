@@ -65,11 +65,7 @@ public abstract class SnapshotContractTests : ContractSuite
         var dcbId = DcbSnapshotId.FromLoadTags(tags);
         var repo = CreateRepository(opened);
         await repo.AppendWithContextAsync(
-            [
-                new InventoryCounted(Guid.NewGuid(), DateTime.UtcNow, 5),
-                new InventoryCounted(Guid.NewGuid(), DateTime.UtcNow, 7)
-            ],
-            tags);
+            [new TaggedEvent(new InventoryCounted(Guid.NewGuid(), DateTime.UtcNow, 5), tags), new TaggedEvent(new InventoryCounted(Guid.NewGuid(), DateTime.UtcNow, 7), tags)]);
         var good = await repo.GetStateAsync<InventoryState>(tags);
         Assert.Equal(12, good.Units);
         await opened.DcbSnapshots.SaveDcbSnapshotAsync(dcbId, 2, good, loadTags: tags);
@@ -125,15 +121,13 @@ public abstract class SnapshotContractTests : ContractSuite
         var dcbId = DcbSnapshotId.FromLoadTags(tags);
         var repo = CreateRepository(opened);
         await repo.AppendWithContextAsync(
-            Enumerable.Range(0, 10).Select(i => (IEvent)new InventoryCounted(Guid.NewGuid(), DateTime.UtcNow, 1)).ToArray(),
-            tags);
+            Enumerable.Range(0, 10).Select(i => (IEvent)new InventoryCounted(Guid.NewGuid(), DateTime.UtcNow, 1)).ToArray().Select(e => new TaggedEvent(e, tags)).ToList());
         var atTen = await repo.GetStateAsync<InventoryState>(tags);
         Assert.Equal(10, atTen.Units);
         var max = await opened.Store.GetMaxSequencePositionAsync(Query.FromItems(QueryItem.ByTags(tags)));
         await opened.DcbSnapshots.SaveDcbSnapshotAsync(dcbId, max, atTen, loadTags: tags);
         await repo.AppendWithContextAsync(
-            Enumerable.Range(0, 5).Select(i => (IEvent)new InventoryCounted(Guid.NewGuid(), DateTime.UtcNow, 1)).ToArray(),
-            tags);
+            Enumerable.Range(0, 5).Select(i => (IEvent)new InventoryCounted(Guid.NewGuid(), DateTime.UtcNow, 1)).ToArray().Select(e => new TaggedEvent(e, tags)).ToList());
         Assert.Equal(15, (await repo.GetStateAsync<InventoryState>(tags)).Units);
     }
 

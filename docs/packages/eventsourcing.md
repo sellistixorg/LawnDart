@@ -96,7 +96,7 @@ backup read.
 
 This package implements `IEventLog` and the typed `IEventStore` adapter
 (which includes `IStreamRegistry`) plus `IEventStoreSubscriptions`.
-Application signatures live in Core and must not change. Third-party
+Application signatures live in Core. Third-party
 stores implement the log. The shipped session still exposes:
 
 - **`IEventStore`:** `ReadStreamAsync`, `ReadStreamEnumerableAsync`,

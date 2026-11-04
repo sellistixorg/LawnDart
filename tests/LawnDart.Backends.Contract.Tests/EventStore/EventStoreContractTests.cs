@@ -136,7 +136,7 @@ public abstract class EventStoreContractTests : ContractSuite
     {
         var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
         var streamId = Stream();
-        await store.AppendAsync(streamId, [ContractEvent.Tick()], tags: ["alpha", "beta"]);
+        await store.AppendAsync(streamId, [new TaggedEvent(ContractEvent.Tick(), ["alpha", "beta"])]);
         var result = Assert.Single(await store.ReadStreamAsync(streamId));
         Assert.Contains("alpha", result.Tags);
         Assert.Contains("beta", result.Tags);
@@ -200,8 +200,8 @@ public abstract class EventStoreContractTests : ContractSuite
     {
         var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
         var tag = "order:" + Guid.NewGuid().ToString("N");
-        await store.AppendAsync(Stream(), [ContractEvent.Tick()], tags: [tag]);
-        await store.AppendAsync(Stream(), [ContractEvent.Tick()], tags: ["other"]);
+        await store.AppendAsync(Stream(), [new TaggedEvent(ContractEvent.Tick(), [tag])]);
+        await store.AppendAsync(Stream(), [new TaggedEvent(ContractEvent.Tick(), ["other"])]);
         var result = await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(tag)));
         Assert.Single(result.Events);
         Assert.Contains(tag, result.Events[0].Tags);
@@ -251,9 +251,9 @@ public abstract class EventStoreContractTests : ContractSuite
         var order = "order:" + Guid.NewGuid().ToString("N");
         var extra = "extra:" + Guid.NewGuid().ToString("N");
         var only = "only:" + Guid.NewGuid().ToString("N");
-        await store.AppendAsync(Stream(), [ContractEvent.Tick()], tags: [order, only]);
-        var match = await store.AppendAsync(Stream(), [ContractEvent.Tick()], tags: [order, extra]);
-        await store.AppendAsync(Stream(), [ContractEvent.Tick()], tags: [extra]);
+        await store.AppendAsync(Stream(), [new TaggedEvent(ContractEvent.Tick(), [order, only])]);
+        var match = await store.AppendAsync(Stream(), [new TaggedEvent(ContractEvent.Tick(), [order, extra])]);
+        await store.AppendAsync(Stream(), [new TaggedEvent(ContractEvent.Tick(), [extra])]);
         var result = await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(order, extra)));
         var evt = Assert.Single(result.Events);
         Assert.Equal(match.SequencePositions[0], evt.SequencePosition);
@@ -268,9 +268,9 @@ public abstract class EventStoreContractTests : ContractSuite
         var left = "left:" + Guid.NewGuid().ToString("N");
         var right = "right:" + Guid.NewGuid().ToString("N");
         var decoy = "decoy:" + Guid.NewGuid().ToString("N");
-        var a = await store.AppendAsync(Stream(), [ContractEvent.Tick()], tags: [left]);
-        var b = await store.AppendAsync(Stream(), [ContractEvent.Tick()], tags: [right]);
-        await store.AppendAsync(Stream(), [ContractEvent.Tick()], tags: [decoy]);
+        var a = await store.AppendAsync(Stream(), [new TaggedEvent(ContractEvent.Tick(), [left])]);
+        var b = await store.AppendAsync(Stream(), [new TaggedEvent(ContractEvent.Tick(), [right])]);
+        await store.AppendAsync(Stream(), [new TaggedEvent(ContractEvent.Tick(), [decoy])]);
         var result = await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(left), QueryItem.ByTags(right)));
         Assert.Equal(2, result.Events.Count);
         Assert.Equal(
@@ -282,7 +282,7 @@ public abstract class EventStoreContractTests : ContractSuite
     public async Task GetMaxSequencePositionAsync_NoMatches_ReturnsZero()
     {
         var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
-        await store.AppendAsync(Stream(), [ContractEvent.Tick()], tags: ["present"]);
+        await store.AppendAsync(Stream(), [new TaggedEvent(ContractEvent.Tick(), ["present"])]);
         Assert.Equal(0, await store.GetMaxSequencePositionAsync(Query.FromItems(QueryItem.ByTags("missing-" + Guid.NewGuid().ToString("N")))));
     }
 
@@ -292,9 +292,9 @@ public abstract class EventStoreContractTests : ContractSuite
         var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
         var tag = "max:" + Guid.NewGuid().ToString("N");
         var other = "max-other:" + Guid.NewGuid().ToString("N");
-        await store.AppendAsync(Stream(), [ContractEvent.Tick()], tags: [other]);
-        var first = await store.AppendAsync(Stream(), [ContractEvent.Tick()], tags: [tag]);
-        var last = await store.AppendAsync(Stream(), [ContractEvent.Tick()], tags: [tag]);
+        await store.AppendAsync(Stream(), [new TaggedEvent(ContractEvent.Tick(), [other])]);
+        var first = await store.AppendAsync(Stream(), [new TaggedEvent(ContractEvent.Tick(), [tag])]);
+        var last = await store.AppendAsync(Stream(), [new TaggedEvent(ContractEvent.Tick(), [tag])]);
         var query = Query.FromItems(QueryItem.ByTags(tag));
         var max = await store.GetMaxSequencePositionAsync(query);
         Assert.Equal(last.SequencePositions[0], max);

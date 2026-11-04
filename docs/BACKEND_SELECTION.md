@@ -53,8 +53,8 @@ store, the SQL Server store, and the Postgres store implement it.
 | `ReadStreamEnumerableAsync(streamId, fromVersion = 0, toVersion = null, toTimestamp = null, ct)` | Stream read (async sequence) |
 | `ReadByQueryAsync(query, fromSequencePosition = null, limit = null, toSequencePosition = null, toTimestamp = null, ct)` | DCB query (list + consistency marker) |
 | `ReadByQueryStreamAsync(query, fromSequencePosition = null, toSequencePosition = null, toTimestamp = null, ct)` | DCB query (async sequence) |
-| `AppendAsync(streamId, events, expectedVersion = null, metadata = null, tags = null, ct)` | Stream append |
-| `AppendAsync(events, condition, metadata = null, tags = null, ct)` | DCB append |
+| `AppendAsync(streamId, events, expectedVersion = null, metadata = null, ct)` | Stream append; each `TaggedEvent` carries its own tags |
+| `AppendAsync(events, condition, metadata = null, ct)` | DCB append; each `TaggedEvent` carries its own tags |
 | `GetCurrentSequenceAsync(ct)` | Store-wide head |
 | `GetMaxSequencePositionAsync(query, fromSequencePosition = null, toSequencePosition = null, toTimestamp = null, ct)` | Filtered max sequence |
 

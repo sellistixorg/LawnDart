@@ -94,7 +94,7 @@ public class SqlServerEventStoreTests : IAsyncLifetime
             await burn.ExecuteNonQueryAsync();
         }
 
-        var append = await _eventStore.AppendAsync(streamId, new IEvent[]
+        var append = await _eventStore!.AppendAsync(streamId, new IEvent[]
         {
             new TestEvent(Guid.NewGuid(), DateTime.UtcNow),
         });

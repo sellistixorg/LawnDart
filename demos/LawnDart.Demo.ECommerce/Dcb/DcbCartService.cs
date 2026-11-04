@@ -51,10 +51,9 @@ public class DcbCartService
         var operationTag = $"operation:{operationId}";
 
         await _eventStore.AppendAsync(
-            new[] { @event },
+            [new TaggedEvent(@event, operationTag, $"cart:{cartId}", $"customer:{customerId}")],
             condition,
-            metadata,
-            tags: new[] { operationTag, $"cart:{cartId}", $"customer:{customerId}" });
+            metadata);
     }
 
     public async Task AddItemAsync(Guid cartId, string productId, int quantity)
@@ -74,10 +73,9 @@ public class DcbCartService
         var operationTag = $"operation:{operationId}";
 
         await _eventStore.AppendAsync(
-            new[] { @event },
+            [new TaggedEvent(@event, operationTag, $"cart:{cartId}", $"product:{productId}")],
             condition,
-            metadata,
-            tags: new[] { operationTag, $"cart:{cartId}", $"product:{productId}" });
+            metadata);
     }
 
     public async Task RemoveItemAsync(Guid cartId, string productId)
@@ -97,10 +95,9 @@ public class DcbCartService
         var operationTag = $"operation:{operationId}";
 
         await _eventStore.AppendAsync(
-            new[] { @event },
+            [new TaggedEvent(@event, operationTag, $"cart:{cartId}", $"product:{productId}")],
             condition,
-            metadata,
-            tags: new[] { operationTag, $"cart:{cartId}", $"product:{productId}" });
+            metadata);
     }
 
     public async Task CheckoutCartAsync(Guid cartId)
@@ -121,10 +118,9 @@ public class DcbCartService
         var operationTag = $"operation:{operationId}";
 
         await _eventStore.AppendAsync(
-            new[] { @event },
+            [new TaggedEvent(@event, operationTag, $"cart:{cartId}", $"order:{orderId}")],
             condition,
-            metadata,
-            tags: new[] { operationTag, $"cart:{cartId}", $"order:{orderId}" });
+            metadata);
     }
 
     private async Task<long> GetLastSequencePositionAsync(string tag)

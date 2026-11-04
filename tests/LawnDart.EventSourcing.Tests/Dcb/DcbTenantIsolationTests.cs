@@ -41,8 +41,7 @@ public class DcbTenantIsolationTests
 
         // Add events with tenant tag
         await repository.AppendWithContextAsync(
-            new[] { new TestEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow } },
-            new[] { "tenant:tenant-123", "order:order-1" });
+            [new TaggedEvent(new TestEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow }, "tenant:tenant-123", "order:order-1")]);
 
         // Act - Query without explicit tenant tag (should auto-inject)
         var state = await repository.GetStateAsync<TestState>(new[] { "order:order-1" });
@@ -95,8 +94,7 @@ public class DcbTenantIsolationTests
 
         // Act - Append without explicit tenant tag (should auto-inject)
         await repository.AppendWithContextAsync(
-            new[] { new TestEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow } },
-            new[] { "order:order-1" });
+            [new TaggedEvent(new TestEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow }, "order:order-1")]);
 
         // Query with explicit tenant tag
         var state = await repository.GetStateAsync<TestState>(new[] { "tenant:tenant-456", "order:order-1" });
@@ -126,8 +124,7 @@ public class DcbTenantIsolationTests
 
         // Act - Should work without tenant
         await repository.AppendWithContextAsync(
-            new[] { new TestEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow } },
-            new[] { "order:order-1" });
+            [new TaggedEvent(new TestEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow }, "order:order-1")]);
 
         var state = await repository.GetStateAsync<TestState>(new[] { "order:order-1" });
 
@@ -156,8 +153,7 @@ public class DcbTenantIsolationTests
 
         // Add events
         await repository.AppendWithContextAsync(
-            new[] { new TestEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow } },
-            new[] { "tenant:tenant-789", "order:order-1" });
+            [new TaggedEvent(new TestEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow }, "tenant:tenant-789", "order:order-1")]);
 
         // Act - Query with explicit tenant tag
         var state = await repository.GetStateAsync<TestState>(new[] { "tenant:tenant-789", "order:order-1" });
@@ -185,13 +181,11 @@ public class DcbTenantIsolationTests
 
         // Act - Tenant 1 appends data
         await repository1.AppendWithContextAsync(
-            new[] { new TestEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow } },
-            new[] { "order:shared-order" });
+            [new TaggedEvent(new TestEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow }, "order:shared-order")]);
 
         // Tenant 2 appends data with same order tag
         await repository2.AppendWithContextAsync(
-            new[] { new TestEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow } },
-            new[] { "order:shared-order" });
+            [new TaggedEvent(new TestEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow }, "order:shared-order")]);
 
         // Query as tenant 1
         var stateTenant1 = await repository1.GetStateAsync<TestState>(new[] { "order:shared-order" });

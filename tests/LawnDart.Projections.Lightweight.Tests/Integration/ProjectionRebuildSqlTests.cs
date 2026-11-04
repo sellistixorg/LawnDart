@@ -11,6 +11,7 @@ using LawnDart.Projections.Partitioning;
 using LawnDart.Projections.Lightweight.SqlServer;
 using LawnDart.Projections.Storage;
 using Testcontainers.MsSql;
+using LawnDart.EventStore;
 
 namespace LawnDart.Projections.Lightweight.Tests.Integration;
 

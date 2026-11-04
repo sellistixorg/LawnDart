@@ -22,7 +22,10 @@ changes to the public API.
 
 ### Changed
 
-- `AppendWithContextAsync` writes the tag provider's tags for an event on that event only. The tags you pass are still written on every event in the call.
+- **Breaking:** `IEventStore.AppendAsync` takes each event with its own tags. Both appends now take `IEnumerable<TaggedEvent>`, and the `tags` parameter is gone. A `TaggedEvent` is one event plus the tags written on that event only, for example `new TaggedEvent(orderPlaced, "order:42", "customer:7")`. There is no tag list for the whole call anymore, so one event's tags never land on another event. One call is still one atomic write under one expected version or one append condition. Metadata is still one value per call. A repeated tag on one `TaggedEvent` is kept once, with the same rule as `AppendEvent`. The in-memory, SQL Server, and Postgres stores write exactly the tags each `TaggedEvent` carries.
+- **Breaking:** `IDcbRepository.AppendWithContextAsync` takes `IEnumerable<TaggedEvent>` in place of an event list and one tag list. Each event is written with its own tags, the tag provider's tags for that event, and the tenant tag when tenant isolation is on. The tenant tag is added to each event that has no `tenant:` tag of its own.
+- Calls with no tags keep compiling. `EventStoreAppendExtensions` in `LawnDart.EventStore` adds `AppendAsync(streamId, events, ...)` and `AppendAsync(events, condition, ...)` for plain events. They wrap each event in a `TaggedEvent` with no tags. Add `using LawnDart.EventStore;` if a file calls a store class directly and does not have it.
+- To update a call that passed `tags:`, wrap each event in a `TaggedEvent` with the tags that belong to that event and drop the `tags:` argument. A class that implements `IEventStore` changes its two `AppendAsync` methods to the new signatures. `IEventLog` does not change.
 
 ## [0.7.0-alpha.3] - 2026-10-26
 

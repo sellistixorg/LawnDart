@@ -80,20 +80,18 @@ internal sealed class CountingEventStore : IEventStore, IEventStoreSubscriptions
 
     public Task<AppendResult> AppendAsync(
         string streamId,
-        IEnumerable<IEvent> events,
+        IEnumerable<TaggedEvent> events,
         long? expectedVersion = null,
         EventMetadata? metadata = null,
-        IEnumerable<string>? tags = null,
         CancellationToken cancellationToken = default) =>
-        _inner.AppendAsync(streamId, events, expectedVersion, metadata, tags, cancellationToken);
+        _inner.AppendAsync(streamId, events, expectedVersion, metadata, cancellationToken);
 
     public Task<AppendResult> AppendAsync(
-        IEnumerable<IEvent> events,
+        IEnumerable<TaggedEvent> events,
         AppendCondition condition,
         EventMetadata? metadata = null,
-        IEnumerable<string>? tags = null,
         CancellationToken cancellationToken = default) =>
-        _inner.AppendAsync(events, condition, metadata, tags, cancellationToken);
+        _inner.AppendAsync(events, condition, metadata, cancellationToken);
 
     public Task<long> GetCurrentSequenceAsync(CancellationToken cancellationToken = default) =>
         _inner.GetCurrentSequenceAsync(cancellationToken);
@@ -268,20 +266,18 @@ internal sealed class IdleSubscribeEventStore : IEventStore, IEventStoreSubscrip
 
     public Task<AppendResult> AppendAsync(
         string streamId,
-        IEnumerable<IEvent> events,
+        IEnumerable<TaggedEvent> events,
         long? expectedVersion = null,
         EventMetadata? metadata = null,
-        IEnumerable<string>? tags = null,
         CancellationToken cancellationToken = default) =>
-        _inner.AppendAsync(streamId, events, expectedVersion, metadata, tags, cancellationToken);
+        _inner.AppendAsync(streamId, events, expectedVersion, metadata, cancellationToken);
 
     public Task<AppendResult> AppendAsync(
-        IEnumerable<IEvent> events,
+        IEnumerable<TaggedEvent> events,
         AppendCondition condition,
         EventMetadata? metadata = null,
-        IEnumerable<string>? tags = null,
         CancellationToken cancellationToken = default) =>
-        _inner.AppendAsync(events, condition, metadata, tags, cancellationToken);
+        _inner.AppendAsync(events, condition, metadata, cancellationToken);
 
     public Task<long> GetCurrentSequenceAsync(CancellationToken cancellationToken = default) =>
         _inner.GetCurrentSequenceAsync(cancellationToken);

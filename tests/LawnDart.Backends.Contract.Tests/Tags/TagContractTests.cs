@@ -61,7 +61,7 @@ public abstract class TagContractTests : ContractSuite
         var bad = $"Student:{id:D}";
         var good = LowercaseTagFormat.Instance.Tag("student", id);
         var loud = Dcb(store, logger, warn: true);
-        await loud.AppendWithContextAsync([new ProbeEvent(Guid.NewGuid(), DateTime.UtcNow)], [bad]);
+        await loud.AppendWithContextAsync([new TaggedEvent(new ProbeEvent(Guid.NewGuid(), DateTime.UtcNow), [bad])]);
         var first = await loud.GetStateAsync<CountingState>([bad]);
         var second = await loud.GetStateAsync<CountingState>([bad]);
         var formatted = await loud.GetStateAsync<CountingState>([good]);
@@ -75,8 +75,7 @@ public abstract class TagContractTests : ContractSuite
         var quiet = Dcb(store, logger, warn: false);
         await quiet.GetStateAsync<CountingState>([quietTag]);
         await quiet.AppendWithContextAsync(
-            [new ProbeEvent(Guid.NewGuid(), DateTime.UtcNow)],
-            [LowercaseTagFormat.Instance.Tag("section", Guid.NewGuid())],
+            [new TaggedEvent(new ProbeEvent(Guid.NewGuid(), DateTime.UtcNow), [LowercaseTagFormat.Instance.Tag("section", Guid.NewGuid())])],
             AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(quietTag))));
         Assert.Equal(0, logger.WarningsFor(quietTag));
     }
@@ -89,7 +88,7 @@ public abstract class TagContractTests : ContractSuite
         var repo = Dcb(store, logger, warn: true);
         var student = LowercaseTagFormat.Instance.Tag("student", Guid.NewGuid());
         var tenant = LowercaseTagFormat.Instance.Tag("tenant", "academy-tenant");
-        await repo.AppendWithContextAsync([new ProbeEvent(Guid.NewGuid(), DateTime.UtcNow)], [student, tenant]);
+        await repo.AppendWithContextAsync([new TaggedEvent(new ProbeEvent(Guid.NewGuid(), DateTime.UtcNow), [student, tenant])]);
         var state = await repo.GetStateAsync<CountingState>([student, tenant]);
         Assert.Equal(1, state.Count);
         Assert.Empty(logger.Warnings);

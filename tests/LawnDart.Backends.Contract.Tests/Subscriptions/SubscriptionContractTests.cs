@@ -46,9 +46,9 @@ public abstract class SubscriptionContractTests : ContractSuite
     {
         SkipUnless(Cap.RunsLiveSubscriptionTests, "This backend does not run the live subscription suite yet.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
-        await opened.Store.AppendAsync("s1", [ContractEvent.Tick()], tags: ["order:1"]);
-        await opened.Store.AppendAsync("s1", [ContractEvent.Tick()], tags: ["other"]);
-        await opened.Store.AppendAsync("s1", [ContractEvent.Tick()], tags: ["order:1"]);
+        await opened.Store.AppendAsync("s1", [new TaggedEvent(ContractEvent.Tick(), ["order:1"])]);
+        await opened.Store.AppendAsync("s1", [new TaggedEvent(ContractEvent.Tick(), ["other"])]);
+        await opened.Store.AppendAsync("s1", [new TaggedEvent(ContractEvent.Tick(), ["order:1"])]);
         var query = Query.FromItems(QueryItem.ByTags("order:1"));
         var expected = (await opened.Store.ReadByQueryAsync(query)).Events.Select(e => e.SequencePosition).ToArray();
         await using var handle = opened.Subscriptions.Subscribe(

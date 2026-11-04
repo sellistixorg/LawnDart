@@ -84,34 +84,42 @@ public interface IEventStore : IStreamRegistry
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Appends events to a stream (traditional approach).
+    /// Appends events to a stream (traditional approach). Each event carries only its own tags.
     /// </summary>
+    /// <remarks>
+    /// One call is one atomic write: every event is written, or none is. Tags are taken from
+    /// each <see cref="TaggedEvent"/>; there is no tag list for the whole call. For events with no
+    /// tags, <see cref="EventStoreAppendExtensions"/> takes plain events.
+    /// </remarks>
     /// <param name="streamId">The stream identifier.</param>
-    /// <param name="events">Events to append.</param>
+    /// <param name="events">Events to append, each with its own tags.</param>
     /// <param name="expectedVersion">Expected version for optimistic concurrency. Null means no version check.</param>
     /// <param name="metadata">Metadata for all events.</param>
-    /// <param name="tags">Tags to apply to all events.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>
     /// An <see cref="AppendResult"/> containing the sequence positions assigned to the appended events
     /// and an optional <see cref="AppendResult.ConsistencyMarker"/> populated by backends that support
     /// hash-based concurrency control. Null for SQL Server / in-memory backends.
     /// </returns>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("ApiDesign", "RS0026:Do not add multiple public overloads with optional parameters", Justification = "The two appends take different required parameters (a stream id or an append condition), so a call always picks one.")]
     Task<AppendResult> AppendAsync(
         string streamId,
-        IEnumerable<IEvent> events,
+        IEnumerable<TaggedEvent> events,
         long? expectedVersion = null,
         EventMetadata? metadata = null,
-        IEnumerable<string>? tags = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Appends events with an append condition (DCB approach).
+    /// Appends events with an append condition (DCB approach). Each event carries only its own tags.
     /// </summary>
-    /// <param name="events">Events to append.</param>
+    /// <remarks>
+    /// One call is one atomic write under one condition: every event is written, or none is.
+    /// Tags are taken from each <see cref="TaggedEvent"/>; there is no tag list for the whole call.
+    /// For events with no tags, <see cref="EventStoreAppendExtensions"/> takes plain events.
+    /// </remarks>
+    /// <param name="events">Events to append, each with its own tags.</param>
     /// <param name="condition">Append condition for consistency checking.</param>
     /// <param name="metadata">Metadata for all events.</param>
-    /// <param name="tags">Tags to apply to all events.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>
     /// An <see cref="AppendResult"/> containing the sequence positions assigned to the appended events
@@ -119,11 +127,11 @@ public interface IEventStore : IStreamRegistry
     /// hash-based concurrency control. Null for SQL Server / in-memory backends.
     /// </returns>
     /// <exception cref="ConcurrencyException">Thrown if the append condition fails.</exception>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("ApiDesign", "RS0026:Do not add multiple public overloads with optional parameters", Justification = "The two appends take different required parameters (a stream id or an append condition), so a call always picks one.")]
     Task<AppendResult> AppendAsync(
-        IEnumerable<IEvent> events,
+        IEnumerable<TaggedEvent> events,
         AppendCondition condition,
         EventMetadata? metadata = null,
-        IEnumerable<string>? tags = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

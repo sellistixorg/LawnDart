@@ -344,9 +344,8 @@ public abstract class StreamListContractTests : ContractSuite
         var tenant = StreamIdParser.ExtractTenantId(streamId);
         await store.AppendAsync(
             streamId,
-            [ContractEvent.Tick()],
-            metadata: tenant is null ? null : new EventMetadata { TenantId = tenant },
-            tags: tags);
+            [new TaggedEvent(ContractEvent.Tick(), tags)],
+            metadata: tenant is null ? null : new EventMetadata { TenantId = tenant });
     }
 
     private static async Task<(List<string> Ids, string? LastToken)> DrainAsync(

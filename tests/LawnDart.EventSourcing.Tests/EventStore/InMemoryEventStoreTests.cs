@@ -111,7 +111,7 @@ public class InMemoryEventStoreTests
         var events = new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) };
         var tags = new[] { "tag1", "tag2" };
 
-        await store.AppendAsync(streamId, events, tags: tags);
+        await store.AppendAsync(streamId, events.Select(e => new TaggedEvent(e, tags)).ToList());
         var query = Query.FromItems(QueryItem.ByTags("tag1"));
 
         // Act
@@ -218,14 +218,14 @@ public class InMemoryEventStoreTests
         var events2 = new[] { new AnotherEvent(Guid.NewGuid(), DateTime.UtcNow) };
 
         // Append event with one tag
-        await store.AppendAsync("stream1", events1, tags: new[] { "order:12345" });
+        await store.AppendAsync("stream1", events1.Select(e => new TaggedEvent(e, "order:12345")).ToList());
 
         // Create condition that checks for different tag
         var query = Query.FromItems(QueryItem.ByTags("order:67890"));
         var condition = AppendCondition.FailIfMatches(query);
 
         // Act - Should succeed because no events match the tag query
-        var result = await store.AppendAsync(events2, condition, tags: new[] { "order:67890" });
+        var result = await store.AppendAsync(events2.Select(e => new TaggedEvent(e, "order:67890")).ToList(), condition);
 
         // Assert
         Assert.Single(result.SequencePositions);
@@ -240,7 +240,7 @@ public class InMemoryEventStoreTests
         var events2 = new[] { new AnotherEvent(Guid.NewGuid(), DateTime.UtcNow) };
 
         // Append event with tag
-        await store.AppendAsync("stream1", events1, tags: new[] { "order:12345" });
+        await store.AppendAsync("stream1", events1.Select(e => new TaggedEvent(e, "order:12345")).ToList());
 
         // Create condition that checks for the same tag
         var query = Query.FromItems(QueryItem.ByTags("order:12345"));
@@ -248,7 +248,7 @@ public class InMemoryEventStoreTests
 
         // Act & Assert - Should fail because event with matching tag exists
         await Assert.ThrowsAsync<ConcurrencyException>(
-            () => store.AppendAsync(events2, condition, tags: new[] { "order:12345" }));
+            () => store.AppendAsync(events2.Select(e => new TaggedEvent(e, "order:12345")).ToList(), condition));
     }
 
     [Fact]
@@ -260,14 +260,14 @@ public class InMemoryEventStoreTests
         var events2 = new[] { new AnotherEvent(Guid.NewGuid(), DateTime.UtcNow) };
 
         // Append event with only one tag (missing the second tag)
-        await store.AppendAsync("stream1", events1, tags: new[] { "order:12345" });
+        await store.AppendAsync("stream1", events1.Select(e => new TaggedEvent(e, "order:12345")).ToList());
 
         // Create condition that requires BOTH tags
         var query = Query.FromItems(QueryItem.ByTags("order:12345", "payment:abc"));
         var condition = AppendCondition.FailIfMatches(query);
 
         // Act - Should succeed because no event has both tags
-        var result = await store.AppendAsync(events2, condition, tags: new[] { "order:12345", "payment:abc" });
+        var result = await store.AppendAsync(events2.Select(e => new TaggedEvent(e, "order:12345", "payment:abc")).ToList(), condition);
 
         // Assert
         Assert.Single(result.SequencePositions);
@@ -282,7 +282,7 @@ public class InMemoryEventStoreTests
         var events2 = new[] { new AnotherEvent(Guid.NewGuid(), DateTime.UtcNow) };
 
         // Append event with both tags
-        await store.AppendAsync("stream1", events1, tags: new[] { "order:12345", "payment:abc" });
+        await store.AppendAsync("stream1", events1.Select(e => new TaggedEvent(e, "order:12345", "payment:abc")).ToList());
 
         // Create condition that requires both tags
         var query = Query.FromItems(QueryItem.ByTags("order:12345", "payment:abc"));
@@ -290,7 +290,7 @@ public class InMemoryEventStoreTests
 
         // Act & Assert - Should fail because event with both tags exists
         await Assert.ThrowsAsync<ConcurrencyException>(
-            () => store.AppendAsync(events2, condition, tags: new[] { "order:12345", "payment:abc" }));
+            () => store.AppendAsync(events2.Select(e => new TaggedEvent(e, "order:12345", "payment:abc")).ToList(), condition));
     }
 
     [Fact]
@@ -302,7 +302,7 @@ public class InMemoryEventStoreTests
         var events2 = new[] { new AnotherEvent(Guid.NewGuid(), DateTime.UtcNow) };
 
         // Append event matching first query item
-        await store.AppendAsync("stream1", events1, tags: new[] { "order:12345" });
+        await store.AppendAsync("stream1", events1.Select(e => new TaggedEvent(e, "order:12345")).ToList());
 
         // Create query with OR logic (matches if ANY item matches)
         var query = Query.FromItems(
@@ -313,7 +313,7 @@ public class InMemoryEventStoreTests
 
         // Act & Assert - Should fail because first query item matches
         await Assert.ThrowsAsync<ConcurrencyException>(
-            () => store.AppendAsync(events2, condition, tags: new[] { "order:99999" }));
+            () => store.AppendAsync(events2.Select(e => new TaggedEvent(e, "order:99999")).ToList(), condition));
     }
 
     [Fact]
@@ -324,16 +324,13 @@ public class InMemoryEventStoreTests
         
         // Append events for different entities but same order (cross-entity scenario)
         await store.AppendAsync("order-stream", 
-            new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) }, 
-            tags: new[] { "order:12345" });
+            [new TaggedEvent(new TestEvent(Guid.NewGuid(), DateTime.UtcNow), new[] { "order:12345" })]);
         
         await store.AppendAsync("payment-stream", 
-            new[] { new AnotherEvent(Guid.NewGuid(), DateTime.UtcNow) }, 
-            tags: new[] { "order:12345", "payment:abc" });
+            [new TaggedEvent(new AnotherEvent(Guid.NewGuid(), DateTime.UtcNow), new[] { "order:12345", "payment:abc" })]);
         
         await store.AppendAsync("inventory-stream", 
-            new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) }, 
-            tags: new[] { "order:12345", "product:xyz" });
+            [new TaggedEvent(new TestEvent(Guid.NewGuid(), DateTime.UtcNow), new[] { "order:12345", "product:xyz" })]);
 
         // Query for all events related to this order (crosses multiple streams/entities)
         var query = Query.FromItems(QueryItem.ByTags("order:12345"));
@@ -376,9 +373,8 @@ public class InMemoryEventStoreTests
         };
 
         var result = await store.AppendAsync(
-            workflowEvents, 
-            condition, 
-            tags: new[] { orderId, paymentId, productId });
+            workflowEvents.Select(e => new TaggedEvent(e, orderId, paymentId, productId)).ToList(), 
+            condition);
 
         // Assert - Both events appended atomically
         Assert.Equal(2, result.SequencePositions.Count);
@@ -393,10 +389,9 @@ public class InMemoryEventStoreTests
     {
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         var append = await store.AppendAsync(
-            new IEvent[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) },
+            [new TaggedEvent(new TestEvent(Guid.NewGuid(), DateTime.UtcNow), new[] { "order:9001" })],
             AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags("order:9001"))),
-            metadata: new EventMetadata { TenantId = "tenant-x" },
-            tags: new[] { "order:9001" });
+            metadata: new EventMetadata { TenantId = "tenant-x" });
 
         var query = await store.ReadByQueryAsync(Query.All(), fromSequencePosition: append.SequencePositions[0], limit: 1);
         var evt = Assert.Single(query.Events);
@@ -535,9 +530,9 @@ public class InMemoryEventStoreTests
     {
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         var streamId = "test-stream";
-        await store.AppendAsync(streamId, new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) }, tags: new[] { "order:1" });
-        var append2 = await store.AppendAsync(streamId, new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) }, tags: new[] { "order:1" });
-        await store.AppendAsync(streamId, new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) }, tags: new[] { "order:1" });
+        await store.AppendAsync(streamId, [new TaggedEvent(new TestEvent(Guid.NewGuid(), DateTime.UtcNow), new[] { "order:1" })]);
+        var append2 = await store.AppendAsync(streamId, [new TaggedEvent(new TestEvent(Guid.NewGuid(), DateTime.UtcNow), new[] { "order:1" })]);
+        await store.AppendAsync(streamId, [new TaggedEvent(new TestEvent(Guid.NewGuid(), DateTime.UtcNow), new[] { "order:1" })]);
 
         var query = Query.FromItems(QueryItem.ByTags("order:1"));
         var result = await store.ReadByQueryAsync(query, toSequencePosition: append2.SequencePositions[0]);
@@ -552,9 +547,9 @@ public class InMemoryEventStoreTests
         var t1 = new DateTime(2025, 4, 1, 10, 0, 0, DateTimeKind.Utc);
         var t2 = new DateTime(2025, 4, 1, 11, 0, 0, DateTimeKind.Utc);
         var t3 = new DateTime(2025, 4, 1, 12, 0, 0, DateTimeKind.Utc);
-        await store.AppendAsync("s1", new[] { new TestEvent(Guid.NewGuid(), t1) }, metadata: new EventMetadata { Timestamp = t1 }, tags: new[] { "order:2" });
-        await store.AppendAsync("s1", new[] { new TestEvent(Guid.NewGuid(), t2) }, metadata: new EventMetadata { Timestamp = t2 }, tags: new[] { "order:2" });
-        await store.AppendAsync("s1", new[] { new TestEvent(Guid.NewGuid(), t3) }, metadata: new EventMetadata { Timestamp = t3 }, tags: new[] { "order:2" });
+        await store.AppendAsync("s1", [new TaggedEvent(new TestEvent(Guid.NewGuid(), t1), new[] { "order:2" })], metadata: new EventMetadata { Timestamp = t1 });
+        await store.AppendAsync("s1", [new TaggedEvent(new TestEvent(Guid.NewGuid(), t2), new[] { "order:2" })], metadata: new EventMetadata { Timestamp = t2 });
+        await store.AppendAsync("s1", [new TaggedEvent(new TestEvent(Guid.NewGuid(), t3), new[] { "order:2" })], metadata: new EventMetadata { Timestamp = t3 });
 
         var query = Query.FromItems(QueryItem.ByTags("order:2"));
         var result = await store.ReadByQueryAsync(query, toTimestamp: t2);

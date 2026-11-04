@@ -21,7 +21,7 @@ public class TagQueryWarningTests
         var bad = $"Student:{id:D}";
         var good = LowercaseTagFormat.Instance.Tag("student", id);
 
-        await repo.AppendWithContextAsync([Event()], [bad]);
+        await repo.AppendWithContextAsync([new TaggedEvent(Event(), [bad])]);
 
         var first = await repo.GetStateAsync<CountingState>([bad]);
         var second = await repo.GetStateAsync<CountingState>([bad]);
@@ -104,7 +104,7 @@ public class TagQueryWarningTests
         var student = format.Tag("student", Guid.NewGuid());
         var tenant = format.Tag("tenant", "academy-tenant");
 
-        await repo.AppendWithContextAsync([Event()], [student, tenant]);
+        await repo.AppendWithContextAsync([new TaggedEvent(Event(), [student, tenant])]);
         var state = await repo.GetStateAsync<CountingState>([student, tenant]);
 
         Assert.Equal(1, state.Count);
@@ -123,12 +123,10 @@ public class TagQueryWarningTests
 
         await repo.GetLastSequencePositionAsync([compact]);
         await repo.AppendWithContextAsync(
-            [Event()],
-            [LowercaseTagFormat.Instance.Tag("section", Guid.NewGuid())],
+            [new TaggedEvent(Event(), [LowercaseTagFormat.Instance.Tag("section", Guid.NewGuid())])],
             condition);
         await repo.AppendWithContextAsync(
-            [Event()],
-            [LowercaseTagFormat.Instance.Tag("section", Guid.NewGuid())],
+            [new TaggedEvent(Event(), [LowercaseTagFormat.Instance.Tag("section", Guid.NewGuid())])],
             condition);
 
         Assert.Equal(1, logger.WarningsFor(compact));
@@ -143,7 +141,7 @@ public class TagQueryWarningTests
         var repo = Repository(store, logger, warn: true, format: new ThrowingFormat());
         var tag = $"student:{Guid.NewGuid():D}";
 
-        await repo.AppendWithContextAsync([Event()], [tag]);
+        await repo.AppendWithContextAsync([new TaggedEvent(Event(), [tag])]);
         var state = await repo.GetStateAsync<CountingState>([tag]);
 
         Assert.Equal(1, state.Count);
@@ -159,8 +157,7 @@ public class TagQueryWarningTests
         var reactionTag = $"Payment:{Guid.NewGuid():D}";
         await store.AppendAsync(
             $"dcb:{Guid.NewGuid():N}",
-            [new NotedEvent(Guid.NewGuid(), DateTime.UtcNow, "seen")],
-            tags: [projectionTag]);
+            [new TaggedEvent(new NotedEvent(Guid.NewGuid(), DateTime.UtcNow, "seen"), [projectionTag])]);
 
         var projector = new NotedProjector(projectionTag);
         projector.UseTagFormat(LowercaseTagFormat.Instance, logger);

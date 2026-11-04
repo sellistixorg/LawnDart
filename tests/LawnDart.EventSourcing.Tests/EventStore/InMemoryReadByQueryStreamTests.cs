@@ -23,9 +23,9 @@ public class InMemoryReadByQueryStreamTests
     public async Task ReadByQueryStreamAsync_ByTags_YieldsMatchingEventsInOrder()
     {
         var store = new InMemoryEventStore();
-        await store.AppendAsync("stream:alpha:1", new[] { (IEvent)new TestStreamEvent("A") }, tags: new[] { "tag:alpha" });
-        await store.AppendAsync("stream:beta:1",  new[] { (IEvent)new TestStreamEvent("B") }, tags: new[] { "tag:beta" });
-        await store.AppendAsync("stream:alpha:2", new[] { (IEvent)new TestStreamEvent("C") }, tags: new[] { "tag:alpha" });
+        await store.AppendAsync("stream:alpha:1", [new TaggedEvent((IEvent)new TestStreamEvent("A"), "tag:alpha")]);
+        await store.AppendAsync("stream:beta:1",  [new TaggedEvent((IEvent)new TestStreamEvent("B"), "tag:beta")]);
+        await store.AppendAsync("stream:alpha:2", [new TaggedEvent((IEvent)new TestStreamEvent("C"), "tag:alpha")]);
 
         var events = await DrainAsync(store.ReadByQueryStreamAsync(
             Query.FromItems(QueryItem.ByTags("tag:alpha"))));
@@ -53,8 +53,7 @@ public class InMemoryReadByQueryStreamTests
         for (var i = 0; i < 5; i++)
             await store.AppendAsync(
                 $"stream:early:{i}",
-                new[] { (IEvent)new TestStreamEvent($"item-{i}") },
-                tags: new[] { "tag:early" });
+                [new TaggedEvent((IEvent)new TestStreamEvent($"item-{i}"), "tag:early")]);
 
         SequencedEvent? first = null;
         await foreach (var evt in store.ReadByQueryStreamAsync(
@@ -74,8 +73,7 @@ public class InMemoryReadByQueryStreamTests
         for (var i = 0; i < 4; i++)
             await store.AppendAsync(
                 $"stream:parity:{i}",
-                new[] { (IEvent)new TestStreamEvent($"parity-{i}") },
-                tags: new[] { "tag:parity" });
+                [new TaggedEvent((IEvent)new TestStreamEvent($"parity-{i}"), "tag:parity")]);
 
         var buffered = (await store.ReadByQueryAsync(
             Query.FromItems(QueryItem.ByTags("tag:parity")))).Events;

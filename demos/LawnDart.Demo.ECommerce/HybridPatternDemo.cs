@@ -189,8 +189,7 @@ public class HybridPatternDemo
             };
 
             await _dcbRepository.AppendWithContextAsync(
-                new IEvent[] { inventoryEvent },
-                tags);
+                [new TaggedEvent(inventoryEvent, tags)]);
 
             Console.WriteLine($"[ok] Allocated Inventory (DCB):");
             Console.WriteLine($"   Product: {productId}");
@@ -254,7 +253,7 @@ public class HybridPatternDemo
 
         // One append. A later write is a separate append.
         // An AppendCondition would fence a concurrent transfer of the same stock.
-        var positions = await _dcbRepository.AppendWithContextAsync(events, transferTags);
+        var positions = await _dcbRepository.AppendWithContextAsync(events.Select(e => new TaggedEvent(e, transferTags)).ToList());
         if (positions.Count != 2)
         {
             throw new InvalidOperationException(
@@ -318,8 +317,7 @@ public class HybridPatternDemo
         };
 
         await _dcbRepository.AppendWithContextAsync(
-            new IEvent[] { orderCreatedEvent },
-            orderTags);
+            [new TaggedEvent(orderCreatedEvent, orderTags)]);
 
         Console.WriteLine($"[ok] Order Created (DCB):");
         Console.WriteLine($"   Order ID: {orderId}");
@@ -356,8 +354,7 @@ public class HybridPatternDemo
             after: workflowLastPos);
 
         await _dcbRepository.AppendWithContextAsync(
-            new IEvent[] { reservationEvent },
-            reservationTags,
+            [new TaggedEvent(reservationEvent, reservationTags)],
             reservationCondition);
 
         Console.WriteLine($"[ok] Inventory Reserved:");
@@ -391,8 +388,7 @@ public class HybridPatternDemo
         };
 
         await _dcbRepository.AppendWithContextAsync(
-            new IEvent[] { paymentEvent },
-            paymentTags,
+            [new TaggedEvent(paymentEvent, paymentTags)],
             AppendCondition.FailIfMatches(
                 Query.FromItems(QueryItem.ByTags($"order:{orderId}")),
                 after: workflowLastPos));
@@ -427,8 +423,7 @@ public class HybridPatternDemo
         };
 
         await _dcbRepository.AppendWithContextAsync(
-            new IEvent[] { shippedEvent },
-            shipmentTags,
+            [new TaggedEvent(shippedEvent, shipmentTags)],
             AppendCondition.FailIfMatches(
                 Query.FromItems(QueryItem.ByTags($"order:{orderId}")),
                 after: workflowLastPos));

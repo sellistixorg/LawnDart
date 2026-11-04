@@ -33,31 +33,29 @@ public sealed class LoggingEventStore : IEventStore, IEventLog, IEventStoreSubsc
     /// <inheritdoc />
     public async Task<AppendResult> AppendAsync(
         string streamId,
-        IEnumerable<IEvent> events,
+        IEnumerable<TaggedEvent> events,
         long? expectedVersion = null,
         EventMetadata? metadata = null,
-        IEnumerable<string>? tags = null,
         CancellationToken cancellationToken = default)
     {
         var list = events.ToList();
-        var result = await _store.AppendAsync(streamId, list, expectedVersion, metadata, tags, cancellationToken)
+        var result = await _store.AppendAsync(streamId, list, expectedVersion, metadata, cancellationToken)
             .ConfigureAwait(false);
-        Record(streamId, list, result.SequencePositions, metadata);
+        Record(streamId, list.ConvertAll(t => t.Event), result.SequencePositions, metadata);
         return result;
     }
 
     /// <inheritdoc />
     public async Task<AppendResult> AppendAsync(
-        IEnumerable<IEvent> events,
+        IEnumerable<TaggedEvent> events,
         AppendCondition condition,
         EventMetadata? metadata = null,
-        IEnumerable<string>? tags = null,
         CancellationToken cancellationToken = default)
     {
         var list = events.ToList();
-        var result = await _store.AppendAsync(list, condition, metadata, tags, cancellationToken)
+        var result = await _store.AppendAsync(list, condition, metadata, cancellationToken)
             .ConfigureAwait(false);
-        Record("(dcb)", list, result.SequencePositions, metadata);
+        Record("(dcb)", list.ConvertAll(t => t.Event), result.SequencePositions, metadata);
         return result;
     }
 

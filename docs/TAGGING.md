@@ -175,8 +175,8 @@ Each event is written with its own tags:
   tags, tags on replayed events, and tags of other events in the same
   command are not added. Pass every tag the event is about to `Emit`,
   including the tags a later load will ask for.
-- `AppendWithContextAsync` writes the tags you passed on every event in
-  the call, plus `GetTags` for each event on that event only.
+- `AppendWithContextAsync` takes each event as a `TaggedEvent` and
+  writes it with that event's tags, plus `GetTags` for that event.
 - `AggregateRepository.SaveAsync` writes each event with its own
   `[Tag]` values, `GetTags` for that event, and the aggregate tag.
 
@@ -185,9 +185,23 @@ aggregate path the context is the aggregate. The fence stays the tags
 you passed to `GetOrCreateEntityAsync`. Tags the provider adds do not
 change the load and do not change the fence.
 
-The typed `IEventStore.AppendAsync` still takes one tag list and writes
-it on every event in the call. Use it for a batch whose events share
-the same subjects, or call it once per event.
+The typed `IEventStore.AppendAsync` takes each event as a `TaggedEvent`,
+an event plus its own tags. There is no tag list for the whole call, so
+one event's tags never land on another event. A repeated tag on one
+event is written once.
+
+```csharp
+await store.AppendAsync(
+    [
+        new TaggedEvent(orderPlaced, "order:42", "customer:7"),
+        new TaggedEvent(paymentTaken, "order:42", "payment:9"),
+    ],
+    condition);
+```
+
+For events with no tags, pass the events directly. The
+`EventStoreAppendExtensions` methods in `LawnDart.EventStore` wrap each
+one in a `TaggedEvent` with no tags.
 
 `AggregateRepository` also copies `[Tag]` values. When no tag starts
 with `{AggregateType}:`, it adds `{AggregateType}:{id}` from the .NET
@@ -197,7 +211,8 @@ carry both. Query the provider's string. `[Tag]` is a fixed string and
 cannot format an id, so identity tags stay on the format.
 
 When `EnforceDcbTenantIsolation` is on, the DCB repository adds
-`tenant:{tenantId}` when no tag starts with `tenant:`. The prefix
+`tenant:{tenantId}` to each event whose tags have no tag that starts
+with `tenant:`. The prefix
 check ignores case. Write `tenant:` in lowercase from the format so
 the stored tag and the query are the same string.
 

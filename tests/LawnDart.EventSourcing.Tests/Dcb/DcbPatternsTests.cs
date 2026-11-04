@@ -48,14 +48,9 @@ public class DcbProjectorTests
         // Add events with matching tags
         await eventStore.AppendAsync(
             "stream1",
-            new IEvent[]
-            {
-                new TestProjectionEvent { Value = "event1" },
-                new TestProjectionEvent { Value = "event2" }
-            },
+            [new TaggedEvent(new TestProjectionEvent { Value = "event1" }, "order"), new TaggedEvent(new TestProjectionEvent { Value = "event2" }, "order")],
             null,
-            new EventMetadata(),
-            new[] { "order" });
+            new EventMetadata());
 
         // Act
         await projector.InitializeFromHistoryAsync(eventStore);
@@ -76,17 +71,15 @@ public class DcbProjectorTests
         // Add events in specific order
         await eventStore.AppendAsync(
             "stream1",
-            new IEvent[] { new TestProjectionEvent { Value = "first" } },
+            [new TaggedEvent(new TestProjectionEvent { Value = "first" }, "order")],
             null,
-            new EventMetadata(),
-            new[] { "order" });
+            new EventMetadata());
 
         await eventStore.AppendAsync(
             "stream2",
-            new IEvent[] { new TestProjectionEvent { Value = "second" } },
+            [new TaggedEvent(new TestProjectionEvent { Value = "second" }, "order")],
             null,
-            new EventMetadata(),
-            new[] { "order" });
+            new EventMetadata());
 
         // Act
         await projector.InitializeFromHistoryAsync(eventStore);

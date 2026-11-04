@@ -66,10 +66,9 @@ public class DcbRepositoryTests
 
         await _eventStore.AppendAsync(
             "tenant1:stream:stream1",
-            events,
+            events.Select(e => new TaggedEvent(e, tags)).ToList(),
             null,
-            new EventMetadata(),
-            tags);
+            new EventMetadata());
 
         // Act
         var state = await _repository.GetStateAsync<TestState>(tags);
@@ -106,10 +105,9 @@ public class DcbRepositoryTests
 
         await _eventStore.AppendAsync(
             "tenant1:stream:stream1",
-            events,
+            events.Select(e => new TaggedEvent(e, tags)).ToList(),
             null,
-            new EventMetadata(),
-            tags);
+            new EventMetadata());
 
         // Act
         var position = await _repository.GetLastSequencePositionAsync(tags);
@@ -129,7 +127,7 @@ public class DcbRepositoryTests
         };
 
         // Act
-        var positions = await _repository.AppendWithContextAsync(events, tags);
+        var positions = await _repository.AppendWithContextAsync(events.Select(e => new TaggedEvent(e, tags)).ToList());
 
         // Assert
         Assert.Single(positions);
@@ -147,7 +145,7 @@ public class DcbRepositoryTests
         };
 
         // First append
-        await _repository.AppendWithContextAsync(events, tags);
+        await _repository.AppendWithContextAsync(events.Select(e => new TaggedEvent(e, tags)).ToList());
 
         // Act - Second append with condition expecting no new events
         var condition = AppendCondition.FailIfMatches(
@@ -156,7 +154,7 @@ public class DcbRepositoryTests
 
         // Assert
         await Assert.ThrowsAsync<ConcurrencyException>(async () =>
-            await _repository.AppendWithContextAsync(events, tags, condition));
+            await _repository.AppendWithContextAsync(events.Select(e => new TaggedEvent(e, tags)).ToList(), condition));
     }
 
     [Fact]
@@ -176,10 +174,9 @@ public class DcbRepositoryTests
         var loadTags = new[] { "product:sku-1" };
         await _eventStore.AppendAsync(
             "tenant1:stream:inventory",
-            new IEvent[] { new TestEvent { Value = "reserved" } },
+            [new TaggedEvent(new TestEvent { Value = "reserved" }, "product:sku-1", "order:order-9")],
             null,
-            new EventMetadata(),
-            new[] { "product:sku-1", "order:order-9" });
+            new EventMetadata());
 
         var entity = await _repository.GetOrCreateEntityAsync<TestDcbEntity>(loadTags);
 
@@ -197,15 +194,13 @@ public class DcbRepositoryTests
         // that only stamps the product tag must still trip the fence.
         var loadTags = new[] { "product:sku-1" };
         await _repository.AppendWithContextAsync(
-            new IEvent[] { new TestEvent { Value = "seed" } },
-            new[] { "product:sku-1", "order:order-9" });
+            [new TaggedEvent(new TestEvent { Value = "seed" }, "product:sku-1", "order:order-9")]);
 
         var entity = await _repository.GetOrCreateEntityAsync<TestDcbEntity>(loadTags);
         Assert.Equal(loadTags, entity.ConsistencyTags);
 
         await _repository.AppendWithContextAsync(
-            new IEvent[] { new TestEvent { Value = "racer" } },
-            loadTags);
+            [new TaggedEvent(new TestEvent { Value = "racer" }, loadTags)]);
 
         await Assert.ThrowsAsync<ConcurrencyException>(() =>
             _repository.HandleCommandAsync(
@@ -273,10 +268,9 @@ public class DcbRepositoryTests
 
         await _eventStore.AppendAsync(
             "tenant1:stream:stream1",
-            events,
+            events.Select(e => new TaggedEvent(e, tags)).ToList(),
             null,
-            new EventMetadata(),
-            tags);
+            new EventMetadata());
 
         // Act
         var entity = await _repository.GetOrCreateEntityAsync<TestDcbEntity>(tags);
@@ -350,7 +344,7 @@ public class DcbRepositoryTests
         var events = new IEvent[] { new TestEvent { Value = "test" } };
 
         // Act
-        await repo.AppendWithContextAsync(events, tags);
+        await repo.AppendWithContextAsync(events.Select(e => new TaggedEvent(e, tags)).ToList());
 
         // Verify the event can be queried by both original and auto tags
         var state1 = await repo.GetStateAsync<TestState>(new[] { "order:123" });
@@ -369,17 +363,15 @@ public class DcbRepositoryTests
         
         await _eventStore.AppendAsync(
             "stream1",
-            new IEvent[] { new TestEvent { Value = "stream1-event" } },
+            [new TaggedEvent(new TestEvent { Value = "stream1-event" }, tags)],
             null,
-            new EventMetadata(),
-            tags);
+            new EventMetadata());
 
         await _eventStore.AppendAsync(
             "stream2",
-            new IEvent[] { new TestEvent { Value = "stream2-event" } },
+            [new TaggedEvent(new TestEvent { Value = "stream2-event" }, tags)],
             null,
-            new EventMetadata(),
-            tags);
+            new EventMetadata());
 
         // Act
         var state = await _repository.GetStateAsync<TestState>(tags);
@@ -396,17 +388,15 @@ public class DcbRepositoryTests
         // Arrange
         await _eventStore.AppendAsync(
             "stream1",
-            new IEvent[] { new TestEvent { Value = "both-tags" } },
+            [new TaggedEvent(new TestEvent { Value = "both-tags" }, "tag1", "tag2")],
             null,
-            new EventMetadata(),
-            new[] { "tag1", "tag2" });
+            new EventMetadata());
 
         await _eventStore.AppendAsync(
             "stream2",
-            new IEvent[] { new TestEvent { Value = "only-tag1" } },
+            [new TaggedEvent(new TestEvent { Value = "only-tag1" }, "tag1")],
             null,
-            new EventMetadata(),
-            new[] { "tag1" });
+            new EventMetadata());
 
         // Act - Query with both tags
         var state = await _repository.GetStateAsync<TestState>(new[] { "tag1", "tag2" });

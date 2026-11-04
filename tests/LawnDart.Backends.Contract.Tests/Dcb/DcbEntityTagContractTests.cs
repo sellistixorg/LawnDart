@@ -66,9 +66,9 @@ public abstract class DcbEntityTagContractTests : ContractSuite
         var earlierB = Tag("student");
         var student = Tag("student");
 
-        await repository.AppendWithContextAsync([new ContractCourseCreated(Guid.NewGuid(), course)], [course]);
-        await repository.AppendWithContextAsync([new ContractStudentSubscribed(Guid.NewGuid(), course, earlierA)], [course, earlierA]);
-        await repository.AppendWithContextAsync([new ContractStudentSubscribed(Guid.NewGuid(), course, earlierB)], [course, earlierB]);
+        await repository.AppendWithContextAsync([new TaggedEvent(new ContractCourseCreated(Guid.NewGuid(), course), [course])]);
+        await repository.AppendWithContextAsync([new TaggedEvent(new ContractStudentSubscribed(Guid.NewGuid(), course, earlierA), [course, earlierA])]);
+        await repository.AppendWithContextAsync([new TaggedEvent(new ContractStudentSubscribed(Guid.NewGuid(), course, earlierB), [course, earlierB])]);
 
         var entity = await repository.GetOrCreateEntityAsync<CourseDecision>([course]);
         Assert.Equal(2, entity.State.Students);
@@ -98,8 +98,8 @@ public abstract class DcbEntityTagContractTests : ContractSuite
         var course = Tag("course");
         var earlier = Tag("student");
 
-        await repository.AppendWithContextAsync([new ContractCourseCreated(Guid.NewGuid(), course)], [course]);
-        await repository.AppendWithContextAsync([new ContractStudentSubscribed(Guid.NewGuid(), course, earlier)], [course, earlier]);
+        await repository.AppendWithContextAsync([new TaggedEvent(new ContractCourseCreated(Guid.NewGuid(), course), [course])]);
+        await repository.AppendWithContextAsync([new TaggedEvent(new ContractStudentSubscribed(Guid.NewGuid(), course, earlier), [course, earlier])]);
 
         // A decision about the earlier student reads only that student's events.
         var studentDecision = await repository.GetOrCreateEntityAsync<StudentDecision>([earlier]);
@@ -141,7 +141,7 @@ public abstract class DcbEntityTagContractTests : ContractSuite
         var repository = Repo(store);
         var course = Tag("course");
 
-        await repository.AppendWithContextAsync([new ContractCourseCreated(Guid.NewGuid(), course)], [course]);
+        await repository.AppendWithContextAsync([new TaggedEvent(new ContractCourseCreated(Guid.NewGuid(), course), [course])]);
 
         var first = await repository.GetOrCreateEntityAsync<CourseDecision>([course]);
         var second = await repository.GetOrCreateEntityAsync<CourseDecision>([course]);

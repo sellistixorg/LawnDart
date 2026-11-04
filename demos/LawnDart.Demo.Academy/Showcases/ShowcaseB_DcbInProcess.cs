@@ -91,17 +91,15 @@ public class ShowcaseB_DcbInProcess
 
         await _eventStore.AppendAsync(
             $"dcb-bootstrap:{sectionId}",
-            [new SectionCreated(Guid.NewGuid(), DateTime.UtcNow, sectionId, courseId, "Morning Cohort", 5)],
+            [new TaggedEvent(new SectionCreated(Guid.NewGuid(), DateTime.UtcNow, sectionId, courseId, "Morning Cohort", 5), [.. enrollmentTags, $"course:{courseId}"])],
             expectedVersion: null,
-            metadata: meta,
-            tags: enrollmentTags.Concat([$"course:{courseId}"]).ToArray());
+            metadata: meta);
 
         await _eventStore.AppendAsync(
             $"dcb-bootstrap:{studentId}",
-            [new StudentRegistered(Guid.NewGuid(), DateTime.UtcNow, studentId, studentName, studentEmail)],
+            [new TaggedEvent(new StudentRegistered(Guid.NewGuid(), DateTime.UtcNow, studentId, studentName, studentEmail), enrollmentTags)],
             expectedVersion: null,
-            metadata: meta,
-            tags: enrollmentTags);
+            metadata: meta);
 
         _sectionProjector.Apply(new SectionCreated(Guid.NewGuid(), DateTime.UtcNow, sectionId, courseId, "Morning Cohort", 5));
         result.Steps.Add("[Step 3] SectionCreated + StudentRegistered seeded with combined tags (student+section)");
