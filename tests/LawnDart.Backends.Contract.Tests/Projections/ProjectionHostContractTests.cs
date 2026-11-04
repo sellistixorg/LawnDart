@@ -14,9 +14,9 @@ namespace LawnDart.Backends.Contract.Tests;
 /// <summary>
 /// Flush, rebuild, and working-set behavior shared by in-memory, SQL Server, and Postgres stores.
 /// </summary>
-public abstract class ProjectionHostContractTests : ContractSuite
+public abstract class ProjectionHostContractTests : BackendContractSuite
 {
-    protected ProjectionHostContractTests(IContractBackend backend)
+    protected ProjectionHostContractTests(IFullContractBackend backend)
         : base(backend)
     {
     }

@@ -44,6 +44,7 @@ app.MapLawnDartCommands();
 | `LawnDart.Projections.Lightweight.SqlServer` | SQL Server view and checkpoint stores |
 | `LawnDart.Projections.Lightweight.Postgres` | Postgres view and checkpoint stores |
 | `LawnDart.EventSourcing.Postgres` | Postgres event store and snapshots |
+| `LawnDart.EventSourcing.Testing` | Event store contract tests |
 | `LawnDart.AspNetCore` | HTTP command mapping |
 | `LawnDart.Authorization.AspNetCore` | HTTP claims to `AuthorizationContext` |
 | `LawnDart.Testing` | Given / when / then harnesses |

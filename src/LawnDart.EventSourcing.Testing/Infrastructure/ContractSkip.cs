@@ -1,7 +1,7 @@
 using Xunit.Abstractions;
 using Xunit.Sdk;
 
-namespace LawnDart.Backends.Contract.Tests;
+namespace LawnDart.EventSourcing.Testing;
 
 /// <summary>
 /// Skips the current test with a reason a person can read.
@@ -25,8 +25,8 @@ public sealed class ContractSkipException : Exception
 }
 
 [XunitTestCaseDiscoverer(
-    "LawnDart.Backends.Contract.Tests.ContractFactDiscoverer",
-    "LawnDart.Backends.Contract.Tests")]
+    "LawnDart.EventSourcing.Testing.ContractFactDiscoverer",
+    "LawnDart.EventSourcing.Testing")]
 [AttributeUsage(AttributeTargets.Method)]
 public sealed class ContractFactAttribute : FactAttribute;
 

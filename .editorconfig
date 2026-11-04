@@ -134,3 +134,7 @@ dotnet_diagnostic.CA2007.severity = warning
 
 [src/LawnDart.AspNetCore/**/*.cs]
 dotnet_diagnostic.CA2007.severity = none
+
+# Abstract xUnit contract tests. Test code keeps the test's context.
+[src/LawnDart.EventSourcing.Testing/**/*.cs]
+dotnet_diagnostic.CA2007.severity = none

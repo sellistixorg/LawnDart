@@ -5,7 +5,7 @@ using LawnDart.EventStore;
 using LawnDart.Metadata;
 using Microsoft.Extensions.Options;
 
-namespace LawnDart.Backends.Contract.Tests;
+namespace LawnDart.EventSourcing.Testing;
 
 /// <summary>
 /// Dynamic consistency boundary appends, queries, and repository reads.
@@ -373,8 +373,8 @@ public abstract class DcbContractTests : ContractSuite
     private static DcbRepository Repo(IEventStore store, string tenant)
         => new(
             store,
-            new TestMetadataProvider(),
-            new TestTenantContextProvider(tenant),
+            new ContractMetadataProvider(),
+            new ContractTenantContextProvider(tenant),
             Options.Create(new LawnDartOptions()),
             null,
             null,

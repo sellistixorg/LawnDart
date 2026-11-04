@@ -1,8 +1,8 @@
 namespace LawnDart.Backends.Contract.Tests;
 
-public abstract class ViewStoreContractTests : ContractSuite
+public abstract class ViewStoreContractTests : BackendContractSuite
 {
-    protected ViewStoreContractTests(IContractBackend backend)
+    protected ViewStoreContractTests(IFullContractBackend backend)
         : base(backend)
     {
     }

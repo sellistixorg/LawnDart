@@ -7,9 +7,9 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace LawnDart.Backends.Contract.Tests;
 
-public abstract class OutboxContractTests : ContractSuite
+public abstract class OutboxContractTests : BackendContractSuite
 {
-    protected OutboxContractTests(IContractBackend backend)
+    protected OutboxContractTests(IFullContractBackend backend)
         : base(backend)
     {
     }
@@ -343,7 +343,7 @@ public abstract class OutboxContractTests : ContractSuite
         var @event = new ContractOutboxEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow, Value = "test" };
         await opened.Store.AppendAsync(streamId, [new TaggedEvent(@event, ["test-tag"])], metadata: new EventMetadata());
         Assert.Equal(@event.Id, Assert.Single(await opened.Store.ReadStreamAsync(streamId)).Event.Id);
-        Assert.Equal(streamId, Assert.Single(await opened.Outbox.GetUnprocessedAsync(10)).StreamId);
+        Assert.Equal(streamId, Assert.Single(await opened.RequireOutbox().GetUnprocessedAsync(10)).StreamId);
     }
 
     [ContractFact]
@@ -359,7 +359,7 @@ public abstract class OutboxContractTests : ContractSuite
             [new TaggedEvent(@event, ["test-tag"])],
             metadata: new EventMetadata { UserId = "outbox-user" });
         var recorded = Assert.Single(await opened.Log.ReadStreamAsync(streamId));
-        var outbox = Assert.Single(await opened.Outbox.GetUnprocessedAsync(10));
+        var outbox = Assert.Single(await opened.RequireOutbox().GetUnprocessedAsync(10));
         Assert.Equal(recorded.EventType, outbox.EventType);
         Assert.Equal(recorded.SchemaVersion, outbox.SchemaVersion);
         Assert.Equal(recorded.CodecId, outbox.CodecId);
@@ -379,7 +379,7 @@ public abstract class OutboxContractTests : ContractSuite
         var streamId = "test-tenant:TestAggregate:" + Guid.NewGuid().ToString("N");
         await opened.Store.AppendAsync(streamId, [new ContractOutboxEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow, Value = "off" }]);
         Assert.Single(await opened.Store.ReadStreamAsync(streamId));
-        Assert.Empty(await opened.Outbox.GetUnprocessedAsync(10));
+        Assert.Empty(await opened.RequireOutbox().GetUnprocessedAsync(10));
     }
 
     [ContractFact]
@@ -397,7 +397,7 @@ public abstract class OutboxContractTests : ContractSuite
             expectedVersion: 5));
         var stored = Assert.Single(await opened.Store.ReadStreamAsync(streamId));
         Assert.Equal(event1.Id, stored.Event.Id);
-        Assert.Single(await opened.Outbox.GetUnprocessedAsync(10));
+        Assert.Single(await opened.RequireOutbox().GetUnprocessedAsync(10));
     }
 
     [ContractFact]
@@ -413,7 +413,7 @@ public abstract class OutboxContractTests : ContractSuite
             new ContractOutboxEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow, Value = "c" }
         ]);
         Assert.Equal(3, (await opened.Store.ReadStreamAsync(streamId)).Count);
-        var outboxMessages = await opened.Outbox.GetUnprocessedAsync(10);
+        var outboxMessages = await opened.RequireOutbox().GetUnprocessedAsync(10);
         Assert.Equal(3, outboxMessages.Count);
         Assert.All(outboxMessages, message => Assert.Equal(streamId, message.StreamId));
     }
@@ -426,9 +426,9 @@ public abstract class OutboxContractTests : ContractSuite
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(enableOutbox: true, outboxClaimLease: TimeSpan.Zero));
         var streamId = "test-tenant:TestAggregate:" + Guid.NewGuid().ToString("N");
         await opened.Store.AppendAsync(streamId, [new ContractOutboxEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow, Value = "p" }]);
-        var message = Assert.Single(await opened.Outbox.GetUnprocessedAsync(10));
-        await opened.Outbox.MarkAsProcessedAsync(message.Id);
-        Assert.Empty(await opened.Outbox.GetUnprocessedAsync(10));
+        var message = Assert.Single(await opened.RequireOutbox().GetUnprocessedAsync(10));
+        await opened.RequireOutbox().MarkAsProcessedAsync(message.Id);
+        Assert.Empty(await opened.RequireOutbox().GetUnprocessedAsync(10));
     }
 
     [ContractFact]
@@ -438,9 +438,9 @@ public abstract class OutboxContractTests : ContractSuite
         SkipUnless(Cap.AppendWritesOutboxRows, "This backend does not write outbox rows when an event is appended.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(enableOutbox: true, outboxClaimLease: TimeSpan.Zero));
         await opened.Store.AppendAsync(Stream(), [new ContractOutboxEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow, Value = "f" }]);
-        var message = Assert.Single(await opened.Outbox.GetUnprocessedAsync(10));
-        await opened.Outbox.RecordFailureAsync(message.Id, "nope");
-        var again = Assert.Single(await opened.Outbox.GetUnprocessedAsync(10));
+        var message = Assert.Single(await opened.RequireOutbox().GetUnprocessedAsync(10));
+        await opened.RequireOutbox().RecordFailureAsync(message.Id, "nope");
+        var again = Assert.Single(await opened.RequireOutbox().GetUnprocessedAsync(10));
         Assert.Equal(1, again.Attempts);
         Assert.Equal("nope", again.LastError);
     }
@@ -479,7 +479,7 @@ public abstract class OutboxContractTests : ContractSuite
             schemaVersion: 2,
             codecId: EventCodec.Json,
             tags: ["env"])]);
-        var row = Assert.Single(await opened.Outbox.GetUnprocessedAsync(10));
+        var row = Assert.Single(await opened.RequireOutbox().GetUnprocessedAsync(10));
         Assert.Equal("contract.outbox.envelope", row.EventType);
         Assert.Equal(2, row.SchemaVersion);
         Assert.Equal(EventCodec.Json, row.CodecId);

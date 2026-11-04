@@ -12,7 +12,7 @@ using Microsoft.Extensions.Options;
 
 namespace LawnDart.Backends.Contract.Tests;
 
-public sealed class SqlServerContractBackend : IContractBackend
+public sealed class SqlServerContractBackend : IFullContractBackend
 {
     private readonly string _connectionString;
     private readonly ConcurrentDictionary<string, Task> _ready = new();
@@ -24,6 +24,7 @@ public sealed class SqlServerContractBackend : IContractBackend
 
     public ContractCapabilities Capabilities { get; } = new()
     {
+        CanTurnOffNewEventsSignal = true,
         EnforcesEventIdAcrossTenants = true,
         StreamIdsCaseInsensitive = true,
         AppendWritesOutboxRows = true,
@@ -34,6 +35,7 @@ public sealed class SqlServerContractBackend : IContractBackend
         StoresDcbSnapshotLoadTags = true,
         ParallelAppendCanConflict = true,
         DuplicateStreamVersionIncludesDatabaseError = true,
+        IsDatabaseDuplicateKeyError = static ex => ex is SqlException { Number: 2627 or 2601 },
         CanPauseBeforeCommit = true,
         AppendLocksPerTag = true,
         CanDropCommitReply = true,
@@ -105,11 +107,28 @@ public sealed class SqlServerContractBackend : IContractBackend
             Log = store,
             Subscriptions = store,
             Signals = store,
+            SignalCounters = new NewEventsSignalCounters(store.NewEvents),
             Hooks = new SqlServerContractHooks(store, connectionString, schema),
             Outbox = outbox,
             ReadLogEntries = () => logger.Entries,
-            SetPublishNewEventsSignal = value => store.PublishNewEventsSignal = value
+            SetPublishNewEventsSignal = value => store.PublishNewEventsSignal = value,
+            MarkStreamArchivedAsync = (streamId, ct) => MarkArchivedAsync(store, connectionString, streamId, ct)
         };
+    }
+
+    private static async Task MarkArchivedAsync(
+        SqlServerEventStore store,
+        string connectionString,
+        string streamId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new SqlCommand(
+            $"UPDATE {store.QualifiedRegistryTable} SET Status = N'Archived' WHERE StreamId = @StreamId",
+            connection);
+        command.Parameters.AddWithValue("@StreamId", streamId);
+        Assert.Equal(1, await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false));
     }
 
     public async Task<IOutboxWriter> OpenOutboxAsync(

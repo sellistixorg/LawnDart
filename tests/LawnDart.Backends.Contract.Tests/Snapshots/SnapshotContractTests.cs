@@ -10,9 +10,9 @@ using Microsoft.Extensions.Options;
 
 namespace LawnDart.Backends.Contract.Tests;
 
-public abstract class SnapshotContractTests : ContractSuite
+public abstract class SnapshotContractTests : BackendContractSuite
 {
-    protected SnapshotContractTests(IContractBackend backend)
+    protected SnapshotContractTests(IFullContractBackend backend)
         : base(backend)
     {
     }

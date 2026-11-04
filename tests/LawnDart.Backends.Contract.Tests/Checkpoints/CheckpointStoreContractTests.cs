@@ -2,9 +2,9 @@ using LawnDart.Projections;
 
 namespace LawnDart.Backends.Contract.Tests;
 
-public abstract class CheckpointStoreContractTests : ContractSuite
+public abstract class CheckpointStoreContractTests : BackendContractSuite
 {
-    protected CheckpointStoreContractTests(IContractBackend backend)
+    protected CheckpointStoreContractTests(IFullContractBackend backend)
         : base(backend)
     {
     }

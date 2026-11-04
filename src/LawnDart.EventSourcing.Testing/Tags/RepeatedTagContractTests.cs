@@ -5,7 +5,7 @@ using LawnDart.EventStore;
 using LawnDart.Metadata;
 using Microsoft.Extensions.Options;
 
-namespace LawnDart.Backends.Contract.Tests;
+namespace LawnDart.EventSourcing.Testing;
 
 /// <summary>
 /// A tag repeated on one event is stored once. The first copy of each tag stays,
@@ -69,8 +69,8 @@ public abstract class RepeatedTagContractTests : ContractSuite
         var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
         var repository = new DcbRepository(
             store,
-            new TestMetadataProvider(),
-            new TestTenantContextProvider("test-tenant"),
+            new ContractMetadataProvider(),
+            new ContractTenantContextProvider("test-tenant"),
             Options.Create(new LawnDartOptions()),
             null,
             null,
@@ -178,27 +178,4 @@ public abstract class RepeatedTagContractTests : ContractSuite
     private static string Stream() => "repeat:" + Guid.NewGuid().ToString("N");
 
     private static string Tag(string kind) => kind + ":" + Guid.NewGuid().ToString("N");
-}
-
-[Collection(InMemoryContractCollection.Name)]
-[Trait("Category", "Contract")]
-public sealed class InMemoryRepeatedTagContractTests : RepeatedTagContractTests
-{
-    public InMemoryRepeatedTagContractTests(InMemoryContractFixture fixture) : base(fixture.Backend) { }
-}
-
-[Collection("SqlServerContract")]
-[Trait("Category", "Integration")]
-[Trait("Category", "Contract")]
-public sealed class SqlServerRepeatedTagContractTests : RepeatedTagContractTests
-{
-    public SqlServerRepeatedTagContractTests(SqlServerContractFixture fixture) : base(fixture.Backend) { }
-}
-
-[Collection("PostgresContract")]
-[Trait("Category", "Integration")]
-[Trait("Category", "Contract")]
-public sealed class PostgresRepeatedTagContractTests : RepeatedTagContractTests
-{
-    public PostgresRepeatedTagContractTests(PostgresContractFixture fixture) : base(fixture.Backend) { }
 }

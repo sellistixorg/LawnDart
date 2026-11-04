@@ -4,7 +4,7 @@ using LawnDart.EventSourcing.Dcb;
 using LawnDart.EventStore;
 using Microsoft.Extensions.Options;
 
-namespace LawnDart.Backends.Contract.Tests;
+namespace LawnDart.EventSourcing.Testing;
 
 /// <summary>
 /// Every store writes each event with only its own tags. One append call with several
@@ -222,8 +222,8 @@ public abstract class PerEventTagContractTests : ContractSuite
         var handle = await OpenAsync();
         var repository = new DcbRepository(
             handle.Store,
-            new TestMetadataProvider(),
-            new TestTenantContextProvider("test-tenant"),
+            new ContractMetadataProvider(),
+            new ContractTenantContextProvider("test-tenant"),
             Options.Create(new LawnDartOptions()),
             null,
             null,

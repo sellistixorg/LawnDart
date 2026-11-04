@@ -1,16 +1,14 @@
 using LawnDart.EventSourcing.Serialization;
 using LawnDart.EventStore;
 using LawnDart.Outbox;
-using LawnDart.Projections.Checkpoints;
-using LawnDart.Projections.Storage;
-using LawnDart.Snapshots;
 using Microsoft.Extensions.Logging;
 
-namespace LawnDart.Backends.Contract.Tests;
+namespace LawnDart.EventSourcing.Testing;
 
 /// <summary>
 /// Real differences between backends. A test branches on these so the difference
-/// shows up in the test instead of being hidden.
+/// shows up in the test instead of being hidden. A backend sets only the values
+/// that apply to it; options for stores it does not have are ignored.
 /// </summary>
 public sealed class ContractCapabilities
 {
@@ -43,6 +41,12 @@ public sealed class ContractCapabilities
 
     /// <summary>A conflicting parallel append's inner error is the database duplicate-key error.</summary>
     public bool DuplicateStreamVersionIncludesDatabaseError { get; init; }
+
+    /// <summary>
+    /// Recognizes the database duplicate-key error inside a <see cref="ConcurrencyException"/>.
+    /// Used when <see cref="DuplicateStreamVersionIncludesDatabaseError"/> is true.
+    /// </summary>
+    public Func<Exception, bool>? IsDatabaseDuplicateKeyError { get; init; }
 
     public bool CanPauseBeforeCommit { get; init; }
 
@@ -111,6 +115,12 @@ public sealed class ContractCapabilities
 
     /// <summary>The store keeps one row per stream tag beside the stream row.</summary>
     public bool HasStreamTagTable { get; init; }
+
+    /// <summary>
+    /// The store honors <see cref="ContractStoreOptions.PublishNewEventsSignal"/> set to false:
+    /// a commit then leaves the new-events signal alone. False skips the test that needs it.
+    /// </summary>
+    public bool CanTurnOffNewEventsSignal { get; init; }
 }
 
 public sealed class ContractStoreOptions
@@ -167,6 +177,19 @@ public sealed class ContractStoreOptions
     }
 }
 
+/// <summary>
+/// Counts on a store's new-events signal. A backend that can read them supplies this;
+/// the tests that count signals or wait for a parked reader skip without it.
+/// </summary>
+public interface IContractSignalCounters
+{
+    /// <summary>How many times the new-events signal has fired.</summary>
+    long NotifyCount { get; }
+
+    /// <summary>How many readers are waiting on the new-events signal right now.</summary>
+    int WaiterCount { get; }
+}
+
 public interface IContractHooks
 {
     bool CanPauseBeforeCommit { get; }
@@ -192,75 +215,67 @@ public interface IContractHooks
     Task BreakLiveReadsAsync(CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// One opened store for a contract test. <see cref="Store"/> and <see cref="Log"/> are
+/// required and usually the same object. The rest is optional: a suite that needs a
+/// missing part skips with a reason instead of failing.
+/// </summary>
 public sealed class ContractEventStore
 {
+    /// <summary>A name that keeps this store's data apart from other tests.</summary>
     public required string SchemaName { get; init; }
 
+    /// <summary>The typed event store under test.</summary>
     public required IEventStore Store { get; init; }
 
+    /// <summary>The raw event log over the same data as <see cref="Store"/>.</summary>
     public required IEventLog Log { get; init; }
 
-    public required IEventStoreSubscriptions Subscriptions { get; init; }
+    /// <summary>Live subscriptions. Null skips the subscription tests.</summary>
+    public IEventStoreSubscriptions? Subscriptions { get; init; }
 
-    public required ISignalsNewEvents Signals { get; init; }
+    /// <summary>The new-events signal. Null skips the tests that wait on it.</summary>
+    public ISignalsNewEvents? Signals { get; init; }
 
-    public required IContractHooks Hooks { get; init; }
+    /// <summary>Counts on the new-events signal. Null skips the tests that count signals.</summary>
+    public IContractSignalCounters? SignalCounters { get; init; }
 
-    public required IOutboxWriter Outbox { get; init; }
+    /// <summary>Fault hooks. The default can do none of them.</summary>
+    public IContractHooks Hooks { get; init; } = UnavailableHooks.Instance;
 
-    public required Func<IReadOnlyList<(LogLevel Level, string Message)>> ReadLogEntries { get; init; }
+    /// <summary>The outbox written with appends, when the store has one.</summary>
+    public IOutboxWriter? Outbox { get; init; }
 
-    public required Action<bool> SetPublishNewEventsSignal { get; init; }
+    /// <summary>Log entries the store wrote, for tests that check a warning.</summary>
+    public Func<IReadOnlyList<(LogLevel Level, string Message)>> ReadLogEntries { get; init; } = static () => [];
+
+    /// <summary>Turns the new-events signal on or off after the store is open.</summary>
+    public Action<bool> SetPublishNewEventsSignal { get; init; } = static _ => { };
+
+    /// <summary>
+    /// Marks one stream archived in the store's registry. There is no public call for this,
+    /// so the backend supplies it. Null skips the archived stream test.
+    /// </summary>
+    public Func<string, CancellationToken, Task>? MarkStreamArchivedAsync { get; init; }
 }
 
-public sealed class ContractInbox
-{
-    public required LawnDart.Messaging.IInboxStore Store { get; init; }
-
-    public Func<CancellationToken, Task<int>>? PurgeExpiredAsync { get; init; }
-
-    public Func<CancellationToken, Task<int>>? CountRowsAsync { get; init; }
-
-    public Func<CancellationToken, Task<string?>>? ReadSingleKeyAsync { get; init; }
-
-    public Func<CancellationToken, Task<LawnDart.Messaging.IInboxStore>>? OpenSecondInstanceAsync { get; init; }
-}
-
-public sealed class ContractSnapshots
-{
-    public required IEventStore Store { get; init; }
-
-    public required ISnapshotStore Snapshots { get; init; }
-
-    public required IDcbSnapshotStore DcbSnapshots { get; init; }
-
-    public Func<string, CancellationToken, Task<int>>? CorruptDcbSnapshotAsync { get; init; }
-
-    public Func<string, CancellationToken, Task<IReadOnlyList<string>?>>? ReadDcbLoadTagsAsync { get; init; }
-}
-
-public sealed class ContractProjectionStores
-{
-    public required IViewStore Views { get; init; }
-
-    public required ICheckpointStore Checkpoints { get; init; }
-}
-
+/// <summary>
+/// The one thing a store supplies to run the contract suites: a way to open a fresh,
+/// empty store for each test, and the capabilities that describe it.
+/// </summary>
 public interface IContractBackend
 {
+    /// <summary>A short name shown in test output.</summary>
     string Name { get; }
 
+    /// <summary>The store's real differences from the others.</summary>
     ContractCapabilities Capabilities { get; }
 
+    /// <summary>
+    /// Opens a store for one test. Use <see cref="ContractStoreOptions.SchemaName"/> to keep
+    /// each test's data apart, and honor the options that apply to this store.
+    /// </summary>
     Task<ContractEventStore> OpenEventStoreAsync(ContractStoreOptions options, CancellationToken cancellationToken = default);
-
-    Task<IOutboxWriter> OpenOutboxAsync(ContractStoreOptions options, CancellationToken cancellationToken = default);
-
-    Task<ContractInbox> OpenInboxAsync(ContractStoreOptions options, CancellationToken cancellationToken = default);
-
-    Task<ContractSnapshots> OpenSnapshotsAsync(ContractStoreOptions options, CancellationToken cancellationToken = default);
-
-    Task<ContractProjectionStores> OpenProjectionStoresAsync(ContractStoreOptions options, CancellationToken cancellationToken = default);
 }
 
 public static class ContractStores

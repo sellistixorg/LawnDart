@@ -2,7 +2,7 @@ using System.Text.RegularExpressions;
 using LawnDart.EventStore;
 using Microsoft.Extensions.Logging;
 
-namespace LawnDart.Backends.Contract.Tests;
+namespace LawnDart.EventSourcing.Testing;
 
 /// <summary>
 /// An open append must not let a later commit skip it.
@@ -31,7 +31,7 @@ public abstract class ReadHorizonContractTests : ContractSuite
 
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(readCommittedSnapshot: readCommittedSnapshot));
         await opened.Store.AppendAsync("s1", [ContractEvent.Tick()]);
-        await using var handle = opened.Subscriptions.Subscribe("ord-sub", fromSequence: 1);
+        await using var handle = SubscriptionsOf(opened).Subscribe("ord-sub", fromSequence: 1);
         var first = await ReadExactlyAsync(handle, 1, TimeSpan.FromSeconds(15));
         Assert.Equal(1, first[0].SequencePosition);
 

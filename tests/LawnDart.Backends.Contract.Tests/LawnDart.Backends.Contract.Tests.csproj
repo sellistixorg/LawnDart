@@ -29,6 +29,7 @@
   <ItemGroup>
     <Using Include="Xunit" />
     <Using Include="LawnDart.TestUtilities" />
+    <Using Include="LawnDart.EventSourcing.Testing" />
   </ItemGroup>
 
   <ItemGroup>
@@ -47,6 +48,7 @@
     <ProjectReference Include="..\..\src\LawnDart.Projections.Lightweight.SqlServer\LawnDart.Projections.Lightweight.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\LawnDart.Projections.Lightweight.Postgres\LawnDart.Projections.Lightweight.Postgres.csproj" />
     <ProjectReference Include="..\..\src\LawnDart.Testing\LawnDart.Testing.csproj" />
+    <ProjectReference Include="..\..\src\LawnDart.EventSourcing.Testing\LawnDart.EventSourcing.Testing.csproj" />
     <ProjectReference Include="..\LawnDart.TestUtilities\LawnDart.TestUtilities.csproj" />
     <ProjectReference Include="..\..\samples\Library.Host\Library.Host.csproj" />
   </ItemGroup>

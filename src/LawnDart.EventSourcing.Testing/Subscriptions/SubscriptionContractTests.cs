@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using LawnDart.EventStore;
 
-namespace LawnDart.Backends.Contract.Tests;
+namespace LawnDart.EventSourcing.Testing;
 
 public abstract class SubscriptionContractTests : ContractSuite
 {
@@ -17,7 +17,7 @@ public abstract class SubscriptionContractTests : ContractSuite
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
         await opened.Store.AppendAsync("s1", [ContractEvent.Tick()]);
         await opened.Store.AppendAsync("s1", [ContractEvent.Tick()]);
-        await using var handle = opened.Subscriptions.Subscribe("sub-global", fromSequence: 1);
+        await using var handle = SubscriptionsOf(opened).Subscribe("sub-global", fromSequence: 1);
         var readTask = ReadExactlyAsync(handle, 3, TimeSpan.FromSeconds(15));
         await opened.Store.AppendAsync("s1", [ContractEvent.Tick()]);
         var received = await readTask;
@@ -32,7 +32,7 @@ public abstract class SubscriptionContractTests : ContractSuite
         await opened.Store.AppendAsync("a", [ContractEvent.Tick()]);
         await opened.Store.AppendAsync("b", [ContractEvent.Tick()]);
         await opened.Store.AppendAsync("a", [ContractEvent.Tick()]);
-        await using var handle = opened.Subscriptions.Subscribe(
+        await using var handle = SubscriptionsOf(opened).Subscribe(
             "sub-stream",
             fromSequence: 1,
             EventSubscriptionFilter.ForStream("a"));
@@ -51,7 +51,7 @@ public abstract class SubscriptionContractTests : ContractSuite
         await opened.Store.AppendAsync("s1", [new TaggedEvent(ContractEvent.Tick(), ["order:1"])]);
         var query = Query.FromItems(QueryItem.ByTags("order:1"));
         var expected = (await opened.Store.ReadByQueryAsync(query)).Events.Select(e => e.SequencePosition).ToArray();
-        await using var handle = opened.Subscriptions.Subscribe(
+        await using var handle = SubscriptionsOf(opened).Subscribe(
             "sub-query",
             fromSequence: 1,
             EventSubscriptionFilter.ForQuery(query));
@@ -65,7 +65,7 @@ public abstract class SubscriptionContractTests : ContractSuite
         SkipUnless(Cap.RunsLiveSubscriptionTests, "This backend does not run the live subscription suite yet.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
         await opened.Store.AppendAsync("s1", [ContractEvent.Tick(), ContractEvent.Tick(), ContractEvent.Tick()]);
-        await using var handle = opened.Subscriptions.Subscribe("sub-inclusive", fromSequence: 2);
+        await using var handle = SubscriptionsOf(opened).Subscribe("sub-inclusive", fromSequence: 2);
         var received = await ReadExactlyAsync(handle, 2, TimeSpan.FromSeconds(15));
         Assert.Equal(new long[] { 2, 3 }, received.Select(e => e.SequencePosition));
     }
@@ -75,7 +75,7 @@ public abstract class SubscriptionContractTests : ContractSuite
     {
         SkipUnless(Cap.RunsLiveSubscriptionTests, "This backend does not run the live subscription suite yet.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
-        await using var handle = opened.Subscriptions.Subscribe("sub-idle", fromSequence: 1);
+        await using var handle = SubscriptionsOf(opened).Subscribe("sub-idle", fromSequence: 1);
         await Task.Delay(80);
         var readTask = ReadExactlyAsync(handle, 1, TimeSpan.FromSeconds(10));
         await opened.Store.AppendAsync("s1", [ContractEvent.Tick()]);
@@ -89,13 +89,13 @@ public abstract class SubscriptionContractTests : ContractSuite
         SkipUnless(Cap.RunsLiveSubscriptionTests, "This backend does not run the live subscription suite yet.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
         await opened.Store.AppendAsync("s1", [ContractEvent.Tick(), ContractEvent.Tick(), ContractEvent.Tick()]);
-        await using (var first = opened.Subscriptions.Subscribe("sub-reconnect", fromSequence: 1))
+        await using (var first = SubscriptionsOf(opened).Subscribe("sub-reconnect", fromSequence: 1))
         {
             var batch = await ReadExactlyAsync(first, 2, TimeSpan.FromSeconds(15));
             Assert.Equal(new long[] { 1, 2 }, batch.Select(e => e.SequencePosition));
         }
 
-        await using var second = opened.Subscriptions.Subscribe("sub-reconnect-2", fromSequence: 3);
+        await using var second = SubscriptionsOf(opened).Subscribe("sub-reconnect-2", fromSequence: 3);
         var rest = await ReadExactlyAsync(second, 1, TimeSpan.FromSeconds(15));
         Assert.Equal(3, rest[0].SequencePosition);
     }
@@ -106,7 +106,7 @@ public abstract class SubscriptionContractTests : ContractSuite
         SkipUnless(Cap.RunsLiveSubscriptionTests, "This backend does not run the live subscription suite yet.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
         await opened.Store.AppendAsync("s1", [ContractEvent.Tick()]);
-        var handle = opened.Subscriptions.Subscribe("sub-dispose", fromSequence: 1);
+        var handle = SubscriptionsOf(opened).Subscribe("sub-dispose", fromSequence: 1);
         _ = await ReadExactlyAsync(handle, 1, TimeSpan.FromSeconds(15));
         await handle.DisposeAsync();
         await opened.Store.AppendAsync("s1", [ContractEvent.Tick()]);
@@ -120,7 +120,7 @@ public abstract class SubscriptionContractTests : ContractSuite
     {
         SkipUnless(Cap.RunsLiveSubscriptionTests, "This backend does not run the live subscription suite yet.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(subscriptionChannelCapacity: 1));
-        await using var handle = opened.Subscriptions.Subscribe("sub-slow", fromSequence: 1);
+        await using var handle = SubscriptionsOf(opened).Subscribe("sub-slow", fromSequence: 1);
         for (var i = 0; i < 5; i++)
             await opened.Store.AppendAsync("s1", [ContractEvent.Tick()]);
         var received = await ReadExactlyAsync(handle, 5, TimeSpan.FromSeconds(30));
@@ -133,8 +133,8 @@ public abstract class SubscriptionContractTests : ContractSuite
         SkipUnless(Cap.RunsLiveSubscriptionTests, "This backend does not run the live subscription suite yet.");
         var ordering = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
         var catalog = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
-        await using var oh = ordering.Subscriptions.Subscribe("o", fromSequence: 1);
-        await using var ch = catalog.Subscriptions.Subscribe("c", fromSequence: 1);
+        await using var oh = SubscriptionsOf(ordering).Subscribe("o", fromSequence: 1);
+        await using var ch = SubscriptionsOf(catalog).Subscribe("c", fromSequence: 1);
         await ordering.Store.AppendAsync("Order:1", [ContractEvent.Tick()]);
         await catalog.Store.AppendAsync("Product:1", [ContractEvent.Tick()]);
         var o = await ReadExactlyAsync(oh, 1, TimeSpan.FromSeconds(15));
@@ -148,7 +148,7 @@ public abstract class SubscriptionContractTests : ContractSuite
     {
         SkipUnless(Cap.RunsLiveSubscriptionTests, "This backend does not run the live subscription suite yet.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
-        await using var handle = opened.Subscriptions.Subscribe("sub-load", fromSequence: 1);
+        await using var handle = SubscriptionsOf(opened).Subscribe("sub-load", fromSequence: 1);
         var readTask = ReadExactlyAsync(handle, 40, TimeSpan.FromSeconds(60));
         for (var i = 0; i < 40; i++)
             await opened.Store.AppendAsync("load", [ContractEvent.Tick()]);
@@ -163,16 +163,18 @@ public abstract class SubscriptionContractTests : ContractSuite
         SkipUnless(Cap.RunsLiveSubscriptionTests, "This backend does not run the live subscription suite yet.");
         var opened = await Backend.OpenEventStoreAsync(
             ContractStores.Isolated(subscriptionPollInterval: TimeSpan.FromSeconds(30)));
-        await using var handle = opened.Subscriptions.Subscribe("sub-wake", fromSequence: 1);
+        var signal = SignalsOf(opened).NewEvents;
+        var counters = SignalCountersOf(opened);
+        await using var handle = SubscriptionsOf(opened).Subscribe("sub-wake", fromSequence: 1);
         var read = ReadExactlyAsync(handle, 1, TimeSpan.FromSeconds(5));
-        await WaitForWaitersAsync(opened.Signals.NewEvents, 1);
+        await WaitForWaitersAsync(counters, 1);
         var started = Stopwatch.StartNew();
         await opened.Store.AppendAsync("s1", [ContractEvent.Tick()]);
         var received = await read;
         Assert.True(started.Elapsed < TimeSpan.FromSeconds(2), $"woke after {started.Elapsed}");
         Assert.Equal(1, received[0].SequencePosition);
-        Assert.True(opened.Signals.NewEvents.Position >= 1);
-        AssertCommitSignalCount(opened.Signals.NewEvents.Generation);
+        Assert.True(signal.Position >= 1);
+        AssertCommitSignalCount(counters.NotifyCount);
     }
 
     [ContractFact]
@@ -180,13 +182,16 @@ public abstract class SubscriptionContractTests : ContractSuite
     {
         SkipUnless(Cap.RunsLiveSubscriptionTests, "This backend does not run the live subscription suite yet.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
+        var signal = SignalsOf(opened).NewEvents;
+        var counters = opened.SignalCounters;
         await opened.Store.AppendAsync("s1", [ContractEvent.Tick()]);
-        var generation = opened.Signals.NewEvents.Generation;
-        var position = opened.Signals.NewEvents.Position;
+        var count = counters?.NotifyCount;
+        var position = signal.Position;
         await Assert.ThrowsAsync<ConcurrencyException>(() =>
             opened.Store.AppendAsync("s1", [ContractEvent.Tick()], expectedVersion: 0));
-        Assert.Equal(generation, opened.Signals.NewEvents.Generation);
-        Assert.Equal(position, opened.Signals.NewEvents.Position);
+        if (counters is not null)
+            Assert.Equal(count, counters.NotifyCount);
+        Assert.Equal(position, signal.Position);
         Assert.Single(await opened.Store.ReadStreamAsync("s1"));
     }
 
@@ -198,32 +203,43 @@ public abstract class SubscriptionContractTests : ContractSuite
             Cap.CanPauseBeforeCommit,
             "In-memory append commits before AppendAsync returns, so there is no moment to pause before commit.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
+        var signal = SignalsOf(opened).NewEvents;
+        var counters = opened.SignalCounters;
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         opened.Hooks.PauseNextAppendBeforeCommit(entered, release);
         var append = opened.Store.AppendAsync("s1", [ContractEvent.Tick()]);
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
-        Assert.Equal(0, opened.Signals.NewEvents.Generation);
+        if (counters is not null)
+            Assert.Equal(0, counters.NotifyCount);
+        Assert.Equal(0, signal.Position);
         Assert.False(append.IsCompleted);
         release.TrySetResult();
         var result = await append.WaitAsync(TimeSpan.FromSeconds(15));
-        AssertCommitSignalCount(opened.Signals.NewEvents.Generation);
-        Assert.Equal(result.SequencePositions[^1], opened.Signals.NewEvents.Position);
+        if (counters is not null)
+            AssertCommitSignalCount(counters.NotifyCount);
+        Assert.Equal(result.SequencePositions[^1], signal.Position);
     }
 
     [ContractFact]
     public async Task SignalNeverFired_PollStillDelivers()
     {
         SkipUnless(Cap.RunsLiveSubscriptionTests, "This backend does not run the live subscription suite yet.");
+        SkipUnless(Cap.CanTurnOffNewEventsSignal, "This backend cannot turn off the new-events signal.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(
             publishNewEventsSignal: false,
             subscriptionPollInterval: TimeSpan.FromMilliseconds(50)));
-        await using var handle = opened.Subscriptions.Subscribe("sub-poll", fromSequence: 1);
+        var signal = SignalsOf(opened).NewEvents;
+        var counters = opened.SignalCounters;
+        await using var handle = SubscriptionsOf(opened).Subscribe("sub-poll", fromSequence: 1);
         var read = ReadExactlyAsync(handle, 2, TimeSpan.FromSeconds(5));
-        await WaitForWaitersAsync(opened.Signals.NewEvents, 1);
+        if (counters is not null)
+            await WaitForWaitersAsync(counters, 1);
         await opened.Store.AppendAsync("s1", [ContractEvent.Tick(), ContractEvent.Tick()]);
         var received = await read;
-        Assert.Equal(0, opened.Signals.NewEvents.Generation);
+        if (counters is not null)
+            Assert.Equal(0, counters.NotifyCount);
+        Assert.Equal(0, signal.Position);
         Assert.Equal(new long[] { 1, 2 }, received.Select(e => e.SequencePosition));
     }
 
@@ -234,7 +250,7 @@ public abstract class SubscriptionContractTests : ContractSuite
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(subscriptionBatchSize: 2));
         for (var i = 0; i < 5; i++)
             await opened.Store.AppendAsync("s1", [ContractEvent.Tick()]);
-        await using var handle = opened.Subscriptions.Subscribe("paged", fromSequence: 1);
+        await using var handle = SubscriptionsOf(opened).Subscribe("paged", fromSequence: 1);
         var received = await ReadExactlyAsync(handle, 5, TimeSpan.FromSeconds(15));
         Assert.Equal(new long[] { 1, 2, 3, 4, 5 }, received.Select(e => e.SequencePosition));
     }
@@ -248,7 +264,7 @@ public abstract class SubscriptionContractTests : ContractSuite
             "In-memory has no table to rename while a subscription is reading.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
         await opened.Store.AppendAsync("s1", [ContractEvent.Tick()]);
-        await using var handle = opened.Subscriptions.Subscribe("failsub", fromSequence: 1);
+        await using var handle = SubscriptionsOf(opened).Subscribe("failsub", fromSequence: 1);
         await ReadExactlyAsync(handle, 1, TimeSpan.FromSeconds(15));
         await opened.Hooks.BreakLiveReadsAsync();
         var completed = await Task.WhenAny(handle.Events.Completion, Task.Delay(TimeSpan.FromSeconds(20)));

@@ -71,7 +71,7 @@ public sealed class PostgresOutboxInboxTests
         ]);
 
         Assert.Empty(await store.ReadStreamAsync(streamId));
-        Assert.Empty(await opened.Outbox.GetUnprocessedAsync(10));
+        Assert.Empty(await opened.RequireOutbox().GetUnprocessedAsync(10));
     }
 
     [Fact]
@@ -169,7 +169,7 @@ public sealed class PostgresOutboxInboxTests
 
         var second = "acme:Order:" + Guid.NewGuid().ToString("N");
         await store.AppendAsync(second, [ContractEvent.Tick()]);
-        Assert.Empty(await opened.Outbox.GetUnprocessedAsync(10));
+        Assert.Empty(await opened.RequireOutbox().GetUnprocessedAsync(10));
 
         var enabled = await _fixture.Backend.OpenEventStoreAsync(
             new ContractStoreOptions
@@ -181,7 +181,7 @@ public sealed class PostgresOutboxInboxTests
             });
         var third = "acme:Order:" + Guid.NewGuid().ToString("N");
         await enabled.Store.AppendAsync(third, [ContractEvent.Tick()]);
-        Assert.Equal(third, Assert.Single(await enabled.Outbox.GetUnprocessedAsync(10)).StreamId);
+        Assert.Equal(third, Assert.Single(await enabled.RequireOutbox().GetUnprocessedAsync(10)).StreamId);
     }
 
     [Fact]
@@ -247,7 +247,7 @@ public sealed class PostgresOutboxInboxTests
         var streamId = "acme:Order:" + Guid.NewGuid().ToString("N");
         await store.AppendAsync(streamId, [ContractEvent.Tick()]);
         Assert.Single(await store.ReadStreamAsync(streamId));
-        Assert.Equal(streamId, Assert.Single(await opened.Outbox.GetUnprocessedAsync(10)).StreamId);
+        Assert.Equal(streamId, Assert.Single(await opened.RequireOutbox().GetUnprocessedAsync(10)).StreamId);
     }
 
     [Fact]
@@ -277,7 +277,7 @@ public sealed class PostgresOutboxInboxTests
 
         var streamId = "acme:Order:" + Guid.NewGuid().ToString("N");
         await store.AppendAsync(streamId, [ContractEvent.Tick()]);
-        Assert.Equal(streamId, Assert.Single(await opened.Outbox.GetUnprocessedAsync(10)).StreamId);
+        Assert.Equal(streamId, Assert.Single(await opened.RequireOutbox().GetUnprocessedAsync(10)).StreamId);
     }
 
     [Fact]
@@ -294,7 +294,7 @@ public sealed class PostgresOutboxInboxTests
         var streamId = "acme:Order:" + Guid.NewGuid().ToString("N");
         await opened.Store.AppendAsync(streamId, [ContractEvent.Tick()]);
         Assert.Single(await opened.Store.ReadStreamAsync(streamId));
-        Assert.Equal(streamId, Assert.Single(await opened.Outbox.GetUnprocessedAsync(10)).StreamId);
+        Assert.Equal(streamId, Assert.Single(await opened.RequireOutbox().GetUnprocessedAsync(10)).StreamId);
     }
 
     [Fact]
@@ -310,7 +310,7 @@ public sealed class PostgresOutboxInboxTests
         });
         var streamId = "acme:Order:" + Guid.NewGuid().ToString("N");
         await opened.Store.AppendAsync(streamId, [ContractEvent.Tick()]);
-        Assert.Equal(streamId, Assert.Single(await opened.Outbox.GetUnprocessedAsync(10)).StreamId);
+        Assert.Equal(streamId, Assert.Single(await opened.RequireOutbox().GetUnprocessedAsync(10)).StreamId);
     }
 
     [Fact]
@@ -327,7 +327,7 @@ public sealed class PostgresOutboxInboxTests
         await writer.WriteAsync(Message(1));
         var streamId = "acme:Order:" + Guid.NewGuid().ToString("N");
         await opened.Store.AppendAsync(streamId, [ContractEvent.Tick()]);
-        var rows = await opened.Outbox.GetUnprocessedAsync(10);
+        var rows = await opened.RequireOutbox().GetUnprocessedAsync(10);
         Assert.Contains(rows, row => row.StreamId == streamId);
     }
 
@@ -348,7 +348,7 @@ public sealed class PostgresOutboxInboxTests
         Assert.Equal(id, ex.EventId);
         Assert.Single(await opened.Log.ReadStreamAsync(first));
         Assert.Empty(await opened.Log.ReadStreamAsync(second));
-        Assert.Single(await opened.Outbox.GetUnprocessedAsync(10));
+        Assert.Single(await opened.RequireOutbox().GetUnprocessedAsync(10));
     }
 
     private static async Task<List<int>> AppendFunctionArgumentCountsAsync(NpgsqlConnection connection, string schema)

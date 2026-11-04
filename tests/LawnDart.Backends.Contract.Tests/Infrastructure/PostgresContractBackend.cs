@@ -13,7 +13,7 @@ using NpgsqlTypes;
 
 namespace LawnDart.Backends.Contract.Tests;
 
-public sealed class PostgresContractBackend : IContractBackend
+public sealed class PostgresContractBackend : IFullContractBackend
 {
     private readonly string _connectionString;
     private readonly string? _migrationConnectionString;
@@ -30,6 +30,7 @@ public sealed class PostgresContractBackend : IContractBackend
         _pollOnly = pollOnly;
         Capabilities = new ContractCapabilities
         {
+            CanTurnOffNewEventsSignal = true,
             EnforcesEventIdAcrossTenants = false,
             StreamIdsCaseInsensitive = false,
             StreamIdPrefixCaseInsensitive = false,
@@ -106,11 +107,27 @@ public sealed class PostgresContractBackend : IContractBackend
             Log = store,
             Subscriptions = store,
             Signals = store,
+            SignalCounters = new NewEventsSignalCounters(store.NewEvents),
             Hooks = new PostgresContractHooks(store, _connectionString, _migrationConnectionString ?? _connectionString),
             Outbox = CreateOutbox(options.SchemaName, options.OutboxClaimLease),
             ReadLogEntries = () => logger.Entries,
-            SetPublishNewEventsSignal = value => store.PublishNewEventsSignal = value
+            SetPublishNewEventsSignal = value => store.PublishNewEventsSignal = value,
+            MarkStreamArchivedAsync = (streamId, ct) => MarkArchivedAsync(store, streamId, ct)
         };
+    }
+
+    private static async Task MarkArchivedAsync(
+        PostgresEventStore store,
+        string streamId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new NpgsqlConnection(store.ConnectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(
+            $"UPDATE {store.QualifiedStreamsTable} SET status = 'Archived' WHERE stream_id = @stream",
+            connection);
+        command.Parameters.AddWithValue("stream", streamId);
+        Assert.Equal(1, await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false));
     }
 
     public async Task<IOutboxWriter> OpenOutboxAsync(ContractStoreOptions options, CancellationToken cancellationToken = default)

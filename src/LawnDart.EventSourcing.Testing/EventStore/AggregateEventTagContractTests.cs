@@ -6,7 +6,7 @@ using LawnDart.Metadata;
 using LawnDart.Tagging;
 using Microsoft.Extensions.Options;
 
-namespace LawnDart.Backends.Contract.Tests;
+namespace LawnDart.EventSourcing.Testing;
 
 /// <summary>
 /// An aggregate save writes each event with that event's own tags. Tags that belong to
@@ -25,15 +25,14 @@ public abstract class AggregateEventTagContractTests : ContractSuite
         var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
         var repository = new AggregateRepository(
             store,
-            new TestMetadataProvider(),
-            new TestTenantContextProvider("test-tenant"),
+            new ContractMetadataProvider(),
+            new ContractTenantContextProvider("test-tenant"),
             Options.Create(new LawnDartOptions()),
             new StudentTagProvider());
 
         var course = Guid.NewGuid();
         var student = "student:" + Guid.NewGuid().ToString("N");
-        var aggregate = new CourseAggregate();
-        aggregate.SetStreamId($"test-tenant:CourseAggregate:{course}");
+        var aggregate = await repository.CreateAsync<CourseAggregate>($"test-tenant:CourseAggregate:{course}");
         aggregate.Raise(new ContractCourseCreated(Guid.NewGuid(), course.ToString()));
         aggregate.Raise(new ContractStudentSubscribed(Guid.NewGuid(), course.ToString(), student));
 

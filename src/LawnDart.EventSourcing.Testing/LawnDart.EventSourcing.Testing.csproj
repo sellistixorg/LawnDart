@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <PackageId>LawnDart.EventSourcing.Testing</PackageId>
+    <Description>Abstract xUnit contract tests for a LawnDart IEventStore and IEventLog implementation.</Description>
+    <IsPackable>true</IsPackable>
+    <!-- A library of abstract tests. The store's test project runs them. -->
+    <IsTestProject>false</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LawnDart\LawnDart.csproj" />
+    <ProjectReference Include="..\LawnDart.EventSourcing\LawnDart.EventSourcing.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- build assets would mark this library as a test project and `dotnet test` would try to run it. -->
+    <PackageReference Include="xunit">
+      <ExcludeAssets>build;buildTransitive</ExcludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

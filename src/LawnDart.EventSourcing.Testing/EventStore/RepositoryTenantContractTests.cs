@@ -7,7 +7,7 @@ using LawnDart.EventStore;
 using LawnDart.Metadata;
 using Microsoft.Extensions.Options;
 
-namespace LawnDart.Backends.Contract.Tests;
+namespace LawnDart.EventSourcing.Testing;
 
 /// <summary>
 /// Repository saves use the same tenant id check as a direct append.
@@ -24,7 +24,7 @@ public abstract class RepositoryTenantContractTests : ContractSuite
     {
         var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(requireTenantId: true))).Store;
         var repository = AggregateRepo(store, "default", validateNames: true);
-        var aggregate = Pending("default");
+        var aggregate = await PendingAsync(repository, "default");
 
         var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
             repository.SaveAsync(aggregate, new CommandMetadata { TenantId = "default" }));
@@ -36,7 +36,7 @@ public abstract class RepositoryTenantContractTests : ContractSuite
     {
         var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(requireTenantId: true, validateNames: false))).Store;
         var repository = AggregateRepo(store, "default", validateNames: false);
-        var aggregate = Pending("default");
+        var aggregate = await PendingAsync(repository, "default");
 
         await repository.SaveAsync(aggregate, new CommandMetadata { TenantId = "default" });
 
@@ -87,8 +87,8 @@ public abstract class RepositoryTenantContractTests : ContractSuite
     private static AggregateRepository AggregateRepo(IEventStore store, string tenantId, bool validateNames)
         => new(
             store,
-            new TestMetadataProvider(),
-            new TestTenantContextProvider(tenantId),
+            new ContractMetadataProvider(),
+            new ContractTenantContextProvider(tenantId),
             Options.Create(new LawnDartOptions
             {
                 RequireTenantId = true,
@@ -98,18 +98,17 @@ public abstract class RepositoryTenantContractTests : ContractSuite
     private static DcbRepository DcbRepo(IEventStore store, string? tenantId, bool validateNames)
         => new(
             store,
-            new TestMetadataProvider(new TestTenantContextProvider(tenantId)),
-            new TestTenantContextProvider(tenantId),
+            new ContractMetadataProvider(new ContractTenantContextProvider(tenantId)),
+            new ContractTenantContextProvider(tenantId),
             Options.Create(new LawnDartOptions
             {
                 RequireTenantId = true,
                 ValidateNames = validateNames
             }));
 
-    private static ProbeAggregate Pending(string tenantId)
+    private static async Task<ProbeAggregate> PendingAsync(AggregateRepository repository, string tenantId)
     {
-        var aggregate = new ProbeAggregate();
-        aggregate.SetStreamId($"{tenantId}:ProbeAggregate:{Guid.NewGuid()}");
+        var aggregate = await repository.CreateAsync<ProbeAggregate>($"{tenantId}:ProbeAggregate:{Guid.NewGuid()}");
         aggregate.Raise(ContractEvent.Tick());
         return aggregate;
     }

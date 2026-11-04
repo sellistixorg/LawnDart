@@ -5,7 +5,7 @@ using LawnDart.EventStore;
 using LawnDart.Metadata;
 using Microsoft.Extensions.Options;
 
-namespace LawnDart.Backends.Contract.Tests;
+namespace LawnDart.EventSourcing.Testing;
 
 /// <summary>
 /// Tags written by a dynamic consistency boundary entity. Each new event carries only the
@@ -154,8 +154,8 @@ public abstract class DcbEntityTagContractTests : ContractSuite
     private static DcbRepository Repo(IEventStore store)
         => new(
             store,
-            new TestMetadataProvider(),
-            new TestTenantContextProvider("test-tenant"),
+            new ContractMetadataProvider(),
+            new ContractTenantContextProvider("test-tenant"),
             Options.Create(new LawnDartOptions()),
             null,
             null,
