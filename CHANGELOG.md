@@ -10,6 +10,10 @@ changes to the public API.
 
 ## [Unreleased]
 
+## [0.7.0-alpha.4] - 2026-11-04
+
+This release writes each event with only its own tags on every store, and both `IEventStore` appends now take each event with its own tags. On SQL Server, when appends with an append condition conflict, exactly one gets through. The event store contract suite ships as the new `LawnDart.EventSourcing.Testing` package. The build kit targets LawnDart 0.7.
+
 ### Added
 
 - `LawnDart.EventSourcing.Testing` ships LawnDart's event store contract suite as abstract xUnit tests. Any `IEventStore` and `IEventLog` implementation can run it by implementing `IContractBackend`, which opens a fresh store for each test. It covers stream and log appends and reads, each event's own tags, repeated tags, Dynamic Consistency Boundary appends and races, the stream registry, and live subscriptions when the store has them. The in-memory, SQL Server and Postgres stores run the same suite. The package uses only public LawnDart API. See [EventSourcing.Testing](docs/packages/eventsourcing-testing.md).
