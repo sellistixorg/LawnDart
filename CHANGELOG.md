@@ -10,6 +10,10 @@ changes to the public API.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** A Dynamic Consistency Boundary decision takes a query: one or more items, OR across items, tags AND and event types OR inside an item. `GetStateAsync`, `GetStateAtAsync`, `GetLastSequencePositionAsync`, `CreateEntityAsync`, and `GetOrCreateEntityAsync` take that `Query`. The same query loads the entity and guards the append. `DcbEntity.DecisionQuery` holds it. `ConsistencyTags` and `DcbSnapshotId.FromLoadTags` are removed. Each new event is still stored with only its own tags. `DcbSpec.For` takes the query. The snapshot key is the hash of the query. A query with no items, an empty item, or a partition filter is rejected. Each event a decision emits should match at least one item of its query.
+
 ## [0.7.0-alpha.4] - 2026-11-04
 
 This release writes each event with only its own tags on every store, and both `IEventStore` appends now take each event with its own tags. On SQL Server, when appends with an append condition conflict, exactly one gets through. The event store contract suite ships as the new `LawnDart.EventSourcing.Testing` package. The build kit targets LawnDart 0.7.

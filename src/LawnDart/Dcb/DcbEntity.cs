@@ -13,7 +13,6 @@ public abstract class DcbEntity
     private readonly List<IEvent> _pendingEvents = new();
     private readonly List<string[]> _pendingEventTags = new();
     private readonly List<string> _tags = new();
-    private readonly List<string> _consistencyTags = new();
 
     /// <summary>
     /// The last sequence position seen by this entity.
@@ -53,28 +52,32 @@ public abstract class DcbEntity
     public long? LastSnapshotGlobalSequence { get; private set; }
 
     /// <summary>
-    /// The entity's load tags plus every tag passed to <see cref="Emit{TEvent}"/> since load.
+    /// Tags from the decision query, plus every tag passed to <see cref="Emit{TEvent}"/> since load.
     /// </summary>
     /// <remarks>
     /// Tags on events read during <see cref="ReplayEvents"/> are not added here. The repository
-    /// does not write this combined list. Each new event is written with only the tags passed to
-    /// <see cref="Emit{TEvent}"/> for that event: what that event is about. Pass every tag the
-    /// event should be found by, including the entity tag. This is not the append condition;
-    /// see <see cref="ConsistencyTags"/>.
+    /// does not write this list. Each new event is written with only the tags passed to
+    /// <see cref="Emit{TEvent}"/> for that event. This list is not the append condition.
+    /// See <see cref="DecisionQuery"/>.
     /// </remarks>
     [JsonIgnore]
     public IReadOnlyList<string> Tags => _tags.AsReadOnly();
 
     /// <summary>
-    /// Load-query tags that define this entity's Dynamic Consistency Boundary.
-    /// Set by the repository from the tags passed to
-    /// <c>GetOrCreateEntityAsync</c> / <c>CreateEntityAsync</c>.
-    /// Not mutated by <see cref="ReplayEvents"/> or <see cref="Emit{TEvent}"/>.
-    /// <c>HandleCommandAsync</c> builds <see cref="AppendCondition.FailIfEventsMatch"/> from
-    /// this set so a concurrent writer that shares only the load tag still conflicts.
+    /// The query this entity was loaded with.
     /// </summary>
+    /// <remarks>
+    /// The repository sets this from <c>GetOrCreateEntityAsync</c> or <c>CreateEntityAsync</c>,
+    /// including a tenant tag it added. <see cref="ReplayEvents"/> and <see cref="Emit{TEvent}"/>
+    /// do not change it. <c>HandleCommandAsync</c> copies it into
+    /// <see cref="AppendCondition.FailIfMatches"/> and throws
+    /// <see cref="InvalidOperationException"/> when it is null.
+    /// Each event passed to <see cref="Emit{TEvent}"/> should match at least one item.
+    /// The repository sets the fence position to the last appended sequence, including an
+    /// event that matches no item.
+    /// </remarks>
     [JsonIgnore]
-    public IReadOnlyList<string> ConsistencyTags => _consistencyTags.AsReadOnly();
+    public Query? DecisionQuery { get; private set; }
 
     /// <summary>
     /// Events that have been emitted but not yet persisted.
@@ -186,8 +189,8 @@ public abstract class DcbEntity
     internal IReadOnlyList<IReadOnlyList<string>> PendingEventTags => _pendingEventTags;
 
     /// <summary>
-    /// Sets the load tags for this entity. Used internally by the repository.
-    /// Does not change <see cref="ConsistencyTags"/>.
+    /// Sets the diagnostic tag list. Used internally by the repository.
+    /// Does not change <see cref="DecisionQuery"/>.
     /// </summary>
     /// <param name="tags">Tags to set.</param>
     internal void SetTags(params string[] tags)
@@ -197,22 +200,14 @@ public abstract class DcbEntity
     }
 
     /// <summary>
-    /// Sets the load-query tags that form this entity's consistency fence.
-    /// Used internally by the repository. Not changed by <see cref="ReplayEvents"/>
-    /// or <see cref="Emit{TEvent}"/>.
+    /// Sets the decision query. Used internally by the repository.
+    /// Not changed by <see cref="ReplayEvents"/> or <see cref="Emit{TEvent}"/>.
     /// </summary>
-    /// <param name="tags">Load-query tags to set.</param>
-    internal void SetConsistencyTags(params string[] tags)
+    /// <param name="query">Query the repository loaded, including a tenant tag it added.</param>
+    internal void SetDecisionQuery(Query query)
     {
-        _consistencyTags.Clear();
-        if (tags == null || tags.Length == 0)
-            return;
-
-        foreach (var tag in tags)
-        {
-            if (!_consistencyTags.Contains(tag))
-                _consistencyTags.Add(tag);
-        }
+        ArgumentNullException.ThrowIfNull(query);
+        DecisionQuery = query;
     }
     
     /// <summary>

@@ -38,7 +38,7 @@ public abstract class SnapshotContractTests : BackendContractSuite
         SkipUnless(Cap.HasSnapshotStore, "This backend does not have snapshot tables yet.");
         var opened = await Backend.OpenSnapshotsAsync(ContractStores.Isolated());
         var tags = new[] { "product:sku-1", "warehouse:east" };
-        var dcbId = DcbSnapshotId.FromLoadTags(tags);
+        var dcbId = DcbSnapshotId.FromQuery(Query.FromItems(QueryItem.ByTags(tags)));
         var state = new InventoryState { Units = 42 };
         await opened.DcbSnapshots.SaveDcbSnapshotAsync(dcbId, 17, state, loadTags: tags);
         var (restored, info) = await opened.DcbSnapshots.LoadDcbSnapshotAsync<InventoryState>(dcbId);
@@ -62,18 +62,18 @@ public abstract class SnapshotContractTests : BackendContractSuite
             "In-memory does not expose the stored snapshot bytes to replace.");
         var opened = await Backend.OpenSnapshotsAsync(ContractStores.Isolated());
         var tags = new[] { "product:sku-corrupt" };
-        var dcbId = DcbSnapshotId.FromLoadTags(tags);
+        var dcbId = DcbSnapshotId.FromQuery(Query.FromItems(QueryItem.ByTags(tags)));
         var repo = CreateRepository(opened);
         await repo.AppendWithContextAsync(
             [new TaggedEvent(new InventoryCounted(Guid.NewGuid(), DateTime.UtcNow, 5), tags), new TaggedEvent(new InventoryCounted(Guid.NewGuid(), DateTime.UtcNow, 7), tags)]);
-        var good = await repo.GetStateAsync<InventoryState>(tags);
+        var good = await repo.GetStateAsync<InventoryState>(Query.FromItems(QueryItem.ByTags(tags)));
         Assert.Equal(12, good.Units);
         await opened.DcbSnapshots.SaveDcbSnapshotAsync(dcbId, 2, good, loadTags: tags);
         Assert.Equal(1, await opened.CorruptDcbSnapshotAsync!(dcbId, CancellationToken.None));
         var (corrupt, info) = await opened.DcbSnapshots.LoadDcbSnapshotAsync<InventoryState>(dcbId);
         Assert.Null(info);
         Assert.Null(corrupt);
-        Assert.Equal(12, (await repo.GetStateAsync<InventoryState>(tags)).Units);
+        Assert.Equal(12, (await repo.GetStateAsync<InventoryState>(Query.FromItems(QueryItem.ByTags(tags)))).Units);
     }
 
     [ContractFact]
@@ -88,10 +88,11 @@ public abstract class SnapshotContractTests : BackendContractSuite
         await pump.StartAsync(CancellationToken.None);
         var repo = CreateRepository(opened, resolver, queue);
         var tags = new[] { "product:sku-cmd" };
-        var dcbId = DcbSnapshotId.FromLoadTags(tags);
+        var query = Query.FromItems(QueryItem.ByTags(tags));
+        var dcbId = DcbSnapshotId.FromQuery(query);
         try
         {
-            var entity = await repo.CreateEntityAsync<InventoryEntity>(tags);
+            var entity = await repo.CreateEntityAsync<InventoryEntity>(query);
             await repo.HandleCommandAsync(entity, new CountInventory(3), new CommandMetadata { UserId = "u" });
             await WaitForSnapshotAsync(opened, dcbId);
         }
@@ -101,13 +102,13 @@ public abstract class SnapshotContractTests : BackendContractSuite
         }
 
         if (Cap.StoresDcbSnapshotLoadTags)
-            Assert.Equal(tags, await opened.ReadDcbLoadTagsAsync!(dcbId, CancellationToken.None));
+            Assert.Equal([DecisionQueryText.Format(query)], await opened.ReadDcbLoadTagsAsync!(dcbId, CancellationToken.None));
 
         var (snapped, info) = await opened.DcbSnapshots.LoadDcbSnapshotAsync<InventoryEntity>(dcbId);
         Assert.NotNull(info);
         Assert.NotNull(snapped);
         Assert.Equal(3, snapped!.State.Units);
-        var loaded = await repo.GetOrCreateEntityAsync<InventoryEntity>(tags);
+        var loaded = await repo.GetOrCreateEntityAsync<InventoryEntity>(query);
         Assert.Equal(3, loaded.State.Units);
         Assert.Equal(0, loaded.EventsSinceLastSnapshot);
     }
@@ -118,17 +119,18 @@ public abstract class SnapshotContractTests : BackendContractSuite
         SkipUnless(Cap.HasSnapshotStore, "This backend does not have snapshot tables yet.");
         var opened = await Backend.OpenSnapshotsAsync(ContractStores.Isolated());
         var tags = new[] { "product:sku-delta" };
-        var dcbId = DcbSnapshotId.FromLoadTags(tags);
+        var query = Query.FromItems(QueryItem.ByTags(tags));
+        var dcbId = DcbSnapshotId.FromQuery(query);
         var repo = CreateRepository(opened);
         await repo.AppendWithContextAsync(
             Enumerable.Range(0, 10).Select(i => (IEvent)new InventoryCounted(Guid.NewGuid(), DateTime.UtcNow, 1)).ToArray().Select(e => new TaggedEvent(e, tags)).ToList());
-        var atTen = await repo.GetStateAsync<InventoryState>(tags);
+        var atTen = await repo.GetStateAsync<InventoryState>(query);
         Assert.Equal(10, atTen.Units);
         var max = await opened.Store.GetMaxSequencePositionAsync(Query.FromItems(QueryItem.ByTags(tags)));
         await opened.DcbSnapshots.SaveDcbSnapshotAsync(dcbId, max, atTen, loadTags: tags);
         await repo.AppendWithContextAsync(
             Enumerable.Range(0, 5).Select(i => (IEvent)new InventoryCounted(Guid.NewGuid(), DateTime.UtcNow, 1)).ToArray().Select(e => new TaggedEvent(e, tags)).ToList());
-        Assert.Equal(15, (await repo.GetStateAsync<InventoryState>(tags)).Units);
+        Assert.Equal(15, (await repo.GetStateAsync<InventoryState>(query)).Units);
     }
 
     private static DcbRepository CreateRepository(

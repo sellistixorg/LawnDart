@@ -38,7 +38,7 @@ public class DcbRepositoryKeyedSnapshotStoreTests
 
         var repo = sp.GetRequiredKeyedService<IDcbRepository>("ordering");
 
-        var entity = await repo.CreateEntityAsync<TestDcbEntity>(["product:sku-keyed"]);
+        var entity = await repo.CreateEntityAsync<TestDcbEntity>(Query.FromItems(QueryItem.ByTags(["product:sku-keyed"])));
         await repo.HandleCommandAsync(
             entity,
             new TestCommand { Value = "one" },
@@ -47,7 +47,9 @@ public class DcbRepositoryKeyedSnapshotStoreTests
         await recording.WaitForSaveAsync(TimeSpan.FromSeconds(2));
         await pump.StopAsync(CancellationToken.None);
         Assert.Equal(1, recording.SaveCount);
-        Assert.Equal(DcbSnapshotId.FromLoadTags(["product:sku-keyed"]), recording.LastDcbId);
+        Assert.Equal(
+            DcbSnapshotId.FromQuery(Query.FromItems(QueryItem.ByTags("product:sku-keyed"))),
+            recording.LastDcbId);
     }
 
     private sealed class RecordingStore : IDcbSnapshotStore

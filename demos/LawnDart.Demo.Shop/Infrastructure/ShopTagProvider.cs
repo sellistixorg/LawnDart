@@ -10,7 +10,8 @@ namespace LawnDart.Demo.Shop.Infrastructure;
 /// can replay its history via <c>QueryItem.ByTags(["product:{id}"])</c>.
 ///
 /// Without these tags the DCB entity always starts from scratch (Stock = 0) because
-/// <c>DcbRepository.GetOrCreateEntityAsync</c> queries events exclusively by tag.
+/// <c>DcbRepository.GetOrCreateEntityAsync</c> loads the decision query. This provider
+/// stamps <c>product:{id}</c> so a product query can find these events.
 /// </summary>
 internal sealed class ShopTagProvider : ITagProvider
 {

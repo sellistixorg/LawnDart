@@ -1,5 +1,6 @@
 using LawnDart;
 using LawnDart.Dcb;
+using LawnDart.EventStore;
 using LawnDart.Testing.Bdd;
 using Library.Dcb.Domain;
 using Library.Dcb.Host;
@@ -18,7 +19,7 @@ public sealed class LibraryBookLoanTests
         var tags = BookLoan.GetTags(bookId, memberId);
 
         await DcbSpec
-            .For<BookLoan, BorrowBookCommand>(ctx, tags, new BorrowBookCommand(Guid.NewGuid(), bookId, memberId, "Jeremy"))
+            .For<BookLoan, BorrowBookCommand>(ctx, Query.FromItems(QueryItem.ByTags(tags)), new BorrowBookCommand(Guid.NewGuid(), bookId, memberId, "Jeremy"))
             .Given(new BookAdded(Guid.NewGuid(), DateTime.UtcNow, bookId, "A Tale of Two Cities", "ABCD"), tags)
             .ThenEmittedEvent<BookBorrowed>(e => e.BookId == bookId && e.MemberId == memberId && e.MemberName == "Jeremy")
             .AndAssert(result =>
@@ -39,7 +40,7 @@ public sealed class LibraryBookLoanTests
         var tags = BookLoan.GetTags(bookId, memberId);
 
         await DcbSpec
-            .For<BookLoan, ReturnBookCommand>(ctx, tags, new ReturnBookCommand(Guid.NewGuid(), bookId, memberId))
+            .For<BookLoan, ReturnBookCommand>(ctx, Query.FromItems(QueryItem.ByTags(tags)), new ReturnBookCommand(Guid.NewGuid(), bookId, memberId))
             .Given(new BookAdded(Guid.NewGuid(), DateTime.UtcNow, bookId, "A Tale of Two Cities", "ABCD"), tags)
             .Given(new BookBorrowed(Guid.NewGuid(), DateTime.UtcNow, bookId, memberId, "Jeremy"), tags)
             .ThenEmittedEvent<BookReturned>(e => e.BookId == bookId && e.MemberId == memberId)
@@ -63,7 +64,7 @@ public sealed class LibraryBookLoanTests
         await DcbSpec
             .For<BookLoan, BorrowBookCommand>(
                 ctx,
-                tags,
+                Query.FromItems(QueryItem.ByTags(tags)),
                 new BorrowBookCommand(Guid.NewGuid(), bookId, memberId, "Someone Else"))
             .Given(new BookAdded(Guid.NewGuid(), DateTime.UtcNow, bookId, "Pragmatic Programmer", "978-0135957059"), tags)
             .Given(new BookBorrowed(Guid.NewGuid(), DateTime.UtcNow, bookId, Guid.NewGuid(), "Jane Doe"), tags)
@@ -84,7 +85,7 @@ public sealed class LibraryBookLoanTests
         await DcbSpec
             .For<BookLoan, BorrowBookCommand>(
                 ctx,
-                tags,
+                Query.FromItems(QueryItem.ByTags(tags)),
                 new BorrowBookCommand(Guid.NewGuid(), bookId, memberId, "Jeremy"))
             .Given(new BookAdded(Guid.NewGuid(), DateTime.UtcNow, bookId, "A Tale of Two Cities", "ABCD"), tags)
             .Given(new BookBorrowed(Guid.NewGuid(), DateTime.UtcNow, Guid.NewGuid(), memberId, "Jeremy"), tags)

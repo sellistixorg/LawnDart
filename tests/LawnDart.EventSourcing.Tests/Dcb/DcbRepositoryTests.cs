@@ -46,7 +46,7 @@ public class DcbRepositoryTests
         var tags = new[] { "order:123" };
 
         // Act
-        var state = await _repository.GetStateAsync<TestState>(tags);
+        var state = await _repository.GetStateAsync<TestState>(Query.FromItems(QueryItem.ByTags(tags)));
 
         // Assert
         Assert.NotNull(state);
@@ -71,7 +71,7 @@ public class DcbRepositoryTests
             new EventMetadata());
 
         // Act
-        var state = await _repository.GetStateAsync<TestState>(tags);
+        var state = await _repository.GetStateAsync<TestState>(Query.FromItems(QueryItem.ByTags(tags)));
 
         // Assert
         Assert.Equal(2, state.EventCount);
@@ -86,7 +86,7 @@ public class DcbRepositoryTests
         var tags = new[] { "order:123" };
 
         // Act
-        var position = await _repository.GetLastSequencePositionAsync(tags);
+        var position = await _repository.GetLastSequencePositionAsync(Query.FromItems(QueryItem.ByTags(tags)));
 
         // Assert
         Assert.Equal(0L, position);
@@ -110,7 +110,7 @@ public class DcbRepositoryTests
             new EventMetadata());
 
         // Act
-        var position = await _repository.GetLastSequencePositionAsync(tags);
+        var position = await _repository.GetLastSequencePositionAsync(Query.FromItems(QueryItem.ByTags(tags)));
 
         // Assert
         Assert.True(position > 0);
@@ -158,13 +158,14 @@ public class DcbRepositoryTests
     }
 
     [Fact]
-    public async Task CreateEntityAsync_SetsConsistencyTagsFromLoadQuery()
+    public async Task CreateEntityAsync_SetsDecisionQueryFromLoadQuery()
     {
         var tags = new[] { "order:123" };
+        var query = Query.FromItems(QueryItem.ByTags(tags));
 
-        var entity = await _repository.CreateEntityAsync<TestDcbEntity>(tags);
+        var entity = await _repository.CreateEntityAsync<TestDcbEntity>(query);
 
-        Assert.Equal(tags, entity.ConsistencyTags);
+        Assert.Same(query, entity.DecisionQuery);
         Assert.Equal(tags, entity.Tags);
     }
 
@@ -178,9 +179,10 @@ public class DcbRepositoryTests
             null,
             new EventMetadata());
 
-        var entity = await _repository.GetOrCreateEntityAsync<TestDcbEntity>(loadTags);
+        var query = Query.FromItems(QueryItem.ByTags(loadTags));
+        var entity = await _repository.GetOrCreateEntityAsync<TestDcbEntity>(query);
 
-        Assert.Equal(loadTags, entity.ConsistencyTags);
+        Assert.Same(query, entity.DecisionQuery);
         Assert.Contains("product:sku-1", entity.Tags);
         Assert.DoesNotContain("order:order-9", entity.Tags);
         Assert.Equal(1, entity.State.EventCount);
@@ -196,8 +198,9 @@ public class DcbRepositoryTests
         await _repository.AppendWithContextAsync(
             [new TaggedEvent(new TestEvent { Value = "seed" }, "product:sku-1", "order:order-9")]);
 
-        var entity = await _repository.GetOrCreateEntityAsync<TestDcbEntity>(loadTags);
-        Assert.Equal(loadTags, entity.ConsistencyTags);
+        var query = Query.FromItems(QueryItem.ByTags(loadTags));
+        var entity = await _repository.GetOrCreateEntityAsync<TestDcbEntity>(query);
+        Assert.Same(query, entity.DecisionQuery);
 
         await _repository.AppendWithContextAsync(
             [new TaggedEvent(new TestEvent { Value = "racer" }, loadTags)]);
@@ -213,7 +216,8 @@ public class DcbRepositoryTests
     public async Task HandleCommandAsync_WithSingleLoadTag_StillPersists()
     {
         var tags = new[] { "order:123" };
-        var entity = await _repository.CreateEntityAsync<TestDcbEntity>(tags);
+        var query = Query.FromItems(QueryItem.ByTags(tags));
+        var entity = await _repository.CreateEntityAsync<TestDcbEntity>(query);
 
         var result = await _repository.HandleCommandAsync(
             entity,
@@ -222,7 +226,21 @@ public class DcbRepositoryTests
 
         Assert.Equal(1, result.State.EventCount);
         Assert.Empty(result.PendingEvents);
-        Assert.Equal(tags, result.ConsistencyTags);
+        Assert.Same(query, result.DecisionQuery);
+    }
+
+    [Fact]
+    public async Task HandleCommandAsync_WithoutDecisionQuery_Throws()
+    {
+        var entity = new TestDcbEntity();
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _repository.HandleCommandAsync(
+                entity,
+                new TestCommand { Value = "ok" },
+                new CommandMetadata { UserId = "test-user" }));
+
+        Assert.Contains("decision query", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -232,7 +250,7 @@ public class DcbRepositoryTests
         var tags = new[] { "order:123" };
 
         // Act
-        var entity = await _repository.CreateEntityAsync<TestDcbEntity>(tags);
+        var entity = await _repository.CreateEntityAsync<TestDcbEntity>(Query.FromItems(QueryItem.ByTags(tags)));
 
         // Assert
         Assert.NotNull(entity);
@@ -247,7 +265,7 @@ public class DcbRepositoryTests
         var tags = new[] { "order:123" };
 
         // Act
-        var entity = await _repository.GetOrCreateEntityAsync<TestDcbEntity>(tags);
+        var entity = await _repository.GetOrCreateEntityAsync<TestDcbEntity>(Query.FromItems(QueryItem.ByTags(tags)));
 
         // Assert
         Assert.NotNull(entity);
@@ -273,7 +291,7 @@ public class DcbRepositoryTests
             new EventMetadata());
 
         // Act
-        var entity = await _repository.GetOrCreateEntityAsync<TestDcbEntity>(tags);
+        var entity = await _repository.GetOrCreateEntityAsync<TestDcbEntity>(Query.FromItems(QueryItem.ByTags(tags)));
 
         // Assert
         Assert.NotNull(entity);
@@ -286,7 +304,7 @@ public class DcbRepositoryTests
     {
         // Arrange
         var tags = new[] { "order:123" };
-        var entity = await _repository.CreateEntityAsync<TestDcbEntity>(tags);
+        var entity = await _repository.CreateEntityAsync<TestDcbEntity>(Query.FromItems(QueryItem.ByTags(tags)));
         var command = new TestCommand { Value = "test" };
         var metadata = new CommandMetadata { UserId = "test-user" };
 
@@ -305,7 +323,7 @@ public class DcbRepositoryTests
     {
         // Arrange
         var tags = new[] { "order:123" };
-        var entity = await _repository.CreateEntityAsync<TestDcbEntity>(tags);
+        var entity = await _repository.CreateEntityAsync<TestDcbEntity>(Query.FromItems(QueryItem.ByTags(tags)));
         var metadata = new CommandMetadata { UserId = "test-user" };
 
         // Act
@@ -347,8 +365,8 @@ public class DcbRepositoryTests
         await repo.AppendWithContextAsync(events.Select(e => new TaggedEvent(e, tags)).ToList());
 
         // Verify the event can be queried by both original and auto tags
-        var state1 = await repo.GetStateAsync<TestState>(new[] { "order:123" });
-        var state2 = await repo.GetStateAsync<TestState>(new[] { "auto-tag" });
+        var state1 = await repo.GetStateAsync<TestState>(Query.FromItems(QueryItem.ByTags(new[] { "order:123" })));
+        var state2 = await repo.GetStateAsync<TestState>(Query.FromItems(QueryItem.ByTags(new[] { "auto-tag" })));
 
         // Assert
         Assert.Equal(1, state1.EventCount);
@@ -374,7 +392,7 @@ public class DcbRepositoryTests
             new EventMetadata());
 
         // Act
-        var state = await _repository.GetStateAsync<TestState>(tags);
+        var state = await _repository.GetStateAsync<TestState>(Query.FromItems(QueryItem.ByTags(tags)));
 
         // Assert
         Assert.Equal(2, state.EventCount);
@@ -399,11 +417,41 @@ public class DcbRepositoryTests
             new EventMetadata());
 
         // Act - Query with both tags
-        var state = await _repository.GetStateAsync<TestState>(new[] { "tag1", "tag2" });
+        var state = await _repository.GetStateAsync<TestState>(Query.FromItems(QueryItem.ByTags(new[] { "tag1", "tag2" })));
 
         // Assert - Should only get events that have ALL tags
         Assert.Equal(1, state.EventCount);
         Assert.Contains("both-tags", state.Values);
+    }
+
+    [Fact]
+    public async Task GetStateAsync_WithTwoItems_ReturnsEventMatchingEitherItem()
+    {
+        await _eventStore.AppendAsync(
+            "stream1",
+            [new TaggedEvent(new TestEvent { Value = "only-tag1" }, "tag1")],
+            null,
+            new EventMetadata());
+
+        await _eventStore.AppendAsync(
+            "stream2",
+            [new TaggedEvent(new TestEvent { Value = "only-tag2" }, "tag2")],
+            null,
+            new EventMetadata());
+
+        await _eventStore.AppendAsync(
+            "stream3",
+            [new TaggedEvent(new TestEvent { Value = "neither" }, "tag3")],
+            null,
+            new EventMetadata());
+
+        var state = await _repository.GetStateAsync<TestState>(
+            Query.FromItems(QueryItem.ByTags("tag1"), QueryItem.ByTags("tag2")));
+
+        Assert.Equal(2, state.EventCount);
+        Assert.Contains("only-tag1", state.Values);
+        Assert.Contains("only-tag2", state.Values);
+        Assert.DoesNotContain("neither", state.Values);
     }
 
     [Fact]
@@ -416,7 +464,7 @@ public class DcbRepositoryTests
         resolver.RegisterForDcb<TestDcbEntity>(new EventCountSnapshotStrategy(1));
         var repo = CreateRepository(snapshotStore, resolver, pump.Queue);
 
-        var entity = await repo.CreateEntityAsync<TestDcbEntity>(new[] { "order:snap-1" });
+        var entity = await repo.CreateEntityAsync<TestDcbEntity>(Query.FromItems(QueryItem.ByTags(new[] { "order:snap-1" })));
         await repo.HandleCommandAsync(entity, new TestCommand { Value = "one" }, new CommandMetadata { UserId = "u" });
 
         await snapshotStore.WaitForSaveAsync(TimeSpan.FromSeconds(2));
@@ -424,8 +472,9 @@ public class DcbRepositoryTests
         Assert.Equal(0, entity.EventsSinceLastSnapshot);
         Assert.NotNull(entity.LastSnapshotUtc);
         Assert.Equal(DcbSnapshotId.HexLength, snapshotStore.LastDcbId!.Length);
-        Assert.Equal(DcbSnapshotId.FromLoadTags(["order:snap-1"]), snapshotStore.LastDcbId);
-        Assert.Equal(["order:snap-1"], snapshotStore.LastLoadTags);
+        var snapQuery = Query.FromItems(QueryItem.ByTags("order:snap-1"));
+        Assert.Equal(DcbSnapshotId.FromQuery(snapQuery), snapshotStore.LastDcbId);
+        Assert.Equal([DecisionQueryText.Format(snapQuery)], snapshotStore.LastLoadTags);
     }
 
     [Fact]
@@ -436,7 +485,7 @@ public class DcbRepositoryTests
         resolver.RegisterForDcb<TestDcbEntity>(new EventCountSnapshotStrategy(5));
         var repo = CreateRepository(snapshotStore, resolver);
 
-        var entity = await repo.CreateEntityAsync<TestDcbEntity>(new[] { "order:snap-5" });
+        var entity = await repo.CreateEntityAsync<TestDcbEntity>(Query.FromItems(QueryItem.ByTags(new[] { "order:snap-5" })));
         await repo.HandleCommandAsync(entity, new TestCommand { Value = "one" }, new CommandMetadata { UserId = "u" });
 
         Assert.Equal(1, entity.EventsSinceLastSnapshot);
@@ -453,7 +502,7 @@ public class DcbRepositoryTests
         resolver.RegisterForDcb<TestDcbEntity>(new EventCountSnapshotStrategy(5));
         var repo = CreateRepository(snapshotStore, resolver, pump.Queue);
 
-        var entity = await repo.CreateEntityAsync<TestDcbEntity>(new[] { "order:snap-5b" });
+        var entity = await repo.CreateEntityAsync<TestDcbEntity>(Query.FromItems(QueryItem.ByTags(new[] { "order:snap-5b" })));
         var metadata = new CommandMetadata { UserId = "u" };
         for (var i = 0; i < 4; i++)
             entity = await repo.HandleCommandAsync(entity, new TestCommand { Value = $"e{i}" }, metadata);
@@ -472,7 +521,7 @@ public class DcbRepositoryTests
     {
         var tags = new[] { "order:snap-reload" };
         var seedRepo = _repository;
-        var entity = await seedRepo.CreateEntityAsync<TestDcbEntity>(tags);
+        var entity = await seedRepo.CreateEntityAsync<TestDcbEntity>(Query.FromItems(QueryItem.ByTags(tags)));
         var metadata = new CommandMetadata { UserId = "u" };
         for (var i = 0; i < 3; i++)
             entity = await seedRepo.HandleCommandAsync(entity, new TestCommand { Value = $"seed{i}" }, metadata);
@@ -484,7 +533,7 @@ public class DcbRepositoryTests
         resolver.RegisterForDcb<TestDcbEntity>(new EventCountSnapshotStrategy(5));
         var repo = CreateRepository(snapshotStore, resolver, pump.Queue);
 
-        var loaded = await repo.GetOrCreateEntityAsync<TestDcbEntity>(tags);
+        var loaded = await repo.GetOrCreateEntityAsync<TestDcbEntity>(Query.FromItems(QueryItem.ByTags(tags)));
         Assert.Equal(3, loaded.EventsSinceLastSnapshot);
 
         loaded = await repo.HandleCommandAsync(loaded, new TestCommand { Value = "four" }, metadata);

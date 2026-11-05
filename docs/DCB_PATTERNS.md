@@ -1,14 +1,18 @@
 # DCB patterns
 
-Dynamic Consistency Boundary (DCB) loads events by **tags**, not by a
-single aggregate stream, then appends new facts atomically with an
-`AppendCondition`.
+A Dynamic Consistency Boundary (DCB) decision takes a query. The same
+query loads the entity and guards the append. Items combine with OR.
+Inside one item, tags combine with AND and event types combine with OR.
+Each new event is stored with only its own tags.
 
-Use DCB when a rule spans more than one identity (book + member,
-student + section). Use an aggregate when one stream owns the rule.
+Use DCB when a rule spans more than one identity (book and member,
+student and section). Use an aggregate when one stream owns the rule.
 
-Skill excerpts come from `samples/Library.Dcb.Domain` (`BookLoan`).
-Academy `EnrollmentEntity` is the larger runnable host.
+Academy `EnrollmentEntity` is the runnable host. Its decision is one
+item, so that item requires both the student tag and the section tag.
+A borrow that must also see `BookAdded` (tagged with the book only) and
+the member's other loans uses two items: the book tag, and the types
+`book-borrowed` and `book-returned` with the member tag.
 
 ## Shape
 
@@ -55,10 +59,24 @@ spelling is a different tag. See [TAGGING.md](TAGGING.md).
 
 The repository:
 
-1. Reads events for that exact tag set (`student:{id}`, `section:{id}`).
-2. Rebuilds the entity.
+1. Reads events for the query passed to `GetOrCreateEntityAsync`.
+2. Rebuilds the entity and stores that query on it.
 3. Runs the command.
-4. Appends emitted events with `FailIfMatches` on the same strings, after the last seen sequence.
+4. Appends with `FailIfMatches` on that query, after the last sequence the entity has seen.
+
+Each event the command emits should match at least one item of the query.
+The fence position is the last appended sequence. A matching event that
+lands at or before that position does not fail the append.
+
+Academy loads one item:
+
+```csharp
+var query = Query.FromItems(QueryItem.ByTags(enrollmentTags));
+var entity = await _dcbRepository.GetOrCreateEntityAsync<EnrollmentEntity>(query);
+```
+
+`enrollmentTags` is `student:{id}` and `section:{id}`. That one item
+requires both tags.
 
 ## Versus choreography
 

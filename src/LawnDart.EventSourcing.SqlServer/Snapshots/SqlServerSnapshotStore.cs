@@ -16,7 +16,7 @@ namespace LawnDart.EventSourcing.SqlServer.Snapshots;
 /// <summary>
 /// SQL Server implementation of <see cref="ISnapshotStore"/>, <see cref="IDcbSnapshotStore"/>,
 /// and <see cref="ISnapshotAdmin"/>. DCB rows are keyed by the 64-character SHA-256 hex from
-/// <see cref="DcbSnapshotId.FromLoadTags"/>; plaintext load tags are stored beside the hash
+/// <see cref="DcbSnapshotId.FromQuery"/>; a plaintext description of the query is stored beside the hash
 /// for operations.
 /// </summary>
 /// <remarks>

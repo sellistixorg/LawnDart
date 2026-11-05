@@ -10,13 +10,17 @@ namespace LawnDart.Testing.Bdd;
 /// </summary>
 public static class DcbSpec
 {
+    /// <summary>
+    /// Starts a specification for <paramref name="command"/> on the decision <paramref name="query"/>.
+    /// <c>Given</c> still takes the tags of that one seeded event.
+    /// </summary>
     public static DcbSpecBuilder<TEntity, TCommand> For<TEntity, TCommand>(
         BddTestContext context,
-        string[] boundaryTags,
+        Query query,
         TCommand command)
         where TEntity : DcbEntity, new()
         where TCommand : ICommand
-        => new(context, boundaryTags, command);
+        => new(context, query, command);
 }
 
 public sealed class DcbSpecBuilder<TEntity, TCommand>
@@ -27,7 +31,7 @@ public sealed class DcbSpecBuilder<TEntity, TCommand>
 
     private readonly BddTestContext _context;
     private readonly List<(IEvent Event, string[] Tags)> _givenEvents = [];
-    private readonly string[] _boundaryTags;
+    private readonly Query _query;
     private readonly TCommand _command;
     private readonly List<Action<DcbSpecResult<TEntity>>> _assertions = [];
 
@@ -35,10 +39,10 @@ public sealed class DcbSpecBuilder<TEntity, TCommand>
     private Func<BddProjectionRunner>? _projectionRunnerFactory;
     private Type? _expectedExceptionType;
 
-    internal DcbSpecBuilder(BddTestContext context, string[] boundaryTags, TCommand command)
+    internal DcbSpecBuilder(BddTestContext context, Query query, TCommand command)
     {
         _context = context;
-        _boundaryTags = boundaryTags;
+        _query = query ?? throw new ArgumentNullException(nameof(query));
         _command = command;
     }
 
@@ -225,7 +229,7 @@ public sealed class DcbSpecBuilder<TEntity, TCommand>
             .ConfigureAwait(false);
         var beforeWhenSequence = afterGiven.Events.LastOrDefault()?.SequencePosition ?? 0;
 
-        var entity = await _context.DcbRepository.GetOrCreateEntityAsync<TEntity>(_boundaryTags, cancellationToken)
+        var entity = await _context.DcbRepository.GetOrCreateEntityAsync<TEntity>(_query, cancellationToken)
             .ConfigureAwait(false);
 
         Exception? thrown = null;

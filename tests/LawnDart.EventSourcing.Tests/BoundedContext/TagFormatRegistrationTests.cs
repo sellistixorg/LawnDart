@@ -119,10 +119,10 @@ public class TagFormatRegistrationTests
         var first = $"Student:{Guid.NewGuid():D}";
         var second = $"Student:{Guid.NewGuid():D}";
 
-        await alpha.GetStateAsync<EmptyState>([first]);
-        await alpha.GetStateAsync<EmptyState>([second]);
-        await beta.GetStateAsync<EmptyState>([first]);
-        await beta.GetStateAsync<EmptyState>([second]);
+        await alpha.GetStateAsync<EmptyState>(Query.FromItems(QueryItem.ByTags([first])));
+        await alpha.GetStateAsync<EmptyState>(Query.FromItems(QueryItem.ByTags([second])));
+        await beta.GetStateAsync<EmptyState>(Query.FromItems(QueryItem.ByTags([first])));
+        await beta.GetStateAsync<EmptyState>(Query.FromItems(QueryItem.ByTags([second])));
 
         Assert.Equal(2, logger.Warnings.Count(message => message.Contains(first, StringComparison.Ordinal)));
         Assert.Equal(0, logger.Warnings.Count(message => message.Contains(second, StringComparison.Ordinal)));
@@ -143,7 +143,7 @@ public class TagFormatRegistrationTests
         var repo = services.BuildServiceProvider().GetRequiredService<IDcbRepository>();
         var bad = $"Student:{Guid.NewGuid():D}";
 
-        await repo.GetStateAsync<EmptyState>([bad]);
+        await repo.GetStateAsync<EmptyState>(Query.FromItems(QueryItem.ByTags([bad])));
 
         Assert.Empty(logger.Warnings);
     }

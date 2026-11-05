@@ -1,5 +1,6 @@
 using LawnDart;
 using LawnDart.Dcb;
+using LawnDart.EventStore;
 
 namespace Library.Dcb.Domain;
 
@@ -12,7 +13,7 @@ public sealed class AddBookHandler : ICommandHandler<AddBookCommand>
     public async Task HandleAsync(AddBookCommand command, CancellationToken cancellationToken = default)
     {
         var loan = await _loans.GetOrCreateEntityAsync<BookLoan>(
-            [$"book:{command.BookId}"], cancellationToken).ConfigureAwait(false);
+            Query.FromItems(QueryItem.ByTags($"book:{command.BookId}")), cancellationToken).ConfigureAwait(false);
         await _loans.HandleCommandAsync(loan, command, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 }
@@ -26,7 +27,7 @@ public sealed class BorrowBookHandler : ICommandHandler<BorrowBookCommand>
     public async Task HandleAsync(BorrowBookCommand command, CancellationToken cancellationToken = default)
     {
         var loan = await _loans.GetOrCreateEntityAsync<BookLoan>(
-            BookLoan.GetTags(command.BookId, command.MemberId), cancellationToken).ConfigureAwait(false);
+            Query.FromItems(QueryItem.ByTags(BookLoan.GetTags(command.BookId, command.MemberId))), cancellationToken).ConfigureAwait(false);
         await _loans.HandleCommandAsync(loan, command, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 }
@@ -40,7 +41,7 @@ public sealed class ReturnBookHandler : ICommandHandler<ReturnBookCommand>
     public async Task HandleAsync(ReturnBookCommand command, CancellationToken cancellationToken = default)
     {
         var loan = await _loans.GetOrCreateEntityAsync<BookLoan>(
-            BookLoan.GetTags(command.BookId, command.MemberId), cancellationToken).ConfigureAwait(false);
+            Query.FromItems(QueryItem.ByTags(BookLoan.GetTags(command.BookId, command.MemberId))), cancellationToken).ConfigureAwait(false);
         await _loans.HandleCommandAsync(loan, command, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 }

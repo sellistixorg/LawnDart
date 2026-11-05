@@ -63,9 +63,9 @@ public abstract class TagContractTests : ContractSuite
         var good = LowercaseTagFormat.Instance.Tag("student", id);
         var loud = Dcb(store, logger, warn: true);
         await loud.AppendWithContextAsync([new TaggedEvent(new ProbeEvent(Guid.NewGuid(), DateTime.UtcNow), [bad])]);
-        var first = await loud.GetStateAsync<CountingState>([bad]);
-        var second = await loud.GetStateAsync<CountingState>([bad]);
-        var formatted = await loud.GetStateAsync<CountingState>([good]);
+        var first = await loud.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags([bad])));
+        var second = await loud.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags([bad])));
+        var formatted = await loud.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags([good])));
         Assert.Equal(1, first.Count);
         Assert.Equal(1, second.Count);
         Assert.Equal(0, formatted.Count);
@@ -74,7 +74,7 @@ public abstract class TagContractTests : ContractSuite
 
         var quietTag = $"Section:{Guid.NewGuid():D}";
         var quiet = Dcb(store, logger, warn: false);
-        await quiet.GetStateAsync<CountingState>([quietTag]);
+        await quiet.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags([quietTag])));
         await quiet.AppendWithContextAsync(
             [new TaggedEvent(new ProbeEvent(Guid.NewGuid(), DateTime.UtcNow), [LowercaseTagFormat.Instance.Tag("section", Guid.NewGuid())])],
             AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(quietTag))));
@@ -90,7 +90,7 @@ public abstract class TagContractTests : ContractSuite
         var student = LowercaseTagFormat.Instance.Tag("student", Guid.NewGuid());
         var tenant = LowercaseTagFormat.Instance.Tag("tenant", "academy-tenant");
         await repo.AppendWithContextAsync([new TaggedEvent(new ProbeEvent(Guid.NewGuid(), DateTime.UtcNow), [student, tenant])]);
-        var state = await repo.GetStateAsync<CountingState>([student, tenant]);
+        var state = await repo.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags([student, tenant])));
         Assert.Equal(1, state.Count);
         Assert.Empty(logger.Warnings);
     }

@@ -70,7 +70,7 @@ public sealed class InMemoryGwtTests
         var tags = new[] { $"counter:{id:N}" };
 
         var result = await DcbSpec
-            .For<CounterEntity, IncrementCommand>(ctx, tags, new IncrementCommand(Guid.NewGuid(), id))
+            .For<CounterEntity, IncrementCommand>(ctx, Query.FromItems(QueryItem.ByTags(tags)), new IncrementCommand(Guid.NewGuid(), id))
             .Given(new CounterCreated(Guid.NewGuid(), DateTime.UtcNow, id), tags)
             .ThenEmittedEvent<CounterIncremented>(e => e.CounterId == id)
             .RunAsync();

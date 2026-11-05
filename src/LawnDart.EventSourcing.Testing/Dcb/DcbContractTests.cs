@@ -306,7 +306,7 @@ public abstract class DcbContractTests : ContractSuite
         var tags = new[] { Tag("order"), Tag("customer") };
         await repository.AppendWithContextAsync(
             [new TaggedEvent(new ContractDcbEvent(Guid.NewGuid(), DateTime.UtcNow, 100), tags), new TaggedEvent(new ContractDcbEvent(Guid.NewGuid(), DateTime.UtcNow, 50), tags)]);
-        var state = await repository.GetStateAsync<ContractDcbState>(tags);
+        var state = await repository.GetStateAsync<ContractDcbState>(Query.FromItems(QueryItem.ByTags(tags)));
         Assert.Equal(150, state.TotalValue);
         Assert.Equal(2, state.EventCount);
     }
@@ -338,8 +338,8 @@ public abstract class DcbContractTests : ContractSuite
         await repository.AppendWithContextAsync([new TaggedEvent(new ContractDcbEvent(Guid.NewGuid(), DateTime.UtcNow, 10), [entityA, order])]);
         await repository.AppendWithContextAsync([new TaggedEvent(new ContractDcbEvent(Guid.NewGuid(), DateTime.UtcNow, 20), [entityB, order])]);
         await repository.AppendWithContextAsync([new TaggedEvent(new ContractDcbEvent(Guid.NewGuid(), DateTime.UtcNow, 30), [entityA, payment])]);
-        Assert.Equal(40, (await repository.GetStateAsync<ContractDcbState>([entityA])).TotalValue);
-        Assert.Equal(20, (await repository.GetStateAsync<ContractDcbState>([entityB])).TotalValue);
+        Assert.Equal(40, (await repository.GetStateAsync<ContractDcbState>(Query.FromItems(QueryItem.ByTags([entityA])))).TotalValue);
+        Assert.Equal(20, (await repository.GetStateAsync<ContractDcbState>(Query.FromItems(QueryItem.ByTags([entityB])))).TotalValue);
     }
 
     [Fact]
@@ -352,8 +352,8 @@ public abstract class DcbContractTests : ContractSuite
         var tenant2 = "tenant:tenant-2-" + Guid.NewGuid().ToString("N");
         await repository.AppendWithContextAsync([new TaggedEvent(new ContractDcbEvent(Guid.NewGuid(), DateTime.UtcNow, 100), [tenant1, order])]);
         await repository.AppendWithContextAsync([new TaggedEvent(new ContractDcbEvent(Guid.NewGuid(), DateTime.UtcNow, 200), [tenant2, order])]);
-        Assert.Equal(100, (await repository.GetStateAsync<ContractDcbState>([tenant1, order])).TotalValue);
-        Assert.Equal(200, (await repository.GetStateAsync<ContractDcbState>([tenant2, order])).TotalValue);
+        Assert.Equal(100, (await repository.GetStateAsync<ContractDcbState>(Query.FromItems(QueryItem.ByTags([tenant1, order])))).TotalValue);
+        Assert.Equal(200, (await repository.GetStateAsync<ContractDcbState>(Query.FromItems(QueryItem.ByTags([tenant2, order])))).TotalValue);
     }
 
     [Fact]
@@ -364,7 +364,7 @@ public abstract class DcbContractTests : ContractSuite
         var tags = new[] { Tag("order") };
         await repository.AppendWithContextAsync([new TaggedEvent(new ContractDcbEvent(Guid.NewGuid(), DateTime.UtcNow, 1), tags)]);
         await repository.AppendWithContextAsync([new TaggedEvent(new ContractDcbEvent(Guid.NewGuid(), DateTime.UtcNow, 2), tags)]);
-        var fromRepo = await repository.GetLastSequencePositionAsync(tags);
+        var fromRepo = await repository.GetLastSequencePositionAsync(Query.FromItems(QueryItem.ByTags(tags)));
         var fromStore = await opened.Store.GetMaxSequencePositionAsync(Query.FromItems(QueryItem.ByTags(tags)));
         Assert.Equal(fromStore, fromRepo);
         Assert.True(fromRepo > 0);

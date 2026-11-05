@@ -23,9 +23,9 @@ public class TagQueryWarningTests
 
         await repo.AppendWithContextAsync([new TaggedEvent(Event(), [bad])]);
 
-        var first = await repo.GetStateAsync<CountingState>([bad]);
-        var second = await repo.GetStateAsync<CountingState>([bad]);
-        var formatted = await repo.GetStateAsync<CountingState>([good]);
+        var first = await repo.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags([bad])));
+        var second = await repo.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags([bad])));
+        var formatted = await repo.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags([good])));
 
         Assert.Equal(1, first.Count);
         Assert.Equal(1, second.Count);
@@ -43,11 +43,11 @@ public class TagQueryWarningTests
         var first = $"Student:{Guid.NewGuid():D}";
         var second = $"Student:{Guid.NewGuid():D}";
 
-        await repo.GetStateAsync<CountingState>([first]);
-        await repo.GetStateAsync<CountingState>([second]);
+        await repo.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags([first])));
+        await repo.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags([second])));
 
         var other = Repository(new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false }), logger, warn: true);
-        await other.GetStateAsync<CountingState>([$"Student:{Guid.NewGuid():D}"]);
+        await other.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags($"Student:{Guid.NewGuid():D}")));
 
         Assert.Equal(1, logger.WarningsFor(first));
         Assert.Equal(0, logger.WarningsFor(second));
@@ -61,11 +61,11 @@ public class TagQueryWarningTests
         var logger = new ListLogger();
         var repo = Repository(store, logger, warn: true, warnings: new UnknownTagWarningLog(maxTypes: 2));
 
-        await repo.GetStateAsync<CountingState>([$"TypeA:{Guid.NewGuid():D}"]);
-        await repo.GetStateAsync<CountingState>([$"TypeB:{Guid.NewGuid():D}"]);
-        await repo.GetStateAsync<CountingState>([$"TypeC:{Guid.NewGuid():D}"]);
-        await repo.GetStateAsync<CountingState>([$"TypeD:{Guid.NewGuid():D}"]);
-        await repo.GetStateAsync<CountingState>([$"TypeA:{Guid.NewGuid():D}"]);
+        await repo.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags($"TypeA:{Guid.NewGuid():D}")));
+        await repo.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags($"TypeB:{Guid.NewGuid():D}")));
+        await repo.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags($"TypeC:{Guid.NewGuid():D}")));
+        await repo.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags($"TypeD:{Guid.NewGuid():D}")));
+        await repo.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags($"TypeA:{Guid.NewGuid():D}")));
 
         Assert.Equal(1, logger.WarningsFor("TypeA:"));
         Assert.Equal(1, logger.WarningsFor("TypeB:"));
@@ -82,14 +82,14 @@ public class TagQueryWarningTests
         var bad = $"Student:{Guid.NewGuid():D}";
         var quiet = Repository(store, logger, warn: false);
 
-        await quiet.GetStateAsync<CountingState>([bad]);
-        await quiet.GetStateAsync<CountingState>([bad]);
+        await quiet.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags([bad])));
+        await quiet.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags([bad])));
 
         Assert.Empty(logger.Warnings);
 
         var loud = Repository(store, logger, warn: true);
-        await loud.GetStateAsync<CountingState>([bad]);
-        await loud.GetStateAsync<CountingState>([bad]);
+        await loud.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags([bad])));
+        await loud.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags([bad])));
 
         Assert.Equal(1, logger.WarningsFor(bad));
     }
@@ -105,7 +105,7 @@ public class TagQueryWarningTests
         var tenant = format.Tag("tenant", "academy-tenant");
 
         await repo.AppendWithContextAsync([new TaggedEvent(Event(), [student, tenant])]);
-        var state = await repo.GetStateAsync<CountingState>([student, tenant]);
+        var state = await repo.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags([student, tenant])));
 
         Assert.Equal(1, state.Count);
         Assert.Empty(logger.Warnings);
@@ -121,7 +121,7 @@ public class TagQueryWarningTests
         var fence = $"Section:{Guid.NewGuid():D}";
         var condition = AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(fence)));
 
-        await repo.GetLastSequencePositionAsync([compact]);
+        await repo.GetLastSequencePositionAsync(Query.FromItems(QueryItem.ByTags([compact])));
         await repo.AppendWithContextAsync(
             [new TaggedEvent(Event(), [LowercaseTagFormat.Instance.Tag("section", Guid.NewGuid())])],
             condition);
@@ -142,7 +142,7 @@ public class TagQueryWarningTests
         var tag = $"student:{Guid.NewGuid():D}";
 
         await repo.AppendWithContextAsync([new TaggedEvent(Event(), [tag])]);
-        var state = await repo.GetStateAsync<CountingState>([tag]);
+        var state = await repo.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags([tag])));
 
         Assert.Equal(1, state.Count);
         Assert.Equal(1, logger.WarningsFor(tag));

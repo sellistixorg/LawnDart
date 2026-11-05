@@ -96,27 +96,20 @@ public class DcbRepository : IDcbRepository
     
     /// <inheritdoc/>
     public async Task<TState> GetStateAsync<TState>(
-        string[] tags,
+        Query query,
         CancellationToken cancellationToken = default) where TState : IState, new()
     {
+        var decision = PrepareDecisionQuery(query);
+        var tags = CollectTags(decision);
         using var activity = DcbTelemetry.StartGetStateActivity(typeof(TState).Name, tags);
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         
         try
         {
-            // Enforce tenant isolation if enabled
-            var tagsList = tags.ToList();
-            if (_eventSourcingOptions.EnforceDcbTenantIsolation)
-            {
-                EnsureTenantTag(tagsList);
-            }
+            WarnOnQueriedTags(tags);
 
-            WarnOnQueriedTags(tagsList);
-
-            // ── DCB snapshot restore (optional) ────────────────────────────────
-            // Derive a stable DCB id from the sorted tag set so snapshots survive
-            // tag ordering changes across calls.
-            var dcbId = DcbSnapshotId.FromLoadTags(tagsList);
+            // Snapshot identity is the hash of the query after tenant injection.
+            var dcbId = DcbSnapshotId.FromQuery(decision);
 
             TState state;
             SnapshotInfo? snapshotInfo = null;
@@ -160,10 +153,9 @@ public class DcbRepository : IDcbRepository
             // Delta scan: from snapshot GlobalSequence+1 when a snapshot was restored,
             // or from the beginning when no snapshot exists.
             var fromSequencePosition = snapshotInfo != null ? snapshotInfo.GlobalSequence + 1 : (long?)null;
-            var query = Query.FromItems(QueryItem.ByTags(tagsList.ToArray()));
             var events = new List<SequencedEvent>();
             await foreach (var evt in _eventStore.ReadByQueryStreamAsync(
-                query,
+                decision,
                 fromSequencePosition,
                 cancellationToken: cancellationToken).ConfigureAwait(false))
             {
@@ -174,7 +166,6 @@ public class DcbRepository : IDcbRepository
             if (snapshotInfo != null)
                 SnapshotTelemetry.RecordHit(typeof(TState).Name, "dcb", events.Count, snapshotRestoreElapsed);
 
-            // Apply delta events using compiled expressions for performance
             foreach (var sequencedEvent in events.OrderBy(e => e.SequencePosition))
             {
                 CompiledEventApplicator.ApplyEvent(state, sequencedEvent.Event);
@@ -195,30 +186,25 @@ public class DcbRepository : IDcbRepository
 
     /// <inheritdoc/>
     public async Task<TState> GetStateAtAsync<TState>(
-        string[] tags,
+        Query query,
         DateTime? asOfTimestamp = null,
         long? asOfSequencePosition = null,
         CancellationToken cancellationToken = default) where TState : IState, new()
     {
         if (!asOfTimestamp.HasValue && !asOfSequencePosition.HasValue)
         {
-            return await GetStateAsync<TState>(tags, cancellationToken).ConfigureAwait(false);
+            return await GetStateAsync<TState>(query, cancellationToken).ConfigureAwait(false);
         }
 
+        var decision = PrepareDecisionQuery(query);
+        var tags = CollectTags(decision);
         using var activity = DcbTelemetry.StartGetStateActivity(typeof(TState).Name, tags);
 
-        var tagsList = tags.ToList();
-        if (_eventSourcingOptions.EnforceDcbTenantIsolation)
-        {
-            EnsureTenantTag(tagsList);
-        }
+        WarnOnQueriedTags(tags);
 
-        WarnOnQueriedTags(tagsList);
-
-        var query = Query.FromItems(QueryItem.ByTags(tagsList.ToArray()));
         var events = new List<SequencedEvent>();
         await foreach (var evt in _eventStore.ReadByQueryStreamAsync(
-            query,
+            decision,
             fromSequencePosition: null,
             toSequencePosition: asOfSequencePosition,
             toTimestamp: asOfTimestamp,
@@ -238,19 +224,12 @@ public class DcbRepository : IDcbRepository
     
     /// <inheritdoc/>
     public async Task<long> GetLastSequencePositionAsync(
-        string[] tags,
+        Query query,
         CancellationToken cancellationToken = default)
     {
-        var tagsList = tags.ToList();
-        if (_eventSourcingOptions.EnforceDcbTenantIsolation)
-        {
-            EnsureTenantTag(tagsList);
-        }
-
-        WarnOnQueriedTags(tagsList);
-
-        var query = Query.FromItems(QueryItem.ByTags(tagsList.ToArray()));
-        return await _eventStore.GetMaxSequencePositionAsync(query, cancellationToken: cancellationToken).ConfigureAwait(false);
+        var decision = PrepareDecisionQuery(query);
+        WarnOnQueriedTags(CollectTags(decision));
+        return await _eventStore.GetMaxSequencePositionAsync(decision, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
     
     /// <inheritdoc/>
@@ -368,46 +347,32 @@ public class DcbRepository : IDcbRepository
     }
 
     /// <inheritdoc/>
-    public async Task<TEntity> CreateEntityAsync<TEntity>(
-        string[] tags,
+    public Task<TEntity> CreateEntityAsync<TEntity>(
+        Query query,
         CancellationToken cancellationToken = default) where TEntity : DcbEntity, new()
     {
-        var tagsList = tags.ToList();
-        if (_eventSourcingOptions.EnforceDcbTenantIsolation)
-        {
-            EnsureTenantTag(tagsList);
-        }
-
+        var decision = PrepareDecisionQuery(query);
         var entity = new TEntity();
-        var loadTags = tagsList.ToArray();
-        entity.SetTags(loadTags);
-        entity.SetConsistencyTags(loadTags);
-        
+        ApplyDecision(entity, decision);
+
         if (_logger is not null)
-            DcbRepositoryLog.EntityCreated(_logger, typeof(TEntity).Name, tagsList.Count);
-        
-        return await Task.FromResult(entity).ConfigureAwait(false);
+            DcbRepositoryLog.EntityCreated(_logger, typeof(TEntity).Name, CollectTags(decision).Length);
+
+        return Task.FromResult(entity);
     }
     
     /// <inheritdoc/>
     public async Task<TEntity> GetOrCreateEntityAsync<TEntity>(
-        string[] tags,
+        Query query,
         CancellationToken cancellationToken = default) where TEntity : DcbEntity, new()
     {
-        var tagsList = tags.ToList();
-        if (_eventSourcingOptions.EnforceDcbTenantIsolation)
-        {
-            EnsureTenantTag(tagsList);
-        }
+        var decision = PrepareDecisionQuery(query);
+        WarnOnQueriedTags(CollectTags(decision));
 
-        WarnOnQueriedTags(tagsList);
-
-        // ── DCB entity snapshot restore (optional) ──────────────────────────────
-        var dcbId = DcbSnapshotId.FromLoadTags(tagsList);
+        var dcbId = DcbSnapshotId.FromQuery(decision);
 
         var entity = new TEntity();
-        var loadTags = tagsList.ToArray();
-        ApplyLoadTags(entity, loadTags);
+        ApplyDecision(entity, decision);
 
         SnapshotInfo? snapshotInfo = null;
         TimeSpan entitySnapshotRestoreElapsed = TimeSpan.Zero;
@@ -423,7 +388,7 @@ public class DcbRepository : IDcbRepository
                 if (info != null && snappedEntity != null)
                 {
                     entity        = snappedEntity;
-                    ApplyLoadTags(entity, loadTags);
+                    ApplyDecision(entity, decision);
                     entity.SetSnapshotCursor(info.GlobalSequence, info.TakenAtUtc);
                     snapshotInfo  = info;
                     if (_logger is not null)
@@ -438,15 +403,14 @@ public class DcbRepository : IDcbRepository
                     DcbRepositoryLog.EntityRestoreFailed(_logger, ex, dcbId);
                 SnapshotTelemetry.RecordMiss(typeof(TEntity).Name, "dcb", restoreSw.Elapsed);
                 entity = new TEntity();
-                ApplyLoadTags(entity, loadTags);
+                ApplyDecision(entity, decision);
             }
         }
 
         // Delta replay from snapshot position or beginning.
-        // The consistency marker is always recomputed from delta events — never reuse the stored marker.
+        // The consistency marker is always recomputed from delta events. The stored marker is not reused.
         var fromSequencePosition = snapshotInfo != null ? snapshotInfo.GlobalSequence + 1 : (long?)null;
-        var query = Query.FromItems(QueryItem.ByTags(tagsList.ToArray()));
-        var queryResult = await _eventStore.ReadByQueryAsync(query, fromSequencePosition, limit: null, cancellationToken: cancellationToken).ConfigureAwait(false);
+        var queryResult = await _eventStore.ReadByQueryAsync(decision, fromSequencePosition, limit: null, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         // Record snapshot hit now that delta count is known.
         if (snapshotInfo != null)
@@ -516,23 +480,22 @@ public class DcbRepository : IDcbRepository
                 await CompiledCommandApplicator.DispatchAsync(entity, command, cancellationToken).ConfigureAwait(false);
 
             var pendingCount = entity.PendingEvents.Count();
-            
-            // Persist events — fence on the load-query tags (ConsistencyTags), not the
-            // accumulated payload-tag union. After is the fence. ConsistencyMarker is
-            // forwarded for compatibility; the shipped backends ignore it and evaluate
-            // FailIfMatches as "no matches with seq > After".
-            var fenceTags = entity.ConsistencyTags.Count > 0
-                ? entity.ConsistencyTags
-                : entity.Tags;
+
+            // Fence on the query the repository loaded. There is no fallback to Tags.
+            // Each emitted event should match at least one item. After is the last sequence
+            // this instance has seen, including an event that matches no item.
+            var decision = entity.DecisionQuery
+                ?? throw new InvalidOperationException(
+                    "This entity has no decision query. Load it with GetOrCreateEntityAsync or CreateEntityAsync before HandleCommandAsync.");
             var condition = AppendCondition.FailIfMatches(
-                Query.FromItems(QueryItem.ByTags(fenceTags.ToArray())),
+                decision,
                 entity.LastSequencePosition > 0 ? entity.LastSequencePosition : null)
                 with { ConsistencyMarker = entity.ConsistencyMarker };
-            
+
             // Each event is written with only the tags passed to Emit for that event (plus
             // the tag provider's tags for that event, and the tenant tag when tenant isolation
-            // is on). The load tags, tags read during replay, and tags of other events in
-            // this command are not written. The load tags still form the append condition.
+            // is on). The decision query, tags read during replay, and tags of other events in
+            // this command are not written.
             var pendingEvents = entity.PendingEvents.ToList();
             var pendingTags = entity.PendingEventTags;
             var pendingTagged = new List<TaggedEvent>(pendingEvents.Count);
@@ -563,7 +526,7 @@ public class DcbRepository : IDcbRepository
             {
                 var strategy = _strategyResolver.ResolveForDcb(typeof(TEntity));
                 var globalSeq = sequencePositions[^1];
-                var dcbId     = DcbIdFromFence(entity);
+                var dcbId     = DcbSnapshotId.FromQuery(decision);
 
                 var ctx = new SnapshotContext(
                     StreamId:                dcbId,
@@ -575,7 +538,7 @@ public class DcbRepository : IDcbRepository
                 if (strategy.ShouldSnapshot(ctx))
                 {
                     var captured = entity.CaptureCommittedSnapshot();
-                    var capturedTags = fenceTags.ToArray();
+                    var capturedTags = new[] { DecisionQueryText.Format(decision) };
                     entity.NoteSnapshotWritten(globalSeq, DateTime.UtcNow);
                     _snapshotWriteQueue.TryEnqueue(new SnapshotWriteItem
                     {
@@ -630,19 +593,103 @@ public class DcbRepository : IDcbRepository
     }
 
     /// <summary>
-    /// Applies the caller's load-query tags as both payload tags (initial) and the
-    /// consistency fence. Replay/Emit may add payload tags; they must not change the fence.
+    /// Stores the decision query and the tags it names. Replay and Emit may add
+    /// diagnostic tags. They do not change the query.
     /// </summary>
-    private static void ApplyLoadTags(DcbEntity entity, string[] loadTags)
+    private static void ApplyDecision(DcbEntity entity, Query decision)
     {
-        entity.SetTags(loadTags);
-        entity.SetConsistencyTags(loadTags);
+        entity.SetTags(CollectTags(decision));
+        entity.SetDecisionQuery(decision);
     }
 
-    private static string DcbIdFromFence(DcbEntity entity)
+    /// <summary>
+    /// Checks the query, then copies it when tenant isolation must add a tenant tag.
+    /// The caller's query is not mutated.
+    /// </summary>
+    private Query PrepareDecisionQuery(Query query)
     {
-        var tags = entity.ConsistencyTags.Count > 0 ? entity.ConsistencyTags : entity.Tags;
-        return DcbSnapshotId.FromLoadTags(tags);
+        ArgumentNullException.ThrowIfNull(query);
+        if (query.Items.Count == 0)
+            throw new ArgumentException(
+                "A decision query needs at least one item. Query.All() matches every event and is not a decision boundary.",
+                nameof(query));
+
+        foreach (var item in query.Items)
+        {
+            if (item is null)
+                throw new ArgumentException("A decision query item cannot be null.", nameof(query));
+            if (item.PartitionFilter is not null)
+                throw new ArgumentException(
+                    "A decision query item cannot set PartitionFilter. Partition filters stay on event store queries.",
+                    nameof(query));
+
+            var hasTypes = item.Types is { Count: > 0 };
+            var hasTags = item.Tags is { Count: > 0 };
+            if (!hasTypes && !hasTags)
+                throw new ArgumentException(
+                    "A decision query item needs an event type or a tag.",
+                    nameof(query));
+
+            if (item.Types is not null && item.Types.Any(t => t is null))
+                throw new ArgumentException("A decision query event type cannot be null.", nameof(query));
+            if (item.Tags is not null && item.Tags.Any(t => t is null))
+                throw new ArgumentException("A decision query tag cannot be null.", nameof(query));
+        }
+
+        if (!_eventSourcingOptions.EnforceDcbTenantIsolation)
+            return query;
+
+        if (query.Items.Any(item =>
+                item.Tags?.Any(t => t.StartsWith("tenant:", StringComparison.OrdinalIgnoreCase)) == true))
+            return query;
+
+        var tenantId = _tenantContextProvider.GetTenantId();
+        if (tenantId is null)
+        {
+            throw new InvalidOperationException(
+                "DCB tenant isolation is enforced, but no tenant tag was provided and ITenantContextProvider did not return a tenant ID. " +
+                "Either provide a tenant tag in the format 'tenant:{id}' or ensure ITenantContextProvider is properly configured.");
+        }
+
+        var tenantTag = $"tenant:{tenantId}";
+        var cloned = new QueryItem[query.Items.Count];
+        for (var i = 0; i < query.Items.Count; i++)
+        {
+            var item = query.Items[i];
+            var tags = item.Tags is { Count: > 0 }
+                ? item.Tags.Append(tenantTag).ToArray()
+                : new[] { tenantTag };
+            cloned[i] = new QueryItem
+            {
+                Types = item.Types is { Count: > 0 } ? item.Types.ToArray() : item.Types,
+                Tags = tags
+            };
+        }
+
+        if (_logger is not null)
+            DcbRepositoryLog.TenantTagInjected(_logger, tenantId);
+
+        return Query.FromItems(cloned);
+    }
+
+    /// <summary>
+    /// Tags named by the query, in item order, first copy kept.
+    /// </summary>
+    private static string[] CollectTags(Query query)
+    {
+        var tags = new List<string>();
+        foreach (var item in query.Items)
+        {
+            if (item.Tags is null)
+                continue;
+            foreach (var tag in item.Tags)
+            {
+                if (!tags.Contains(tag))
+                    tags.Add(tag);
+            }
+        }
+
+        return tags.ToArray();
     }
 
     /// <summary>

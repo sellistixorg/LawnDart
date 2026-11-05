@@ -33,7 +33,7 @@ public interface IDcbSnapshotStore
     /// Returns <c>(default, null)</c> when no snapshot exists or checksum validation fails.
     /// </summary>
     /// <typeparam name="TState">The DCB state type to deserialize into.</typeparam>
-    /// <param name="dcbId">Hashed identity from <c>DcbSnapshotId.FromLoadTags</c> (64-char SHA-256 hex). Do not join tags with <c>|</c>.</param>
+    /// <param name="dcbId">Hashed identity from <c>DcbSnapshotId.FromQuery</c> (64-char SHA-256 hex).</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>
     /// A tuple of the deserialized state and its associated <see cref="SnapshotInfo"/>,
@@ -47,7 +47,7 @@ public interface IDcbSnapshotStore
     /// Persists a DCB snapshot of <paramref name="state"/> at the given global <paramref name="globalSequence"/>.
     /// </summary>
     /// <typeparam name="TState">The DCB state type to serialize.</typeparam>
-    /// <param name="dcbId">Hashed identity from <c>DcbSnapshotId.FromLoadTags</c> (64-char SHA-256 hex).</param>
+    /// <param name="dcbId">Hashed identity from <c>DcbSnapshotId.FromQuery</c> (64-char SHA-256 hex).</param>
     /// <param name="globalSequence">Global event store sequence at the time of this snapshot.</param>
     /// <param name="state">The DCB state to serialize and store.</param>
     /// <param name="consistencyMarker">
@@ -55,8 +55,8 @@ public interface IDcbSnapshotStore
     /// the repository must recompute a fresh marker after delta replay on restore.
     /// </param>
     /// <param name="loadTags">
-    /// Optional plaintext load-query tags persisted beside the hashed <paramref name="dcbId"/>
-    /// for operations. Not used as the snapshot key.
+    /// Optional plaintext description of the decision query, persisted beside the hashed
+    /// <paramref name="dcbId"/> for operations. Not used as the snapshot key.
     /// </param>
     /// <param name="ct">Cancellation token.</param>
     Task SaveDcbSnapshotAsync<TState>(

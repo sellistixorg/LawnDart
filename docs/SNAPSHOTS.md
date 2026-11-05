@@ -45,6 +45,10 @@ bytes. A bad checksum, or a snapshot that cannot be read, returns empty and
 the repository replays the events. The table is one row per stream
 (`tenant_id`, `stream_id`) or one row per dynamic consistency boundary hash.
 
+The dynamic consistency boundary key is the hash of the decision query
+(`DcbSnapshotId.FromQuery`). A query change is a new key. The load replays
+when the key misses.
+
 A custom `Use*` must call `AddSnapshotWriteInfrastructure` and construct
 repositories with `EventSourcingRepositories.CreateAggregateRepository` /
 `CreateDcbRepository`. The public repository constructors omit the write

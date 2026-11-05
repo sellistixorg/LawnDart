@@ -109,7 +109,8 @@ public class ShowcaseB_DcbInProcess
         // Now includes:
         //   - SectionCreated  → State.SeatsAvailable = 5
         //   - StudentRegistered → State.StudentIsActive = true
-        var entity = await _dcbRepository.GetOrCreateEntityAsync<EnrollmentEntity>(enrollmentTags);
+        var entity = await _dcbRepository.GetOrCreateEntityAsync<EnrollmentEntity>(
+            Query.FromItems(QueryItem.ByTags(enrollmentTags)));
 
         result.Steps.Add($"[Step 4a] DCB read: {enrollmentTags.Length} tags, " +
                          $"{entity.State.SeatsAvailable} seats available, " +
@@ -129,7 +130,8 @@ public class ShowcaseB_DcbInProcess
         result.Steps.Add($"          Seats remaining: {entity.State.SeatsAvailable - 1}");
 
         // ── Step 5: Send confirmation (same boundary) ─────────────────────────
-        entity = await _dcbRepository.GetOrCreateEntityAsync<EnrollmentEntity>(enrollmentTags);
+        entity = await _dcbRepository.GetOrCreateEntityAsync<EnrollmentEntity>(
+            Query.FromItems(QueryItem.ByTags(enrollmentTags)));
         await _dcbRepository.HandleCommandAsync<EnrollmentEntity, SendConfirmationCommand>(
             entity,
             new SendConfirmationCommand(Guid.NewGuid(), studentId, courseId, studentEmail));

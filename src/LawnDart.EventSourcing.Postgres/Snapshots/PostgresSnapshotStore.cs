@@ -16,8 +16,8 @@ namespace LawnDart.EventSourcing.Postgres.Snapshots;
 /// <summary>
 /// Postgres implementation of <see cref="ISnapshotStore"/>, <see cref="IDcbSnapshotStore"/>,
 /// and <see cref="ISnapshotAdmin"/>. Dynamic consistency boundary rows are keyed by the
-/// 64-character SHA-256 hex from <see cref="DcbSnapshotId.FromLoadTags"/>. Plaintext load
-/// tags are stored beside the hash.
+/// 64-character SHA-256 hex from <see cref="DcbSnapshotId.FromQuery"/>. A plaintext
+/// description of the query is stored beside the hash.
 /// </summary>
 /// <remarks>
 /// One row per key. A write replaces that row. State is stored as bytes so the checksum
