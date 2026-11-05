@@ -328,7 +328,7 @@ public class HybridPatternDemo
 
         // Step 2: Reserve Inventory from Warehouse
         var workflowLastPos = await _dcbRepository.GetLastSequencePositionAsync(
-            new[] { $"order:{orderId}" });
+            Query.FromItems(QueryItem.ByTags($"order:{orderId}")));
 
         var reservationEvent = new InventoryReservedEvent
         {
@@ -365,7 +365,7 @@ public class HybridPatternDemo
 
         // Step 3: Process Payment
         workflowLastPos = await _dcbRepository.GetLastSequencePositionAsync(
-            new[] { $"order:{orderId}" });
+            Query.FromItems(QueryItem.ByTags($"order:{orderId}")));
 
         var paymentId = Guid.NewGuid();
         var paymentEvent = new PaymentProcessedEvent
@@ -400,7 +400,7 @@ public class HybridPatternDemo
 
         // Step 4: Ship Order
         workflowLastPos = await _dcbRepository.GetLastSequencePositionAsync(
-            new[] { $"order:{orderId}" });
+            Query.FromItems(QueryItem.ByTags($"order:{orderId}")));
 
         var shipmentId = Guid.NewGuid();
         var shippedEvent = new OrderShippedEvent

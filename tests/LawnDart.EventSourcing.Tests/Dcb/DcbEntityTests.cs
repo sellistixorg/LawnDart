@@ -175,10 +175,11 @@ public class DcbEntityTests
     }
 
     [Fact]
-    public void ReplayEvents_DoesNotMutateConsistencyTags()
+    public void ReplayEvents_DoesNotMutateDecisionQuery()
     {
         var entity = new TestDcbEntityForEntityTests();
-        entity.SetConsistencyTags("product:sku-1");
+        var query = Query.FromItems(QueryItem.ByTags("product:sku-1"));
+        entity.SetDecisionQuery(query);
 
         entity.ReplayEvents(new[]
         {
@@ -191,7 +192,7 @@ public class DcbEntityTests
                 tags: new[] { "product:sku-1", "order:order-9" })
         });
 
-        Assert.Equal(new[] { "product:sku-1" }, entity.ConsistencyTags);
+        Assert.Same(query, entity.DecisionQuery);
         Assert.DoesNotContain("order:order-9", entity.Tags);
     }
 
@@ -213,27 +214,41 @@ public class DcbEntityTests
     }
 
     [Fact]
-    public void Emit_DoesNotMutateConsistencyTags()
+    public void Emit_DoesNotMutateDecisionQuery()
     {
         var entity = new TestDcbEntityForEntityTests();
+        var query = Query.FromItems(QueryItem.ByTags("tag1"));
         entity.SetTags("tag1");
-        entity.SetConsistencyTags("tag1");
+        entity.SetDecisionQuery(query);
 
         entity.Handle(new TestCommand { Value = "test" });
 
-        Assert.Equal(new[] { "tag1" }, entity.ConsistencyTags);
+        Assert.Same(query, entity.DecisionQuery);
         Assert.Contains("order:123", entity.Tags);
     }
 
     [Fact]
-    public void SetTags_DoesNotChangeConsistencyTags()
+    public void SetTags_DoesNotChangeDecisionQuery()
     {
         var entity = new TestDcbEntityForEntityTests();
-        entity.SetConsistencyTags("fence:a");
+        var query = Query.FromItems(QueryItem.ByTags("fence:a"));
+        entity.SetDecisionQuery(query);
         entity.SetTags("payload:b");
 
-        Assert.Equal(new[] { "fence:a" }, entity.ConsistencyTags);
+        Assert.Same(query, entity.DecisionQuery);
         Assert.Equal(new[] { "payload:b" }, entity.Tags);
+    }
+
+    [Fact]
+    public void DecisionQuery_IsIgnoredByJson()
+    {
+        var entity = new TestDcbEntityForEntityTests();
+        entity.SetDecisionQuery(Query.FromItems(QueryItem.ByTags("fence:a")));
+
+        var json = System.Text.Json.JsonSerializer.Serialize(entity, entity.GetType());
+
+        Assert.DoesNotContain("DecisionQuery", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("fence:a", json, StringComparison.Ordinal);
     }
 
     [Fact]

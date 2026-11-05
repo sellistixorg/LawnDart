@@ -44,7 +44,7 @@ public class DcbTenantIsolationTests
             [new TaggedEvent(new TestEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow }, "tenant:tenant-123", "order:order-1")]);
 
         // Act - Query without explicit tenant tag (should auto-inject)
-        var state = await repository.GetStateAsync<TestState>(new[] { "order:order-1" });
+        var state = await repository.GetStateAsync<TestState>(Query.FromItems(QueryItem.ByTags(new[] { "order:order-1" })));
 
         // Assert
         Assert.NotNull(state);
@@ -71,7 +71,7 @@ public class DcbTenantIsolationTests
 
         // Act & Assert
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await repository.GetStateAsync<TestState>(new[] { "order:order-1" }));
+            await repository.GetStateAsync<TestState>(Query.FromItems(QueryItem.ByTags(new[] { "order:order-1" }))));
     }
 
     [Fact]
@@ -97,7 +97,7 @@ public class DcbTenantIsolationTests
             [new TaggedEvent(new TestEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow }, "order:order-1")]);
 
         // Query with explicit tenant tag
-        var state = await repository.GetStateAsync<TestState>(new[] { "tenant:tenant-456", "order:order-1" });
+        var state = await repository.GetStateAsync<TestState>(Query.FromItems(QueryItem.ByTags(new[] { "tenant:tenant-456", "order:order-1" })));
 
         // Assert
         Assert.NotNull(state);
@@ -126,7 +126,7 @@ public class DcbTenantIsolationTests
         await repository.AppendWithContextAsync(
             [new TaggedEvent(new TestEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow }, "order:order-1")]);
 
-        var state = await repository.GetStateAsync<TestState>(new[] { "order:order-1" });
+        var state = await repository.GetStateAsync<TestState>(Query.FromItems(QueryItem.ByTags(new[] { "order:order-1" })));
 
         // Assert
         Assert.NotNull(state);
@@ -156,7 +156,7 @@ public class DcbTenantIsolationTests
             [new TaggedEvent(new TestEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow }, "tenant:tenant-789", "order:order-1")]);
 
         // Act - Query with explicit tenant tag
-        var state = await repository.GetStateAsync<TestState>(new[] { "tenant:tenant-789", "order:order-1" });
+        var state = await repository.GetStateAsync<TestState>(Query.FromItems(QueryItem.ByTags(new[] { "tenant:tenant-789", "order:order-1" })));
 
         // Assert
         Assert.NotNull(state);
@@ -188,10 +188,10 @@ public class DcbTenantIsolationTests
             [new TaggedEvent(new TestEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow }, "order:shared-order")]);
 
         // Query as tenant 1
-        var stateTenant1 = await repository1.GetStateAsync<TestState>(new[] { "order:shared-order" });
+        var stateTenant1 = await repository1.GetStateAsync<TestState>(Query.FromItems(QueryItem.ByTags(new[] { "order:shared-order" })));
 
         // Query as tenant 2
-        var stateTenant2 = await repository2.GetStateAsync<TestState>(new[] { "order:shared-order" });
+        var stateTenant2 = await repository2.GetStateAsync<TestState>(Query.FromItems(QueryItem.ByTags(new[] { "order:shared-order" })));
 
         // Assert - Each tenant should only see their own event
         Assert.Equal(1, stateTenant1.EventCount);

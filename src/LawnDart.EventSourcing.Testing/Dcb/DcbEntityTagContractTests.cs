@@ -28,7 +28,7 @@ public abstract class DcbEntityTagContractTests : ContractSuite
         var course = Tag("course");
         var student = Tag("student");
 
-        var entity = await repository.GetOrCreateEntityAsync<CourseDecision>([course]);
+        var entity = await repository.GetOrCreateEntityAsync<CourseDecision>(Query.FromItems(QueryItem.ByTags([course])));
         await repository.HandleCommandAsync(entity, new OpenCourseAndSubscribe(course, student));
 
         var events = (await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(course)))).Events;
@@ -48,7 +48,7 @@ public abstract class DcbEntityTagContractTests : ContractSuite
         var course = Tag("course");
         var student = Tag("student");
 
-        var entity = await repository.GetOrCreateEntityAsync<CourseDecision>([course]);
+        var entity = await repository.GetOrCreateEntityAsync<CourseDecision>(Query.FromItems(QueryItem.ByTags([course])));
         await repository.HandleCommandAsync(entity, new OpenCourseAndSubscribe(course, student));
 
         var forStudent = (await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(student)))).Events;
@@ -70,7 +70,7 @@ public abstract class DcbEntityTagContractTests : ContractSuite
         await repository.AppendWithContextAsync([new TaggedEvent(new ContractStudentSubscribed(Guid.NewGuid(), course, earlierA), [course, earlierA])]);
         await repository.AppendWithContextAsync([new TaggedEvent(new ContractStudentSubscribed(Guid.NewGuid(), course, earlierB), [course, earlierB])]);
 
-        var entity = await repository.GetOrCreateEntityAsync<CourseDecision>([course]);
+        var entity = await repository.GetOrCreateEntityAsync<CourseDecision>(Query.FromItems(QueryItem.ByTags([course])));
         Assert.Equal(2, entity.State.Students);
         var before = entity.LastSequencePosition;
 
@@ -102,11 +102,11 @@ public abstract class DcbEntityTagContractTests : ContractSuite
         await repository.AppendWithContextAsync([new TaggedEvent(new ContractStudentSubscribed(Guid.NewGuid(), course, earlier), [course, earlier])]);
 
         // A decision about the earlier student reads only that student's events.
-        var studentDecision = await repository.GetOrCreateEntityAsync<StudentDecision>([earlier]);
+        var studentDecision = await repository.GetOrCreateEntityAsync<StudentDecision>(Query.FromItems(QueryItem.ByTags([earlier])));
 
         // Meanwhile the course decision replays the earlier student's subscription
         // and changes the course capacity. That event is about the course only.
-        var courseDecision = await repository.GetOrCreateEntityAsync<CourseDecision>([course]);
+        var courseDecision = await repository.GetOrCreateEntityAsync<CourseDecision>(Query.FromItems(QueryItem.ByTags([course])));
         await repository.HandleCommandAsync(courseDecision, new ChangeCapacity(course, 40));
 
         // The student decision did not read anything the course decision wrote.
@@ -126,7 +126,7 @@ public abstract class DcbEntityTagContractTests : ContractSuite
         var student = Tag("student");
 
         // The decision reads by course and student, but the note is about the student only.
-        var entity = await repository.GetOrCreateEntityAsync<StudentDecision>([student, course]);
+        var entity = await repository.GetOrCreateEntityAsync<StudentDecision>(Query.FromItems(QueryItem.ByTags([student, course])));
         await repository.HandleCommandAsync(entity, new NoteStudent(student, "hello"));
 
         var written = Assert.Single((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(student)))).Events);
@@ -143,8 +143,8 @@ public abstract class DcbEntityTagContractTests : ContractSuite
 
         await repository.AppendWithContextAsync([new TaggedEvent(new ContractCourseCreated(Guid.NewGuid(), course), [course])]);
 
-        var first = await repository.GetOrCreateEntityAsync<CourseDecision>([course]);
-        var second = await repository.GetOrCreateEntityAsync<CourseDecision>([course]);
+        var first = await repository.GetOrCreateEntityAsync<CourseDecision>(Query.FromItems(QueryItem.ByTags([course])));
+        var second = await repository.GetOrCreateEntityAsync<CourseDecision>(Query.FromItems(QueryItem.ByTags([course])));
 
         await repository.HandleCommandAsync(first, new ChangeCapacity(course, 10));
         await Assert.ThrowsAsync<ConcurrencyException>(() =>

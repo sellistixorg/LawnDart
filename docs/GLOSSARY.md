@@ -25,7 +25,7 @@ rebuilds state. The Command → Event pattern.
 
 **AppendCondition**  
 A write-time fence for DCB appends. If any later event matches the condition's
-tag strings exactly, the append fails with `ConcurrencyException`.
+query, the append fails with `ConcurrencyException`.
 
 **AuthorizationContext**  
 User roles, permission claims, and entitlements used by `AuthorizationService`.
@@ -90,11 +90,15 @@ saga / W3C trace id. It is not a copy of causation.
 ## D
 
 **DCB (Dynamic Consistency Boundary)**  
-Load events by tags, enforce multi-entity rules, append atomically.
+A decision loads a query and appends under that query. Items combine
+with OR. Inside one item, tags combine with AND and event types combine
+with OR.
 See [DCB_PATTERNS.md](DCB_PATTERNS.md).
 
 **DcbEntity**  
-Base type for tag-based entities (`DcbEntity` / `DcbEntity<TState>`).
+Base type for a dynamic consistency boundary decision
+(`DcbEntity` / `DcbEntity<TState>`). It holds the query it was loaded
+with (`DecisionQuery`).
 
 **Delegation**
 Command → Command. Planned for a later release. No public type until a host exists.

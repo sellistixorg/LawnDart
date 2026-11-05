@@ -4,10 +4,10 @@ A tag is an exact string stored on an event. Build every tag through the
 context's `ITagFormat`, in one place. A provider and the decision code
 call that same format.
 
-Tags choose the events a Dynamic Consistency Boundary (DCB) decision
-loads, and they are the fence on `AppendCondition`. They are also the
-key a later search or index uses. The string is data. A second spelling
-misses the event and misses the fence.
+A Dynamic Consistency Boundary (DCB) decision loads a query and appends
+under that query. Tags are what one item of that query asks for. They
+are also the key a later search or index uses. The string is data. A
+second spelling misses the event and misses the fence.
 
 ## What a tag means
 
@@ -15,10 +15,9 @@ A tag says what one event is about: its subjects. `CourseCreated` is
 about `course:c1`. `StudentSubscribed` is about `course:c1` and
 `student:s1`. Each event carries its own tags and no others.
 
-The append condition is a separate thing. It is the query the decision
-read, and it guards that decision. The load tags you pass to
-`GetOrCreateEntityAsync` are that query. They are not written on the
-events the decision emits.
+The append condition is the query the decision read. It guards that
+decision. The query you pass to `GetOrCreateEntityAsync` is that query.
+It is not written on the events the decision emits.
 
 A decision that loads `course:c1`, replays two earlier subscriptions,
 and emits `CourseCreated` and `StudentSubscribed` writes:
@@ -43,12 +42,20 @@ collation. In-memory reads and subscription filters use ordinal
 comparison (`EventQueryMatcher`). `GetStreamsByTagAsync` uses the same
 key.
 
-`GetOrCreateEntityAsync` loads with one `QueryItem.ByTags`. The event
-is in the decision only when it carries every tag in that item.
-`HandleCommandAsync` builds `AppendCondition.FailIfMatches` from those
-load tags (`ConsistencyTags`). An event written with a different
+`GetOrCreateEntityAsync` loads the query you pass. One item still
+requires every tag in that item. Several items match an event that fits
+any item. Event types inside one item match when the event is any of
+those types. `HandleCommandAsync` builds `AppendCondition.FailIfMatches`
+from that query (`DecisionQuery`). An event written with a different
 spelling is absent from the decision, and it does not trip the fence.
 Two decisions can both commit.
+
+An event stored with one tag is absent from a decision whose only item
+requires two tags. A borrow that must see `BookAdded` (tagged
+`book:{bookId}` only) and this member's loans of other books uses two
+items. The first item is the book tag. The second item names
+`book-borrowed` and `book-returned` with the member tag. An event is in
+the decision when it fits either item.
 
 A tag repeated on one event is written once. The first copy stays, in
 the order given, on every store. The same exact comparison decides what
@@ -157,16 +164,17 @@ var query = Query.FromItems(
 
 One `QueryItem` matches an event that has every listed tag. Several
 items in one `Query` match an event that fits any item.
-`DcbRepository` loads with one item, so the load requires every tag.
-`DcbProjector.InitializeFromHistoryAsync` makes one item per tag, so
-that replay matches any of them. `GetTagsForProjection` and
-`GetTagsForReaction` return the provider's strings. Call
-`UseTagFormat` on the projector or reactor with the same format.
+`DcbRepository` loads the query passed to `GetOrCreateEntityAsync`.
+`DcbProjector.InitializeFromHistoryAsync`
+makes one item per tag, so that replay matches any of them.
+`GetTagsForProjection` and `GetTagsForReaction` return the provider's
+strings. Call `UseTagFormat` on the projector or reactor with the same
+format.
 
 Pass `ForEnrollment` on the bootstrap append as well as on the load.
 `GetTags` for `StudentRegistered` returns `student:{id}` only. A load
-of `student:{id}` and `section:{id}` still requires both on the stored
-event.
+whose only item names `student:{id}` and `section:{id}` still requires
+both on the stored event.
 
 Each event is written with its own tags:
 
@@ -174,14 +182,18 @@ Each event is written with its own tags:
   to `Emit` for that event, plus `GetTags` for that event. The load
   tags, tags on replayed events, and tags of other events in the same
   command are not added. Pass every tag the event is about to `Emit`,
-  including the tags a later load will ask for.
+  including the tags a later load will ask for. Each event the decision
+  emits should match at least one item of the decision query. The
+  repository sets the fence position to the last appended sequence. A
+  matching event that lands at or before that position does not fail
+  the append.
 - `AppendWithContextAsync` takes each event as a `TaggedEvent` and
   writes it with that event's tags, plus `GetTags` for that event.
 - `AggregateRepository.SaveAsync` writes each event with its own
   `[Tag]` values, `GetTags` for that event, and the aggregate tag.
 
 On the DCB path the provider is called with a null context. On the
-aggregate path the context is the aggregate. The fence stays the tags
+aggregate path the context is the aggregate. The fence stays the query
 you passed to `GetOrCreateEntityAsync`. Tags the provider adds do not
 change the load and do not change the fence.
 
@@ -232,12 +244,13 @@ services.Configure<EventSourcingOptions>(o => o.WarnOnUnknownTag = false);
 `UseSqlServer` copies `WarnOnUnknownTag = false` and
 `FormatAggregateFallbackTag = true` onto those options.
 
-The repository logs a warning when a load tag or a fence tag does not
-round-trip through the context format. Loads are `GetStateAsync`,
-`GetOrCreateEntityAsync`, and `GetLastSequencePositionAsync`
-(`QueryItem.ByTags`). The fence is `AppendCondition.FailIfMatches`,
-including the one `HandleCommandAsync` builds and any condition passed
-to `AppendWithContextAsync`. `DcbProjector.InitializeFromHistoryAsync`
+The repository logs a warning when a tag on the decision query, or a
+tag on a fence, does not round-trip through the context format. Loads
+are `GetStateAsync`, `GetOrCreateEntityAsync`, and
+`GetLastSequencePositionAsync`. The fence is
+`AppendCondition.FailIfMatches`, including the one `HandleCommandAsync`
+builds from `DecisionQuery` and any condition passed to
+`AppendWithContextAsync`. `DcbProjector.InitializeFromHistoryAsync`
 and `DcbReactor.ReactAsync` check their tags after `UseTagFormat`.
 
 The repository keeps one record per context. The key is the tag type,
@@ -288,13 +301,13 @@ on, that query logs once.
 A different `Guid` format. `student:{id:N}` and `student:{id}` are
 different tags.
 
-A load of `student:{id}` and `section:{id}` while the bootstrap event
-was stored with only `student:{id}`. One query item requires every tag.
-The event is in the log and absent from the decision.
+A load whose only item names `student:{id}` and `section:{id}` while
+the bootstrap event was stored with only `student:{id}`. That item
+requires both tags. The event is in the log and absent from the decision.
 
 A query built by calling `GetTags`. `GetTags` needs an event and runs
-at append. The load and the fence use the array passed to
-`GetOrCreateEntityAsync`. Build that array with the provider.
+at append. The load and the fence use the query passed to
+`GetOrCreateEntityAsync`. Build that query with the provider.
 
 A `Tenant:` prefix. Isolation sees a tenant prefix and skips
 `tenant:{id}`. A query for `tenant:{id}` does not match `Tenant:{id}`.

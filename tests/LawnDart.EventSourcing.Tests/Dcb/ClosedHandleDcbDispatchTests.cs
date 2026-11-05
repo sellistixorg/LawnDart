@@ -27,7 +27,7 @@ public class ClosedHandleDcbDispatchTests
     public async Task HandleCommandAsync_ClosedHandle_EmitsEvent()
     {
         var repository = CreateRepository();
-        var entity = await repository.CreateEntityAsync<ClosedHandleDcbEntity>(["sku:1"]);
+        var entity = await repository.CreateEntityAsync<ClosedHandleDcbEntity>(Query.FromItems(QueryItem.ByTags(["sku:1"])));
 
         await repository.HandleCommandAsync(entity, new ClosedDcbCommand { Value = "one" });
 
@@ -40,7 +40,7 @@ public class ClosedHandleDcbDispatchTests
     public async Task HandleCommandAsync_ClosedHandle_UnknownCommand_Throws()
     {
         var repository = CreateRepository();
-        var entity = await repository.CreateEntityAsync<ClosedHandleDcbEntity>(["sku:1"]);
+        var entity = await repository.CreateEntityAsync<ClosedHandleDcbEntity>(Query.FromItems(QueryItem.ByTags(["sku:1"])));
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             repository.HandleCommandAsync(entity, new UnknownDcbCommand()));
@@ -52,7 +52,7 @@ public class ClosedHandleDcbDispatchTests
     public async Task HandleCommandAsync_GenericOverride_StillWins()
     {
         var repository = CreateRepository();
-        var entity = await repository.CreateEntityAsync<GenericOverrideDcbEntity>(["sku:1"]);
+        var entity = await repository.CreateEntityAsync<GenericOverrideDcbEntity>(Query.FromItems(QueryItem.ByTags(["sku:1"])));
 
         await repository.HandleCommandAsync(entity, new ClosedDcbCommand { Value = "one" });
 

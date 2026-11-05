@@ -94,6 +94,29 @@ public sealed class PostgresDcbEntityTagContractTests : DcbEntityTagContractTest
 
 [Collection(InMemoryContractCollection.Name)]
 [Trait("Category", "Contract")]
+public sealed class InMemoryDcbDecisionQueryContractTests : DcbDecisionQueryContractTests
+{
+    public InMemoryDcbDecisionQueryContractTests(InMemoryContractFixture fixture) : base(fixture.Backend) { }
+}
+
+[Collection("SqlServerContract")]
+[Trait("Category", "Integration")]
+[Trait("Category", "Contract")]
+public sealed class SqlServerDcbDecisionQueryContractTests : DcbDecisionQueryContractTests
+{
+    public SqlServerDcbDecisionQueryContractTests(SqlServerContractFixture fixture) : base(fixture.Backend) { }
+}
+
+[Collection("PostgresContract")]
+[Trait("Category", "Integration")]
+[Trait("Category", "Contract")]
+public sealed class PostgresDcbDecisionQueryContractTests : DcbDecisionQueryContractTests
+{
+    public PostgresDcbDecisionQueryContractTests(PostgresContractFixture fixture) : base(fixture.Backend) { }
+}
+
+[Collection(InMemoryContractCollection.Name)]
+[Trait("Category", "Contract")]
 public sealed class InMemoryAggregateEventTagContractTests : AggregateEventTagContractTests
 {
     public InMemoryAggregateEventTagContractTests(InMemoryContractFixture fixture) : base(fixture.Backend) { }

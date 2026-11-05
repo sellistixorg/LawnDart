@@ -16,6 +16,7 @@ LawnDart API, so a store outside this repository runs it the same way.
 | `TagContractTests` | The aggregate fallback tag format and the unknown tag warning |
 | `DcbContractTests` | Dynamic Consistency Boundary appends with an append condition |
 | `DcbEntityTagContractTests` | Dynamic Consistency Boundary entities write each event with its own tags |
+| `DcbDecisionQueryContractTests` | A decision query loads and fences with OR across items. An event that matches two items is applied once. Two repository races overlap on one item |
 | `DcbAppendRaceContractTests` | Conditional appends that start at the same moment: exactly one may win |
 | `AggregateEventTagContractTests` | Aggregate saves write each event with its own tags |
 | `RepositoryTenantContractTests` | Tenant tags and tenant checks through the repositories |

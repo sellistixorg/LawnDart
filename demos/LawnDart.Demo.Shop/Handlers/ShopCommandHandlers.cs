@@ -9,6 +9,7 @@ using LawnDart.Demo.Shop.Domain.Product;
 using LawnDart.Demo.Shop.Domain.Product.Commands;
 using LawnDart.Demo.Shop.Infrastructure;
 using LawnDart.Demo.Shop.Inventory;
+using LawnDart.EventStore;
 using LawnDart.Messaging;
 using LawnDart.Metadata;
 namespace LawnDart.Demo.Shop.Handlers;
@@ -58,7 +59,8 @@ public sealed class CreateProductCommandHandler : ICommandHandler<CreateProductC
         // Reserve the SKU via DCB so two creates of the same seller SKU cannot both commit.
         //    Two concurrent requests for the same seller+SKU will race here; only one wins.
         var skuTags  = SkuRegistryEntity.GetSkuTags(tenantId, command.Sku);
-        var skuEntity = await _dcb.GetOrCreateEntityAsync<SkuRegistryEntity>(skuTags, cancellationToken);
+        var skuEntity = await _dcb.GetOrCreateEntityAsync<SkuRegistryEntity>(
+            Query.FromItems(QueryItem.ByTags(skuTags)), cancellationToken);
         await _dcb.HandleCommandAsync<SkuRegistryEntity, ReserveSkuCommand>(
             skuEntity,
             new ReserveSkuCommand(Guid.NewGuid(), command.Sku, command.ProductId, tenantId),
@@ -161,7 +163,8 @@ public sealed class PlaceOrderCommandHandler : ICommandHandler<PlaceOrderCommand
 
         // Load with the product tag so the DCB query finds product and stock events.
         var tags = InventoryEntity.GetProductTags(command.ProductId);
-        var entity = await _dcb.GetOrCreateEntityAsync<InventoryEntity>(tags, cancellationToken)
+        var entity = await _dcb.GetOrCreateEntityAsync<InventoryEntity>(
+            Query.FromItems(QueryItem.ByTags(tags)), cancellationToken)
             .ConfigureAwait(false);
         await _dcb.HandleCommandAsync<InventoryEntity, PlaceOrderCommand>(entity, command, meta, cancellationToken)
             .ConfigureAwait(false);

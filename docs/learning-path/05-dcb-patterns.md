@@ -46,21 +46,24 @@ Those prefixes are lowercase `student:`, `section:`, and `course:`.
 Build the load and the `Emit` arguments with the context `ITagFormat`.
 See [TAGGING.md](../TAGGING.md).
 
-The repository loads events for that exact tag set, rebuilds the entity,
-runs the command, and appends with `FailIfMatches` on the same strings,
-after the last seen sequence.
+The repository reads the query, rebuilds the entity, runs the command,
+and appends with `FailIfMatches` on that query, after the last sequence
+the entity has seen. Academy passes one item, so the item requires both
+tags. A decision with more than one item is on
+[DCB patterns](../DCB_PATTERNS.md).
 Excerpted from `demos/LawnDart.Demo.Academy/Showcases/ShowcaseB_DcbInProcess.cs`
 (seed and projector lines omitted):
 
 ```csharp
-var entity = await _dcbRepository.GetOrCreateEntityAsync<EnrollmentEntity>(enrollmentTags);
+var entity = await _dcbRepository.GetOrCreateEntityAsync<EnrollmentEntity>(
+    Query.FromItems(QueryItem.ByTags(enrollmentTags)));
 await _dcbRepository.HandleCommandAsync<EnrollmentEntity, EnrollStudentCommand>(
     entity,
     new EnrollStudentCommand(Guid.NewGuid(), studentId, courseId));
 ```
 
-Bootstrap events must carry that same tag set, character for character,
-or they will not appear in state. Same InMemory host as
+Bootstrap events must carry every tag that one item requires, character
+for character, or they will not appear in state. Same in-memory host as
 [step 2](02-first-aggregate.md).
 
 Academy Showcase B appends `SeatReserved` and `StudentEnrolled` in one
