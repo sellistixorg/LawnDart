@@ -10,9 +10,26 @@ student and section). Use an aggregate when one stream owns the rule.
 
 Academy `EnrollmentEntity` is the runnable host. Its decision is one
 item, so that item requires both the student tag and the section tag.
-A borrow that must also see `BookAdded` (tagged with the book only) and
-the member's other loans uses two items: the book tag, and the types
-`book-borrowed` and `book-returned` with the member tag.
+
+The Library borrow decision is `BookLoan.ForLoan`. Add book is
+`BookLoan.ForBook`. Source: `samples/Library.Dcb.Domain/BookLoan.cs`.
+
+```csharp
+public static Query ForBook(Guid bookId) =>
+    Query.FromItems(QueryItem.ByTags($"book:{bookId}"));
+
+public static Query ForLoan(Guid bookId, Guid memberId) => Query.FromItems(
+    QueryItem.ByTags($"book:{bookId}"),
+    QueryItem.ByTypeAndTags(
+        ["book-borrowed", "book-returned"],
+        [$"member:{memberId}"]));
+```
+
+`AddBookHandler` loads `ForBook`. `BorrowBookHandler` and
+`ReturnBookHandler` load `ForLoan`. `BookAdded` is stored with the book
+tag only. `BookBorrowed` and `BookReturned` are stored with the book
+tag and the member tag. Each of those events matches at least one item
+of the query that wrote it.
 
 ## Shape
 

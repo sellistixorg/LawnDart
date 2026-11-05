@@ -13,6 +13,7 @@ changes to the public API.
 ### Changed
 
 - **Breaking:** A Dynamic Consistency Boundary decision takes a query: one or more items, OR across items, tags AND and event types OR inside an item. `GetStateAsync`, `GetStateAtAsync`, `GetLastSequencePositionAsync`, `CreateEntityAsync`, and `GetOrCreateEntityAsync` take that `Query`. The same query loads the entity and guards the append. `DcbEntity.DecisionQuery` holds it. `ConsistencyTags` and `DcbSnapshotId.FromLoadTags` are removed. Each new event is still stored with only its own tags. `DcbSpec.For` takes the query. The snapshot key is the hash of the query. A query with no items, an empty item, or a partition filter is rejected. Each event a decision emits should match at least one item of its query.
+- The Library sample borrow loads `BookLoan.ForLoan`: the book tag, or `book-borrowed` and `book-returned` with the member tag. Add book loads `BookLoan.ForBook`. `BookAdded` is stored with the book tag only, so a borrow sees that book and the member's loans of other books.
 
 ## [0.7.0-alpha.4] - 2026-11-04
 
