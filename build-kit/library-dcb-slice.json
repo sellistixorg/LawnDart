@@ -16,7 +16,21 @@
     "kind": "dcb",
     "state": "BookLoanState",
     "stateFields": ["BookId", "Exists", "OnLoan", "BorrowedBy", "BorrowedByMemberId", "MemberActiveLoans"],
-    "tags": ["book:{bookId}", "member:{memberId}"],
+    "queries": [
+      {
+        "name": "ForBook",
+        "items": [
+          { "tags": ["book:{bookId}"] }
+        ]
+      },
+      {
+        "name": "ForLoan",
+        "items": [
+          { "tags": ["book:{bookId}"] },
+          { "types": ["book-borrowed", "book-returned"], "tags": ["member:{memberId}"] }
+        ]
+      }
+    ],
     "rules": ["book exists", "book not on loan", "member under 3 active loans"]
   },
   "gwt": [
@@ -41,6 +55,18 @@
     {
       "name": "cannot_borrow_when_member_at_loan_limit",
       "given": ["BookAdded", "BookBorrowed x3 other books"],
+      "when": "BorrowBook",
+      "then": ["throws DomainException"]
+    },
+    {
+      "name": "add_then_borrow_through_handlers",
+      "given": ["AddBook"],
+      "when": "BorrowBook",
+      "then": ["BookBorrowed", "Exists"]
+    },
+    {
+      "name": "borrow_hits_loan_limit_across_books",
+      "given": ["AddBook x4", "BorrowBook x3 other books"],
       "when": "BorrowBook",
       "then": ["throws DomainException"]
     }

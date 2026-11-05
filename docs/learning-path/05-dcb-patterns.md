@@ -49,7 +49,7 @@ See [TAGGING.md](../TAGGING.md).
 The repository reads the query, rebuilds the entity, runs the command,
 and appends with `FailIfMatches` on that query, after the last sequence
 the entity has seen. Academy passes one item, so the item requires both
-tags. A decision with more than one item is on
+tags. The Library borrow is `BookLoan.ForLoan`. See
 [DCB patterns](../DCB_PATTERNS.md).
 Excerpted from `demos/LawnDart.Demo.Academy/Showcases/ShowcaseB_DcbInProcess.cs`
 (seed and projector lines omitted):

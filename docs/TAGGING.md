@@ -51,11 +51,13 @@ spelling is absent from the decision, and it does not trip the fence.
 Two decisions can both commit.
 
 An event stored with one tag is absent from a decision whose only item
-requires two tags. A borrow that must see `BookAdded` (tagged
-`book:{bookId}` only) and this member's loans of other books uses two
-items. The first item is the book tag. The second item names
-`book-borrowed` and `book-returned` with the member tag. An event is in
-the decision when it fits either item.
+requires two tags. The Library borrow loads `BookLoan.ForLoan`
+(`samples/Library.Dcb.Domain/BookLoan.cs`). That query has two items.
+The first item is the book tag, so `BookAdded` (tagged `book:{bookId}`
+only) is in the decision. The second item names `book-borrowed` and
+`book-returned` with the member tag, so this member's loans of other
+books are in the decision too. An event is in the decision when it fits
+either item.
 
 A tag repeated on one event is written once. The first copy stays, in
 the order given, on every store. The same exact comparison decides what

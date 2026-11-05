@@ -1,5 +1,6 @@
 using LawnDart;
 using LawnDart.Dcb;
+using LawnDart.EventStore;
 
 namespace Library.Dcb.Domain;
 
@@ -7,8 +8,14 @@ public sealed class BookLoan : DcbEntity<BookLoanState>
 {
     public const int MaxLoansPerMember = 3;
 
-    public static string[] GetTags(Guid bookId, Guid memberId)
-        => [$"book:{bookId}", $"member:{memberId}"];
+    public static Query ForBook(Guid bookId) =>
+        Query.FromItems(QueryItem.ByTags($"book:{bookId}"));
+
+    public static Query ForLoan(Guid bookId, Guid memberId) => Query.FromItems(
+        QueryItem.ByTags($"book:{bookId}"),
+        QueryItem.ByTypeAndTags(
+            ["book-borrowed", "book-returned"],
+            [$"member:{memberId}"]));
 
     public void Handle(AddBookCommand cmd)
     {
