@@ -39,7 +39,8 @@ await AggregateSpec
 
 ## DCB spec
 
-`DcbSpec` uses the same Given / When / Then verbs with tags. Excerpted from
+`DcbSpec` uses the same Given / When / Then verbs. `For` takes the
+decision query. `Given` takes the tags of that one event. Excerpted from
 `samples/Library.Dcb.Domain.Tests/LibraryBookLoanTests.cs`
 (`cannot_borrow_when_already_on_loan`; method signature omitted):
 
@@ -47,25 +48,26 @@ await AggregateSpec
 await using var ctx = BddTestContext.CreateInMemory(typeof(BookAdded), typeof(BookBorrowed), typeof(BookReturned));
 var bookId = Guid.NewGuid();
 var memberId = Guid.NewGuid();
-var tags = BookLoan.GetTags(bookId, memberId);
+var borrowerId = Guid.NewGuid();
 
 await DcbSpec
     .For<BookLoan, BorrowBookCommand>(
         ctx,
-        tags,
+        BookLoan.ForLoan(bookId, memberId),
         new BorrowBookCommand(Guid.NewGuid(), bookId, memberId, "Someone Else"))
-    .Given(new BookAdded(Guid.NewGuid(), DateTime.UtcNow, bookId, "Pragmatic Programmer", "978-0135957059"), tags)
-    .Given(new BookBorrowed(Guid.NewGuid(), DateTime.UtcNow, bookId, Guid.NewGuid(), "Jane Doe"), tags)
+    .Given(new BookAdded(Guid.NewGuid(), DateTime.UtcNow, bookId, "Pragmatic Programmer", "978-0135957059"), $"book:{bookId}")
+    .Given(new BookBorrowed(Guid.NewGuid(), DateTime.UtcNow, bookId, borrowerId, "Jane Doe"), $"book:{bookId}", $"member:{borrowerId}")
     .ThenThrows<DomainException>()
     .AndAssert(result =>
         Assert.Equal("Book is already on loan.", result.Exception!.Message))
     .RunAsync();
 ```
 
-`BookLoan.GetTags` returns `book:{id}` and `member:{id}` (lowercase,
-`Guid` format `D`). `Emit` in `BookLoan` writes those same prefixes.
-Build those strings with the context `ITagFormat`.
-See [TAGGING.md](../TAGGING.md).
+`BookLoan.ForLoan` is the decision query. `Given` stores `BookAdded`
+with `book:{bookId}` only. The earlier loan carries `book:{bookId}` and
+that borrower's `member:{id}`. Those prefixes are lowercase. A `Guid`
+uses format `D`. `Emit` in `BookLoan` writes the same strings. Build
+them with the context `ITagFormat`. See [TAGGING.md](../TAGGING.md).
 
 Input: `build-kit/library-dcb-slice.json`.
 Framework proofs also live in

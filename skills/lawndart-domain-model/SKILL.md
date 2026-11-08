@@ -106,8 +106,14 @@ public sealed class BookLoan : DcbEntity<BookLoanState>
 {
     public const int MaxLoansPerMember = 3;
 
-    public static string[] GetTags(Guid bookId, Guid memberId)
-        => [$"book:{bookId}", $"member:{memberId}"];
+    public static Query ForBook(Guid bookId) =>
+        Query.FromItems(QueryItem.ByTags($"book:{bookId}"));
+
+    public static Query ForLoan(Guid bookId, Guid memberId) => Query.FromItems(
+        QueryItem.ByTags($"book:{bookId}"),
+        QueryItem.ByTypeAndTags(
+            ["book-borrowed", "book-returned"],
+            [$"member:{memberId}"]));
 
     public void Handle(BorrowBookCommand cmd)
     {
@@ -132,7 +138,7 @@ public sealed class BorrowBookHandler : ICommandHandler<BorrowBookCommand>
     public async Task HandleAsync(BorrowBookCommand command, CancellationToken cancellationToken = default)
     {
         var loan = await _loans.GetOrCreateEntityAsync<BookLoan>(
-            BookLoan.GetTags(command.BookId, command.MemberId), cancellationToken).ConfigureAwait(false);
+            BookLoan.ForLoan(command.BookId, command.MemberId), cancellationToken).ConfigureAwait(false);
         await _loans.HandleCommandAsync(loan, command, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 }
