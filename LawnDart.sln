@@ -111,6 +111,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LawnDart.Postgres.Benchmark
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LawnDart.EventSourcing.Testing", "src\LawnDart.EventSourcing.Testing\LawnDart.EventSourcing.Testing.csproj", "{EC494683-0341-47C6-80D9-C0958E2A7AAD}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LawnDart.Demo.Academy.Tests", "demos\LawnDart.Demo.Academy.Tests\LawnDart.Demo.Academy.Tests.csproj", "{A529FFC3-AE96-4B04-B3D8-0EB8CBF69485}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -709,6 +711,18 @@ Global
 		{EC494683-0341-47C6-80D9-C0958E2A7AAD}.Release|x64.Build.0 = Release|Any CPU
 		{EC494683-0341-47C6-80D9-C0958E2A7AAD}.Release|x86.ActiveCfg = Release|Any CPU
 		{EC494683-0341-47C6-80D9-C0958E2A7AAD}.Release|x86.Build.0 = Release|Any CPU
+		{A529FFC3-AE96-4B04-B3D8-0EB8CBF69485}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A529FFC3-AE96-4B04-B3D8-0EB8CBF69485}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A529FFC3-AE96-4B04-B3D8-0EB8CBF69485}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{A529FFC3-AE96-4B04-B3D8-0EB8CBF69485}.Debug|x64.Build.0 = Debug|Any CPU
+		{A529FFC3-AE96-4B04-B3D8-0EB8CBF69485}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{A529FFC3-AE96-4B04-B3D8-0EB8CBF69485}.Debug|x86.Build.0 = Debug|Any CPU
+		{A529FFC3-AE96-4B04-B3D8-0EB8CBF69485}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A529FFC3-AE96-4B04-B3D8-0EB8CBF69485}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A529FFC3-AE96-4B04-B3D8-0EB8CBF69485}.Release|x64.ActiveCfg = Release|Any CPU
+		{A529FFC3-AE96-4B04-B3D8-0EB8CBF69485}.Release|x64.Build.0 = Release|Any CPU
+		{A529FFC3-AE96-4B04-B3D8-0EB8CBF69485}.Release|x86.ActiveCfg = Release|Any CPU
+		{A529FFC3-AE96-4B04-B3D8-0EB8CBF69485}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -763,5 +777,6 @@ Global
 		{C6C72C58-D282-4BB1-A794-6BE234CA3071} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{85F0B762-7B2A-435A-912C-1AEF6674BDFE} = {66320409-64EC-F7C5-3DEF-65E7510DAAD1}
 		{EC494683-0341-47C6-80D9-C0958E2A7AAD} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{A529FFC3-AE96-4B04-B3D8-0EB8CBF69485} = {FA8A28C8-4B59-8028-2ACF-626D05B08DB7}
 	EndGlobalSection
 EndGlobal

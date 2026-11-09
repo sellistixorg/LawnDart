@@ -8,8 +8,9 @@ using LawnDart.Demo.Academy.Domain.CourseSection.Commands;
 namespace LawnDart.Demo.Academy.Enrollment;
 
 /// <summary>
-/// State tracked by the DCB enrollment entity.
-/// Rebuilt from events tagged with both student:{id} and section:{id}.
+/// State for one student's enrollment in one section.
+/// Seat counts come from every student's seat events for the section.
+/// Enrolled, confirmation, and cancelled flags come from this student's events.
 /// </summary>
 public class EnrollmentState : IState
 {

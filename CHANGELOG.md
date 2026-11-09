@@ -18,6 +18,7 @@ changes to the public API.
 ### Fixed
 
 - The tagging guide, the concepts page, the stream ID page, and the domain-model and host-setup skills load a Dynamic Consistency Boundary entity with a decision query. The Academy example is `EnrollmentDecision`: the section tag, or `StudentRegistered`, `StudentEnrolled`, `RegistrationConfirmationSent`, and `RegistrationCancelled` with the student tag. `StudentRegistered` is stored with the student tag. `SectionCreated` is stored with the section and course tags.
+- The Academy demo enrollment loads `EnrollmentEntity.EnrollmentDecision`: the section tag, or `StudentRegistered`, `StudentEnrolled`, `RegistrationConfirmationSent`, and `RegistrationCancelled` with the student tag. Another student's seat reservation is visible, so one remaining seat cannot be taken twice. `StudentRegistered` is stored with the student tag. `SectionCreated` is stored with the section and course tags.
 
 ## [0.7.0-alpha.4] - 2026-11-04
 

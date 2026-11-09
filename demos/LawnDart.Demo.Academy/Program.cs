@@ -315,7 +315,7 @@ internal class Program
         SafeClear();
         PrintShowcaseHeader("Showcase B: DCB In-Process (no broker)");
         Console.WriteLine("""
-  Architecture: Tag-based DCB — events tagged with student:{id} + section:{id}
+  Architecture: Tag-based DCB. The decision loads the section and this student's registration events.
   Consistency:  Strong — SeatReserved + StudentEnrolled appended atomically
   Broker:       None required
   Hops:         3 round-trips (vs 5 in Showcase A)
