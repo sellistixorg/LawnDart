@@ -16,27 +16,13 @@ using LawnDart.EventStore;
 namespace LawnDart.Demo.Academy.Showcases;
 
 /// <summary>
-/// Showcase B: DCB In-Process (same workflow, no broker).
-///
-/// Workflow:
-///   Step 1: RegisterStudent          → StudentRegistered
-///   Step 2: CreateCourse             → CourseCreated
-///   Step 3: CreateSection (5 seats)  → SectionCreated
-///   Step 4: EnrollmentEntity.HandleCommandAsync(EnrollStudentCommand)
-///             → reads: student:{id} + section:{id}  (1 read trip)
-///             → atomic append: SeatReserved + StudentEnrolled  (1 write trip)
-///             → AppendCondition: fails if any seat was taken since we read
-///   Step 5: EnrollmentEntity.HandleCommandAsync(SendConfirmationCommand)
-///             → RegistrationConfirmationSent
-///
-/// Total round-trips: 3 (setup) + 2 (DCB load + DCB append)
-/// Consistency: Strong — seat reservation and enrollment are atomic.
-/// No broker needed — no inbox, no idempotency key management.
-///
-/// Key DCB insight: the EnrollmentEntity loads a consistent snapshot of ALL
-/// events tagged student:{id} + section:{id}.  This means bootstrap events
-/// (StudentRegistered, SectionCreated) MUST carry BOTH tags so the entity
-/// state is populated correctly before the enrollment guard runs.
+/// Showcase B: DCB in one process. No broker.
+/// Register the student, create the course, then seed the section and the
+/// student with their own tags. Enrollment loads
+/// <see cref="EnrollmentEntity.EnrollmentDecision"/>, then appends
+/// SeatReserved and StudentEnrolled in one write. The same query is the
+/// append condition, so a seat taken after the read fails the append.
+/// Confirmation uses that query again.
 /// </summary>
 public class ShowcaseB_DcbInProcess
 {
@@ -81,43 +67,37 @@ public class ShowcaseB_DcbInProcess
             new CreateCourseCommand(Guid.NewGuid(), courseId, "Advanced Event Sourcing", "Master ES, CQRS, and DCB", 299m));
         result.Steps.Add($"[Step 2] CourseCreated: {course.State.Title} @ £{course.State.Price:F2}");
 
-        // ── Step 3 & seed: Write bootstrap events with BOTH tags ──────────────
-        // The DCB entity queries by [student:{id}, section:{id}].
-        // QueryItem.ByTags returns events that carry ALL of the given tags.
-        // Bootstrap events (SectionCreated, StudentRegistered) must therefore carry
-        // both tags so they appear in the entity's state when it is loaded.
-        var enrollmentTags = EnrollmentEntity.GetTags(studentId, sectionId);
+        // Each seeded event carries only its own tags. The section item of the
+        // decision finds SectionCreated. The student item finds StudentRegistered.
+        var decision = EnrollmentEntity.EnrollmentDecision(studentId, sectionId);
         var meta = new LawnDart.Metadata.EventMetadata { Timestamp = DateTime.UtcNow };
 
         await _eventStore.AppendAsync(
             $"dcb-bootstrap:{sectionId}",
-            [new TaggedEvent(new SectionCreated(Guid.NewGuid(), DateTime.UtcNow, sectionId, courseId, "Morning Cohort", 5), [.. enrollmentTags, $"course:{courseId}"])],
+            [new TaggedEvent(
+                new SectionCreated(Guid.NewGuid(), DateTime.UtcNow, sectionId, courseId, "Morning Cohort", 5),
+                [$"section:{sectionId}", $"course:{courseId}"])],
             expectedVersion: null,
             metadata: meta);
 
         await _eventStore.AppendAsync(
             $"dcb-bootstrap:{studentId}",
-            [new TaggedEvent(new StudentRegistered(Guid.NewGuid(), DateTime.UtcNow, studentId, studentName, studentEmail), enrollmentTags)],
+            [new TaggedEvent(
+                new StudentRegistered(Guid.NewGuid(), DateTime.UtcNow, studentId, studentName, studentEmail),
+                [$"student:{studentId}"])],
             expectedVersion: null,
             metadata: meta);
 
         _sectionProjector.Apply(new SectionCreated(Guid.NewGuid(), DateTime.UtcNow, sectionId, courseId, "Morning Cohort", 5));
-        result.Steps.Add("[Step 3] SectionCreated + StudentRegistered seeded with combined tags (student+section)");
+        result.Steps.Add("[Step 3] SectionCreated seeded with section and course tags. StudentRegistered seeded with the student tag.");
 
-        // ── Step 4: DCB atomic enrollment ─────────────────────────────────────
-        // Load entity: reads ALL events tagged with student:{id} AND section:{id} in one query.
-        // Now includes:
-        //   - SectionCreated  → State.SeatsAvailable = 5
-        //   - StudentRegistered → State.StudentIsActive = true
-        var entity = await _dcbRepository.GetOrCreateEntityAsync<EnrollmentEntity>(
-            Query.FromItems(QueryItem.ByTags(enrollmentTags)));
+        // The section item loads every seat event. The student item loads this student's registration.
+        var entity = await _dcbRepository.GetOrCreateEntityAsync<EnrollmentEntity>(decision);
 
-        result.Steps.Add($"[Step 4a] DCB read: {enrollmentTags.Length} tags, " +
-                         $"{entity.State.SeatsAvailable} seats available, " +
+        result.Steps.Add($"[Step 4a] DCB read: {entity.State.SeatsAvailable} seats available, " +
                          $"student active: {entity.State.StudentIsActive}");
 
-        // Atomic write: SeatReserved + StudentEnrolled in one AppendAsync call.
-        // AppendCondition: fails if any event matching both tags appeared since we read.
+        // SeatReserved and StudentEnrolled share one append. The condition is the decision query.
         await _dcbRepository.HandleCommandAsync<EnrollmentEntity, EnrollStudentCommand>(
             entity,
             new EnrollStudentCommand(Guid.NewGuid(), studentId, courseId));
@@ -126,12 +106,10 @@ public class ShowcaseB_DcbInProcess
         _transcriptProjector.Apply(new StudentEnrolled(Guid.NewGuid(), DateTime.UtcNow, studentId, courseId));
 
         result.Steps.Add("[Step 4b] DCB atomic append: SeatReserved + StudentEnrolled in 1 round-trip");
-        result.Steps.Add($"          AppendCondition guards: student:{studentId} ∩ section:{sectionId}");
-        result.Steps.Add($"          Seats remaining: {entity.State.SeatsAvailable - 1}");
+        result.Steps.Add("          Append condition uses the enrollment decision");
+        result.Steps.Add($"          Seats remaining: {entity.State.SeatsAvailable}");
 
-        // ── Step 5: Send confirmation (same boundary) ─────────────────────────
-        entity = await _dcbRepository.GetOrCreateEntityAsync<EnrollmentEntity>(
-            Query.FromItems(QueryItem.ByTags(enrollmentTags)));
+        entity = await _dcbRepository.GetOrCreateEntityAsync<EnrollmentEntity>(decision);
         await _dcbRepository.HandleCommandAsync<EnrollmentEntity, SendConfirmationCommand>(
             entity,
             new SendConfirmationCommand(Guid.NewGuid(), studentId, courseId, studentEmail));

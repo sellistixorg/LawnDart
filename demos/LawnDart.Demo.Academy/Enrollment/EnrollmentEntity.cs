@@ -4,19 +4,15 @@ using LawnDart.Demo.Academy.Domain.Student.Commands;
 using LawnDart.Demo.Academy.Domain.Student.Events;
 using LawnDart.Demo.Academy.Domain.CourseSection.Commands;
 using LawnDart.Demo.Academy.Domain.CourseSection.Events;
+using LawnDart.EventStore;
 
 namespace LawnDart.Demo.Academy.Enrollment;
 
 /// <summary>
-/// DCB enrollment entity — spans Student, Course, and CourseSection streams.
-/// 
-/// The key insight vs. traditional aggregates: this entity reads a consistent snapshot
-/// of events from multiple logical "entities" in a single query (tagged with
-/// student:{id}, section:{id}), applies AppendCondition to guard seat capacity,
-/// and appends all resulting events atomically in one round-trip.
-/// 
-/// Contrast with ShowcaseA where seat reservation is a separate command
-/// that requires its own round-trip and a broker between steps.
+/// Enrollment decision for one student and one section.
+/// The decision query loads the section and this student's registration events.
+/// Seat counts come from every student's seat events. The student's own flags
+/// come from that student's events. The append uses the same query.
 /// </summary>
 public class EnrollmentEntity : DcbEntity<EnrollmentState>
 {
@@ -24,11 +20,21 @@ public class EnrollmentEntity : DcbEntity<EnrollmentState>
     public EnrollmentEntity() { }
 
     /// <summary>
-    /// Tags that define the consistency boundary: events for this student AND this section.
-    /// Loading these gives us current enrollment + current seat count atomically.
+    /// Decision for one student in one section.
+    /// The first item is the section tag, so every seat event for that section is included.
+    /// The second item is this student's registration and enrollment events.
     /// </summary>
-    public static string[] GetTags(Guid studentId, Guid sectionId)
-        => [$"student:{studentId}", $"section:{sectionId}"];
+    public static Query EnrollmentDecision(Guid studentId, Guid sectionId) =>
+        Query.FromItems(
+            QueryItem.ByTags($"section:{sectionId}"),
+            QueryItem.ByTypeAndTags(
+                [
+                    "StudentRegistered",
+                    "StudentEnrolled",
+                    "RegistrationConfirmationSent",
+                    "RegistrationCancelled"
+                ],
+                [$"student:{studentId}"]));
 
     // The student/section IDs are read back from the entity state after loading.
     private Guid _studentId => State.StudentId == Guid.Empty ? Guid.Empty : State.StudentId;
@@ -102,14 +108,16 @@ public class EnrollmentEntity : DcbEntity<EnrollmentState>
                 break;
 
             case SeatReserved e:
+                // Every student's seat event changes the count. Only this student's event changes the flag.
                 State.SeatsAvailable = Math.Max(0, State.SeatsAvailable - 1);
                 if (e.StudentId == State.StudentId)
                     State.SeatReserved = true;
                 break;
 
-            case SeatReleased e when e.StudentId == State.StudentId:
+            case SeatReleased e:
                 State.SeatsAvailable++;
-                State.SeatReserved = false;
+                if (e.StudentId == State.StudentId)
+                    State.SeatReserved = false;
                 break;
 
             case StudentEnrolled e when e.StudentId == State.StudentId:
