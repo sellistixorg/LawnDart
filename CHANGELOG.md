@@ -15,6 +15,10 @@ changes to the public API.
 - **Breaking:** A Dynamic Consistency Boundary decision takes a query: one or more items, OR across items, tags AND and event types OR inside an item. `GetStateAsync`, `GetStateAtAsync`, `GetLastSequencePositionAsync`, `CreateEntityAsync`, and `GetOrCreateEntityAsync` take that `Query`. The same query loads the entity and guards the append. `DcbEntity.DecisionQuery` holds it. `ConsistencyTags` and `DcbSnapshotId.FromLoadTags` are removed. Each new event is still stored with only its own tags. `DcbSpec.For` takes the query. The snapshot key is the hash of the query. A query with no items, an empty item, or a partition filter is rejected. Each event a decision emits should match at least one item of its query.
 - The Library sample borrow loads `BookLoan.ForLoan`: the book tag, or `book-borrowed` and `book-returned` with the member tag. Add book loads `BookLoan.ForBook`. `BookAdded` is stored with the book tag only, so a borrow sees that book and the member's loans of other books.
 
+### Fixed
+
+- The tagging guide, the concepts page, the stream ID page, and the domain-model and host-setup skills load a Dynamic Consistency Boundary entity with a decision query. The Academy example is `EnrollmentDecision`: the section tag, or `StudentRegistered`, `StudentEnrolled`, `RegistrationConfirmationSent`, and `RegistrationCancelled` with the student tag. `StudentRegistered` is stored with the student tag. `SectionCreated` is stored with the section and course tags.
+
 ## [0.7.0-alpha.4] - 2026-11-04
 
 This release writes each event with only its own tags on every store, and both `IEventStore` appends now take each event with its own tags. On SQL Server, when appends with an append condition conflict, exactly one gets through. The event store contract suite ships as the new `LawnDart.EventSourcing.Testing` package. The build kit targets LawnDart 0.7.

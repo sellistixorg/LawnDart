@@ -95,15 +95,24 @@ also accepts an instance or a factory.
 `ITagProvider.GetTags(IEvent, object?)` still runs only on append. It
 needs an event, so it cannot build the load from an id. Put the domain
 helpers on the concrete provider. `GetTags` returns the same strings
-the decision passes to the load and to `Emit`.
+the decision puts in the query and passes to `Emit`.
 
 ```csharp
 public sealed class AcademyTagProvider : TagProvider
 {
     public AcademyTagProvider(ITagFormat format) : base(format) { }
 
-    public string[] ForEnrollment(Guid studentId, Guid sectionId)
-        => [Tag("student", studentId), Tag("section", sectionId)];
+    public Query EnrollmentDecision(Guid studentId, Guid sectionId) =>
+        Query.FromItems(
+            QueryItem.ByTags(Tag("section", sectionId)),
+            QueryItem.ByTypeAndTags(
+                [
+                    "StudentRegistered",
+                    "StudentEnrolled",
+                    "RegistrationConfirmationSent",
+                    "RegistrationCancelled"
+                ],
+                [Tag("student", studentId)]));
 
     public string Course(Guid courseId) => Tag("course", courseId);
 
@@ -112,7 +121,10 @@ public sealed class AcademyTagProvider : TagProvider
         StudentRegistered e => [Tag("student", e.StudentId)],
         SectionCreated e => [Tag("section", e.SectionId), Tag("course", e.CourseId)],
         SeatReserved e => [Tag("student", e.StudentId), Tag("section", e.SectionId)],
+        SeatReleased e => [Tag("student", e.StudentId), Tag("section", e.SectionId)],
         StudentEnrolled e => [Tag("student", e.StudentId), Tag("course", e.CourseId)],
+        RegistrationConfirmationSent e => [Tag("student", e.StudentId), Tag("course", e.CourseId)],
+        RegistrationCancelled e => [Tag("student", e.StudentId), Tag("course", e.CourseId)],
         _ => []
     };
 }
@@ -139,12 +151,16 @@ services.AddBoundedContext("academy")
         sp.GetRequiredKeyedService<ITagFormat>("academy")));
 ```
 
-Load with the provider's strings:
+Load the provider's decision query:
 
 ```csharp
-var tags = provider.ForEnrollment(studentId, sectionId);
-var entity = await dcb.GetOrCreateEntityAsync<EnrollmentEntity>(tags);
+var entity = await dcb.GetOrCreateEntityAsync<EnrollmentEntity>(
+    provider.EnrollmentDecision(studentId, sectionId));
 ```
+
+The first item is the section tag, so every `SeatReserved` and
+`SeatReleased` for that section is in the decision. The second item
+names this student's registration and enrollment events.
 
 `Emit` takes the same format. `SeatReserved` has no course id, and the
 DCB repository calls `GetTags` with a null context, so the course tag
@@ -173,10 +189,9 @@ makes one item per tag, so that replay matches any of them.
 strings. Call `UseTagFormat` on the projector or reactor with the same
 format.
 
-Pass `ForEnrollment` on the bootstrap append as well as on the load.
-`GetTags` for `StudentRegistered` returns `student:{id}` only. A load
-whose only item names `student:{id}` and `section:{id}` still requires
-both on the stored event.
+Each event is appended with only its own tags: `StudentRegistered`
+with the student tag, and `SectionCreated` with the section and course
+tags. The two-item query finds both.
 
 Each event is written with its own tags:
 

@@ -29,7 +29,7 @@ a command. Same host as reactions (step 6).
 **Task Processing (State → Command).** A poller emits commands from
 read-model conditions (timeouts, SLAs).
 
-**DCB.** When a rule spans identities, load by tags and append atomically.
+**DCB.** When a rule spans identities, load a decision query and append atomically.
 See [DCB_PATTERNS.md](../DCB_PATTERNS.md).
 
 ## Mental model

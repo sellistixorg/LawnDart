@@ -10,7 +10,7 @@ declare closed `Handle(TCommand)`. Persist with `HandleCommandAsync`.
 
 **Load:** aggregate `GetOrCreateAsync<T>(id)` when the stream is
 `{type}:{guid}` (or `{tenant}:{type}:{guid}`); `GetOrCreateAsync<T>(streamId)`
-otherwise. DCB `GetOrCreateEntityAsync<T>(tags)` then `Emit(event, tags)`.
+otherwise. DCB `GetOrCreateEntityAsync<T>(query)` then `Emit(event, tags)`.
 Do not implement `IProjector<TState>`.
 
 Stream IDs: `{tenant}:{type}:{id}`. Tags for DCB: `type:{id}` (Guids, not
