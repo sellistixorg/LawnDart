@@ -11,7 +11,7 @@ Use this skill first when wiring a new application on LawnDart packages.
 
 1. **App-facing dispatch** is `ICommandHandler<T>` (HTTP, jobs). Register with `WithCommandHandlers<TMarker>()`.
 2. **Aggregates / DCB** declare closed `Handle(TCommand)`. `HandleCommandAsync` is persistence + authorization. Do not write the obsolete entity `HandleAsync<TCommand>` switch.
-3. **Load:** aggregate `GetOrCreateAsync<T>(id)` when the stream is `{type}:{guid}` (or `{tenant}:{type}:{guid}`); `GetOrCreateAsync<T>(streamId)` otherwise. DCB `GetOrCreateEntityAsync<T>(tags)` then `Emit(event, tags)`.
+3. **Load:** aggregate `GetOrCreateAsync<T>(id)` when the stream is `{type}:{guid}` (or `{tenant}:{type}:{guid}`); `GetOrCreateAsync<T>(streamId)` otherwise. DCB `GetOrCreateEntityAsync<T>(query)` then `Emit(event, tags)`.
 4. **Projections:** `ProjectionBase<TView>` plus a scope attribute (`[SingleStreamProjection]`, `[GlobalProjection]`, `[DcbProjection]`, `[MultiStreamProjection]`). `[ProjectionEndpoint]` is optional GET mapping. Multi-stream handlers also implement `IMultiStreamEntityResolver`. Do not implement `IProjector<TState>`.
 5. **Stores:** `UseInMemory` / `UseSqlServer` on `AddBoundedContext(name)`.
 

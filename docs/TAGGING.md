@@ -95,7 +95,7 @@ also accepts an instance or a factory.
 `ITagProvider.GetTags(IEvent, object?)` still runs only on append. It
 needs an event, so it cannot build the load from an id. Put the domain
 helpers on the concrete provider. `GetTags` returns the same strings
-the decision passes to the load and to `Emit`.
+the decision puts in the query and passes to `Emit`.
 
 ```csharp
 public sealed class AcademyTagProvider : TagProvider
@@ -139,11 +139,12 @@ services.AddBoundedContext("academy")
         sp.GetRequiredKeyedService<ITagFormat>("academy")));
 ```
 
-Load with the provider's strings:
+Build the decision query from the provider's tags:
 
 ```csharp
 var tags = provider.ForEnrollment(studentId, sectionId);
-var entity = await dcb.GetOrCreateEntityAsync<EnrollmentEntity>(tags);
+var entity = await dcb.GetOrCreateEntityAsync<EnrollmentEntity>(
+    Query.FromItems(QueryItem.ByTags(tags)));
 ```
 
 `Emit` takes the same format. `SeatReserved` has no course id, and the
