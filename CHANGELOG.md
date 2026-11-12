@@ -10,6 +10,10 @@ changes to the public API.
 
 ## [Unreleased]
 
+## [0.7.0-alpha.5] - 2026-11-09
+
+This release loads a Dynamic Consistency Boundary decision with a query. `GetOrCreateEntityAsync` and `CreateEntityAsync` take that query, and the same query guards the append. The Library borrow loads the book and the member's loans. Docs show the Academy decision query, and Academy enrollment sees another student's seat, so one remaining seat cannot be taken twice. The build kit targets LawnDart 0.7.
+
 ### Changed
 
 - **Breaking:** A Dynamic Consistency Boundary decision takes a query: one or more items, OR across items, tags AND and event types OR inside an item. `GetStateAsync`, `GetStateAtAsync`, `GetLastSequencePositionAsync`, `CreateEntityAsync`, and `GetOrCreateEntityAsync` take that `Query`. The same query loads the entity and guards the append. `DcbEntity.DecisionQuery` holds it. `ConsistencyTags` and `DcbSnapshotId.FromLoadTags` are removed. Each new event is still stored with only its own tags. `DcbSpec.For` takes the query. The snapshot key is the hash of the query. A query with no items, an empty item, or a partition filter is rejected. Each event a decision emits should match at least one item of its query.
