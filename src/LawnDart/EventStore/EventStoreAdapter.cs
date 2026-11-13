@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using LawnDart.Metadata;
+using LawnDart.Publishing;
 
 namespace LawnDart.EventStore;
 
@@ -27,6 +28,7 @@ public sealed class EventStoreAdapter : IEventStore, IEventStoreSubscriptions
     private readonly EventSession _session;
     private readonly IEventLogSubscriptions? _logSubscriptions;
     private readonly int _subscriptionChannelCapacity;
+    private readonly PublishedEventMap? _publishedEvents;
 
     /// <param name="log">Log that does not know .NET types. Also used as <see cref="IStreamRegistry"/>.</param>
     /// <param name="session">Typed session that serializes on append and reads records back into objects.</param>
@@ -35,11 +37,16 @@ public sealed class EventStoreAdapter : IEventStore, IEventStoreSubscriptions
     /// <see cref="IEventLogSubscriptions"/>.
     /// </param>
     /// <param name="subscriptionChannelCapacity">Typed subscription channel capacity.</param>
+    /// <param name="publishedEvents">
+    /// The context's published events. <c>null</c> means no append carries an
+    /// <see cref="AppendEvent.Outbound"/>.
+    /// </param>
     public EventStoreAdapter(
         IEventLog log,
         EventSession session,
         IEventLogSubscriptions? logSubscriptions = null,
-        int subscriptionChannelCapacity = DefaultSubscriptionChannelCapacity)
+        int subscriptionChannelCapacity = DefaultSubscriptionChannelCapacity,
+        PublishedEventMap? publishedEvents = null)
     {
         _log = log ?? throw new ArgumentNullException(nameof(log));
         _session = session ?? throw new ArgumentNullException(nameof(session));
@@ -52,6 +59,7 @@ public sealed class EventStoreAdapter : IEventStore, IEventStoreSubscriptions
         }
 
         _subscriptionChannelCapacity = subscriptionChannelCapacity;
+        _publishedEvents = publishedEvents;
     }
 
     /// <inheritdoc />
@@ -161,13 +169,31 @@ public sealed class EventStoreAdapter : IEventStore, IEventStoreSubscriptions
         {
             if (tagged is null)
                 throw new ArgumentException("Events cannot contain null items", nameof(events));
-            envelopes.Add(_session.ToAppendEvent(tagged.Event, metadata, tagged.Tags));
+            var envelope = _session.ToAppendEvent(tagged.Event, metadata, tagged.Tags);
+            envelopes.Add(_publishedEvents is null ? envelope : AttachOutbound(envelope, tagged.Event, metadata));
         }
 
         if (envelopes.Count == 0)
             throw new ArgumentException("At least one event is required", nameof(events));
 
         return envelopes;
+    }
+
+    private AppendEvent AttachOutbound(AppendEvent envelope, IEvent @event, EventMetadata? metadata)
+    {
+        var context = new PublishContext(
+            @event.Id,
+            envelope.EventType,
+            envelope.Tags,
+            metadata?.TenantId,
+            metadata?.CorrelationId,
+            metadata?.CausationId,
+            @event.Timestamp);
+
+        if (!_publishedEvents!.TryTranslate(@event, context, out var notice))
+            return envelope;
+
+        return envelope.WithOutbound(_session.ToOutboundEvent(notice, context, metadata));
     }
 
     /// <inheritdoc />

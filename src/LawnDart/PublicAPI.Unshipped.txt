@@ -136,3 +136,67 @@ override LawnDart.EventStore.TaggedEvent.GetHashCode() -> int
 override LawnDart.EventStore.TaggedEvent.ToString() -> string!
 static LawnDart.EventStore.TaggedEvent.operator !=(LawnDart.EventStore.TaggedEvent? left, LawnDart.EventStore.TaggedEvent? right) -> bool
 static LawnDart.EventStore.TaggedEvent.operator ==(LawnDart.EventStore.TaggedEvent? left, LawnDart.EventStore.TaggedEvent? right) -> bool
+*REMOVED*LawnDart.EventStore.AppendEvent.AppendEvent(string! eventType, System.ReadOnlyMemory<byte> payload, System.ReadOnlyMemory<byte> metadata = default(System.ReadOnlyMemory<byte>), int schemaVersion = 1, byte codecId = 1, System.Collections.Generic.IEnumerable<string!>? tags = null) -> void
+*REMOVED*LawnDart.EventStore.EventStoreAdapter.EventStoreAdapter(LawnDart.EventStore.IEventLog! log, LawnDart.EventStore.EventSession! session, LawnDart.EventStore.IEventLogSubscriptions? logSubscriptions = null, int subscriptionChannelCapacity = 10000) -> void
+LawnDart.EventStore.AppendEvent.AppendEvent(string! eventType, System.ReadOnlyMemory<byte> payload, System.ReadOnlyMemory<byte> metadata = default(System.ReadOnlyMemory<byte>), int schemaVersion = 1, byte codecId = 1, System.Collections.Generic.IEnumerable<string!>? tags = null, LawnDart.Publishing.OutboundEvent? outbound = null) -> void
+LawnDart.EventStore.AppendEvent.Outbound.get -> LawnDart.Publishing.OutboundEvent?
+LawnDart.EventStore.EventSession.ToOutboundEvent(LawnDart.IEvent! notice, in LawnDart.Publishing.PublishContext context, LawnDart.Metadata.EventMetadata? sourceMetadata = null) -> LawnDart.Publishing.OutboundEvent!
+LawnDart.EventStore.EventStoreAdapter.EventStoreAdapter(LawnDart.EventStore.IEventLog! log, LawnDart.EventStore.EventSession! session, LawnDart.EventStore.IEventLogSubscriptions? logSubscriptions = null, int subscriptionChannelCapacity = 10000, LawnDart.Publishing.PublishedEventMap? publishedEvents = null) -> void
+LawnDart.Publishing.IEventTranslator<TInternal, TPublic>
+LawnDart.Publishing.IEventTranslator<TInternal, TPublic>.Translate(TInternal! event, LawnDart.Publishing.PublishContext context) -> TPublic?
+LawnDart.Publishing.OutboundEvent
+LawnDart.Publishing.OutboundEvent.CodecId.get -> byte
+LawnDart.Publishing.OutboundEvent.EventType.get -> string!
+LawnDart.Publishing.OutboundEvent.Metadata.get -> System.ReadOnlyMemory<byte>
+LawnDart.Publishing.OutboundEvent.OutboundEvent(string! eventType, System.ReadOnlyMemory<byte> payload, System.ReadOnlyMemory<byte> metadata = default(System.ReadOnlyMemory<byte>), int schemaVersion = 1, byte codecId = 1) -> void
+LawnDart.Publishing.OutboundEvent.Payload.get -> System.ReadOnlyMemory<byte>
+LawnDart.Publishing.OutboundEvent.SchemaVersion.get -> int
+LawnDart.Publishing.PublishContext
+LawnDart.Publishing.PublishContext.CausationId.get -> string?
+LawnDart.Publishing.PublishContext.CausationId.init -> void
+LawnDart.Publishing.PublishContext.CorrelationId.get -> string?
+LawnDart.Publishing.PublishContext.CorrelationId.init -> void
+LawnDart.Publishing.PublishContext.Deconstruct(out System.Guid SourceEventId, out string! SourceEventType, out System.Collections.Generic.IReadOnlyList<string!>! Tags, out string? TenantId, out string? CorrelationId, out string? CausationId, out System.DateTime Timestamp) -> void
+LawnDart.Publishing.PublishContext.Equals(LawnDart.Publishing.PublishContext other) -> bool
+LawnDart.Publishing.PublishContext.PublishContext() -> void
+LawnDart.Publishing.PublishContext.PublishContext(System.Guid SourceEventId, string! SourceEventType, System.Collections.Generic.IReadOnlyList<string!>! Tags, string? TenantId, string? CorrelationId, string? CausationId, System.DateTime Timestamp) -> void
+LawnDart.Publishing.PublishContext.SourceEventId.get -> System.Guid
+LawnDart.Publishing.PublishContext.SourceEventId.init -> void
+LawnDart.Publishing.PublishContext.SourceEventType.get -> string!
+LawnDart.Publishing.PublishContext.SourceEventType.init -> void
+LawnDart.Publishing.PublishContext.Tags.get -> System.Collections.Generic.IReadOnlyList<string!>!
+LawnDart.Publishing.PublishContext.Tags.init -> void
+LawnDart.Publishing.PublishContext.TenantId.get -> string?
+LawnDart.Publishing.PublishContext.TenantId.init -> void
+LawnDart.Publishing.PublishContext.Timestamp.get -> System.DateTime
+LawnDart.Publishing.PublishContext.Timestamp.init -> void
+LawnDart.Publishing.PublishedEventCatalog
+LawnDart.Publishing.PublishedEventCatalog.GetName(System.Type! type) -> string!
+LawnDart.Publishing.PublishedEventCatalog.PublishedTypes.get -> System.Collections.Generic.IReadOnlyCollection<System.Type!>!
+LawnDart.Publishing.PublishedEventCatalog.TryResolveType(string! storedName, int schemaVersion, out System.Type? type) -> bool
+LawnDart.Publishing.PublishedEventCatalog.TryResolveType(string! storedName, out System.Type? type) -> bool
+LawnDart.Publishing.PublishedEventCatalog.UpcastPipeline.get -> LawnDart.EventStore.EventUpcastPipeline?
+LawnDart.Publishing.PublishedEventMap
+LawnDart.Publishing.PublishedEventMap.ContextName.get -> string!
+LawnDart.Publishing.PublishedEventMap.PublishedTypes.get -> System.Collections.Generic.IReadOnlyCollection<System.Type!>!
+LawnDart.Publishing.PublishedEventMap.SourceTypes.get -> System.Collections.Generic.IReadOnlyCollection<System.Type!>!
+LawnDart.Publishing.PublishedEventMap.TryTranslate(LawnDart.IEvent! source, in LawnDart.Publishing.PublishContext context, out LawnDart.IEvent? notice) -> bool
+LawnDart.Publishing.PublishedEventsBuilder
+LawnDart.Publishing.PublishedEventsBuilder.AddTranslator<TTranslator>() -> LawnDart.Publishing.PublishedEventsBuilder!
+LawnDart.Publishing.PublishedEventsBuilder.AddTranslators(params System.Reflection.Assembly![]! assemblies) -> LawnDart.Publishing.PublishedEventsBuilder!
+LawnDart.Publishing.PublishedEventsBuilder.AddTranslators<TMarker>() -> LawnDart.Publishing.PublishedEventsBuilder!
+LawnDart.Publishing.PublishedEventsBuilder.Publish<TEvent>() -> LawnDart.Publishing.PublishedEventsBuilder!
+LawnDart.Publishing.PublishedEventsBuilder.Translate<TInternal, TPublic>(System.Func<TInternal!, LawnDart.Publishing.PublishContext, TPublic?>! translate) -> LawnDart.Publishing.PublishedEventsBuilder!
+LawnDart.Publishing.PublishedEventsBuilder.Translate<TInternal, TPublic>(System.Func<TInternal!, TPublic?>! translate) -> LawnDart.Publishing.PublishedEventsBuilder!
+LawnDart.Publishing.PublishedEventsBuilder.WithUpcasters(params System.Reflection.Assembly![]! assemblies) -> LawnDart.Publishing.PublishedEventsBuilder!
+LawnDart.Publishing.PublishedEventsBuilder.WithUpcasters<TMarker>() -> LawnDart.Publishing.PublishedEventsBuilder!
+const LawnDart.EventStore.EventSession.SourceEventIdKey = "lawndart.source-event-id" -> string!
+const LawnDart.EventStore.EventSession.SourceEventTypeKey = "lawndart.source-event-type" -> string!
+override LawnDart.Publishing.PublishContext.GetHashCode() -> int
+static LawnDart.EventStore.BoundedContextExtensions.PublishEvents(this LawnDart.EventStore.BoundedContextBuilder! builder, System.Action<LawnDart.Publishing.PublishedEventsBuilder!>! configure) -> LawnDart.EventStore.BoundedContextBuilder!
+static LawnDart.Publishing.PublishContext.operator !=(LawnDart.Publishing.PublishContext left, LawnDart.Publishing.PublishContext right) -> bool
+static LawnDart.Publishing.PublishContext.operator ==(LawnDart.Publishing.PublishContext left, LawnDart.Publishing.PublishContext right) -> bool
+static LawnDart.Publishing.PublishedEventCatalog.Create(System.Collections.Generic.IEnumerable<LawnDart.Publishing.PublishedEventMap!>! maps) -> LawnDart.Publishing.PublishedEventCatalog!
+static LawnDart.Publishing.PublishedEventMap.Create(string! contextName, LawnDart.EventStore.EventTypeCatalog! sourceCatalog, System.Action<LawnDart.Publishing.PublishedEventsBuilder!>! configure) -> LawnDart.Publishing.PublishedEventMap!
+~override LawnDart.Publishing.PublishContext.Equals(object obj) -> bool
+~override LawnDart.Publishing.PublishContext.ToString() -> string
