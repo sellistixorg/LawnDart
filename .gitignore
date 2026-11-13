@@ -80,4 +80,7 @@ TestResults/
 # Local scratch
 .local/
 
+# Private benchmark output. Timings stay on the machine that ran them.
+benchmarks/LawnDart.SqlPerformance/results/
+
 .cursor/mcp.json
