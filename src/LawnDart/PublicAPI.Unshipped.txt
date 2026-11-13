@@ -198,5 +198,6 @@ static LawnDart.Publishing.PublishContext.operator !=(LawnDart.Publishing.Publis
 static LawnDart.Publishing.PublishContext.operator ==(LawnDart.Publishing.PublishContext left, LawnDart.Publishing.PublishContext right) -> bool
 static LawnDart.Publishing.PublishedEventCatalog.Create(System.Collections.Generic.IEnumerable<LawnDart.Publishing.PublishedEventMap!>! maps) -> LawnDart.Publishing.PublishedEventCatalog!
 static LawnDart.Publishing.PublishedEventMap.Create(string! contextName, LawnDart.EventStore.EventTypeCatalog! sourceCatalog, System.Action<LawnDart.Publishing.PublishedEventsBuilder!>! configure) -> LawnDart.Publishing.PublishedEventMap!
+static LawnDart.Publishing.PublishedEventMap.NothingDeclaredMessage(string! contextName, LawnDart.EventStore.EventTypeCatalog? catalog) -> string!
 ~override LawnDart.Publishing.PublishContext.Equals(object obj) -> bool
 ~override LawnDart.Publishing.PublishContext.ToString() -> string

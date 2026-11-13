@@ -133,11 +133,19 @@ public sealed class PublishedEventMap
     }
 
     /// <summary>
-    /// Message for a context that turns the outbox on but declares nothing to publish.
+    /// Message for a context that turns the outbox on and declares nothing to publish.
     /// Lists the context's event types so the fix is clear.
     /// </summary>
-    internal static string NothingDeclaredMessage(string contextName, EventTypeCatalog? catalog)
+    /// <param name="contextName">The bounded context name.</param>
+    /// <param name="catalog">The context's event catalog, or <c>null</c> when it has none.</param>
+    /// <remarks>
+    /// A store throws <see cref="InvalidOperationException"/> with this text when it opens
+    /// with the outbox on and no <see cref="PublishedEventMap"/>.
+    /// </remarks>
+    public static string NothingDeclaredMessage(string contextName, EventTypeCatalog? catalog)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(contextName);
+
         var message =
             $"Bounded context '{contextName}' declares no published events. " +
             "Nothing leaves a context unless it is declared. Call PublishEvents(p => p.Publish<TEvent>() " +

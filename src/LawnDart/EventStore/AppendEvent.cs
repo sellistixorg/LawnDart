@@ -54,6 +54,7 @@ public sealed class AppendEvent
     /// </summary>
     public OutboundEvent? Outbound { get; }
 
+    /// <summary>Creates an append envelope.</summary>
     /// <param name="eventType">Event name.</param>
     /// <param name="payload">Serialized payload. Copied on construct.</param>
     /// <param name="metadata">UTF-8 JSON metadata bytes. Copied on construct. Empty is valid.</param>

@@ -1,4 +1,5 @@
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.DependencyInjection;
 using LawnDart;
 using LawnDart.EventSourcing.Serialization;
 using LawnDart.EventSourcing.SqlServer;
@@ -94,6 +95,32 @@ public class SqlServerMultiContextOutboxTests : IAsyncLifetime
         Assert.Equal("catalog.product-noted", catalogRow.EventType);
     }
 
+    [Fact]
+    public async Task UseSqlServer_OutboxOff_DoesNotRunTranslations()
+    {
+        var schema = "t" + Guid.NewGuid().ToString("N");
+        var services = new ServiceCollection();
+        services.AddBoundedContext("ordering")
+            .WithEventTypes(typeof(OrderNoted))
+            .PublishEvents(events => events.Translate<OrderNoted, BrokenOrderNotice>(_ =>
+                throw new InvalidOperationException("broken translation")))
+            .UseSqlServer(opt =>
+            {
+                opt.ConnectionString = _connectionString;
+                opt.SchemaName = schema;
+                opt.RequireTenantId = false;
+            });
+        await using var provider = services.BuildServiceProvider();
+        var store = (SqlServerEventStore)provider.GetRequiredKeyedService<IEventStore>("ordering");
+        await store.InitializeSchemaAsync();
+        var id = Guid.NewGuid();
+        var stream = Stream("Order");
+
+        await store.AppendAsync(stream, [new OrderNoted(id, DateTime.UtcNow, "off")]);
+
+        Assert.Equal(id, Assert.Single(await store.ReadStreamAsync(stream)).Event.Id);
+    }
+
     private async Task<(SqlServerEventStore Store, IOutboxWriter Outbox)> OpenDeclaredStoreAsync(
         string schema,
         Type[] eventTypes,
@@ -154,6 +181,9 @@ public class SqlServerMultiContextOutboxTests : IAsyncLifetime
 
     [EventTypeName("catalog.internal")]
     public sealed record CatalogInternal(Guid Id, DateTime Timestamp) : IEvent;
+
+    [EventTypeName("sql-registration.broken-notice")]
+    private sealed record BrokenOrderNotice(Guid Id, DateTime Timestamp) : IEvent;
 
     private async Task<bool> TableExistsAsync(string schemaName, string tableName)
     {

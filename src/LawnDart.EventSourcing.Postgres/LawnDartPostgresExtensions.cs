@@ -82,7 +82,7 @@ public static class LawnDartPostgresExtensions
             if (options.EnableOutbox && published is null)
             {
                 throw new InvalidOperationException(
-                    BoundedContextExtensions.MissingPublishedEventsMessage(contextName, catalog as EventTypeCatalog));
+                    PublishedEventMap.NothingDeclaredMessage(contextName, catalog as EventTypeCatalog));
             }
 
             var pipeline = sp.GetKeyedService<EventUpcastPipeline>(contextName);

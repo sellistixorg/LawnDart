@@ -171,30 +171,4 @@ public class SqlServerMultiContextRegistrationTests
         Assert.NotNull(provider.GetRequiredKeyedService<IEventStore>("ordering"));
     }
 
-    [Fact]
-    public async Task UseSqlServer_OutboxOff_DoesNotRunTranslations()
-    {
-        var services = new ServiceCollection();
-        services.AddBoundedContext("ordering")
-            .WithEventTypes(typeof(CatalogPlaceholderEvent))
-            .PublishEvents(events => events.Translate<CatalogPlaceholderEvent, BrokenOrderNotice>(_ =>
-                throw new InvalidOperationException("broken translation")))
-            .UseSqlServer(opt =>
-            {
-                opt.ConnectionString = FakeConnectionString;
-                opt.RequireTenantId = false;
-            });
-        using var provider = services.BuildServiceProvider();
-        var store = provider.GetRequiredKeyedService<IEventStore>("ordering");
-
-        var ex = await Record.ExceptionAsync(() => store.AppendAsync(
-            "acme:Order:" + Guid.NewGuid().ToString("N"),
-            [new CatalogPlaceholderEvent(Guid.NewGuid(), DateTime.UtcNow)]));
-
-        Assert.NotNull(ex);
-        Assert.DoesNotContain("broken translation", ex.ToString(), StringComparison.Ordinal);
-    }
-
-    [EventTypeName("sql-registration.broken-notice")]
-    private sealed record BrokenOrderNotice(Guid Id, DateTime Timestamp) : IEvent;
 }
