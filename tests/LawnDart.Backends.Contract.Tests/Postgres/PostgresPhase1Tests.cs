@@ -780,4 +780,31 @@ public sealed class PostgresRegistrationTests
         Assert.Contains("ordering", ex.Message, StringComparison.Ordinal);
         Assert.Contains("counter-created", ex.Message, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task UsePostgres_OutboxOff_DoesNotRunTranslations()
+    {
+        var services = new ServiceCollection();
+        services.AddLawnDart(o => o.RequireTenantId = false);
+        services.AddBoundedContext("ordering")
+            .WithEventTypes(typeof(CounterCreated))
+            .PublishEvents(events => events.Translate<CounterCreated, BrokenPostgresNotice>(_ =>
+                throw new InvalidOperationException("broken translation")))
+            .UsePostgres(o =>
+            {
+                o.ConnectionString = "Host=localhost;Username=lawndart_app;Password=lawndart_app;Database=lawndart";
+            });
+        using var provider = services.BuildServiceProvider();
+        var store = provider.GetRequiredKeyedService<IEventStore>("ordering");
+
+        var ex = await Record.ExceptionAsync(() => store.AppendAsync(
+            "acme:Order:" + Guid.NewGuid().ToString("N"),
+            [new CounterCreated(Guid.NewGuid(), DateTime.UtcNow, Guid.NewGuid())]));
+
+        Assert.NotNull(ex);
+        Assert.DoesNotContain("broken translation", ex.ToString(), StringComparison.Ordinal);
+    }
+
+    [EventTypeName("postgres-registration.broken-notice")]
+    private sealed record BrokenPostgresNotice(Guid Id, DateTime Timestamp) : IEvent;
 }

@@ -71,7 +71,7 @@ public sealed class PostgresContractBackend : IFullContractBackend
         ContractStoreOptions options,
         CancellationToken cancellationToken = default)
     {
-        var published = ContractOutboxMaps.For(options);
+        var published = options.EnableOutbox ? ContractOutboxMaps.For(options) : null;
         var logger = new ListLogger<PostgresEventStore>();
         var storeOptions = new PostgresEventStoreOptions
         {

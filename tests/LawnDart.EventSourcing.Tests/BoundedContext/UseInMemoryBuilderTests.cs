@@ -267,6 +267,25 @@ public class UseInMemoryBuilderTests
         Assert.Empty(await writer.GetUnprocessedAsync(10));
     }
 
+    [Fact]
+    public async Task UseInMemory_OutboxOff_DoesNotRunTranslations()
+    {
+        var services = new ServiceCollection();
+        services.AddLawnDart(o => o.RequireTenantId = false);
+        services.AddBoundedContext("academy")
+            .WithEventTypes(typeof(StubEvent))
+            .PublishEvents(events => events.Translate<StubEvent, BrokenNotice>(_ =>
+                throw new InvalidOperationException("broken translation")))
+            .UseInMemory();
+        await using var provider = services.BuildServiceProvider();
+        var store = provider.GetRequiredKeyedService<IEventStore>("academy");
+        var id = Guid.NewGuid();
+
+        await store.AppendAsync("Order:1", [new StubEvent(id, DateTime.UtcNow)]);
+
+        Assert.Equal(id, Assert.Single(await store.ReadStreamAsync("Order:1")).Event.Id);
+    }
+
     // ── Stubs ──────────────────────────────────────────────────────────────────
 [EventTypeName("use-in-memory-builder-tests.stub-event")]
 
@@ -274,6 +293,9 @@ public class UseInMemoryBuilderTests
 
     [EventTypeName("use-in-memory-builder-tests.quiet-event")]
     private sealed record QuietEvent(Guid Id, DateTime Timestamp) : IEvent;
+
+    [EventTypeName("use-in-memory-builder-tests.broken-notice")]
+    private sealed record BrokenNotice(Guid Id, DateTime Timestamp) : IEvent;
 
     private sealed class RecordingPublisher : IOutboxPublisher
     {

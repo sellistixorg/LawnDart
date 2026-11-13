@@ -85,7 +85,9 @@ public static class BoundedContextBuilderExtensions
         {
             var catalog = sp.GetKeyedService<IEventTypeCatalog>(contextName)
                 ?? throw new InvalidOperationException(BoundedContextExtensions.MissingEventTypesMessage(contextName));
-            var published = sp.GetKeyedService<PublishedEventMap>(contextName);
+            var published = options.EnableOutbox
+                ? sp.GetKeyedService<PublishedEventMap>(contextName)
+                : null;
             if (options.EnableOutbox && published is null)
             {
                 throw new InvalidOperationException(
@@ -145,6 +147,9 @@ public static class BoundedContextBuilderExtensions
         {
             services.AddSingleton<IHostedService>(sp =>
             {
+                // Resolve the store first so a missing PublishEvents fails here,
+                // with the context's event types, before any publisher error.
+                var store = sp.GetRequiredKeyedService<IEventStore>(contextName);
                 var writer = sp.GetRequiredKeyedService<IOutboxWriter>(contextName);
                 var publishers = sp.GetServices<IOutboxPublisher>().ToArray();
                 if (publishers.Length == 0)
@@ -156,7 +161,6 @@ public static class BoundedContextBuilderExtensions
                 IOutboxPublisher publisher = publishers.Length == 1
                     ? publishers[0]
                     : new CompositeOutboxPublisher(publishers);
-                var store = sp.GetRequiredKeyedService<IEventStore>(contextName);
                 return new OutboxProcessor(
                     writer,
                     publisher,

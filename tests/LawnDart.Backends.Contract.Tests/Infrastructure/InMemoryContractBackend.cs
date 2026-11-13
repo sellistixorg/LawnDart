@@ -44,7 +44,7 @@ public sealed class InMemoryContractBackend : IFullContractBackend
         ContractStoreOptions options,
         CancellationToken cancellationToken = default)
     {
-        var published = ContractOutboxMaps.For(options);
+        var published = options.EnableOutbox ? ContractOutboxMaps.For(options) : null;
         var connected = options.EnableOutbox
             ? _outboxes.GetOrAdd(options.SchemaName, _ => new InMemoryOutboxWriter(options.OutboxClaimLease))
             : null;

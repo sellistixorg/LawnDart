@@ -17,6 +17,7 @@ public class EventSourcingOptions
     /// When true, an append writes an outbox message for each event this context
     /// declares with <c>PublishEvents</c>. A context that declares nothing fails
     /// when the store is resolved. Default: false.
+    /// It takes effect on the store's options for each context.
     /// </summary>
     /// <remarks>
     /// Stream appends and dynamic consistency boundary appends use the same rule.

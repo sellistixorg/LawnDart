@@ -52,7 +52,7 @@ public sealed class SqlServerContractBackend : IFullContractBackend
         ContractStoreOptions options,
         CancellationToken cancellationToken = default)
     {
-        var published = ContractOutboxMaps.For(options);
+        var published = options.EnableOutbox ? ContractOutboxMaps.For(options) : null;
         var connectionString = options.ReadCommittedSnapshot is { } snapshot
             ? await CreateDatabaseAsync(snapshot, cancellationToken).ConfigureAwait(false)
             : _connectionString;
