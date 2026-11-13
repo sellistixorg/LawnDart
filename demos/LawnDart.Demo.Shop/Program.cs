@@ -60,6 +60,9 @@ builder.Services.AddSingleton(new ShopRuntimeOptions { PublishDirectly = !useSql
 
 var shop = builder.Services.AddBoundedContext("default")
     .WithEventTypes<OrderPlaced>()
+    .PublishEvents(events => events
+        .Publish<OrderPlaced>()
+        .Publish<OrderPaymentProcessed>())
     .WithCommandHandlers<CreateProductCommandHandler>()
     .WithTagProvider<ShopTagProvider>();
 

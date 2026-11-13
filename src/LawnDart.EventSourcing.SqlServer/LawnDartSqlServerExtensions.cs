@@ -17,6 +17,7 @@ using LawnDart.EventSourcing.Outbox;
 using LawnDart.EventStore;
 using LawnDart.Metadata;
 using LawnDart.Outbox;
+using LawnDart.Publishing;
 using LawnDart.Serialization;
 using LawnDart.EventSourcing.Serialization;
 using LawnDart.Snapshots;
@@ -101,6 +102,13 @@ public static class LawnDartSqlServerExtensions
             var serializer  = sp.GetRequiredService<IEventSerializer>();
             var catalog     = sp.GetKeyedService<IEventTypeCatalog>(contextName)
                 ?? throw new InvalidOperationException(BoundedContextExtensions.MissingEventTypesMessage(contextName));
+            var published   = sp.GetKeyedService<PublishedEventMap>(contextName);
+            if (options.EnableOutbox && published is null)
+            {
+                throw new InvalidOperationException(
+                    BoundedContextExtensions.MissingPublishedEventsMessage(contextName, catalog as EventTypeCatalog));
+            }
+
             var pipeline    = sp.GetKeyedService<EventUpcastPipeline>(contextName);
             var session     = new EventSession(serializer, catalog, pipeline);
             var outbox      = options.EnableOutbox
@@ -116,7 +124,8 @@ public static class LawnDartSqlServerExtensions
                 options,
                 outbox,
                 logger,
-                session);
+                session,
+                published);
         });
 
         services.AddKeyedSingleton<IEventLog>(contextName,

@@ -212,8 +212,77 @@ public class UseInMemoryBuilderTests
         Assert.Single(await store.ReadStreamAsync("Order:1"));
     }
 
+    [Fact]
+    public void UseInMemory_EnableOutbox_WithoutPublishEvents_ThrowsOnStoreResolve()
+    {
+        var services = new ServiceCollection();
+        services.AddBoundedContext("academy")
+            .WithEventTypes(typeof(StubEvent))
+            .UseInMemory(o => o.EnableOutbox = true);
+        using var provider = services.BuildServiceProvider();
+
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => provider.GetRequiredKeyedService<IEventStore>("academy"));
+
+        Assert.Contains("academy", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("use-in-memory-builder-tests.stub-event", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task UseInMemory_EnableOutbox_WritesOnlyDeclaredEvents_AndTheProcessorPublishesThem()
+    {
+        var services = new ServiceCollection();
+        services.AddLawnDart(o => o.RequireTenantId = false);
+        services.AddBoundedContext("academy")
+            .WithEventTypes(typeof(StubEvent), typeof(QuietEvent))
+            .PublishEvents(events => events.Publish<StubEvent>())
+            .UseInMemory(o =>
+            {
+                o.EnableOutbox = true;
+                o.OutboxClaimLease = TimeSpan.Zero;
+            });
+        await using var provider = services.BuildServiceProvider();
+        var store = provider.GetRequiredKeyedService<IEventStore>("academy");
+        var writer = provider.GetRequiredKeyedService<IOutboxWriter>("academy");
+        var declared = new StubEvent(Guid.NewGuid(), DateTime.UtcNow);
+        await store.AppendAsync("Order:1", [declared, new QuietEvent(Guid.NewGuid(), DateTime.UtcNow)]);
+
+        var pending = Assert.Single(await writer.GetUnprocessedAsync(10));
+        Assert.Equal(declared.Id, pending.Id);
+        Assert.Equal("use-in-memory-builder-tests.stub-event", pending.EventType);
+
+        var publisher = new RecordingPublisher();
+        var processor = new OutboxProcessor(
+            writer,
+            publisher,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<OutboxProcessor>.Instance,
+            pollingInterval: TimeSpan.FromSeconds(5),
+            maxAttempts: 3);
+        var batch = typeof(OutboxProcessor).GetMethod(
+            "ProcessBatchAsync",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        await (Task)batch!.Invoke(processor, [CancellationToken.None])!;
+
+        Assert.Equal(declared.Id, Assert.Single(publisher.Published).Id);
+        Assert.Empty(await writer.GetUnprocessedAsync(10));
+    }
+
     // ── Stubs ──────────────────────────────────────────────────────────────────
 [EventTypeName("use-in-memory-builder-tests.stub-event")]
 
     private sealed record StubEvent(Guid Id, DateTime Timestamp) : IEvent;
+
+    [EventTypeName("use-in-memory-builder-tests.quiet-event")]
+    private sealed record QuietEvent(Guid Id, DateTime Timestamp) : IEvent;
+
+    private sealed class RecordingPublisher : IOutboxPublisher
+    {
+        public List<OutboxMessage> Published { get; } = [];
+
+        public Task PublishAsync(OutboxMessage message, CancellationToken cancellationToken = default)
+        {
+            Published.Add(message);
+            return Task.CompletedTask;
+        }
+    }
 }

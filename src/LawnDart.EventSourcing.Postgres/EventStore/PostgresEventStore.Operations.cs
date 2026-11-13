@@ -140,15 +140,12 @@ public sealed partial class PostgresEventStore
         CancellationToken cancellationToken)
     {
         var tenant = TenantKey.ForStream(streamId);
-        var writeOutbox = _options.EnableOutbox;
         var payloads = new string?[envelopes.Count];
         var binaries = new byte[]?[envelopes.Count];
         var metadata = new string?[envelopes.Count];
         var typeIds = new int[envelopes.Count];
         var schemaVersions = new int[envelopes.Count];
         var codecs = new short[envelopes.Count];
-        var eventTypeNames = writeOutbox ? new string[envelopes.Count] : null;
-        var outboxPayloads = writeOutbox ? new byte[envelopes.Count][] : null;
         var tagOrds = new List<int>();
         var tagValues = new List<string>();
         var streamTags = new HashSet<string>(StringComparer.Ordinal);
@@ -165,11 +162,6 @@ public sealed partial class PostgresEventStore
             payloads[i] = json;
             binaries[i] = binary;
             metadata[i] = MetadataJson(envelope.Metadata);
-            if (writeOutbox)
-            {
-                eventTypeNames![i] = envelope.EventType;
-                outboxPayloads![i] = envelope.Payload.IsEmpty ? [] : envelope.Payload.ToArray();
-            }
             foreach (var tag in envelope.Tags)
             {
                 if (string.IsNullOrEmpty(tag))
@@ -182,6 +174,53 @@ public sealed partial class PostgresEventStore
 
         BuildLocks(envelopes, condition, out var lockTags, out var lockModes, out var lockStore);
         BuildCondition(condition, out var check, out var all, out var after, out var itemCount, out var typeItems, out var typeCond, out var tagItems, out var tagCond, out var itemsWithTypes, out var itemsWithTags);
+        // The stored function returns one row per event, in batch order. The outbox
+        // insert stays in this statement and joins those rows by batch position, so
+        // only envelopes that carry Outbound get a row. The function body and the
+        // schema stamp stay as they are. A batch with no outbound value uses the
+        // plain append statement.
+        var outboxSlots = new List<int>();
+        if (_options.EnableOutbox)
+        {
+            for (var i = 0; i < envelopes.Count; i++)
+            {
+                if (envelopes[i].Outbound is not null)
+                    outboxSlots.Add(i);
+            }
+        }
+
+        var writeOutbox = outboxSlots.Count > 0;
+        int[]? outboxOrds = null;
+        Guid[]? outboxEventIds = null;
+        string[]? eventTypeNames = null;
+        int[]? outboxSchemaVersions = null;
+        short[]? outboxCodecs = null;
+        byte[][]? outboxPayloads = null;
+        string?[]? outboxMetadata = null;
+        if (writeOutbox)
+        {
+            var count = outboxSlots.Count;
+            outboxOrds = new int[count];
+            outboxEventIds = new Guid[count];
+            eventTypeNames = new string[count];
+            outboxSchemaVersions = new int[count];
+            outboxCodecs = new short[count];
+            outboxPayloads = new byte[count][];
+            outboxMetadata = new string?[count];
+            for (var slot = 0; slot < count; slot++)
+            {
+                var index = outboxSlots[slot];
+                var outbound = envelopes[index].Outbound!;
+                outboxOrds[slot] = index + 1;
+                outboxEventIds[slot] = eventIds[index];
+                eventTypeNames[slot] = outbound.EventType;
+                outboxSchemaVersions[slot] = outbound.SchemaVersion;
+                outboxCodecs[slot] = outbound.CodecId;
+                outboxPayloads[slot] = outbound.Payload.IsEmpty ? [] : outbound.Payload.ToArray();
+                outboxMetadata[slot] = MetadataJson(outbound.Metadata);
+            }
+        }
+
         const string emptyJson = "'{}'::jsonb";
 
         var call = $"""
@@ -219,8 +258,9 @@ public sealed partial class PostgresEventStore
                     r.global_position
                 FROM r
                 JOIN unnest(
-                    @event_ids, @event_type_names, @schema_versions, @codec_ids, @outbox_payloads, @metadata
-                ) WITH ORDINALITY AS u(event_id, event_type, schema_version, codec_id, payload, metadata, ord)
+                    @outbox_ords, @outbox_event_ids, @event_type_names, @outbox_schema_versions,
+                    @outbox_codec_ids, @outbox_payloads, @outbox_metadata
+                ) AS u(ord, event_id, event_type, schema_version, codec_id, payload, metadata)
                     ON u.ord = r.ord
                 RETURNING sequence_position
             )
@@ -271,8 +311,13 @@ public sealed partial class PostgresEventStore
         command.Parameters.Add(new NpgsqlParameter("items_with_tags", NpgsqlDbType.Array | NpgsqlDbType.Integer) { Value = itemsWithTags });
         if (writeOutbox)
         {
+            command.Parameters.Add(new NpgsqlParameter("outbox_ords", NpgsqlDbType.Array | NpgsqlDbType.Integer) { Value = outboxOrds });
+            command.Parameters.Add(new NpgsqlParameter("outbox_event_ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid) { Value = outboxEventIds });
             command.Parameters.Add(new NpgsqlParameter("event_type_names", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = eventTypeNames });
+            command.Parameters.Add(new NpgsqlParameter("outbox_schema_versions", NpgsqlDbType.Array | NpgsqlDbType.Integer) { Value = outboxSchemaVersions });
+            command.Parameters.Add(new NpgsqlParameter("outbox_codec_ids", NpgsqlDbType.Array | NpgsqlDbType.Smallint) { Value = outboxCodecs });
             command.Parameters.Add(new NpgsqlParameter("outbox_payloads", NpgsqlDbType.Array | NpgsqlDbType.Bytea) { Value = outboxPayloads });
+            command.Parameters.Add(new NpgsqlParameter("outbox_metadata", NpgsqlDbType.Array | NpgsqlDbType.Jsonb) { Value = outboxMetadata });
         }
 
         // A closure before any result row means this call did not observe a saved

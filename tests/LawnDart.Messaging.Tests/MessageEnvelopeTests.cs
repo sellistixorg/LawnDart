@@ -19,6 +19,7 @@ public class MessageEnvelopeTests
                 ["region"] = "east",
                 [MessageHeaders.TraceParent] = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
                 [MessageHeaders.OutboxStreamId] = "Order:1",
+                [MessageHeaders.OutboxSourceEventId] = "source-1",
             },
         };
 
@@ -35,6 +36,9 @@ public class MessageEnvelopeTests
         Assert.Equal("outbox.streamId", MessageHeaders.OutboxStreamId);
         Assert.Equal("outbox.sequencePosition", MessageHeaders.OutboxSequencePosition);
         Assert.Equal("outbox.eventType", MessageHeaders.OutboxEventType);
+        Assert.Equal("outbox.sourceEventId", MessageHeaders.OutboxSourceEventId);
+        Assert.Equal("source-1", wire[MessageHeaders.OutboxSourceEventId]);
+        Assert.False(wire.ContainsKey(MessageHeaders.CustomPrefix + MessageHeaders.OutboxSourceEventId));
 
         var restored = MessageEnvelopeHeaders.Read(wire, "InMemory");
         Assert.Equal("order-placed", restored.MessageType);
@@ -48,6 +52,7 @@ public class MessageEnvelopeTests
         Assert.Equal("east", restored.Context.Headers["region"]);
         Assert.Equal(context.Headers[MessageHeaders.TraceParent], restored.Context.Headers[MessageHeaders.TraceParent]);
         Assert.Equal("Order:1", restored.Context.Headers[MessageHeaders.OutboxStreamId]);
+        Assert.Equal("source-1", restored.Context.Headers[MessageHeaders.OutboxSourceEventId]);
         Assert.False(restored.Context.Headers.ContainsKey(MessageHeaders.UserId));
     }
 

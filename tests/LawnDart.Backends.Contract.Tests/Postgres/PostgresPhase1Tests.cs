@@ -759,4 +759,25 @@ public sealed class PostgresRegistrationTests
         Assert.Equal("ordering", provider.GetRequiredKeyedService<PostgresEventStoreOptions>("ordering").SchemaName);
         Assert.Equal("lawndart", provider.GetRequiredKeyedService<PostgresEventStoreOptions>("default").SchemaName);
     }
+
+    [Fact]
+    public void UsePostgres_EnableOutbox_WithoutPublishEvents_ThrowsOnStoreResolve()
+    {
+        var services = new ServiceCollection();
+        services.AddLawnDart();
+        services.AddBoundedContext("ordering")
+            .WithEventTypes(typeof(CounterCreated))
+            .UsePostgres(o =>
+            {
+                o.ConnectionString = "Host=localhost;Username=lawndart_app;Password=lawndart_app;Database=lawndart";
+                o.EnableOutbox = true;
+            });
+        using var provider = services.BuildServiceProvider();
+
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => provider.GetRequiredKeyedService<IEventStore>("ordering"));
+
+        Assert.Contains("ordering", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("counter-created", ex.Message, StringComparison.Ordinal);
+    }
 }

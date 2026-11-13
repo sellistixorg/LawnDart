@@ -71,6 +71,7 @@ public sealed class PostgresContractBackend : IFullContractBackend
         ContractStoreOptions options,
         CancellationToken cancellationToken = default)
     {
+        var published = ContractOutboxMaps.For(options);
         var logger = new ListLogger<PostgresEventStore>();
         var storeOptions = new PostgresEventStoreOptions
         {
@@ -93,7 +94,13 @@ public sealed class PostgresContractBackend : IFullContractBackend
         if (options.OutboxClaimLease is { } lease)
             storeOptions.OutboxClaimLease = lease;
 
-        var store = new PostgresEventStore(_connectionString, serializer: null, storeOptions, logger, options.CreateSession());
+        var store = new PostgresEventStore(
+            _connectionString,
+            serializer: null,
+            storeOptions,
+            logger,
+            options.CreateSession(),
+            published);
         store.PublishNewEventsSignal = options.PublishNewEventsSignal;
         store.ForcePollOnly = _pollOnly;
         await _ready.GetOrAdd(

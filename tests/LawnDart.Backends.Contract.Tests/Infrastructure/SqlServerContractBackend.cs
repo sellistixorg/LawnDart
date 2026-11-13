@@ -52,6 +52,7 @@ public sealed class SqlServerContractBackend : IFullContractBackend
         ContractStoreOptions options,
         CancellationToken cancellationToken = default)
     {
+        var published = ContractOutboxMaps.For(options);
         var connectionString = options.ReadCommittedSnapshot is { } snapshot
             ? await CreateDatabaseAsync(snapshot, cancellationToken).ConfigureAwait(false)
             : _connectionString;
@@ -93,7 +94,8 @@ public sealed class SqlServerContractBackend : IFullContractBackend
             options: storeOptions,
             outboxWriter: options.EnableOutbox ? outbox : null,
             logger: logger,
-            session: options.CreateSession());
+            session: options.CreateSession(),
+            publishedEvents: published);
         store.PublishNewEventsSignal = options.PublishNewEventsSignal;
 
         await _ready.GetOrAdd(

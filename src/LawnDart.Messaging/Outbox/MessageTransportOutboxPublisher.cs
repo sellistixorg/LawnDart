@@ -110,6 +110,12 @@ public sealed class MessageTransportOutboxPublisher : IOutboxPublisher
             [MessageHeaders.OutboxSequencePosition] = message.SequencePosition.ToString(),
             [MessageHeaders.OutboxEventType] = message.EventType,
         };
+        if (metadata?.Custom is { } custom
+            && custom.TryGetValue(EventSession.SourceEventIdKey, out var sourceEventId)
+            && !string.IsNullOrEmpty(sourceEventId))
+        {
+            headers[MessageHeaders.OutboxSourceEventId] = sourceEventId;
+        }
         var context = new MessageContext
         {
             // Stable id for downstream IInboxStore deduplication.

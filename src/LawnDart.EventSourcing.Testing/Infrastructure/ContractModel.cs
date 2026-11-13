@@ -1,6 +1,7 @@
 using LawnDart.EventSourcing.Serialization;
 using LawnDart.EventStore;
 using LawnDart.Outbox;
+using LawnDart.Publishing;
 using Microsoft.Extensions.Logging;
 
 namespace LawnDart.EventSourcing.Testing;
@@ -166,6 +167,30 @@ public sealed class ContractStoreOptions
     public IReadOnlyList<Type>? EventTypes { get; init; }
 
     /// <summary>
+    /// Declarations for the events this store publishes. Required when
+    /// <see cref="EnableOutbox"/> is true. Null with the outbox on fails when the store opens.
+    /// </summary>
+    public Action<PublishedEventsBuilder>? PublishedEvents { get; init; }
+
+    /// <summary>
+    /// Builds the context map from <see cref="PublishedEvents"/> and <see cref="EventTypes"/>.
+    /// Null when nothing was declared.
+    /// </summary>
+    public PublishedEventMap? CreatePublishedMap()
+    {
+        if (PublishedEvents is null)
+            return null;
+        if (EventTypes is not { Count: > 0 })
+        {
+            throw new InvalidOperationException(
+                "PublishedEvents needs EventTypes so the declared events are in the context catalog.");
+        }
+
+        var name = string.IsNullOrWhiteSpace(SchemaName) ? "default" : SchemaName;
+        return PublishedEventMap.Create(name, EventTypeCatalog.Materialize(EventTypes), PublishedEvents);
+    }
+
+    /// <summary>
     /// Builds a session for <see cref="EventTypes"/>.
     /// Null when no types were given.
     /// </summary>
@@ -294,7 +319,8 @@ public static class ContractStores
         TimeSpan? outboxClaimLease = null,
         TimeSpan? inboxClaimLease = null,
         TimeSpan? inboxDeduplicationWindow = null,
-        IReadOnlyList<Type>? eventTypes = null)
+        IReadOnlyList<Type>? eventTypes = null,
+        Action<PublishedEventsBuilder>? publishedEvents = null)
         => new()
         {
             SchemaName = "c" + Guid.NewGuid().ToString("N"),
@@ -311,7 +337,8 @@ public static class ContractStores
             OutboxClaimLease = outboxClaimLease,
             InboxClaimLease = inboxClaimLease,
             InboxDeduplicationWindow = inboxDeduplicationWindow,
-            EventTypes = eventTypes
+            EventTypes = eventTypes,
+            PublishedEvents = publishedEvents
         };
 }
 

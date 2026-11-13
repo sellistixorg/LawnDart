@@ -11,6 +11,7 @@ using LawnDart.EventSourcing.EventStore;
 using LawnDart.EventStore;
 using LawnDart.Metadata;
 using LawnDart.Outbox;
+using LawnDart.Publishing;
 using LawnDart.Serialization;
 using LawnDart.EventSourcing.Serialization;
 using LawnDart.EventSourcing.SqlServer.Snapshots;
@@ -126,7 +127,8 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         SqlServerEventStoreOptions? options = null,
         IOutboxWriter? outboxWriter = null,
         ILogger<SqlServerEventStore>? logger = null,
-        EventSession? session = null)
+        EventSession? session = null,
+        PublishedEventMap? publishedEvents = null)
     {
         _session = session ?? new EventSession(
             serializer ?? new JsonEventSerializer(),
@@ -139,7 +141,7 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
                 _options.AppendLockTagThreshold,
                 "AppendLockTagThreshold must be at least 1.");
         }
-        _adapter = new EventStoreAdapter(this, _session, this, _options.SubscriptionChannelCapacity);
+        _adapter = new EventStoreAdapter(this, _session, this, _options.SubscriptionChannelCapacity, publishedEvents);
         _tableName = tableName ?? throw new ArgumentNullException(nameof(tableName));
         _registryTableName = registryTableName ?? throw new ArgumentNullException(nameof(registryTableName));
         _enableRegistry = enableRegistry;
@@ -1901,8 +1903,8 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
     }
 
     /// <summary>
-    /// Copies already-serialized <see cref="AppendEvent"/> frames into the outbox
-    /// in the same transaction. Does not re-serialize a CLR event.
+    /// Copies <see cref="AppendEvent.Outbound"/> into the outbox in the same transaction.
+    /// An envelope with no outbound value is skipped. Does not re-serialize a CLR event.
     /// </summary>
     private async Task WriteEventsToOutboxAsync(
         SqlConnection connection,
@@ -1913,24 +1915,27 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         string streamId,
         CancellationToken cancellationToken)
     {
+        var written = 0;
         for (int i = 0; i < envelopes.Count; i++)
         {
-            var envelope = envelopes[i];
-            var sequencePosition = sequencePositions[i];
-            var metadataText = envelope.Metadata.IsEmpty
+            var outbound = envelopes[i].Outbound;
+            if (outbound is null)
+                continue;
+
+            var metadataText = outbound.Metadata.IsEmpty
                 ? "{}"
-                : Encoding.UTF8.GetString(envelope.Metadata.Span);
+                : Encoding.UTF8.GetString(outbound.Metadata.Span);
 
             var outboxMessage = new OutboxMessage
             {
                 Id = eventIds[i],
-                EventType = envelope.EventType,
-                SchemaVersion = envelope.SchemaVersion,
-                CodecId = envelope.CodecId,
-                Payload = envelope.Payload,
+                EventType = outbound.EventType,
+                SchemaVersion = outbound.SchemaVersion,
+                CodecId = outbound.CodecId,
+                Payload = outbound.Payload,
                 Metadata = metadataText,
                 StreamId = streamId,
-                SequencePosition = sequencePosition,
+                SequencePosition = sequencePositions[i],
                 CreatedAt = DateTime.UtcNow,
                 Attempts = 0
             };
@@ -1960,10 +1965,22 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
             command.Parameters.AddWithValue("@SequencePosition", outboxMessage.SequencePosition);
 
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            written++;
         }
 
-        if (_logger is not null)
-            SqlServerEventStoreLog.OutboxEventsWritten(_logger, envelopes.Count, streamId);
+        if (_logger is not null && written > 0)
+            SqlServerEventStoreLog.OutboxEventsWritten(_logger, written, streamId);
+    }
+
+    private static bool BatchHasOutbound(IReadOnlyList<AppendEvent> envelopes)
+    {
+        foreach (var envelope in envelopes)
+        {
+            if (envelope.Outbound is not null)
+                return true;
+        }
+
+        return false;
     }
 
     /// <inheritdoc />
@@ -2277,7 +2294,7 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
                         ct).ConfigureAwait(false);
                 }
 
-                if (_options.EnableOutbox)
+                if (_options.EnableOutbox && BatchHasOutbound(envelopes))
                 {
                     await WriteEventsToOutboxAsync(
                         connection, transaction, envelopes, sequencePositions, eventIds, streamId, ct)
@@ -2383,7 +2400,7 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
                         ct).ConfigureAwait(false);
                 }
 
-                if (_options.EnableOutbox)
+                if (_options.EnableOutbox && BatchHasOutbound(envelopes))
                 {
                     await WriteEventsToOutboxAsync(
                         connection, transaction, envelopes, sequencePositions, eventIds, streamId, ct)

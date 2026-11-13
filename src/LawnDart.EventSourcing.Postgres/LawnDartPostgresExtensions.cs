@@ -8,6 +8,7 @@ using LawnDart.EventSourcing.Postgres.Snapshots;
 using LawnDart.EventSourcing.Serialization;
 using LawnDart.EventStore;
 using LawnDart.Outbox;
+using LawnDart.Publishing;
 using LawnDart.Serialization;
 using LawnDart.Snapshots;
 using LawnDart.Tagging;
@@ -34,7 +35,7 @@ public static class LawnDartPostgresExtensions
     /// Keyed services use <see cref="BoundedContextBuilder.ContextName"/>.
     /// The context named <c>default</c> also gets unkeyed aliases.
     /// The callback must set <see cref="PostgresEventStoreOptions.ConnectionString"/>.
-    /// <see cref="PostgresEventStoreOptions.EnableOutbox"/> writes outbox rows in the append.
+    /// <see cref="PostgresEventStoreOptions.EnableOutbox"/> writes an outbox row for each event this context declares with <c>PublishEvents</c>.
     /// Call <c>InitializeSchemaAsync</c> from a deploy or admin step so the outbox table
     /// exists before the first append. Normal app startup does not call it.
     /// </remarks>
@@ -75,6 +76,13 @@ public static class LawnDartPostgresExtensions
             var serializer = sp.GetRequiredService<IEventSerializer>();
             var catalog = sp.GetKeyedService<IEventTypeCatalog>(contextName)
                 ?? throw new InvalidOperationException(BoundedContextExtensions.MissingEventTypesMessage(contextName));
+            var published = sp.GetKeyedService<PublishedEventMap>(contextName);
+            if (options.EnableOutbox && published is null)
+            {
+                throw new InvalidOperationException(
+                    BoundedContextExtensions.MissingPublishedEventsMessage(contextName, catalog as EventTypeCatalog));
+            }
+
             var pipeline = sp.GetKeyedService<EventUpcastPipeline>(contextName);
             var session = new EventSession(serializer, catalog, pipeline);
             return new PostgresEventStore(
@@ -82,7 +90,8 @@ public static class LawnDartPostgresExtensions
                 serializer,
                 options,
                 sp.GetService<ILogger<PostgresEventStore>>(),
-                session);
+                session,
+                published);
         });
 
         services.AddKeyedSingleton<IEventLog>(contextName,

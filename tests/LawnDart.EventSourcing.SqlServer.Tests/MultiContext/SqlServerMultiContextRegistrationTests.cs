@@ -132,4 +132,41 @@ public class SqlServerMultiContextRegistrationTests
         var sp = services.BuildServiceProvider();
         Assert.NotNull(sp);
     }
+
+    [Fact]
+    public void UseSqlServer_EnableOutbox_WithoutPublishEvents_ThrowsOnStoreResolve()
+    {
+        var services = new ServiceCollection();
+        services.AddBoundedContext("ordering")
+            .WithEventTypes(typeof(CatalogPlaceholderEvent))
+            .UseSqlServer(opt =>
+            {
+                opt.ConnectionString = FakeConnectionString;
+                opt.EnableOutbox = true;
+            });
+        using var provider = services.BuildServiceProvider();
+
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => provider.GetRequiredKeyedService<IEventStore>("ordering"));
+
+        Assert.Contains("ordering", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("test-utilities.catalog-placeholder", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void UseSqlServer_EnableOutbox_WithPublishEvents_ResolvesTheStore()
+    {
+        var services = new ServiceCollection();
+        services.AddBoundedContext("ordering")
+            .WithEventTypes(typeof(CatalogPlaceholderEvent))
+            .PublishEvents(events => events.Publish<CatalogPlaceholderEvent>())
+            .UseSqlServer(opt =>
+            {
+                opt.ConnectionString = FakeConnectionString;
+                opt.EnableOutbox = true;
+            });
+        using var provider = services.BuildServiceProvider();
+
+        Assert.NotNull(provider.GetRequiredKeyedService<IEventStore>("ordering"));
+    }
 }

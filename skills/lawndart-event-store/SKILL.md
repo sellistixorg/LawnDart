@@ -51,6 +51,7 @@ ctx.UseSqlServer(o =>
 });
 ctx.WithCommandHandlers<BorrowBookHandler>();
 ctx.WithEventTypes<BookAdded>();
+ctx.PublishEvents(events => events.Publish<BookBorrowed>());
 ctx.WithProjections(
     [typeof(LibraryCatalogProjection).Assembly],
     opts =>

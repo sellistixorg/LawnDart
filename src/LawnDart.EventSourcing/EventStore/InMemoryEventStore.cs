@@ -1,10 +1,13 @@
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using LawnDart.EventSourcing.Serialization;
 using LawnDart.EventStore;
 using LawnDart.Metadata;
+using LawnDart.Outbox;
+using LawnDart.Publishing;
 
 namespace LawnDart.EventSourcing.EventStore;
 
@@ -30,6 +33,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
     private readonly bool _enableRegistry;
     private readonly bool _requireTenantId;
     private readonly bool _validateNames;
+    private readonly IOutboxWriter? _outbox;
 
     /// <summary>
     /// The bounded context name this store belongs to.
@@ -72,12 +76,23 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
     /// process-wide resolver). Hosts must pass a materialized catalog via
     /// <c>WithEventTypes</c>.
     /// </param>
+    /// <param name="publishedEvents">
+    /// Declarations for this context. The typed append attaches
+    /// <see cref="AppendEvent.Outbound"/> for each declared event.
+    /// </param>
+    /// <param name="outbox">
+    /// When set, a successful append records one message for each envelope that has
+    /// <see cref="AppendEvent.Outbound"/>, on the stream path and the dynamic consistency
+    /// boundary path. Null records nothing.
+    /// </param>
     public InMemoryEventStore(
         bool enableRegistry = true,
         string contextName  = "default",
         ILogger<InMemoryEventStore>? logger = null,
         InMemoryEventStoreOptions? options = null,
-        EventSession? session = null)
+        EventSession? session = null,
+        PublishedEventMap? publishedEvents = null,
+        IOutboxWriter? outbox = null)
     {
         _enableRegistry = enableRegistry;
         ContextName     = string.IsNullOrWhiteSpace(contextName) ? "default" : contextName;
@@ -96,7 +111,8 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         if (poll < TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(options), "SubscriptionPollInterval cannot be negative.");
         _subscriptionPollInterval = poll;
-        _adapter = new EventStoreAdapter(this, _session, this, _subscriptionChannelCapacity);
+        _adapter = new EventStoreAdapter(this, _session, this, _subscriptionChannelCapacity, publishedEvents);
+        _outbox = outbox;
     }
 
     public Task<IReadOnlyList<SequencedEvent>> ReadStreamAsync(
@@ -670,7 +686,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         if (!_streams.ContainsKey(streamId))
             _streams[streamId] = [];
 
-        ReserveEventIds(envelopes);
+        var eventIds = ReserveEventIds(envelopes);
         foreach (var envelope in envelopes)
         {
             var recorded = Record(envelope, streamId, ++streamVersion);
@@ -683,6 +699,8 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         {
             UpdateStreamRegistry(streamId, streamVersion, sequencePositions.Last(), envelopes.Count, UnionTags(envelopes));
         }
+
+        WriteDeclaredOutbox(streamId, envelopes, sequencePositions, eventIds);
 
         if (_logger is not null)
             InMemoryEventStoreLog.StreamEventsAppended(
@@ -717,7 +735,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         var streamId = BuildDcbStreamId(tenantId);
         var sequencePositions = new List<long>();
 
-        ReserveEventIds(envelopes);
+        var eventIds = ReserveEventIds(envelopes);
         foreach (var envelope in envelopes)
         {
             var recorded = Record(envelope, streamId, streamVersion: 0);
@@ -729,6 +747,8 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         {
             UpdateStreamRegistry(streamId, 0, sequencePositions.Last(), envelopes.Count, UnionTags(envelopes));
         }
+
+        WriteDeclaredOutbox(streamId, envelopes, sequencePositions, eventIds);
 
         if (_logger is not null)
             InMemoryEventStoreLog.DcbEventsAppended(
@@ -756,7 +776,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
             envelope.Tags);
     }
 
-    private void ReserveEventIds(IReadOnlyList<AppendEvent> envelopes)
+    private List<Guid> ReserveEventIds(IReadOnlyList<AppendEvent> envelopes)
     {
         var ids = EventIdResolver.ResolveBatch(envelopes.Select(e => e.Metadata).ToList());
         foreach (var id in ids)
@@ -767,6 +787,53 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
 
         foreach (var id in ids)
             _eventIds.Add(id);
+        return ids;
+    }
+
+    /// <summary>
+    /// Records one message per envelope that carries <see cref="AppendEvent.Outbound"/>.
+    /// Runs after the frames are stored and before the caller signals, so a failed
+    /// append leaves no message. The writer finishes before this call returns.
+    /// </summary>
+    private void WriteDeclaredOutbox(
+        string streamId,
+        IReadOnlyList<AppendEvent> envelopes,
+        IReadOnlyList<long> positions,
+        IReadOnlyList<Guid> eventIds)
+    {
+        if (_outbox is null)
+            return;
+
+        List<OutboxMessage>? messages = null;
+        for (var i = 0; i < envelopes.Count; i++)
+        {
+            var outbound = envelopes[i].Outbound;
+            if (outbound is null)
+                continue;
+
+            messages ??= [];
+            var metadata = outbound.Metadata.IsEmpty
+                ? "{}"
+                : Encoding.UTF8.GetString(outbound.Metadata.Span);
+            messages.Add(new OutboxMessage
+            {
+                Id = eventIds[i],
+                EventType = outbound.EventType,
+                SchemaVersion = outbound.SchemaVersion,
+                CodecId = outbound.CodecId,
+                Payload = outbound.Payload,
+                Metadata = metadata,
+                StreamId = streamId,
+                SequencePosition = positions[i],
+                CreatedAt = DateTime.UtcNow,
+                Attempts = 0
+            });
+        }
+
+        if (messages is null)
+            return;
+
+        _outbox.WriteBatchAsync(messages).GetAwaiter().GetResult();
     }
 
     private static IReadOnlyList<string> UnionTags(IReadOnlyList<AppendEvent> envelopes)
