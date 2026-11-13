@@ -332,13 +332,6 @@ public static class BoundedContextExtensions
            "Call WithEventTypes(...) when configuring this context. " +
            "The catalog is per-context and required at startup.";
 
-    /// <summary>
-    /// Message when a context turns the outbox on and declares nothing to publish.
-    /// Lists the context's event types.
-    /// </summary>
-    internal static string MissingPublishedEventsMessage(string contextName, EventTypeCatalog? catalog)
-        => PublishedEventMap.NothingDeclaredMessage(contextName, catalog);
-
     private static PublishedEventRegistry GetOrCreatePublishedRegistry(IServiceCollection services)
     {
         for (var i = 0; i < services.Count; i++)

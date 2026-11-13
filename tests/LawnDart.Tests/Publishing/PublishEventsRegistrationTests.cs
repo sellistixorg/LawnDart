@@ -135,7 +135,7 @@ public class PublishEventsRegistrationTests
     [Fact]
     public void Store_startup_message_for_an_outbox_with_nothing_declared_lists_the_event_types()
     {
-        var message = BoundedContextExtensions.MissingPublishedEventsMessage("membership", MembershipCatalog());
+        var message = PublishedEventMap.NothingDeclaredMessage("membership", MembershipCatalog());
 
         Assert.Contains("'membership' declares no published events", message);
         Assert.Contains("PublishEvents(", message);
@@ -145,7 +145,7 @@ public class PublishEventsRegistrationTests
     [Fact]
     public void Store_startup_message_without_a_catalog_still_names_the_context()
     {
-        var message = BoundedContextExtensions.MissingPublishedEventsMessage("membership", catalog: null);
+        var message = PublishedEventMap.NothingDeclaredMessage("membership", catalog: null);
 
         Assert.Contains("'membership'", message);
         Assert.DoesNotContain("Event types in this context", message);

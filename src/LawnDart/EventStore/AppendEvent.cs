@@ -54,6 +54,11 @@ public sealed class AppendEvent
     /// </summary>
     public OutboundEvent? Outbound { get; }
 
+    /// <summary>Creates an append envelope.</summary>
+    /// <remarks>
+    /// The six-argument constructor is removed. Source that calls this constructor still compiles.
+    /// A program already compiled against that constructor must be rebuilt.
+    /// </remarks>
     /// <param name="eventType">Event name.</param>
     /// <param name="payload">Serialized payload. Copied on construct.</param>
     /// <param name="metadata">UTF-8 JSON metadata bytes. Copied on construct. Empty is valid.</param>
