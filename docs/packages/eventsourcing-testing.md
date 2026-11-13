@@ -24,6 +24,7 @@ LawnDart API, so a store outside this repository runs it the same way.
 | `StreamListContractTests` | Stream listing: order, filters, page tokens |
 | `SubscriptionContractTests` | Live subscriptions, when the store has them |
 | `ReadHorizonContractTests` | The read horizon, when the store has one |
+| `OutboxPublicationContractTests` | An append writes an outbox row only for a declared event. 11 tests. A store that does not write rows on append skips them |
 
 ## Run it against your store
 
@@ -98,6 +99,12 @@ Add one class like the last two for each suite in the table. Run them with
   off the new-events signal when `PublishNewEventsSignal` is false, set
   `ContractCapabilities.CanTurnOffNewEventsSignal` so the poll-only test runs.
   Options for stores you do not have, such as the outbox, can be ignored.
+  A store that writes a row on append sets `AppendWritesOutboxRows` and runs
+  `OutboxPublicationContractTests`. When that store opens, call
+  `ContractOutboxMaps.For`. With the outbox on and nothing declared, that call
+  throws `PublishedEventMap.NothingDeclaredMessage`, which names the context
+  and lists its event types. The in-memory, SQL Server, and Postgres stores
+  run these 11 tests.
 - **Know the test events.** When `options.CreateSession()` returns a session,
   give it to your store so it can read the suite's events back as types.
 - **Return both views of one store.** `Store` is your `IEventStore` and `Log`

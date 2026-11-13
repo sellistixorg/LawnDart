@@ -19,6 +19,14 @@ An Amazon SQS host calls `AddAwsSqsTransport` from `LawnDart.Messaging.AwsSqs`.
 The event passed to `AddReactor` must declare `[EventTypeName]`.
 The host fails at startup when the attribute is missing.
 
+When the host turns the outbox on, that reactor event is the integration
+event the context declared. Call `PublishEvents` after `WithEventTypes`.
+`Translate` is the normal case: the reactor handles the notice, not the
+internal event. `Publish<T>()` sends an event that already lives in a
+contracts project. There is no publish-everything option. The store fails
+to open when the outbox is on and nothing is declared. See
+`docs/OUTBOX_PATTERN.md` and `lawndart-event-store`.
+
 `IEventProcessor` (event to event) and `ITaskProcessor` (state to command)
 are also hosted. See `docs/learning-path/06-reactions.md`.
 

@@ -13,7 +13,7 @@ Use this skill first when wiring a new application on LawnDart packages.
 2. **Aggregates / DCB** declare closed `Handle(TCommand)`. `HandleCommandAsync` is persistence + authorization. Do not write the obsolete entity `HandleAsync<TCommand>` switch.
 3. **Load:** aggregate `GetOrCreateAsync<T>(id)` when the stream is `{type}:{guid}` (or `{tenant}:{type}:{guid}`); `GetOrCreateAsync<T>(streamId)` otherwise. DCB `GetOrCreateEntityAsync<T>(query)` then `Emit(event, tags)`.
 4. **Projections:** `ProjectionBase<TView>` plus a scope attribute (`[SingleStreamProjection]`, `[GlobalProjection]`, `[DcbProjection]`, `[MultiStreamProjection]`). `[ProjectionEndpoint]` is optional GET mapping. Multi-stream handlers also implement `IMultiStreamEntityResolver`. Do not implement `IProjector<TState>`.
-5. **Stores:** `UseInMemory` / `UseSqlServer` on `AddBoundedContext(name)`.
+5. **Stores:** `UseInMemory` / `UseSqlServer` / `UsePostgres` on `AddBoundedContext(name)`. When `EnableOutbox` is true, call `PublishEvents` after `WithEventTypes`.
 
 ## Packages
 
@@ -73,3 +73,14 @@ ctx.WithProjections(
 ```
 
 Canonical demo input: `build-kit/library-slice.json`. DCB alternate: `build-kit/library-dcb-slice.json`. Academy is a runnable host, not the excerpt source.
+
+## Outbox
+
+Turn the outbox on only after `PublishEvents`. `Translate` is the normal case.
+`Publish<T>()` sends an event that already lives in a contracts project.
+There is no publish-everything option. The store fails to open when the outbox
+is on and nothing is declared. The message lists that context's event types.
+`UseInMemory` takes `EnableOutbox` and records those messages in the process.
+SQL Server and Postgres write the row in the append transaction.
+`AddMessageTransportOutboxPublisher()` with no types reads `PublishedEventCatalog`.
+See `docs/OUTBOX_PATTERN.md` and `lawndart-event-store`.

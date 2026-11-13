@@ -33,6 +33,36 @@ ctx.UseInMemory();
 ctx.WithEventTypes<BookAdded>();
 ```
 
+When `EnableOutbox` is true, call `PublishEvents` after `WithEventTypes`.
+An event leaves the context only when it is declared. `Translate<TInternal, TPublic>`
+is the normal case: the stored event stays internal, and the outbox row is a
+separate integration event. Return null to publish nothing for that event.
+`Publish<T>()` sends the event as stored. Use it when that event already lives
+in a contracts project. There is no publish-everything option.
+
+`UseInMemory`, `UseSqlServer`, and `UsePostgres` take the same `EnableOutbox`
+flag. The store fails to open when the outbox is on and nothing is declared.
+The message names the context and lists its event types.
+`AddMessageTransportOutboxPublisher()` with no types reads `PublishedEventCatalog`.
+
+```csharp
+ctx.WithEventTypes<BookAdded>();
+ctx.PublishEvents(events => events.Translate<BookBorrowed, BookBorrowedNotice>(
+    (borrowed, publication) => new BookBorrowedNotice(
+        publication.SourceEventId,
+        borrowed.Timestamp,
+        borrowed.BookId,
+        borrowed.MemberName)));
+```
+
+`BookBorrowedNotice` is the integration event. Give it `[EventTypeName]`.
+`WithUpcasters<TMarker>()` inside `PublishEvents` reads an outbox row written
+with an older version of that notice.
+
+The Library SQL host calls `Publish<BookBorrowed>()` because
+`LoanNoticeReactor` consumes `BookBorrowed`. Prefer `Translate` when the
+stored event should stay internal.
+
 Excerpt from `samples/Library.Host/LibraryHost.cs` (`AddSqlLibrary`):
 
 ```csharp

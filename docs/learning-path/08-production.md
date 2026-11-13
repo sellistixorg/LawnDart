@@ -25,21 +25,25 @@ The store snippet below leaves the message transport to you.
 `AddMessageTransportOutboxPublisher` publishes outbox rows through the
 registered `IMessageTransport`. Register `AddInMemoryMessaging`,
 `AddRabbitMqTransport`, or `AddAzureServiceBusTransport` before that call.
-See [Message transports](../MESSAGE_TRANSPORTS.md) and
+`Publish<StudentRegistered>()` sends that event as stored. Use `Publish<T>()`
+when the event already lives in a contracts project. `Translate` is the
+normal case. There is no publish-everything option. See
+[Message transports](../MESSAGE_TRANSPORTS.md) and
 [Outbox](../OUTBOX_PATTERN.md).
 
 ```csharp
 services.AddLawnDart(o => o.RequireTenantId = false);
 services.AddSqlProjectionStores("default", cs);
 services.AddBoundedContext("default")
+    .WithCommandHandlers<RegisterStudentCommandHandler>()
+    .WithEventTypes<StudentRegistered>()
+    .PublishEvents(events => events.Publish<StudentRegistered>())
     .UseSqlServer(o =>
     {
         o.ConnectionString = cs;
         o.RequireTenantId = false;
         o.EnableOutbox = true;
     })
-    .WithCommandHandlers<RegisterStudentCommandHandler>()
-    .WithEventTypes<StudentRegistered>()
     .WithProjections([typeof(StudentSummaryProjection).Assembly]);
 
 services.AddLawnDartHttpCommands(typeof(RegisterStudentCommand).Assembly);

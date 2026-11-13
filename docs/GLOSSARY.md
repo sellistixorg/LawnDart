@@ -190,8 +190,12 @@ for a later release (no public type until a host exists). See the
 ## O
 
 **Outbox**  
-Persist outgoing messages with the same commit as events (SQL Server), then
-publish to a transport.
+An append writes a row for each event the context declares with `PublishEvents`.
+`Translate` is the normal case. `Publish<T>()` sends an event that already
+lives in a contracts project. SQL Server and Postgres write that row in the
+append transaction. The in-memory store records it in the process when
+`EnableOutbox` is true. The publisher sends the row to a transport. See
+[Outbox pattern](OUTBOX_PATTERN.md).
 
 ## P
 

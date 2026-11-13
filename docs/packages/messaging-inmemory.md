@@ -3,8 +3,12 @@
 In-process `IMessageTransport`. Academy Showcase A uses it for choreography
 without a broker.
 
-Take it for local work and tests. Use SQL Server plus `EnableOutbox` when
-the consumer is another process. InMemory publishes in-process.
+Take it for local work and tests. Use SQL Server or Postgres plus
+`EnableOutbox` when the consumer is another process. Declare those events
+with `PublishEvents`. `Translate` is the normal case. `Publish<T>()` sends an
+event that already lives in a contracts project. InMemory publishes in-process.
+`UseInMemory` can record outbox messages when `EnableOutbox` is true. See
+[Outbox pattern](../OUTBOX_PATTERN.md).
 
 ## Registration
 

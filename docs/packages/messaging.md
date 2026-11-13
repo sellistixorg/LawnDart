@@ -38,6 +38,10 @@ fails when the attribute is missing. The message type is that token.
 publisher. Property names are PascalCase. Reads ignore case. Null values are
 omitted.
 
+`AddMessageTransportOutboxPublisher()` with no types reads
+`PublishedEventCatalog`. Register `PublishEvents` on each context that turns
+the outbox on. See [Outbox pattern](../OUTBOX_PATTERN.md).
+
 `MessageHeaders` names the envelope headers. `MessageTransportOptions` sets
 the subscription name, concurrency, prefetch, max delivery attempts, and
 dead-letter handling. `TopicMapper` maps a declared event type to a topic

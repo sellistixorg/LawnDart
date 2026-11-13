@@ -74,6 +74,7 @@ Write the envelope with `MessageEnvelopeHeaders.Write`. Read it with
 | `OutboxStreamId` | `outbox.streamId` |
 | `OutboxSequencePosition` | `outbox.sequencePosition` |
 | `OutboxEventType` | `outbox.eventType` |
+| `OutboxSourceEventId` | `outbox.sourceEventId` |
 | `TraceParent` | `traceparent` |
 | `TraceState` | `tracestate` |
 
@@ -81,6 +82,9 @@ Application headers are stored with the `header.` prefix and restored without
 it. `traceparent`, `tracestate`, and the `outbox.*` headers are copied under
 their own names. User, tenant, and custom headers the publisher set are the
 values the handler sees.
+
+The outbox publisher sets `outbox.sourceEventId` to the source event id. The
+message id is that same id.
 
 `enqueued-at` is a round-trip timestamp (`o` format). A value that does not
 parse fails the read.

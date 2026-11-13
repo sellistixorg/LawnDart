@@ -39,9 +39,11 @@ public static class BoundedContextBuilderExtensions
 
     /// <summary>
     /// Configures this bounded context to use the in-memory event store.
-    /// <paramref name="configure"/> sets options such as <see cref="EventSourcingOptions.OutboxClaimLease"/>,
+    /// <paramref name="configure"/> sets options such as <see cref="EventSourcingOptions.EnableOutbox"/>,
+    /// <see cref="EventSourcingOptions.OutboxClaimLease"/>,
     /// <see cref="EventSourcingOptions.WarnOnUnknownTag"/>, and
     /// <see cref="EventSourcingOptions.FormatAggregateFallbackTag"/>.
+    /// <see cref="EventSourcingOptions.EnableOutbox"/> records an outbox message for each event this context declares with <c>PublishEvents</c>.
     /// The callback is also registered on <c>IOptions&lt;EventSourcingOptions&gt;</c>
     /// so the repositories see those flags. The outbox writer reads the same values
     /// from the object built here.

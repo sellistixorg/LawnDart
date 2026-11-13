@@ -52,7 +52,10 @@ demonstrates this without a broker.
 
 ## Outbox
 
-Use SQL Server plus `EnableOutbox` when the consumer is another process.
+Use SQL Server or Postgres plus `EnableOutbox` when the consumer is another
+process. Declare each event with `PublishEvents` after `WithEventTypes`.
+`Translate` is the normal case. `Publish<T>()` sends an event that already
+lives in a contracts project. There is no publish-everything option.
 `AddMessageTransportOutboxPublisher` hands each row to the registered
 transport: in-process, RabbitMQ, Azure Service Bus, or Amazon SQS.
 See [OUTBOX_PATTERN.md](OUTBOX_PATTERN.md).

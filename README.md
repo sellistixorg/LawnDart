@@ -20,7 +20,7 @@ checkpoints to SQL Server or Postgres by dependency injection. Written by a huma
 Supported today, as a closed set:
 
 - **Stores:** InMemory, SQL Server, and Postgres (event store; `LawnDart.EventSourcing.Postgres`)
-- **Messaging:** in-process transport (`LawnDart.Messaging.InMemory`), RabbitMQ (`LawnDart.Messaging.RabbitMQ`), Azure Service Bus (`LawnDart.Messaging.AzureServiceBus`), and Amazon SQS (`LawnDart.Messaging.AwsSqs`). Inbox deduplication is in-process, SQL Server (`LawnDart.Messaging.SqlServer`), or Postgres (`LawnDart.Messaging.Postgres`). When the outbox is on, SQL Server and Postgres rows commit with your events.
+- **Messaging:** in-process transport (`LawnDart.Messaging.InMemory`), RabbitMQ (`LawnDart.Messaging.RabbitMQ`), Azure Service Bus (`LawnDart.Messaging.AzureServiceBus`), and Amazon SQS (`LawnDart.Messaging.AwsSqs`). Inbox deduplication is in-process, SQL Server (`LawnDart.Messaging.SqlServer`), or Postgres (`LawnDart.Messaging.Postgres`). When the outbox is on, a row is written only for an event the context declares with `PublishEvents`. SQL Server and Postgres commit that row with the event. The in-memory store records it in the process.
 - **Runtime:** in-process, `net10.0`, your host, your DI
 - **Modelling:** aggregates and DCB behind one store contract
 
