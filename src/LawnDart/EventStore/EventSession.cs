@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using LawnDart.Metadata;
+using LawnDart.Publishing;
 using LawnDart.Serialization;
 
 namespace LawnDart.EventStore;
@@ -88,6 +89,78 @@ public sealed class EventSession
             codecId: EventCodec.IdFor(_serializer.ContentType),
             tags);
     }
+
+    /// <summary>
+    /// Serializes an integration event for an outbox row, with reduced metadata.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The payload uses this session's format. The event name and schema version come
+    /// from the notice type's <see cref="EventTypeNameAttribute"/>; the notice does not
+    /// need to be in this session's catalog.
+    /// </para>
+    /// <para>
+    /// The metadata carries only: <see cref="EventMetadata.EventId"/> (the source event id,
+    /// which is the message id), <see cref="EventMetadata.TenantId"/>,
+    /// <see cref="EventMetadata.CorrelationId"/>, <see cref="EventMetadata.CausationId"/>,
+    /// <see cref="EventMetadata.TraceId"/>, <see cref="EventMetadata.SpanId"/>,
+    /// <see cref="EventMetadata.Timestamp"/> (the source event's business time), and the
+    /// notice's <see cref="EventMetadata.SchemaName"/> and <see cref="EventMetadata.SchemaVersion"/>.
+    /// <see cref="EventMetadata.Custom"/> holds only <see cref="SourceEventIdKey"/> and
+    /// <see cref="SourceEventTypeKey"/>. User, network, account and authorization fields
+    /// are never copied. A notice that needs a user id carries it as a field.
+    /// </para>
+    /// </remarks>
+    /// <param name="notice">The integration event (or the pass-through event).</param>
+    /// <param name="context">Source event id, type, tenant and correlation for the row.</param>
+    /// <param name="sourceMetadata">Metadata of the append, read for trace and span ids. Not mutated.</param>
+    /// <exception cref="InvalidOperationException">The notice type has no <see cref="EventTypeNameAttribute"/>.</exception>
+    public OutboundEvent ToOutboundEvent(
+        IEvent notice,
+        in PublishContext context,
+        EventMetadata? sourceMetadata = null)
+    {
+        ArgumentNullException.ThrowIfNull(notice);
+
+        var type = notice.GetType();
+        var token = EventTypeCatalog.TryGetDeclaredName(type)
+            ?? throw new InvalidOperationException(
+                $"Published event type '{type.FullName}' must declare [EventTypeName(\"kebab-token\")].");
+        var schemaVersion = ReadDeclaredSchemaVersion(type);
+        var payload = _serializer.Serialize(notice, type);
+
+        var sourceEventId = context.SourceEventId.ToString();
+        var metadata = new EventMetadata
+        {
+            EventId = sourceEventId,
+            TenantId = context.TenantId,
+            CorrelationId = context.CorrelationId,
+            CausationId = context.CausationId,
+            TraceId = sourceMetadata?.TraceId,
+            SpanId = sourceMetadata?.SpanId,
+            Timestamp = context.Timestamp,
+            SchemaName = token,
+            SchemaVersion = schemaVersion,
+            Custom = new Dictionary<string, string>
+            {
+                [SourceEventIdKey] = sourceEventId,
+                [SourceEventTypeKey] = context.SourceEventType
+            }
+        };
+
+        return new OutboundEvent(
+            token,
+            payload,
+            SerializeMetadata(metadata),
+            schemaVersion,
+            codecId: EventCodec.IdFor(_serializer.ContentType));
+    }
+
+    /// <summary><see cref="EventMetadata.Custom"/> key on an outbox row that holds the source event id.</summary>
+    public const string SourceEventIdKey = "lawndart.source-event-id";
+
+    /// <summary><see cref="EventMetadata.Custom"/> key on an outbox row that holds the source event's stored name.</summary>
+    public const string SourceEventTypeKey = "lawndart.source-event-type";
 
     /// <summary>
     /// Reads a stored record into a typed <see cref="SequencedEvent"/>.

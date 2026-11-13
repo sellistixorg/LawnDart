@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using LawnDart.Publishing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -34,6 +35,9 @@ public sealed class BoundedContextBuilder
     public EventTypeCatalog? EventCatalog { get; internal set; }
 
     internal EventUpcastPipeline? UpcastPipeline { get; set; }
+
+    /// <summary>Map registered by <c>PublishEvents</c>, or <c>null</c> when nothing is declared.</summary>
+    internal PublishedEventMap? PublishedEvents { get; set; }
 
     internal BoundedContextBuilder(string contextName, IServiceCollection services)
     {
@@ -217,6 +221,54 @@ public static class BoundedContextExtensions
         return builder;
     }
 
+    /// <summary>
+    /// Declares the events this context publishes through the outbox: each one passes
+    /// through as is (<see cref="PublishedEventsBuilder.Publish{TEvent}"/>) or is turned
+    /// into an integration event (<see cref="PublishedEventsBuilder.Translate{TInternal, TPublic}(Func{TInternal, TPublic})"/>).
+    /// An event that is not declared is never published.
+    /// Call <see cref="WithEventTypes(BoundedContextBuilder, Assembly[])"/> first.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Registers a <see cref="PublishedEventMap"/> keyed by <see cref="BoundedContextBuilder.ContextName"/>
+    /// and one process-wide <see cref="PublishedEventCatalog"/> holding every context's published types.
+    /// </para>
+    /// <para>
+    /// Fails at startup when nothing is declared (the message lists this context's event
+    /// types), a published type has no <see cref="EventTypeNameAttribute"/>, a declared
+    /// internal event is not in this context's catalog, one internal event is declared
+    /// twice, another context already publishes the same event name with a different
+    /// .NET type, or this method was already called for this context.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">A startup check fails.</exception>
+    public static BoundedContextBuilder PublishEvents(
+        this BoundedContextBuilder builder,
+        Action<PublishedEventsBuilder> configure)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(configure);
+
+        var catalog = builder.EventCatalog
+            ?? throw new InvalidOperationException(
+                "PublishEvents requires WithEventTypes first on this bounded context.");
+        if (builder.PublishedEvents is not null)
+        {
+            throw new InvalidOperationException(
+                $"PublishEvents has already been called for context '{builder.ContextName}'.");
+        }
+
+        var map = PublishedEventMap.Create(builder.ContextName, catalog, configure);
+        var registry = GetOrCreatePublishedRegistry(builder.Services);
+        registry.Add(map);
+
+        builder.PublishedEvents = map;
+        builder.Services.AddKeyedSingleton(builder.ContextName, map);
+        if (string.Equals(builder.ContextName, LawnDartNames.DefaultContextName, StringComparison.Ordinal))
+            builder.Services.TryAddSingleton(map);
+        return builder;
+    }
+
     private static void RegisterCatalog(BoundedContextBuilder builder, IReadOnlyCollection<Type> types)
     {
         var catalog = EventTypeCatalog.Materialize(types);
@@ -279,6 +331,30 @@ public static class BoundedContextExtensions
         => $"Bounded context '{contextName}' has no event-type catalog. " +
            "Call WithEventTypes(...) when configuring this context. " +
            "The catalog is per-context and required at startup.";
+
+    /// <summary>
+    /// Message when a context turns the outbox on and declares nothing to publish.
+    /// Lists the context's event types.
+    /// </summary>
+    internal static string MissingPublishedEventsMessage(string contextName, EventTypeCatalog? catalog)
+        => PublishedEventMap.NothingDeclaredMessage(contextName, catalog);
+
+    private static PublishedEventRegistry GetOrCreatePublishedRegistry(IServiceCollection services)
+    {
+        for (var i = 0; i < services.Count; i++)
+        {
+            if (services[i].ServiceType == typeof(PublishedEventRegistry) &&
+                services[i].ImplementationInstance is PublishedEventRegistry existing)
+            {
+                return existing;
+            }
+        }
+
+        var registry = new PublishedEventRegistry();
+        services.AddSingleton(registry);
+        services.TryAddSingleton(_ => PublishedEventCatalog.Create(registry.Maps));
+        return registry;
+    }
 
     private static BoundedContextRegistry GetOrCreateRegistry(IServiceCollection services)
     {
