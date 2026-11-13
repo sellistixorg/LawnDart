@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>LawnDart.SqlPerformance</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>false</IsTestProject>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LawnDartRoot Condition="'$(LawnDartRoot)' == ''">$(MSBuildThisFileDirectory)..\..</LawnDartRoot>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="$(LawnDartRoot)\src\LawnDart\LawnDart.csproj" />
+    <ProjectReference Include="$(LawnDartRoot)\src\LawnDart.EventSourcing\LawnDart.EventSourcing.csproj" />
+    <ProjectReference Include="$(LawnDartRoot)\src\LawnDart.EventSourcing.Postgres\LawnDart.EventSourcing.Postgres.csproj" />
+    <ProjectReference Include="$(LawnDartRoot)\src\LawnDart.EventSourcing.SqlServer\LawnDart.EventSourcing.SqlServer.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.SqlClient" />
+    <PackageReference Include="Npgsql" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="LawnDart.SqlPerformance.Tests" />
+  </ItemGroup>
+
+</Project>
