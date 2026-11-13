@@ -42,6 +42,9 @@ public static class MessageHeaders
     /// <summary>Outbox header for the event type token. Value is <c>outbox.eventType</c>.</summary>
     public const string OutboxEventType = "outbox.eventType";
 
+    /// <summary>Outbox header for the source event id. Value is <c>outbox.sourceEventId</c>.</summary>
+    public const string OutboxSourceEventId = "outbox.sourceEventId";
+
     /// <summary>W3C <c>traceparent</c> header.</summary>
     public const string TraceParent = MessageTrace.TraceParentHeader;
 

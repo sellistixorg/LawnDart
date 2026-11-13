@@ -156,5 +156,6 @@ public static class MessageEnvelopeHeaders
             or MessageHeaders.TraceState
             or MessageHeaders.OutboxStreamId
             or MessageHeaders.OutboxSequencePosition
-            or MessageHeaders.OutboxEventType;
+            or MessageHeaders.OutboxEventType
+            or MessageHeaders.OutboxSourceEventId;
 }

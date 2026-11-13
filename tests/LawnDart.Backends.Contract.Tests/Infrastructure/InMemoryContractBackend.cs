@@ -13,6 +13,8 @@ namespace LawnDart.Backends.Contract.Tests;
 
 public sealed class InMemoryContractBackend : IFullContractBackend
 {
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, InMemoryOutboxWriter> _outboxes = new(StringComparer.Ordinal);
+
     public string Name => "in-memory";
 
     public ContractCapabilities Capabilities { get; } = new()
@@ -20,7 +22,7 @@ public sealed class InMemoryContractBackend : IFullContractBackend
         CanTurnOffNewEventsSignal = true,
         EnforcesEventIdAcrossTenants = true,
         StreamIdsCaseInsensitive = false,
-        AppendWritesOutboxRows = false,
+        AppendWritesOutboxRows = true,
         SecondInstanceSeesCommittedEvents = false,
         InboxMarksSurviveASecondInstance = false,
         ExposesStoredInboxKey = false,
@@ -42,6 +44,10 @@ public sealed class InMemoryContractBackend : IFullContractBackend
         ContractStoreOptions options,
         CancellationToken cancellationToken = default)
     {
+        var published = options.EnableOutbox ? ContractOutboxMaps.For(options) : null;
+        var connected = options.EnableOutbox
+            ? _outboxes.GetOrAdd(options.SchemaName, _ => new InMemoryOutboxWriter(options.OutboxClaimLease))
+            : null;
         var storeOptions = new InMemoryEventStoreOptions
         {
             SubscriptionPollInterval = options.SubscriptionPollInterval ?? TimeSpan.FromMilliseconds(50),
@@ -53,7 +59,9 @@ public sealed class InMemoryContractBackend : IFullContractBackend
             enableRegistry: options.EnableRegistry,
             contextName: options.SchemaName,
             options: storeOptions,
-            session: options.CreateSession());
+            session: options.CreateSession(),
+            publishedEvents: published,
+            outbox: connected);
         store.PublishNewEventsSignal = options.PublishNewEventsSignal;
         var opened = new ContractEventStore
         {
@@ -64,7 +72,7 @@ public sealed class InMemoryContractBackend : IFullContractBackend
             Signals = store,
             SignalCounters = new NewEventsSignalCounters(store.NewEvents),
             Hooks = UnavailableHooks.Instance,
-            Outbox = new InMemoryOutboxWriter(options.OutboxClaimLease),
+            Outbox = connected ?? new InMemoryOutboxWriter(options.OutboxClaimLease),
             ReadLogEntries = () => [],
             SetPublishNewEventsSignal = value => store.PublishNewEventsSignal = value,
             MarkStreamArchivedAsync = (streamId, ct) => MarkArchivedAsync(store, streamId, ct)
@@ -85,7 +93,8 @@ public sealed class InMemoryContractBackend : IFullContractBackend
     public Task<IOutboxWriter> OpenOutboxAsync(
         ContractStoreOptions options,
         CancellationToken cancellationToken = default)
-        => Task.FromResult<IOutboxWriter>(new InMemoryOutboxWriter(options.OutboxClaimLease));
+        => Task.FromResult<IOutboxWriter>(
+            _outboxes.GetOrAdd(options.SchemaName, _ => new InMemoryOutboxWriter(options.OutboxClaimLease)));
 
     public Task<ContractInbox> OpenInboxAsync(
         ContractStoreOptions options,

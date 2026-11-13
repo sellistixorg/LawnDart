@@ -29,7 +29,8 @@ public static class SchemaCheckStartupSample
                 o.RequireTenantId = false;
                 o.EnableOutbox = true;
             })
-            .WithEventTypes<CounterCreated>();
+            .WithEventTypes<CounterCreated>()
+            .PublishEvents(events => events.Publish<CounterCreated>());
     }
 
     public static async Task CheckPostgresAsync(IServiceProvider provider, CancellationToken cancellationToken = default)

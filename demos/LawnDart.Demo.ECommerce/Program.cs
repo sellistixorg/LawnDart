@@ -6,6 +6,7 @@ using LawnDart.EventSourcing;
 using LawnDart.EventSourcing.SqlServer;
 using LawnDart.Demo.ECommerce.Dcb;
 using LawnDart.Demo.ECommerce.Domain.Cart.Events;
+using LawnDart.Demo.ECommerce.Domain.Order.Events;
 using LawnDart.Demo.ECommerce.EDA;
 using LawnDart.Demo.ECommerce.MultiContext;
 using LawnDart.Demo.ECommerce.Projections;
@@ -173,7 +174,11 @@ internal static class Program
         services.AddSingleton<ITenantContextProvider>(new DemoTenantContextProvider("demo-tenant"));
 
         var context = services.AddBoundedContext("default")
-            .WithEventTypes(typeof(CartCreated).Assembly);
+            .WithEventTypes(typeof(CartCreated).Assembly)
+            .PublishEvents(events => events
+                .Publish<OrderCreated>()
+                .Publish<OrderItemAdded>()
+                .Publish<OrderCompleted>());
 
         if (useSql)
         {
@@ -182,6 +187,7 @@ internal static class Program
                 o.ConnectionString = connectionString!;
                 o.RequireTenantId = false;
                 o.EnableOutbox = true;
+                o.OutboxClaimLease = TimeSpan.Zero;
             });
             services.AddSingleton<ConsoleOutboxPublisher>();
             services.AddSingleton<IOutboxPublisher>(sp => sp.GetRequiredService<ConsoleOutboxPublisher>());

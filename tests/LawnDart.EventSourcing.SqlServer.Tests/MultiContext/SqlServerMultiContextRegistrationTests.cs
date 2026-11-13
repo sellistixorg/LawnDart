@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using LawnDart;
 using LawnDart.EventStore;
 
 namespace LawnDart.EventSourcing.SqlServer.Tests.MultiContext;
@@ -132,4 +133,68 @@ public class SqlServerMultiContextRegistrationTests
         var sp = services.BuildServiceProvider();
         Assert.NotNull(sp);
     }
+
+    [Fact]
+    public void UseSqlServer_EnableOutbox_WithoutPublishEvents_ThrowsOnStoreResolve()
+    {
+        var services = new ServiceCollection();
+        services.AddBoundedContext("ordering")
+            .WithEventTypes(typeof(CatalogPlaceholderEvent))
+            .UseSqlServer(opt =>
+            {
+                opt.ConnectionString = FakeConnectionString;
+                opt.EnableOutbox = true;
+            });
+        using var provider = services.BuildServiceProvider();
+
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => provider.GetRequiredKeyedService<IEventStore>("ordering"));
+
+        Assert.Contains("ordering", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("test-utilities.catalog-placeholder", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void UseSqlServer_EnableOutbox_WithPublishEvents_ResolvesTheStore()
+    {
+        var services = new ServiceCollection();
+        services.AddBoundedContext("ordering")
+            .WithEventTypes(typeof(CatalogPlaceholderEvent))
+            .PublishEvents(events => events.Publish<CatalogPlaceholderEvent>())
+            .UseSqlServer(opt =>
+            {
+                opt.ConnectionString = FakeConnectionString;
+                opt.EnableOutbox = true;
+            });
+        using var provider = services.BuildServiceProvider();
+
+        Assert.NotNull(provider.GetRequiredKeyedService<IEventStore>("ordering"));
+    }
+
+    [Fact]
+    public async Task UseSqlServer_OutboxOff_DoesNotRunTranslations()
+    {
+        var services = new ServiceCollection();
+        services.AddBoundedContext("ordering")
+            .WithEventTypes(typeof(CatalogPlaceholderEvent))
+            .PublishEvents(events => events.Translate<CatalogPlaceholderEvent, BrokenOrderNotice>(_ =>
+                throw new InvalidOperationException("broken translation")))
+            .UseSqlServer(opt =>
+            {
+                opt.ConnectionString = FakeConnectionString;
+                opt.RequireTenantId = false;
+            });
+        using var provider = services.BuildServiceProvider();
+        var store = provider.GetRequiredKeyedService<IEventStore>("ordering");
+
+        var ex = await Record.ExceptionAsync(() => store.AppendAsync(
+            "acme:Order:" + Guid.NewGuid().ToString("N"),
+            [new CatalogPlaceholderEvent(Guid.NewGuid(), DateTime.UtcNow)]));
+
+        Assert.NotNull(ex);
+        Assert.DoesNotContain("broken translation", ex.ToString(), StringComparison.Ordinal);
+    }
+
+    [EventTypeName("sql-registration.broken-notice")]
+    private sealed record BrokenOrderNotice(Guid Id, DateTime Timestamp) : IEvent;
 }

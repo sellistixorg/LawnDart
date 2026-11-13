@@ -11,6 +11,7 @@ using LawnDart.Messaging.InMemory;
 using LawnDart.Messaging.Outbox;
 using LawnDart.Metadata;
 using LawnDart.Outbox;
+using LawnDart.Publishing;
 
 namespace LawnDart.Messaging.Tests.Outbox;
 
@@ -351,6 +352,72 @@ public class MessageTransportOutboxPublisherTests
         using var sp = services.BuildServiceProvider();
         var publisher = sp.GetRequiredService<IOutboxPublisher>();
         Assert.IsType<MessageTransportOutboxPublisher>(publisher);
+    }
+
+    [Fact]
+    public async Task AddMessageTransportOutboxPublisher_UsesPublishedEventCatalog_ForANamedContext()
+    {
+        var services = new ServiceCollection();
+        var transport = new InMemoryMessageTransport(NullLogger<InMemoryMessageTransport>.Instance);
+        OrderPlacedEvent? received = null;
+        MessageContext? receivedCtx = null;
+        await transport.SubscribeAsync<OrderPlacedEvent>((e, ctx, _) =>
+        {
+            received = e;
+            receivedCtx = ctx;
+            return Task.CompletedTask;
+        });
+        services.AddSingleton<IMessageTransport>(transport);
+        services.AddBoundedContext("ordering")
+            .WithEventTypes(typeof(OrderPlacedEvent))
+            .PublishEvents(events => events.Publish<OrderPlacedEvent>());
+        services.AddMessageTransportOutboxPublisher();
+
+        using var provider = services.BuildServiceProvider();
+        var publisher = provider.GetRequiredService<IOutboxPublisher>();
+        var sourceId = Guid.NewGuid();
+        var rowId = Guid.NewGuid();
+        var evt = new OrderPlacedEvent(sourceId, DateTime.UtcNow, "order-named");
+        await publisher.PublishAsync(new OutboxMessage
+        {
+            Id = rowId,
+            EventType = EventTypeCatalog.TryGetDeclaredName(typeof(OrderPlacedEvent))!,
+            SchemaVersion = 1,
+            CodecId = EventCodec.Json,
+            Payload = JsonSerializer.SerializeToUtf8Bytes(evt, evt.GetType(), JsonOptions),
+            Metadata = JsonSerializer.Serialize(new EventMetadata
+            {
+                EventId = sourceId.ToString(),
+                CorrelationId = "corr-named",
+                Custom = new Dictionary<string, string>
+                {
+                    [EventSession.SourceEventIdKey] = sourceId.ToString(),
+                    [EventSession.SourceEventTypeKey] = "test-types.order-placed-event"
+                }
+            }, JsonOptions),
+            CreatedAt = DateTime.UtcNow,
+            StreamId = "Order:named",
+            SequencePosition = 4
+        });
+
+        Assert.Equal("order-named", received!.OrderId);
+        Assert.Equal(rowId.ToString(), receivedCtx!.MessageId);
+        Assert.Equal(sourceId.ToString(), receivedCtx.Headers[MessageHeaders.OutboxSourceEventId]);
+        Assert.False(receivedCtx.Headers.ContainsKey(EventSession.SourceEventTypeKey));
+        Assert.Equal("corr-named", receivedCtx.CorrelationId);
+    }
+
+    [Fact]
+    public void AddMessageTransportOutboxPublisher_WithoutDeclarations_FailsAtResolve()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IMessageTransport>(
+            new InMemoryMessageTransport(NullLogger<InMemoryMessageTransport>.Instance));
+        services.AddMessageTransportOutboxPublisher();
+        using var provider = services.BuildServiceProvider();
+
+        var ex = Assert.Throws<InvalidOperationException>(() => provider.GetRequiredService<IOutboxPublisher>());
+        Assert.Contains("PublishEvents", ex.Message, StringComparison.Ordinal);
     }
 
     /// <summary>Exposes <see cref="OutboxProcessor"/> batch processing for tests.</summary>

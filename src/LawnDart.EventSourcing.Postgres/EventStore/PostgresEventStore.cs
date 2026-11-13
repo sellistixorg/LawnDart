@@ -8,6 +8,7 @@ using LawnDart.EventSourcing.EventStore;
 using LawnDart.EventSourcing.Postgres.Outbox;
 using LawnDart.EventSourcing.Serialization;
 using LawnDart.EventStore;
+using LawnDart.Publishing;
 using LawnDart.Serialization;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -51,7 +52,8 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
         IEventSerializer? serializer = null,
         PostgresEventStoreOptions? options = null,
         ILogger<PostgresEventStore>? logger = null,
-        EventSession? session = null)
+        EventSession? session = null,
+        PublishedEventMap? publishedEvents = null)
     {
         _options = options ?? new PostgresEventStoreOptions { ConnectionString = connectionString };
         if (string.IsNullOrWhiteSpace(_options.ConnectionString))
@@ -59,7 +61,7 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
         _options.EnsureValid();
         _names = new PostgresNames(_options);
         _session = session ?? new EventSession(serializer ?? new JsonEventSerializer(), new WriteThroughEventTypeCatalog());
-        _adapter = new EventStoreAdapter(this, _session, this, _options.SubscriptionChannelCapacity);
+        _adapter = new EventStoreAdapter(this, _session, this, _options.SubscriptionChannelCapacity, publishedEvents);
         _dataSource = Source(_options.ConnectionString!);
         _migration = string.IsNullOrWhiteSpace(_options.MigrationConnectionString)
             ? _dataSource

@@ -92,13 +92,6 @@ public class SqlServerEventStoreOptions : EventSourcingOptions
     public bool ValidateNames { get; set; } = true;
 
     /// <summary>
-    /// Enable transactional outbox pattern.
-    /// When true, events are automatically written to the outbox table in the same transaction as event append.
-    /// Default: false
-    /// </summary>
-    public bool EnableOutbox { get; set; } = false;
-
-    /// <summary>
     /// DCB snapshot table name. Primary key is a 64-character SHA-256 hex
     /// (<see cref="LawnDart.Dcb.DcbSnapshotId"/>), not plaintext tags.
     /// Default: "DcbSnapshots"

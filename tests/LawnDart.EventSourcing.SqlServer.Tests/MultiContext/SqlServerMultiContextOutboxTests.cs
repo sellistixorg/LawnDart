@@ -1,6 +1,12 @@
 using Microsoft.Data.SqlClient;
+using LawnDart;
+using LawnDart.EventSourcing.Serialization;
+using LawnDart.EventSourcing.SqlServer;
+using LawnDart.EventSourcing.SqlServer.EventStore;
 using LawnDart.EventSourcing.SqlServer.Outbox;
+using LawnDart.EventStore;
 using LawnDart.Outbox;
+using LawnDart.Publishing;
 using Testcontainers.MsSql;
 
 namespace LawnDart.EventSourcing.SqlServer.Tests.MultiContext;
@@ -55,6 +61,68 @@ public class SqlServerMultiContextOutboxTests : IAsyncLifetime
         Assert.True(await TableExistsAsync("context2", "Outbox"));
     }
 
+    [Fact]
+    public async Task TwoContexts_WriteOnlyTheirDeclaredNotices()
+    {
+        var orderingSchema = "o" + Guid.NewGuid().ToString("N");
+        var catalogSchema = "c" + Guid.NewGuid().ToString("N");
+        var ordering = await OpenDeclaredStoreAsync(
+            orderingSchema,
+            [typeof(OrderNoted), typeof(OrderingInternal)],
+            events => events.Publish<OrderNoted>());
+        var catalog = await OpenDeclaredStoreAsync(
+            catalogSchema,
+            [typeof(ProductNoted), typeof(CatalogInternal)],
+            events => events.Publish<ProductNoted>());
+
+        var noted = new OrderNoted(Guid.NewGuid(), DateTime.UtcNow, "o-1");
+        await ordering.Store.AppendAsync(Stream("Order"), [
+            noted,
+            new OrderingInternal(Guid.NewGuid(), DateTime.UtcNow)
+        ]);
+        var product = new ProductNoted(Guid.NewGuid(), DateTime.UtcNow, "sku-1");
+        await catalog.Store.AppendAsync(Stream("Product"), [
+            product,
+            new CatalogInternal(Guid.NewGuid(), DateTime.UtcNow)
+        ]);
+
+        var orderingRow = Assert.Single(await ordering.Outbox.GetUnprocessedAsync(10));
+        var catalogRow = Assert.Single(await catalog.Outbox.GetUnprocessedAsync(10));
+        Assert.Equal(noted.Id, orderingRow.Id);
+        Assert.Equal("ordering.order-noted", orderingRow.EventType);
+        Assert.Equal(product.Id, catalogRow.Id);
+        Assert.Equal("catalog.product-noted", catalogRow.EventType);
+    }
+
+    private async Task<(SqlServerEventStore Store, IOutboxWriter Outbox)> OpenDeclaredStoreAsync(
+        string schema,
+        Type[] eventTypes,
+        Action<PublishedEventsBuilder> declare)
+    {
+        var catalog = EventTypeCatalog.Materialize(eventTypes);
+        var map = PublishedEventMap.Create(schema, catalog, declare);
+        var options = new SqlServerEventStoreOptions
+        {
+            ConnectionString = _connectionString,
+            SchemaName = schema,
+            ContextName = schema,
+            RequireTenantId = false,
+            EnableOutbox = true,
+            OutboxTableName = "Outbox"
+        };
+        var outbox = new SqlServerOutboxWriter(_connectionString, "Outbox", null, schema);
+        await outbox.InitializeSchemaAsync();
+        var store = new SqlServerEventStore(
+            _connectionString,
+            options: options,
+            session: new EventSession(new JsonEventSerializer(), catalog),
+            publishedEvents: map);
+        await store.InitializeSchemaAsync();
+        return (store, outbox);
+    }
+
+    private static string Stream(string aggregate) => "acme:" + aggregate + ":" + Guid.NewGuid().ToString("N");
+
 
 
 
@@ -74,6 +142,18 @@ public class SqlServerMultiContextOutboxTests : IAsyncLifetime
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
+
+    [EventTypeName("ordering.order-noted")]
+    public sealed record OrderNoted(Guid Id, DateTime Timestamp, string OrderId) : IEvent;
+
+    [EventTypeName("ordering.internal")]
+    public sealed record OrderingInternal(Guid Id, DateTime Timestamp) : IEvent;
+
+    [EventTypeName("catalog.product-noted")]
+    public sealed record ProductNoted(Guid Id, DateTime Timestamp, string Sku) : IEvent;
+
+    [EventTypeName("catalog.internal")]
+    public sealed record CatalogInternal(Guid Id, DateTime Timestamp) : IEvent;
 
     private async Task<bool> TableExistsAsync(string schemaName, string tableName)
     {

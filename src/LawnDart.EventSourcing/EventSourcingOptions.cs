@@ -14,6 +14,22 @@ public class EventSourcingOptions
     public bool EnforceDcbTenantIsolation { get; set; } = false;
 
     /// <summary>
+    /// When true, an append writes an outbox message for each event this context
+    /// declares with <c>PublishEvents</c>. A context that declares nothing fails
+    /// when the store is resolved. Default: false.
+    /// It takes effect on the store's options for each context.
+    /// </summary>
+    /// <remarks>
+    /// Stream appends and dynamic consistency boundary appends use the same rule.
+    /// A raw append writes a message only when the caller sets <c>AppendEvent.Outbound</c>.
+    /// The in-memory writer holds the messages in the process. SQL Server and Postgres
+    /// write the row in the append transaction. Call <c>InitializeSchemaAsync</c> so
+    /// that outbox table exists. Register an <c>IOutboxPublisher</c> so the outbox
+    /// processor can send the messages.
+    /// </remarks>
+    public bool EnableOutbox { get; set; }
+
+    /// <summary>
     /// How long a processor claim hides an outbox row from other processors.
     /// Default: 30 seconds.
     /// </summary>

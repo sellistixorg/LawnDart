@@ -1,5 +1,6 @@
 using LawnDart;
 using LawnDart.EventStore;
+using LawnDart.Publishing;
 
 namespace LawnDart.EventSourcing.Testing;
 
@@ -27,6 +28,57 @@ public sealed record ContractOutboxEvent : IEvent
     public Guid Id { get; init; }
     public DateTime Timestamp { get; init; }
     public string Value { get; init; } = "";
+}
+
+[EventTypeName("backend-contract.translated-source")]
+public sealed record ContractTranslatedSource : IEvent
+{
+    public Guid Id { get; init; }
+    public DateTime Timestamp { get; init; }
+    public string Value { get; init; } = "";
+    public string InternalNote { get; init; } = "";
+}
+
+[EventTypeName("backend-contract.outbox-notice", version: 2)]
+public sealed record ContractOutboxNotice(Guid Id, DateTime Timestamp, string Value) : IEvent;
+
+[EventTypeName("backend-contract.internal-only")]
+public sealed record ContractInternalEvent : IEvent
+{
+    public Guid Id { get; init; }
+    public DateTime Timestamp { get; init; }
+    public string Secret { get; init; } = "";
+}
+
+[EventTypeName("backend-contract.skipped-source")]
+public sealed record ContractSkippedSource : IEvent
+{
+    public Guid Id { get; init; }
+    public DateTime Timestamp { get; init; }
+}
+
+/// <summary>Declarations the outbox contract tests share.</summary>
+public static class ContractPublication
+{
+    public static readonly Type[] SourceTypes =
+    [
+        typeof(ContractOutboxEvent),
+        typeof(ContractTranslatedSource),
+        typeof(ContractInternalEvent),
+        typeof(ContractSkippedSource)
+    ];
+
+    public static void Declare(PublishedEventsBuilder builder)
+    {
+        builder
+            .Publish<ContractOutboxEvent>()
+            .Translate<ContractTranslatedSource, ContractOutboxNotice>(source =>
+                new ContractOutboxNotice(source.Id, source.Timestamp, source.Value))
+            .Translate<ContractSkippedSource, ContractOutboxNotice>(_ => null);
+    }
+
+    public static void DeclarePassThrough(PublishedEventsBuilder builder)
+        => builder.Publish<ContractOutboxEvent>();
 }
 
 public static class ContractEvent

@@ -83,12 +83,6 @@ public class PostgresEventStoreOptions : EventSourcingOptions
     /// </summary>
     public bool ValidateNames { get; set; } = true;
 
-    /// <summary>
-    /// When true, an append writes one outbox row per event in that same transaction.
-    /// Default false. Call <c>InitializeSchemaAsync</c> so the outbox table exists.
-    /// </summary>
-    public bool EnableOutbox { get; set; }
-
     /// <summary>Outbox table name. Default <c>outbox</c>. Not partitioned.</summary>
     public string OutboxTableName { get; set; } = "outbox";
 

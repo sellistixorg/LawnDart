@@ -3,6 +3,7 @@ using System.Text;
 using LawnDart.EventSourcing.Postgres;
 using LawnDart.EventSourcing.Postgres.EventStore;
 using LawnDart.EventStore;
+using LawnDart.Publishing;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using Testcontainers.PostgreSql;
@@ -287,6 +288,13 @@ public sealed class PostgresAppendClosureTests
         bool enableOutbox = false)
     {
         var schema = "a" + Guid.NewGuid().ToString("N");
+        PublishedEventMap? published = null;
+        if (enableOutbox)
+        {
+            var catalog = EventTypeCatalog.Materialize([typeof(ContractTestEvent)]);
+            published = PublishedEventMap.Create(schema, catalog, events => events.Publish<ContractTestEvent>());
+        }
+
         var store = new PostgresEventStore(
             connectionString,
             options: new PostgresEventStoreOptions
@@ -296,7 +304,8 @@ public sealed class PostgresAppendClosureTests
                 RequireTenantId = false,
                 EnableOutbox = enableOutbox
             },
-            logger: logger);
+            logger: logger,
+            publishedEvents: published);
         await store.InitializeSchemaAsync();
         return new OpenedStore(store, schema);
     }

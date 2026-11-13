@@ -49,15 +49,23 @@ var useSql = args.Contains("--sql")
 
 if (useSql)
 {
-    var connectionString =
-        builder.Configuration.GetConnectionString("Academy")
-        ?? Environment.GetEnvironmentVariable("LAWNDART_SQL_CONNECTION")
-        ?? throw new InvalidOperationException(
+    var fromConfig = builder.Configuration.GetConnectionString("Academy");
+    var connectionString = string.IsNullOrWhiteSpace(fromConfig)
+        ? Environment.GetEnvironmentVariable("LAWNDART_SQL_CONNECTION")
+        : fromConfig;
+    if (string.IsNullOrWhiteSpace(connectionString))
+    {
+        throw new InvalidOperationException(
             "SQL mode requires ConnectionStrings:Academy or LAWNDART_SQL_CONNECTION.");
+    }
 
     builder.Services.AddSqlProjectionStores("default", connectionString);
     builder.Services.AddInMemoryMessaging();
     builder.Services.AddMessageTransportOutboxPublisher();
+    ctx.PublishEvents(events => events
+        .Publish<StudentRegistered>()
+        .Publish<StudentEnrolled>()
+        .Publish<SeatReserved>());
     ctx.UseSqlServer(opts =>
         {
             opts.ConnectionString = connectionString;

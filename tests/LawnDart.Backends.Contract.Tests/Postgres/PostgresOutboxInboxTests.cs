@@ -4,6 +4,7 @@ using LawnDart.EventSourcing.Postgres.EventStore;
 using LawnDart.EventSourcing.Postgres.Outbox;
 using LawnDart.EventStore;
 using LawnDart.Outbox;
+using LawnDart.Publishing;
 using Npgsql;
 
 namespace LawnDart.Backends.Contract.Tests;
@@ -63,11 +64,13 @@ public sealed class PostgresOutboxInboxTests
     [Fact]
     public async Task RolledBackAppend_LeavesNoOutboxRow()
     {
-        var opened = await _fixture.Backend.OpenEventStoreAsync(ContractStores.Isolated(enableOutbox: true));
+        var opened = await _fixture.Backend.OpenEventStoreAsync(Publishing());
         var store = (PostgresEventStore)opened.Store;
         var streamId = "acme:Order:" + Guid.NewGuid().ToString("N");
+        var payload = """{"n":1}"""u8.ToArray();
+        var notice = new OutboundEvent("contract.outbox.rollback", payload, metadata: "{}"u8.ToArray());
         await store.AppendAndRollbackAsync(streamId, [
-            new AppendEvent("contract.outbox.rollback", """{"n":1}"""u8.ToArray(), metadata: "{}"u8.ToArray())
+            new AppendEvent("contract.outbox.rollback", payload, metadata: "{}"u8.ToArray(), outbound: notice)
         ]);
 
         Assert.Empty(await store.ReadStreamAsync(streamId));
@@ -171,14 +174,7 @@ public sealed class PostgresOutboxInboxTests
         await store.AppendAsync(second, [ContractEvent.Tick()]);
         Assert.Empty(await opened.RequireOutbox().GetUnprocessedAsync(10));
 
-        var enabled = await _fixture.Backend.OpenEventStoreAsync(
-            new ContractStoreOptions
-            {
-                SchemaName = schema,
-                RequireTenantId = false,
-                EnableOutbox = true,
-                OutboxClaimLease = TimeSpan.Zero
-            });
+        var enabled = await _fixture.Backend.OpenEventStoreAsync(Publishing(schema, claimLease: TimeSpan.Zero));
         var third = "acme:Order:" + Guid.NewGuid().ToString("N");
         await enabled.Store.AppendAsync(third, [ContractEvent.Tick()]);
         Assert.Equal(third, Assert.Single(await enabled.RequireOutbox().GetUnprocessedAsync(10)).StreamId);
@@ -187,7 +183,7 @@ public sealed class PostgresOutboxInboxTests
     [Fact]
     public async Task OutboxAppend_SucceedsAfterAlpha1InitRecreatesOnlyTheShortFunction()
     {
-        var opened = await _fixture.Backend.OpenEventStoreAsync(ContractStores.Isolated(enableOutbox: true));
+        var opened = await _fixture.Backend.OpenEventStoreAsync(Publishing());
         var store = (PostgresEventStore)opened.Store;
         var schema = store.SchemaName;
         var quoted = Quote(schema);
@@ -253,7 +249,7 @@ public sealed class PostgresOutboxInboxTests
     [Fact]
     public async Task InitializeSchemaAsync_RemovesALongerAppendFunction()
     {
-        var opened = await _fixture.Backend.OpenEventStoreAsync(ContractStores.Isolated(enableOutbox: true));
+        var opened = await _fixture.Backend.OpenEventStoreAsync(Publishing());
         var store = (PostgresEventStore)opened.Store;
         var quoted = Quote(store.SchemaName);
 
@@ -285,12 +281,7 @@ public sealed class PostgresOutboxInboxTests
     {
         var schema = "lawndart";
         await _fixture.Backend.OpenInboxAsync(new ContractStoreOptions { SchemaName = schema, RequireTenantId = false });
-        var opened = await _fixture.Backend.OpenEventStoreAsync(new ContractStoreOptions
-        {
-            SchemaName = schema,
-            RequireTenantId = false,
-            EnableOutbox = true
-        });
+        var opened = await _fixture.Backend.OpenEventStoreAsync(Publishing(schema));
         var streamId = "acme:Order:" + Guid.NewGuid().ToString("N");
         await opened.Store.AppendAsync(streamId, [ContractEvent.Tick()]);
         Assert.Single(await opened.Store.ReadStreamAsync(streamId));
@@ -302,12 +293,7 @@ public sealed class PostgresOutboxInboxTests
     {
         var schema = "c" + Guid.NewGuid().ToString("N");
         await _fixture.Backend.OpenOutboxAsync(new ContractStoreOptions { SchemaName = schema, RequireTenantId = false });
-        var opened = await _fixture.Backend.OpenEventStoreAsync(new ContractStoreOptions
-        {
-            SchemaName = schema,
-            RequireTenantId = false,
-            EnableOutbox = true
-        });
+        var opened = await _fixture.Backend.OpenEventStoreAsync(Publishing(schema));
         var streamId = "acme:Order:" + Guid.NewGuid().ToString("N");
         await opened.Store.AppendAsync(streamId, [ContractEvent.Tick()]);
         Assert.Equal(streamId, Assert.Single(await opened.RequireOutbox().GetUnprocessedAsync(10)).StreamId);
@@ -317,7 +303,7 @@ public sealed class PostgresOutboxInboxTests
     public async Task InboxAndOutboxWriter_InitializeAfterTheEventStore()
     {
         var schema = "c" + Guid.NewGuid().ToString("N");
-        var options = new ContractStoreOptions { SchemaName = schema, RequireTenantId = false, EnableOutbox = true };
+        var options = Publishing(schema);
         var opened = await _fixture.Backend.OpenEventStoreAsync(options);
         var inbox = await _fixture.Backend.OpenInboxAsync(options);
         var writer = await _fixture.Backend.OpenOutboxAsync(options);
@@ -334,16 +320,17 @@ public sealed class PostgresOutboxInboxTests
     [Fact]
     public async Task SameEventId_OnTwoTenants_WithOutbox_ThrowsEventAlreadyAppended()
     {
-        var opened = await _fixture.Backend.OpenEventStoreAsync(ContractStores.Isolated(enableOutbox: true));
+        var opened = await _fixture.Backend.OpenEventStoreAsync(Publishing());
         var id = Guid.NewGuid();
         var metadata = Encoding.UTF8.GetBytes($"{{\"EventId\":\"{id:D}\"}}");
         var payload = """{"n":1}"""u8.ToArray();
         var first = "alpha:Order:" + Guid.NewGuid().ToString("N");
         var second = "beta:Order:" + Guid.NewGuid().ToString("N");
-        await opened.Log.AppendAsync(first, [new AppendEvent("contract.outbox.same-id", payload, metadata)]);
+        var notice = new OutboundEvent("contract.outbox.same-id", payload, metadata);
+        await opened.Log.AppendAsync(first, [new AppendEvent("contract.outbox.same-id", payload, metadata, outbound: notice)]);
 
         var ex = await Assert.ThrowsAsync<EventAlreadyAppendedException>(() =>
-            opened.Log.AppendAsync(second, [new AppendEvent("contract.outbox.same-id", payload, metadata)]));
+            opened.Log.AppendAsync(second, [new AppendEvent("contract.outbox.same-id", payload, metadata, outbound: notice)]));
 
         Assert.Equal(id, ex.EventId);
         Assert.Single(await opened.Log.ReadStreamAsync(first));
@@ -384,6 +371,28 @@ public sealed class PostgresOutboxInboxTests
             StreamId = "acme:Order:outbox",
             SequencePosition = sequence
         };
+
+    private static ContractStoreOptions Publishing(string? schema = null, TimeSpan? claimLease = null)
+    {
+        if (schema is null)
+        {
+            return ContractStores.Isolated(
+                enableOutbox: true,
+                outboxClaimLease: claimLease,
+                eventTypes: [typeof(ContractTestEvent)],
+                publishedEvents: static events => events.Publish<ContractTestEvent>());
+        }
+
+        return new ContractStoreOptions
+        {
+            SchemaName = schema,
+            RequireTenantId = false,
+            EnableOutbox = true,
+            OutboxClaimLease = claimLease,
+            EventTypes = [typeof(ContractTestEvent)],
+            PublishedEvents = static events => events.Publish<ContractTestEvent>()
+        };
+    }
 
     private static string Quote(string name) => "\"" + name.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
 }

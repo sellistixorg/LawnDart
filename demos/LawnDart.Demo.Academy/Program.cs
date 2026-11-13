@@ -9,6 +9,7 @@ using LawnDart.EventSourcing.SqlServer.EventStore;
 using LawnDart.EventStore;
 using LawnDart.Demo.Academy.Projections;
 using LawnDart.Demo.Academy.Showcases;
+using LawnDart.Demo.Academy.Domain.CourseSection.Events;
 using LawnDart.Demo.Academy.Domain.Student.Events;
 using LawnDart.Demo.Academy.EDA;
 using LawnDart.Messaging.InMemory;
@@ -64,9 +65,10 @@ internal class Program
             .WithEventTypes(typeof(StudentRegistered).Assembly);
         if (useSql)
         {
-            var connectionString =
-                config.GetConnectionString("Academy")
-                ?? Environment.GetEnvironmentVariable("LAWNDART_SQL_CONNECTION");
+            var fromConfig = config.GetConnectionString("Academy");
+            var connectionString = string.IsNullOrWhiteSpace(fromConfig)
+                ? Environment.GetEnvironmentVariable("LAWNDART_SQL_CONNECTION")
+                : fromConfig;
 
             if (string.IsNullOrWhiteSpace(connectionString))
             {
@@ -75,6 +77,10 @@ internal class Program
                 return;
             }
 
+            academyCtx.PublishEvents(events => events
+                .Publish<StudentRegistered>()
+                .Publish<StudentEnrolled>()
+                .Publish<SeatReserved>());
             academyCtx.UseSqlServer(opts =>
             {
                 opts.ConnectionString = connectionString;
