@@ -150,8 +150,8 @@ failed attempt that will run again. The current span gets a
 `DeadLetterFailedMessages` defaults to false.
 
 On the in-process transport, the last failure is thrown and the message is
-not parked. A publish with no subscriber throws. The caller still has the
-message. Set the flag true to park the message on `IDeadLetterQueue` and
+not parked. Every publish with no subscriber throws. The caller still has
+the message. Set the flag true to park the message on `IDeadLetterQueue` and
 return. A caller such as the outbox still sees the failure when the flag is
 false, so the outbox keeps the row. See [Outbox](OUTBOX_PATTERN.md).
 

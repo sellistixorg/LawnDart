@@ -19,7 +19,7 @@ changes to the public API.
 ### Fixed
 
 - A reactor skips a message only when that message was already processed. When another attempt still holds the claim, handling fails. The outbox keeps the row and tries it again after the claim lease ends.
-- A publish on the in-process transport throws when the message type has no subscriber. The outbox keeps the row and tries it again. Attempt counting and the max-attempts limit are unchanged.
+- Every publish on the in-process transport throws when that message type has no subscriber. A direct call does this too. The caller still has the message. The outbox keeps the row and tries it again. Attempt counting and the max-attempts limit are unchanged.
 - The reactor host handles each message in a new dependency injection scope and disposes that scope when handling finishes.
 - A SQL Server append writes each new stream tag from the id it already holds. A condition tag that is not registered matches no event.
 - A subscription reads again when a wake-up names a position that an open transaction still hides. The wake-up is consumed by the read that misses the row, and the transaction that clears the head does not signal. Postgres and SQL Server both retry that read. The idle poll is unchanged.

@@ -8,7 +8,7 @@ namespace LawnDart.Messaging.InMemory;
 
 /// <summary>
 /// In-process message transport. It delivers each publish to the subscribers registered for that CLR type.
-/// A publish with no subscriber throws, so the caller still has the message.
+/// Every publish with no subscriber throws, so the caller still has the message.
 /// Suitable for unit tests and local development. No broker.
 /// Thread-safe. Subscribers for one message type run in registration order.
 /// A failed handler is retried up to <see cref="MessageTransportOptions.MaxDeliveryAttempts"/>.
