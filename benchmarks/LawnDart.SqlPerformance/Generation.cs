@@ -10,6 +10,7 @@ namespace LawnDart.SqlPerformance;
 internal sealed class DatasetPlan
 {
     public const long OneMillion = 1_000_000;
+    public const long TenMillion = 10_000_000;
     public const long OneHundredMillion = 100_000_000;
     public const long OneBillion = 1_000_000_000;
     public const int SnapshotEvery = 50;
@@ -48,6 +49,8 @@ internal static class SizeParser
         var value = text.Trim();
         if (value.Equals("1M", StringComparison.OrdinalIgnoreCase))
             return DatasetPlan.OneMillion;
+        if (value.Equals("10M", StringComparison.OrdinalIgnoreCase))
+            return DatasetPlan.TenMillion;
         if (value.Equals("100M", StringComparison.OrdinalIgnoreCase))
             return DatasetPlan.OneHundredMillion;
         if (value.Equals("1B", StringComparison.OrdinalIgnoreCase))
@@ -55,7 +58,7 @@ internal static class SizeParser
         if (long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var count) && count > 0)
             return count;
 
-        throw new ArgumentException("Size must be an event count, 1M, 100M, or 1B.");
+        throw new ArgumentException("Size must be an event count, 1M, 10M, 100M, or 1B.");
     }
 }
 

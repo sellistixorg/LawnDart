@@ -97,13 +97,8 @@ internal static class Engines
         if (!string.IsNullOrWhiteSpace(external))
             return External(kind, external);
 
-        var large = size >= DatasetPlan.OneHundredMillion;
-        var pgMemory = Environment.GetEnvironmentVariable("LAWNDART_SQLPERF_PG_MEMORY");
-        var sqlMemoryCap = Environment.GetEnvironmentVariable("LAWNDART_SQLPERF_SQL_MEMORY");
-        var profile = (large ? "large" : "small")
-            + "-" + (kind == DatabaseKind.Postgres
-                ? string.IsNullOrWhiteSpace(pgMemory) ? (large ? "12g" : "4g") : pgMemory
-                : string.IsNullOrWhiteSpace(sqlMemoryCap) ? (large ? "16g" : "4g") : sqlMemoryCap);
+        var memory = EngineMemory.Container(kind, size);
+        var profile = EngineMemory.Tier(size) + "-" + memory;
         var name = kind == DatabaseKind.Postgres ? EngineNames.PgContainer : EngineNames.SqlContainer;
         await EnsureImageAsync(kind, cancellationToken).ConfigureAwait(false);
         var runningProfile = await ContainerProfileAsync(name, cancellationToken).ConfigureAwait(false);
@@ -111,7 +106,7 @@ internal static class Engines
         {
             if (runningProfile is not null)
                 await DockerCli.RunAsync(cancellationToken, "rm", "-f", name).ConfigureAwait(false);
-            await StartAsync(kind, name, profile, large, cancellationToken).ConfigureAwait(false);
+            await StartAsync(kind, name, profile, size, memory, cancellationToken).ConfigureAwait(false);
         }
         else
         {
@@ -276,13 +271,17 @@ internal static class Engines
         }
     }
 
-    private static async Task StartAsync(DatabaseKind kind, string name, string profile, bool large, CancellationToken cancellationToken)
+    private static async Task StartAsync(
+        DatabaseKind kind,
+        string name,
+        string profile,
+        long size,
+        string memory,
+        CancellationToken cancellationToken)
     {
         if (kind == DatabaseKind.Postgres)
         {
-            var memory = Environment.GetEnvironmentVariable("LAWNDART_SQLPERF_PG_MEMORY");
-            if (string.IsNullOrWhiteSpace(memory))
-                memory = large ? "12g" : "4g";
+            var large = size >= DatasetPlan.OneHundredMillion;
             var buffers = large ? "4GB" : "512MB";
             var wal = large ? "16GB" : "4GB";
             var shm = large ? "5g" : "1g";
@@ -306,19 +305,15 @@ internal static class Engines
             return;
         }
 
-        var sqlMemory = Environment.GetEnvironmentVariable("LAWNDART_SQLPERF_SQL_MEMORY");
-        if (string.IsNullOrWhiteSpace(sqlMemory))
-            sqlMemory = large ? "16g" : "4g";
-        var limit = large ? "12288" : "2048";
         await DockerCli.RunAsync(
             cancellationToken,
             "run", "-d", "--name", name,
             "--label", "lawndart.sqlperf.profile=" + profile,
-            "--memory", sqlMemory,
+            "--memory", memory,
             "-e", "ACCEPT_EULA=Y",
             "-e", "MSSQL_SA_PASSWORD=" + EngineNames.SqlPassword,
             "-e", "MSSQL_PID=Developer",
-            "-e", "MSSQL_MEMORY_LIMIT_MB=" + limit,
+            "-e", "MSSQL_MEMORY_LIMIT_MB=" + EngineMemory.SqlLimit(size),
             "-v", EngineNames.SqlVolume + ":/var/opt/mssql",
             "-p", "127.0.0.1::1433",
             Images.SqlServer).ConfigureAwait(false);
@@ -378,28 +373,21 @@ internal static class Engines
     private static async Task RecreatePostgresAsync(EngineEndpoint endpoint, CancellationToken cancellationToken)
     {
         ClearPools();
+        var database = DatabaseNames.Postgres(endpoint.DatabaseConnectionString);
         await using var connection = new NpgsqlConnection(endpoint.MaintenanceConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await ExecuteAsync(connection, TerminateSql(EngineNames.Database), cancellationToken).ConfigureAwait(false);
-        await ExecuteAsync(connection, "DROP DATABASE IF EXISTS " + EngineNames.Database, cancellationToken).ConfigureAwait(false);
-        await ExecuteAsync(connection, "CREATE DATABASE " + EngineNames.Database, cancellationToken).ConfigureAwait(false);
+        await TerminatePostgresAsync(connection, database, cancellationToken).ConfigureAwait(false);
+        await ExecuteAsync(connection, DatabaseNames.PostgresDropSql(database), cancellationToken).ConfigureAwait(false);
+        await ExecuteAsync(connection, DatabaseNames.PostgresCreateSql(database), cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task RecreateSqlServerAsync(EngineEndpoint endpoint, CancellationToken cancellationToken)
     {
         ClearPools();
+        var database = DatabaseNames.SqlServer(endpoint.DatabaseConnectionString);
         await using var connection = new SqlConnection(endpoint.MaintenanceConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        var sql = """
-            IF DB_ID(N'lawndart') IS NOT NULL
-            BEGIN
-                ALTER DATABASE [lawndart] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
-                DROP DATABASE [lawndart];
-            END
-            CREATE DATABASE [lawndart];
-            ALTER DATABASE [lawndart] SET RECOVERY SIMPLE;
-            """;
-        await ExecuteSqlAsync(connection, sql, cancellationToken).ConfigureAwait(false);
+        await ExecuteSqlAsync(connection, DatabaseNames.SqlServerRecreateScript(database), cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task SavePostgresAsync(EngineEndpoint endpoint, CancellationToken cancellationToken)
@@ -413,23 +401,29 @@ internal static class Engines
         }
 
         ClearPools();
-        await ExecuteAsync(connection, TerminateSql(EngineNames.Database), cancellationToken).ConfigureAwait(false);
-        await ExecuteAsync(connection, TerminateSql(EngineNames.PgSaved), cancellationToken).ConfigureAwait(false);
-        await ExecuteAsync(connection, "DROP DATABASE IF EXISTS " + EngineNames.PgSaved, cancellationToken).ConfigureAwait(false);
-        await ExecuteAsync(connection, "CREATE DATABASE " + EngineNames.PgSaved + " TEMPLATE " + EngineNames.Database, cancellationToken).ConfigureAwait(false);
+        var database = DatabaseNames.Postgres(endpoint.DatabaseConnectionString);
+        await TerminatePostgresAsync(connection, database, cancellationToken).ConfigureAwait(false);
+        await TerminatePostgresAsync(connection, EngineNames.PgSaved, cancellationToken).ConfigureAwait(false);
+        await ExecuteAsync(connection, DatabaseNames.PostgresDropSql(EngineNames.PgSaved), cancellationToken).ConfigureAwait(false);
+        await ExecuteAsync(connection, DatabaseNames.PostgresCreateFromTemplateSql(EngineNames.PgSaved, database), cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task RestorePostgresAsync(EngineEndpoint endpoint, CancellationToken cancellationToken)
     {
         await using var connection = new NpgsqlConnection(endpoint.MaintenanceConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        var exists = await ScalarLongAsync(connection, "SELECT COUNT(*) FROM pg_database WHERE datname = '" + EngineNames.PgSaved + "'", cancellationToken).ConfigureAwait(false);
+        var exists = await ScalarLongAsync(
+            connection,
+            "SELECT COUNT(*) FROM pg_database WHERE datname = @name",
+            cancellationToken,
+            new NpgsqlParameter("name", EngineNames.PgSaved)).ConfigureAwait(false);
         if (exists < 1)
             throw new InvalidOperationException("There is no saved Postgres database. Load and save first.");
 
-        await ExecuteAsync(connection, TerminateSql(EngineNames.Database), cancellationToken).ConfigureAwait(false);
-        await ExecuteAsync(connection, "DROP DATABASE IF EXISTS " + EngineNames.Database, cancellationToken).ConfigureAwait(false);
-        await ExecuteAsync(connection, "CREATE DATABASE " + EngineNames.Database + " TEMPLATE " + EngineNames.PgSaved, cancellationToken).ConfigureAwait(false);
+        var database = DatabaseNames.Postgres(endpoint.DatabaseConnectionString);
+        await TerminatePostgresAsync(connection, database, cancellationToken).ConfigureAwait(false);
+        await ExecuteAsync(connection, DatabaseNames.PostgresDropSql(database), cancellationToken).ConfigureAwait(false);
+        await ExecuteAsync(connection, DatabaseNames.PostgresCreateFromTemplateSql(database, EngineNames.PgSaved), cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task SaveSqlServerAsync(EngineEndpoint endpoint, CancellationToken cancellationToken)
@@ -439,7 +433,8 @@ internal static class Engines
         await ExecuteSqlAsync(connection, "CHECKPOINT", cancellationToken).ConfigureAwait(false);
         await using var master = new SqlConnection(endpoint.MaintenanceConnectionString);
         await master.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await ExecuteSqlAsync(master, "BACKUP DATABASE [lawndart] TO DISK = N'" + EngineNames.SqlBackupPath + "' WITH INIT, FORMAT, COMPRESSION", cancellationToken).ConfigureAwait(false);
+        var database = DatabaseNames.SqlServer(endpoint.DatabaseConnectionString);
+        await ExecuteSqlAsync(master, DatabaseNames.SqlServerBackupScript(database), cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task RestoreSqlServerAsync(EngineEndpoint endpoint, CancellationToken cancellationToken)
@@ -455,17 +450,29 @@ internal static class Engines
             throw new InvalidOperationException("There is no saved SQL Server backup. Load and save first.");
         }
 
-        var sql = """
-            IF DB_ID(N'lawndart') IS NOT NULL
-                ALTER DATABASE [lawndart] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
-            RESTORE DATABASE [lawndart] FROM DISK = N'/var/opt/mssql/backup/lawndart.bak' WITH REPLACE;
-            ALTER DATABASE [lawndart] SET MULTI_USER;
-            """;
-        await ExecuteSqlAsync(connection, sql, cancellationToken).ConfigureAwait(false);
+        var database = DatabaseNames.SqlServer(endpoint.DatabaseConnectionString);
+        await ExecuteSqlAsync(connection, DatabaseNames.SqlServerRestoreScript(database), cancellationToken).ConfigureAwait(false);
     }
 
-    private static string TerminateSql(string database)
-        => "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '" + database + "' AND pid <> pg_backend_pid()";
+    public static async Task RestartOwnedAsync(EngineEndpoint endpoint, CancellationToken cancellationToken)
+    {
+        if (!endpoint.OwnedContainer || string.IsNullOrEmpty(endpoint.ContainerName))
+            throw new InvalidOperationException("There is no container to restart.");
+
+        await DockerCli.RunAsync(cancellationToken, "restart", endpoint.ContainerName).ConfigureAwait(false);
+        ClearPools();
+        await WaitUntilReadyAsync(endpoint, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task TerminatePostgresAsync(NpgsqlConnection connection, string database, CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(
+            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = @name AND pid <> pg_backend_pid()",
+            connection)
+        { CommandTimeout = 0 };
+        command.Parameters.Add(new NpgsqlParameter("name", database));
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
 
     private static async Task ExecuteAsync(NpgsqlConnection connection, string sql, CancellationToken cancellationToken)
     {
@@ -473,9 +480,15 @@ internal static class Engines
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task<long> ScalarLongAsync(NpgsqlConnection connection, string sql, CancellationToken cancellationToken)
+    private static async Task<long> ScalarLongAsync(
+        NpgsqlConnection connection,
+        string sql,
+        CancellationToken cancellationToken,
+        params NpgsqlParameter[] parameters)
     {
         await using var command = new NpgsqlCommand(sql, connection) { CommandTimeout = 0 };
+        foreach (var parameter in parameters)
+            command.Parameters.Add(parameter);
         var value = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return Convert.ToInt64(value, CultureInfo.InvariantCulture);
     }
@@ -509,6 +522,148 @@ internal static class Engines
     {
         NpgsqlConnection.ClearAllPools();
         SqlConnection.ClearAllPools();
+    }
+}
+
+internal static class EngineMemory
+{
+    public static string Tier(long size)
+        => size >= DatasetPlan.OneHundredMillion ? "large"
+            : size >= DatasetPlan.TenMillion ? "mid"
+            : "small";
+
+    public static string Container(DatabaseKind kind, long size)
+    {
+        var configured = Environment.GetEnvironmentVariable(
+            kind == DatabaseKind.Postgres ? "LAWNDART_SQLPERF_PG_MEMORY" : "LAWNDART_SQLPERF_SQL_MEMORY");
+        return string.IsNullOrWhiteSpace(configured) ? DefaultContainer(kind, size) : configured;
+    }
+
+    public static string DefaultContainer(DatabaseKind kind, long size)
+    {
+        if (kind == DatabaseKind.Postgres)
+            return size >= DatasetPlan.OneHundredMillion ? "12g" : "4g";
+        if (size >= DatasetPlan.OneHundredMillion)
+            return "16g";
+        if (size >= DatasetPlan.TenMillion)
+            return "8g";
+        return "4g";
+    }
+
+    public static string SqlLimit(long size)
+    {
+        if (size >= DatasetPlan.OneHundredMillion)
+            return "12288";
+        if (size >= DatasetPlan.TenMillion)
+            return "6144";
+        return "2048";
+    }
+}
+
+internal static class DatabaseNames
+{
+    private static readonly HashSet<string> PostgresSystem = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "postgres",
+        "template0",
+        "template1"
+    };
+
+    private static readonly HashSet<string> SqlServerSystem = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "master",
+        "model",
+        "msdb",
+        "tempdb"
+    };
+
+    public static string Postgres(string connectionString)
+    {
+        var name = new NpgsqlConnectionStringBuilder(connectionString).Database;
+        if (string.IsNullOrWhiteSpace(name))
+            throw new InvalidOperationException("The Postgres connection string names no database.");
+        RefusePostgres(name);
+        return name;
+    }
+
+    public static string SqlServer(string connectionString)
+    {
+        var name = new SqlConnectionStringBuilder(connectionString).InitialCatalog;
+        if (string.IsNullOrWhiteSpace(name))
+            throw new InvalidOperationException("The SQL Server connection string names no database.");
+        RefuseSqlServer(name);
+        return name;
+    }
+
+    public static string QuotePostgres(string name)
+    {
+        RefusePostgres(name);
+        return "\"" + name.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
+    }
+
+    public static string QuoteSqlServer(string name)
+    {
+        RefuseSqlServer(name);
+        return "[" + name.Replace("]", "]]", StringComparison.Ordinal) + "]";
+    }
+
+    public static string PostgresDropSql(string database)
+        => "DROP DATABASE IF EXISTS " + QuotePostgres(database);
+
+    public static string PostgresCreateSql(string database)
+        => "CREATE DATABASE " + QuotePostgres(database);
+
+    public static string PostgresCreateFromTemplateSql(string database, string template)
+        => "CREATE DATABASE " + QuotePostgres(database) + " TEMPLATE " + QuotePostgres(template);
+
+    public static string SqlServerRecreateScript(string database)
+    {
+        var quoted = QuoteSqlServer(database);
+        var literal = SqlLiteral(database);
+        return $"""
+            IF DB_ID(N'{literal}') IS NOT NULL
+            BEGIN
+                ALTER DATABASE {quoted} SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+                DROP DATABASE {quoted};
+            END
+            CREATE DATABASE {quoted};
+            ALTER DATABASE {quoted} SET RECOVERY SIMPLE;
+            """;
+    }
+
+    public static string SqlServerBackupScript(string database)
+        => "BACKUP DATABASE " + QuoteSqlServer(database)
+           + " TO DISK = N'" + SqlLiteral(EngineNames.SqlBackupPath) + "' WITH INIT, FORMAT, COMPRESSION";
+
+    public static string SqlServerRestoreScript(string database)
+    {
+        var quoted = QuoteSqlServer(database);
+        var literal = SqlLiteral(database);
+        return $"""
+            IF DB_ID(N'{literal}') IS NOT NULL
+                ALTER DATABASE {quoted} SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+            RESTORE DATABASE {quoted} FROM DISK = N'{SqlLiteral(EngineNames.SqlBackupPath)}' WITH REPLACE;
+            ALTER DATABASE {quoted} SET MULTI_USER;
+            """;
+    }
+
+    private static string SqlLiteral(string value)
+        => value.Replace("'", "''", StringComparison.Ordinal);
+
+    private static void RefusePostgres(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            throw new InvalidOperationException("The Postgres connection string names no database.");
+        if (PostgresSystem.Contains(name))
+            throw new InvalidOperationException("Refusing to recreate the Postgres system database " + name + ".");
+    }
+
+    private static void RefuseSqlServer(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            throw new InvalidOperationException("The SQL Server connection string names no database.");
+        if (SqlServerSystem.Contains(name))
+            throw new InvalidOperationException("Refusing to recreate the SQL Server system database " + name + ".");
     }
 }
 
