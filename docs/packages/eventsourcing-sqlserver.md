@@ -29,11 +29,18 @@ own short transaction and commits before the append transaction opens.
 An orphan `EventTypes` row is harmless.
 
 `Tags` is `NVARCHAR(4000)` and is a read projection only. DCB queries
-and append-condition checks use the `EventTags` side table (clustered on
-`(Tag, GlobalSequencePosition)`, collation `Latin1_General_100_BIN2`).
-Tag equality is ordinal. `student:{id}` and `Student:{id}` are different
-tags. That table is always created and always written. See
-[Tagging](../TAGGING.md). There is no
+and append-condition checks use the `EventTags` side table. Each tag
+text is stored once in `TagRegistry` (`Id INT IDENTITY`, `Tag`
+`NVARCHAR(256)` with collation `Latin1_General_100_BIN2`). Tag equality
+is ordinal. `student:{id}` and `Student:{id}` are different tags.
+`EventTags` stores `TagId`, `GlobalSequencePosition`, and `EventTypeId`,
+clustered on (`TagId`, `GlobalSequencePosition`). A query for a tag, a
+tag and an event type, several tags, or any of several items reads that
+table. The events table is joined to return the matching events. Tag ids
+belong to the events table. The same tag text has one id. A tenant tag
+such as `tenant:{id}` is its own row, so a query that names one tenant's
+tag does not return another tenant's events. That table is always created
+and always written. See [Tagging](../TAGGING.md). There is no
 `UseEventTagsTable` flag and no `OPENJSON` fallback on `Events.Tags`.
 Metadata stays `NVARCHAR` JSON.
 
@@ -127,16 +134,17 @@ append.
 
 `EventSnapshots` uses that same `StreamKey`. One row per stream.
 
-`Events_Readable` still shows the stream id text. It joins `Streams` for
-the id and `EventTypes` for the event name.
+`Events_Readable` still shows the stream id text and the tag text. It joins
+`Streams` for the id and `EventTypes` for the event name. The tag text is
+the `Tags` column on the event.
 
 Init writes an extended property `LawnDart_SchemaFormat` on the events
-table (current format `5`). A table with no stamp, or with any other stamp,
-is not changed. The call throws and names drop and recreate. Back up first.
+table (current format `6`). A table with no stamp, or with any other stamp,
+is left as it is. The call throws and names drop and recreate. Back up first.
 See [Upgrading from 0.6.0-alpha.2](#upgrading-from-060-alpha2).
 
-`RowVersion`, `AppendFence`, and `EventTags.Tag` at `Latin1_General_100_BIN2`
-are part of a new format 5 table.
+`RowVersion` and `AppendFence` are part of a format 6 table. Tag text in
+`TagRegistry` uses `Latin1_General_100_BIN2`.
 
 `RowVersion` is the commit horizon. An append inserts an `AppendFence` row
 before it reserves a sequence, so the transaction owns a rowversion first.
@@ -235,9 +243,9 @@ InMemory remains the documented default for local work and Academy.
 
 `ListStreamsAsync` reads active streams in stream id order. The order uses `Streams.StreamIdBin`, a persisted column defined as `StreamId` with the `Latin1_General_100_BIN2` collation, and a unique index on that column. A page without a tag reads that index from the last stream id. A prefix with no letters matches those exact characters, the same way the in-memory store and Postgres do. A full-width digit (U+FF11) or a superscript (U+00B2) is not a plain digit. That prefix is one range on `StreamIdBin`: the page starts at the later of the token and the prefix, and stops at the end of the range. A prefix that contains letters follows the `StreamId` column collation. A new database is case-insensitive. A case-sensitive database matches case. That prefix is not one range. The first page reads the clustered stream id key for that prefix, then orders those rows by `StreamIdBin`. A later page reads `StreamIdBin` from the token and applies the prefix, with no end bound. A page limited to an aggregate type reads the index on (`AggregateType`, `StreamIdBin`).
 
-Tags for that list live in `StreamTags` (`Tag`, `StreamId`), with `Latin1_General_100_BIN2` on both columns. The primary key is (`Tag`, `StreamId`). A tag page reads that key from the last stream id. A trigger on `Streams` updates `StreamTags` when a row is inserted, when its tags or stream id change, and when the row is deleted. The trigger matches the stored stream id exactly, using `Latin1_General_100_BIN2`, against the old row and the new row. A change of spelling removes the tag rows for the old spelling and writes them for the new one. The trigger runs in the save's transaction, including a save from an older build. The aggregate type index is (`AggregateType`, `StreamIdBin`).
+Tags for that list live in `StreamTags` (`TagId`, `StreamKey`). The primary key is (`TagId`, `StreamKey`). The tag text lives in `TagRegistry`. A tag page reads `StreamTags` for that tag id, joins `Streams` on the stream key, and continues from the last stream id. A trigger on `Streams` updates `StreamTags` when a row is inserted, when its tags or stream id change, and when the row is deleted. The trigger deletes the tag rows for that stream key and writes the current tags. The trigger runs in the save's transaction. The aggregate type index is (`AggregateType`, `StreamIdBin`).
 
-`InitializeSchemaAsync` adds the column, the indexes, `StreamTags`, and the trigger when they are missing. It then copies tags from the JSON in `Streams.Tags`, in batches, after the schema lock is released. That copy is recorded on `StreamTags` and does not run again. Existing rows stay. The events stamp stays at format 5. Call it before listing on a database created by an earlier build of this format. Adding `StreamIdBin` rewrites the stream table, so run that call when other writers can wait. A second call leaves the objects in place.
+`InitializeSchemaAsync` adds the column, the indexes, `StreamTags`, and the trigger when they are missing. It then copies tags from the JSON in `Streams.Tags`, in batches, after the schema lock is released. That copy is recorded on `StreamTags` and does not run again. Existing rows stay. The events stamp stays at format 6. Call it before listing on a database created by an earlier build of this format. Adding `StreamIdBin` rewrites the stream table, so run that call when other writers can wait. A second call leaves the objects in place.
 
 Several processes starting together take one lock for those objects and commit them together. The tag copy uses a separate lock, so a startup does not fail while another startup is still copying. The events stamp is unchanged.
 
@@ -245,7 +253,7 @@ Several processes starting together take one lock for those objects and commit t
 
 0.6.0-alpha.2 stamped the events table `LawnDart_SchemaFormat` 2, the
 outbox `LawnDart_OutboxSchemaFormat` 1, and the inbox
-`LawnDart_InboxSchemaFormat` 1. This process stamps events 5, outbox 2,
+`LawnDart_InboxSchemaFormat` 1. This process stamps events 6, outbox 2,
 and inbox 2.
 
 Call `InitializeSchemaAsync` on the SQL event store once on each database
@@ -258,10 +266,10 @@ Call `InitializeSchemaAsync` on the outbox writer when
 `EnableOutbox` is on. Call `InitializeSqlInboxStoreAsync` when the inbox
 is SQL Server. A second call on a table that is already current returns.
 
-An events table stamped 2, 3, or 4 is left as it is. Format 5 is a different
-layout: the clustered key is the global position, and the stream id text
-lives only on `Streams`. Drop the events tables and call
-`InitializeSchemaAsync` again. This process does not copy those rows.
+An events table stamped 2, 3, 4, or 5 is left as it is. Format 6 stores
+tag ids on the event tag rows and on the stream tag rows. Drop the events
+tables and call `InitializeSchemaAsync` again. This process does not copy
+those rows.
 
 `Events.EventId` is unique per tenant on SQL Server. The in-memory log still
 rejects the same id on a second tenant. An append whose metadata `EventId`
@@ -281,7 +289,7 @@ Outbox format 1 becomes 2 by adding nullable `ClaimedUntil`. Inbox format
 The outbox and inbox stamps move forward only. There is no downgrade. An older process that
 does not accept the new stamp throws and names drop and recreate.
 
-A missing events stamp, or any events stamp other than 5, throws the same
+A missing events stamp, or any events stamp other than 6, throws the same
 way. A missing stamp, or any stamp other than 1 or 2, throws on the outbox
 and on the inbox. Back up the database before you drop a table. This process
 does not copy the rows.

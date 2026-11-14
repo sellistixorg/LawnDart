@@ -340,7 +340,7 @@ public sealed class ProjectionAdminTests
 
         await mgr.StartAllAsync(CancellationToken.None);
         await ProjectionRunnerTestHarness.WaitForCheckpointAtLeastAsync(
-            checkpoints, reg.StorageKey, 1, TimeSpan.FromSeconds(30));
+            checkpoints, reg.StorageKey, 2, TimeSpan.FromSeconds(30));
 
         var cpBefore   = await checkpoints.GetCheckpointAsync(reg.StorageKey, 0, cts.Token);
         var viewBefore = await views.GetViewAsync(reg.StorageKey, streamId, cts.Token);

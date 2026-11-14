@@ -105,9 +105,10 @@ internal static class Loader
         var types = await InsertSqlTypesAsync(connection, cancellationToken).ConfigureAwait(false);
         var generator = new EventGenerator(plan);
         var streamKeys = new Dictionary<string, long>(StringComparer.Ordinal);
+        var tagIds = new Dictionary<string, int>(StringComparer.Ordinal);
         long nextStreamKey = 1;
         foreach (var batch in generator.Batches(4000))
-            nextStreamKey = await CopySqlAsync(connection, batch, types, streamKeys, nextStreamKey, cancellationToken).ConfigureAwait(false);
+            nextStreamKey = await CopySqlAsync(connection, batch, types, streamKeys, tagIds, nextStreamKey, cancellationToken).ConfigureAwait(false);
 
         var next = (plan.Size + 1).ToString(CultureInfo.InvariantCulture);
         await ExecSqlAsync(connection, "ALTER SEQUENCE dbo.EventSequencePosition RESTART WITH " + next, cancellationToken).ConfigureAwait(false);
@@ -118,6 +119,7 @@ internal static class Loader
         await ExecSqlAsync(connection, """
             UPDATE STATISTICS dbo.Events;
             UPDATE STATISTICS dbo.EventTags;
+            UPDATE STATISTICS dbo.TagRegistry;
             UPDATE STATISTICS dbo.Streams;
             UPDATE STATISTICS dbo.StreamTags;
             UPDATE STATISTICS dbo.EventSnapshots;
@@ -258,14 +260,27 @@ internal static class Loader
         LoadBatch batch,
         Dictionary<string, int> types,
         Dictionary<string, long> streamKeys,
+        Dictionary<string, int> tagIds,
         long nextStreamKey,
         CancellationToken cancellationToken)
     {
+        var texts = new List<string>();
+        foreach (var row in batch.Events)
+        {
+            texts.AddRange(row.Tags);
+            if (row.ClosesStream)
+                texts.AddRange(row.StreamTags);
+        }
+
+        await EnsureSqlTagIdsAsync(connection, texts, tagIds, cancellationToken).ConfigureAwait(false);
+
         var events = new List<object?[]>(batch.Events.Count);
         var tags = new List<object?[]>();
         var streams = new List<object?[]>();
         var streamTags = new List<object?[]>();
         var snaps = new List<object?[]>();
+        var seenEventTags = new HashSet<(long Position, int TagId)>();
+        var seenStreamTags = new HashSet<(int TagId, long StreamKey)>();
         foreach (var row in batch.Events)
         {
             if (!streamKeys.TryGetValue(row.StreamId, out var streamKey))
@@ -291,7 +306,14 @@ internal static class Loader
                 row.EventId
             ]);
             foreach (var tag in row.Tags)
-                tags.Add([row.Position, tag]);
+            {
+                if (string.IsNullOrEmpty(tag))
+                    continue;
+                var tagId = tagIds[tag];
+                if (!seenEventTags.Add((row.Position, tagId)))
+                    continue;
+                tags.Add([tagId, row.Position, types[row.EventType]]);
+            }
             if (row.WritesSnapshot)
             {
                 var state = SnapshotText.For(row.SnapshotVersion);
@@ -325,7 +347,14 @@ internal static class Loader
                 "Active"
             ]);
             foreach (var tag in row.StreamTags)
-                streamTags.Add([tag, row.StreamId]);
+            {
+                if (string.IsNullOrEmpty(tag))
+                    continue;
+                var tagId = tagIds[tag];
+                if (!seenStreamTags.Add((tagId, streamKey)))
+                    continue;
+                streamTags.Add([tagId, streamKey]);
+            }
         }
 
         await BulkAsync(connection, "dbo.Events",
@@ -333,16 +362,16 @@ internal static class Loader
             [typeof(long), typeof(string), typeof(long), typeof(long), typeof(int), typeof(byte[]), typeof(int), typeof(byte), typeof(string), typeof(string), typeof(DateTime), typeof(int), typeof(Guid)],
             events, cancellationToken).ConfigureAwait(false);
         await BulkAsync(connection, "dbo.EventTags",
-            ["GlobalSequencePosition", "Tag"],
-            [typeof(long), typeof(string)],
+            ["TagId", "GlobalSequencePosition", "EventTypeId"],
+            [typeof(int), typeof(long), typeof(int)],
             tags, cancellationToken).ConfigureAwait(false);
         await BulkAsync(connection, "dbo.Streams",
             ["StreamKey", "StreamId", "TenantId", "AggregateType", "AggregateId", "CurrentVersion", "LastSequencePosition", "CreatedAt", "LastEventAt", "EventCount", "Tags", "Status"],
             [typeof(long), typeof(string), typeof(string), typeof(string), typeof(Guid), typeof(long), typeof(long), typeof(DateTime), typeof(DateTime), typeof(long), typeof(string), typeof(string)],
             streams, cancellationToken).ConfigureAwait(false);
         await BulkAsync(connection, "dbo.StreamTags",
-            ["Tag", "StreamId"],
-            [typeof(string), typeof(string)],
+            ["TagId", "StreamKey"],
+            [typeof(int), typeof(long)],
             streamTags, cancellationToken).ConfigureAwait(false);
         await BulkAsync(connection, "dbo.EventSnapshots",
             ["StreamKey", "Version", "GlobalSequence", "TakenAtUtc", "StateType", "StateData", "Checksum"],
@@ -385,6 +414,43 @@ internal static class Loader
         text.Append('\n');
         await using var writer = await connection.BeginTextImportAsync(command, cancellationToken).ConfigureAwait(false);
         await writer.WriteAsync(text, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task EnsureSqlTagIdsAsync(
+        SqlConnection connection,
+        IEnumerable<string> tags,
+        Dictionary<string, int> tagIds,
+        CancellationToken cancellationToken)
+    {
+        var missing = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var tag in tags)
+        {
+            if (string.IsNullOrEmpty(tag) || tagIds.ContainsKey(tag) || !seen.Add(tag))
+                continue;
+            missing.Add(tag);
+        }
+
+        const int chunkSize = 400;
+        for (var start = 0; start < missing.Count; start += chunkSize)
+        {
+            var count = Math.Min(chunkSize, missing.Count - start);
+            var sql = new StringBuilder("INSERT INTO dbo.TagRegistry (Tag) OUTPUT INSERTED.Id, INSERTED.Tag VALUES ");
+            await using var command = new SqlCommand { Connection = connection };
+            for (var n = 0; n < count; n++)
+            {
+                if (n > 0)
+                    sql.Append(',');
+                var name = "@t" + n.ToString(CultureInfo.InvariantCulture);
+                sql.Append('(').Append(name).Append(')');
+                command.Parameters.Add(name, SqlDbType.NVarChar, 256).Value = missing[start + n];
+            }
+
+            command.CommandText = sql.ToString();
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                tagIds[reader.GetString(1)] = reader.GetInt32(0);
+        }
     }
 
     private static async Task BulkAsync(

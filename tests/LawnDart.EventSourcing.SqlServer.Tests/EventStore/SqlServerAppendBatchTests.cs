@@ -88,6 +88,22 @@ public sealed class SqlServerAppendBatchTests : IAsyncLifetime
         Assert.True(
             batch.IndexOf("THROW " + SqlServerEventStore.AppendConditionConflictError, StringComparison.Ordinal)
             < batch.IndexOf("sp_sequence_get_range", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains("INSERT INTO [batchdcb].[StreamTags]", batch, StringComparison.Ordinal);
+
+        await using (var connection = new SqlConnection(_connectionString))
+        {
+            await connection.OpenAsync();
+            await using var command = new SqlCommand(
+                """
+                SELECT COUNT(*)
+                FROM [batchdcb].[StreamTags] AS t
+                INNER JOIN [batchdcb].[TagRegistry] AS r ON r.Id = t.TagId
+                WHERE r.Tag = @Tag
+                """,
+                connection);
+            command.Parameters.AddWithValue("@Tag", tag);
+            Assert.Equal(1, Convert.ToInt32(await command.ExecuteScalarAsync()));
+        }
 
         var conflictCommands = new List<string>();
         using (Capture(conflictCommands))
@@ -99,6 +115,76 @@ public sealed class SqlServerAppendBatchTests : IAsyncLifetime
         }
 
         Assert.Single(conflictCommands);
+    }
+
+    [Fact]
+    public async Task EmptyAfter_TagCondition_PlanDoesNotReferenceEvents()
+    {
+        var store = await OpenAsync("batchplan");
+        var tag = "course:" + Guid.NewGuid().ToString("N");
+        var other = "student:" + Guid.NewGuid().ToString("N");
+        await store.AppendAsync(
+            "s-" + Guid.NewGuid().ToString("N"),
+            [Event("warmup", tag), Event("warmup", tag, other)]);
+
+        var (text, parameters) = store.PreviewAppendCondition(
+            AppendCondition.FailIfMatches(Query.FromItems(
+                QueryItem.ByTags(tag),
+                QueryItem.ByTypeAndTags(["warmup"], [tag, other]))));
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using (var command = new SqlCommand(text, connection))
+        {
+            foreach (var parameter in parameters)
+                command.Parameters.Add(parameter);
+            var thrown = await Assert.ThrowsAsync<SqlException>(() => command.ExecuteNonQueryAsync());
+            Assert.Contains(
+                thrown.Errors.Cast<SqlError>(),
+                error => error.Number == SqlServerEventStore.AppendConditionConflictError);
+        }
+
+        await using var planCommand = new SqlCommand(
+            """
+            SELECT TOP 1 CAST(qp.query_plan AS nvarchar(max))
+            FROM sys.dm_exec_query_stats AS qs
+            CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) AS st
+            CROSS APPLY sys.dm_exec_query_plan(qs.plan_handle) AS qp
+            WHERE st.text LIKE N'%EventTags%'
+              AND st.text LIKE N'%Append condition failed%'
+            ORDER BY qs.last_execution_time DESC
+            """,
+            connection);
+        var plan = Convert.ToString(await planCommand.ExecuteScalarAsync()) ?? "";
+        Directory.CreateDirectory("/tmp/lawndart-tag-plans");
+        await File.WriteAllTextAsync("/tmp/lawndart-tag-plans/empty-after-condition.xml", plan);
+        Assert.Contains("EventTags", plan, StringComparison.Ordinal);
+        Assert.DoesNotContain("Table=\"[Events]\"", plan, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TagMatch_CaseAndAccent_StayDistinct()
+    {
+        var store = await OpenAsync("tagmatch");
+        var streamId = "s-" + Guid.NewGuid().ToString("N");
+        await store.AppendAsync(streamId, [
+            Event("warmup", "Student:1"),
+            Event("warmup", "student:1"),
+            Event("warmup", "café"),
+            Event("warmup", "cafe")
+        ]);
+
+        var log = (IEventLog)store;
+        Assert.Equal(1, await CountAsync(log, "Student:1"));
+        Assert.Equal(1, await CountAsync(log, "student:1"));
+        Assert.Equal(1, await CountAsync(log, "café"));
+        Assert.Equal(1, await CountAsync(log, "cafe"));
+    }
+
+    private static async Task<int> CountAsync(IEventLog log, string tag)
+    {
+        var page = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(tag)), limit: 10);
+        return page.Events.Count;
     }
 
     [Fact]
@@ -173,6 +259,8 @@ public sealed class SqlServerAppendBatchTests : IAsyncLifetime
         Assert.Contains("sp_getapplock", batch, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(1, CountOf(batch, "sp_sequence_get_range"));
         Assert.DoesNotContain("SELECT NEXT VALUE FOR", batch, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("TABLE (", batch, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("CREATE TABLE #", batch, StringComparison.OrdinalIgnoreCase);
         Assert.True(
             batch.IndexOf("sp_getapplock", StringComparison.OrdinalIgnoreCase)
             < batch.IndexOf("sp_sequence_get_range", StringComparison.OrdinalIgnoreCase));

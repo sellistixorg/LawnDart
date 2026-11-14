@@ -36,6 +36,7 @@ public class SqlIdentifierTests
 
         Assert.Equal("[odd]]schema].[Events]", store.QualifiedEventsTable);
         Assert.Equal("[odd]]schema].[EventTags]", store.QualifiedTagsTable);
+        Assert.Equal("[odd]]schema].[TagRegistry]", store.QualifiedTagRegistryTable);
         Assert.Equal("[odd]]schema].[EventTypes]", store.QualifiedTypesTable);
         Assert.Equal("[odd]]schema].[Streams]", store.QualifiedRegistryTable);
         Assert.Equal("[odd]]schema].[EventSequencePosition]", store.QualifiedSequence);

@@ -6,8 +6,9 @@ namespace LawnDart.EventSourcing.SqlServer.EventStore;
 
 /// <summary>
 /// Builds DCB <see cref="Query"/> SQL. Tag items are driven from the
-/// <c>EventTags</c> clustered index (seek + intersection join).
-/// Type items are <c>EventTypeId IN (...)</c> from the store cache.
+/// <c>EventTags</c> clustered index (seek + intersection join) by tag id.
+/// A tag item filters <c>EventTypeId</c> on that row. The events table is
+/// joined to return the matching rows, and for a timestamp or partition filter.
 /// <c>Events.Tags</c> is a read projection and is never filtered.
 /// </summary>
 internal static class DcbQuerySql
@@ -15,8 +16,12 @@ internal static class DcbQuerySql
     internal const string EventColumns =
         "s.StreamId, e.Version, e.SequencePosition, e.EventTypeId, e.EventData, e.SchemaVersion, e.CodecId, e.Tags, e.Metadata, e.Timestamp";
 
+    /// <summary>
+    /// One seek per event. A hash of the stream registry would read every stream
+    /// before a short page stopped.
+    /// </summary>
     private static string StreamJoin(string qRegistry) =>
-        $"INNER JOIN {qRegistry} s ON s.StreamKey = e.StreamKey";
+        $"INNER LOOP JOIN {qRegistry} s ON s.StreamKey = e.StreamKey";
 
     /// <summary>
     /// Rows whose rowversion is still owned by an open transaction, or that
@@ -24,6 +29,19 @@ internal static class DcbQuerySql
     /// Callers omit this predicate after <c>ReadHorizonGracePeriod</c> elapses.
     /// </summary>
     internal const string StableHorizon = "e.[RowVersion] < MIN_ACTIVE_ROWVERSION()";
+
+    /// <summary>
+    /// Lookup of one event by global position. The seek uses the clustered position key.
+    /// </summary>
+    private static string EventsLookupHint(bool applyStableHorizon)
+        => applyStableHorizon ? " WITH (FORCESEEK)" : " WITH (READPAST, FORCESEEK)";
+
+    /// <summary>
+    /// Seek of one tag id. A later tag in the same item is a point seek on
+    /// (tag id, global position), so a short page stops after the first matches.
+    /// </summary>
+    private static string TagSeekHint(bool applyStableHorizon)
+        => applyStableHorizon ? " WITH (FORCESEEK)" : " WITH (READPAST, FORCESEEK)";
 
     internal enum Mode
     {
@@ -42,6 +60,7 @@ internal static class DcbQuerySql
         string qRegistry,
         Query query,
         Func<string, int?> resolveTypeId,
+        Func<string, int?> resolveTagId,
         long? fromSequencePosition,
         long? toSequencePosition,
         DateTime? toTimestamp,
@@ -50,6 +69,7 @@ internal static class DcbQuerySql
         bool applyStableHorizon = true)
     {
         ArgumentNullException.ThrowIfNull(resolveTypeId);
+        ArgumentNullException.ThrowIfNull(resolveTagId);
 
         var parameters = new List<SqlParameter>();
         AddWindowParameters(parameters, fromSequencePosition, toSequencePosition, toTimestamp);
@@ -65,7 +85,7 @@ internal static class DcbQuerySql
         for (var i = 0; i < items.Count; i++)
         {
             var source = BuildItemSource(
-                qTable, qTags, items[i], i, resolveTypeId,
+                qTable, qTags, items[i], i, resolveTypeId, resolveTagId,
                 fromSequencePosition, toSequencePosition, toTimestamp, parameters, applyStableHorizon);
             if (source is { } built)
                 sources.Add(built);
@@ -145,6 +165,7 @@ internal static class DcbQuerySql
         QueryItem item,
         int itemIndex,
         Func<string, int?> resolveTypeId,
+        Func<string, int?> resolveTagId,
         long? fromSequencePosition,
         long? toSequencePosition,
         DateTime? toTimestamp,
@@ -168,43 +189,66 @@ internal static class DcbQuerySql
             typeIds = ids;
         }
 
-        var hasTags = item.Tags is { Count: > 0 };
-        var needsEvents = typeIds is { Count: > 0 }
-            || item.PartitionFilter != null
+        int[]? tagIds = null;
+        if (item.Tags is { Count: > 0 })
+        {
+            var ids = new int[item.Tags.Count];
+            for (var j = 0; j < item.Tags.Count; j++)
+            {
+                var id = resolveTagId(item.Tags[j]);
+                if (id is null)
+                    return null;
+
+                ids[j] = id.Value;
+            }
+
+            tagIds = ids;
+        }
+
+        var hasTags = tagIds is { Length: > 0 };
+        // Event type lives on the tag row. The events table is needed for a
+        // timestamp, a partition filter, or an item that has no tags.
+        var needsEvents = item.PartitionFilter != null
             || toTimestamp.HasValue
             || !hasTags;
 
         var from = new StringBuilder();
         var where = new StringBuilder("WHERE 1=1");
         var readPast = applyStableHorizon ? "" : " WITH (READPAST)";
+        var tagHint = TagSeekHint(applyStableHorizon);
         string seqColumn;
 
         if (hasTags)
         {
-            var tags = item.Tags!;
-            from.Append(qTags).Append(" et").Append(itemIndex).Append("_0").Append(readPast);
-            for (var j = 1; j < tags.Count; j++)
+            from.Append(qTags).Append(" et").Append(itemIndex).Append("_0").Append(tagHint);
+            for (var j = 1; j < tagIds!.Length; j++)
             {
                 var alias = $"et{itemIndex}_{j}";
                 var paramName = $"@Tag{itemIndex}_{j}";
-                from.Append(" INNER JOIN ").Append(qTags).Append(' ').Append(alias).Append(readPast)
-                    .Append(" ON ").Append(alias).Append(".GlobalSequencePosition = et").Append(itemIndex)
-                    .Append("_0.GlobalSequencePosition AND ").Append(alias).Append(".Tag = ").Append(paramName);
-                parameters.Add(new SqlParameter(paramName, tags[j]));
+                // Point seek on (tag id, position). A hash of every row for the tag
+                // would read the whole tag before the page limit stops it.
+                from.Append(" INNER LOOP JOIN ").Append(qTags).Append(' ').Append(alias).Append(tagHint)
+                    .Append(" ON ").Append(alias).Append(".TagId = ").Append(paramName)
+                    .Append(" AND ").Append(alias).Append(".GlobalSequencePosition = et").Append(itemIndex)
+                    .Append("_0.GlobalSequencePosition");
+                parameters.Add(new SqlParameter(paramName, tagIds[j]));
             }
 
             var tag0 = $"@Tag{itemIndex}_0";
-            where.Append(" AND et").Append(itemIndex).Append("_0.Tag = ").Append(tag0);
-            parameters.Add(new SqlParameter(tag0, tags[0]));
+            where.Append(" AND et").Append(itemIndex).Append("_0.TagId = ").Append(tag0);
+            parameters.Add(new SqlParameter(tag0, tagIds[0]));
             AppendSequenceWindow(where, $"et{itemIndex}_0.GlobalSequencePosition", fromSequencePosition, toSequencePosition);
+            AppendTypeIn(where, $"et{itemIndex}_0.EventTypeId", typeIds, itemIndex, parameters);
             seqColumn = $"et{itemIndex}_0.GlobalSequencePosition";
 
             if (needsEvents)
             {
-                from.Append(" INNER JOIN ").Append(qTable).Append(" e").Append(readPast)
+                from.Append(" INNER LOOP JOIN ").Append(qTable).Append(" e").Append(EventsLookupHint(applyStableHorizon))
                     .Append(" ON e.SequencePosition = et")
                     .Append(itemIndex).Append("_0.GlobalSequencePosition");
-                AppendEventPredicates(where, typeIds, item, itemIndex, toTimestamp, parameters);
+                if (toTimestamp.HasValue)
+                    where.Append(" AND e.Timestamp <= @ToTimestamp");
+                AppendPartition(where, item, itemIndex, parameters);
                 seqColumn = "e.SequencePosition";
             }
         }
@@ -215,14 +259,15 @@ internal static class DcbQuerySql
             if (toTimestamp.HasValue)
                 where.Append(" AND e.Timestamp <= @ToTimestamp");
 
-            AppendTypeAndPartition(where, typeIds, item, itemIndex, parameters);
+            AppendTypeIn(where, "e.EventTypeId", typeIds, itemIndex, parameters);
+            AppendPartition(where, item, itemIndex, parameters);
             seqColumn = "e.SequencePosition";
         }
 
-        if (applyStableHorizon && (needsEvents || !hasTags))
+        if (applyStableHorizon && needsEvents)
             where.Append(" AND ").Append(StableHorizon);
 
-        return new ItemSource(from.ToString(), where.ToString(), seqColumn, needsEvents || !hasTags);
+        return new ItemSource(from.ToString(), where.ToString(), seqColumn, needsEvents);
     }
 
     private static string ComposeSingle(
@@ -235,17 +280,21 @@ internal static class DcbQuerySql
         bool applyStableHorizon)
     {
         var horizonAnd = applyStableHorizon ? "AND " + StableHorizon : "";
-        var readPast = applyStableHorizon ? "" : " WITH (READPAST)";
+        var lookup = EventsLookupHint(applyStableHorizon);
         if (mode == Mode.MaxSequence)
         {
             if (!source.IncludesEvents)
             {
                 return $"""
-                    SELECT ISNULL(MAX(e.SequencePosition), 0)
+                    SELECT ISNULL(MAX({source.SequenceColumn}), 0)
                     FROM {source.FromClause}
-                    INNER JOIN {qTable} e{readPast} ON e.SequencePosition = {source.SequenceColumn}
                     {source.WhereClause}
-                      {horizonAnd}
+                      AND EXISTS (
+                        SELECT 1
+                        FROM {qTable} e{lookup}
+                        WHERE e.SequencePosition = {source.SequenceColumn}
+                          {horizonAnd}
+                      )
                     """;
             }
 
@@ -272,7 +321,7 @@ internal static class DcbQuerySql
             sql = $"""
                 SELECT {EventColumns}
                 FROM {source.FromClause}
-                INNER JOIN {qTable} e{readPast} ON e.SequencePosition = {source.SequenceColumn}
+                INNER LOOP JOIN {qTable} e{lookup} ON e.SequencePosition = {source.SequenceColumn}
                 {StreamJoin(qRegistry)}
                 {source.WhereClause}
                   {horizonAnd}
@@ -293,7 +342,7 @@ internal static class DcbQuerySql
         bool applyStableHorizon)
     {
         var horizonAnd = applyStableHorizon ? "AND " + StableHorizon : "";
-        var readPast = applyStableHorizon ? "" : " WITH (READPAST)";
+        var lookup = EventsLookupHint(applyStableHorizon);
         var union = new StringBuilder();
         for (var i = 0; i < sources.Count; i++)
         {
@@ -312,7 +361,7 @@ internal static class DcbQuerySql
                 FROM (
                 {union}
                 ) m
-                INNER JOIN {qTable} e{readPast} ON e.SequencePosition = m.SequencePosition
+                INNER LOOP JOIN {qTable} e{lookup} ON e.SequencePosition = m.SequencePosition
                 WHERE 1 = 1
                   {horizonAnd}
                 """;
@@ -323,7 +372,7 @@ internal static class DcbQuerySql
             FROM (
             {union}
             ) m
-            INNER JOIN {qTable} e{readPast} ON e.SequencePosition = m.SequencePosition
+            INNER LOOP JOIN {qTable} e{lookup} ON e.SequencePosition = m.SequencePosition
             {StreamJoin(qRegistry)}
             WHERE 1 = 1
               {horizonAnd}
@@ -360,47 +409,40 @@ internal static class DcbQuerySql
         return where.ToString();
     }
 
-    private static void AppendEventPredicates(
+    private static void AppendTypeIn(
         StringBuilder where,
+        string column,
         IReadOnlyList<int>? typeIds,
-        QueryItem item,
         int itemIndex,
-        DateTime? toTimestamp,
         List<SqlParameter> parameters)
     {
-        if (toTimestamp.HasValue)
-            where.Append(" AND e.Timestamp <= @ToTimestamp");
-        AppendTypeAndPartition(where, typeIds, item, itemIndex, parameters);
+        if (typeIds is not { Count: > 0 })
+            return;
+
+        var names = new string[typeIds.Count];
+        for (var j = 0; j < typeIds.Count; j++)
+        {
+            var paramName = $"@Type{itemIndex}_{j}";
+            names[j] = paramName;
+            parameters.Add(new SqlParameter(paramName, typeIds[j]));
+        }
+
+        where.Append(" AND ").Append(column).Append(" IN (").Append(string.Join(", ", names)).Append(')');
     }
 
-    private static void AppendTypeAndPartition(
+    private static void AppendPartition(
         StringBuilder where,
-        IReadOnlyList<int>? typeIds,
         QueryItem item,
         int itemIndex,
         List<SqlParameter> parameters)
     {
-        if (typeIds is { Count: > 0 })
-        {
-            var names = new string[typeIds.Count];
-            for (var j = 0; j < typeIds.Count; j++)
-            {
-                var paramName = $"@Type{itemIndex}_{j}";
-                names[j] = paramName;
-                parameters.Add(new SqlParameter(paramName, typeIds[j]));
-            }
+        if (item.PartitionFilter is not { } pf)
+            return;
 
-            where.Append(" AND e.EventTypeId IN (").Append(string.Join(", ", names)).Append(')');
-        }
-
-        if (item.PartitionFilter != null)
-        {
-            var pf = item.PartitionFilter;
-            where.Append(" AND (e.PartitionHash % @TotalInstances").Append(itemIndex)
-                .Append(") = @NodeInstance").Append(itemIndex);
-            parameters.Add(new SqlParameter($"@TotalInstances{itemIndex}", pf.TotalInstances));
-            parameters.Add(new SqlParameter($"@NodeInstance{itemIndex}", pf.NodeInstance));
-        }
+        where.Append(" AND (e.PartitionHash % @TotalInstances").Append(itemIndex)
+            .Append(") = @NodeInstance").Append(itemIndex);
+        parameters.Add(new SqlParameter($"@TotalInstances{itemIndex}", pf.TotalInstances));
+        parameters.Add(new SqlParameter($"@NodeInstance{itemIndex}", pf.NodeInstance));
     }
 
     private static string AppendFetch(string sql, int? limit, List<SqlParameter> parameters)

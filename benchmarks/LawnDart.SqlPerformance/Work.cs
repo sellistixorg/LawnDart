@@ -94,7 +94,7 @@ internal sealed class OperationLog
 internal static class Workloads
 {
     private static readonly byte[] Payload = PayloadFactory.Make("order-placed", 1, 400);
-    private static readonly int[] Writers = [1, 8, 32, 128];
+    private static readonly int[] Writers = [1, 8, 16, 32, 128];
 
     public static async Task<List<CaseResult>> RunAsync(
         EngineEndpoint endpoint,
@@ -133,7 +133,7 @@ internal static class Workloads
         if (loadStreams.Count < 1 || streams.Count < Writers[^1])
             throw new InvalidOperationException("Not enough loaded streams for the append and read workloads.");
         results.AddRange(await StreamLoadsAsync(log, snapshots, endpoint, loadStreams, samples, cancellationToken).ConfigureAwait(false));
-        results.AddRange(await AppendStreamsAsync(log, streams, samples, cancellationToken).ConfigureAwait(false));
+        results.AddRange(await AppendStreamsAsync(endpoint, log, streams, samples, cancellationToken).ConfigureAwait(false));
         results.Add(await HotStreamAsync(log, catalog, samples, cancellationToken).ConfigureAwait(false));
         results.Add(await DcbAppendsAsync(log, catalog, samples, recentAfter: true, "dcb append recent after", cancellationToken).ConfigureAwait(false));
         results.Add(await QueryAsync(log, Query.FromItems(QueryItem.ByTags(catalog.QueryTag)), samples, "queries", "tag", cancellationToken).ConfigureAwait(false));
@@ -143,12 +143,13 @@ internal static class Workloads
         results.Add(await ConditionReadAsync(log, catalog, samples, recentAfter: false, "condition empty after", cancellationToken).ConfigureAwait(false));
         results.Add(await CatchUpAsync(log, 1000, fullCatchUp ? int.MaxValue : 2, cancellationToken).ConfigureAwait(false));
         results.Add(await CatchUpAsync(log, 5000, fullCatchUp ? int.MaxValue : 2, cancellationToken).ConfigureAwait(false));
-        var trials = fullCatchUp ? 5 : 1;
+        var trials = fullCatchUp ? Math.Max(1, samples) : 1;
         results.Add(await PollAsync(endpoint, log, subscriptions, trials, cancellationToken).ConfigureAwait(false));
         return results;
     }
 
     private static async Task<List<CaseResult>> AppendStreamsAsync(
+        EngineEndpoint endpoint,
         IEventLog log,
         IReadOnlyList<StreamSample> streams,
         int samples,
@@ -169,7 +170,7 @@ internal static class Workloads
             var start = cursor;
             if (start + writers > streams.Count)
                 start = 0;
-            var rounds = Math.Max(1, samples / writers);
+            var rounds = Math.Max(1, (samples + writers - 1) / writers);
             var operations = new OperationLog();
             operations.Start();
             var tasks = new Task[writers];
@@ -183,7 +184,10 @@ internal static class Workloads
 
             cursor = start + writers;
 
-            await Task.WhenAll(tasks).ConfigureAwait(false);
+            if (writers == 128 && endpoint.Kind == DatabaseKind.SqlServer)
+                await WaitProbe.AroundAsync(endpoint.DatabaseConnectionString, () => Task.WhenAll(tasks), cancellationToken).ConfigureAwait(false);
+            else
+                await Task.WhenAll(tasks).ConfigureAwait(false);
             results.Add(operations.Freeze("appends", "stream writers " + writers.ToString(System.Globalization.CultureInfo.InvariantCulture)));
         }
 
@@ -364,7 +368,7 @@ internal static class Workloads
         }
 
         var coldName = flush == CacheFlush.ConnectionOnly ? "connection-cold" : "cold";
-        var coldRounds = Math.Max(1, Math.Min(samples, 20));
+        var coldRounds = Math.Max(1, samples);
         var cold = new OperationLog();
         cold.Start();
         for (var round = 0; round < coldRounds; round++)

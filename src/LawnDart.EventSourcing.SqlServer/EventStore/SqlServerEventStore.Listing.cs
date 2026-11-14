@@ -110,17 +110,16 @@ public partial class SqlServerEventStore
     private string EnsureStreamTagsTableSql()
     {
         var pk = SqlIdentifier.Quote("PK_" + _streamTagsTableName);
-        var clustered = SqlIdentifier.Quote("IX_" + _streamTagsTableName + "_StreamId");
-        // Tag plus stream id is wider than a clustered primary key allows, so the key is nonclustered.
+        var byStream = SqlIdentifier.Quote("IX_" + _streamTagsTableName + "_StreamKey");
         return $"""
             IF OBJECT_ID(N'{SqlIdentifier.Literal(_qStreamTags)}', N'U') IS NULL
             BEGIN
                 CREATE TABLE {_qStreamTags} (
-                    [Tag] NVARCHAR(256) COLLATE {TagCollation} NOT NULL,
-                    [StreamId] NVARCHAR(255) COLLATE {TagCollation} NOT NULL,
-                    CONSTRAINT {pk} PRIMARY KEY NONCLUSTERED ([Tag], [StreamId])
+                    [TagId] INT NOT NULL,
+                    [StreamKey] BIGINT NOT NULL,
+                    CONSTRAINT {pk} PRIMARY KEY CLUSTERED ([TagId], [StreamKey])
                 );
-                CREATE CLUSTERED INDEX {clustered} ON {_qStreamTags} ([StreamId]);
+                CREATE NONCLUSTERED INDEX {byStream} ON {_qStreamTags} ([StreamKey]);
             END
             """;
     }
@@ -128,13 +127,16 @@ public partial class SqlServerEventStore
     private string EnsureStreamTagTriggerSql()
     {
         var trigger = SqlIdentifier.Qualify(_schemaName, "TR_" + _schemaName + "_" + _registryTableName + "_StreamTags");
-        // Match the tag row's stream id exactly. Deleted carries the old spelling and inserted carries the new one.
+        // Stream tags follow the stream key. A change of stream id spelling keeps that key.
         return $"""
             CREATE OR ALTER TRIGGER {trigger} ON {_qRegistry}
             AFTER INSERT, UPDATE, DELETE
             AS
             BEGIN
                 SET NOCOUNT ON;
+                -- The append batch writes stream tag ids itself. Skip the text lookup.
+                IF TRY_CONVERT(int, SESSION_CONTEXT(N'LawnDart.SkipStreamTags')) = 1
+                    RETURN;
                 IF EXISTS (SELECT 1 FROM inserted) AND EXISTS (SELECT 1 FROM deleted)
                    AND NOT (UPDATE([Tags]) OR UPDATE([StreamId]))
                     RETURN;
@@ -142,17 +144,27 @@ public partial class SqlServerEventStore
                 DELETE t
                 FROM {_qStreamTags} AS t
                 INNER JOIN (
-                    SELECT CONVERT(NVARCHAR(255), [StreamId]) COLLATE {TagCollation} AS [StreamId] FROM deleted
+                    SELECT [StreamKey] FROM deleted
                     UNION
-                    SELECT CONVERT(NVARCHAR(255), [StreamId]) COLLATE {TagCollation} AS [StreamId] FROM inserted
-                ) AS ids ON t.[StreamId] = ids.[StreamId];
+                    SELECT [StreamKey] FROM inserted
+                ) AS ids ON t.[StreamKey] = ids.[StreamKey];
 
-                INSERT INTO {_qStreamTags} ([Tag], [StreamId])
-                SELECT DISTINCT
-                    CONVERT(NVARCHAR(256), j.[value]) COLLATE {TagCollation},
-                    CONVERT(NVARCHAR(255), i.[StreamId]) COLLATE {TagCollation}
+                INSERT INTO {_qTagRegistry} ([Tag])
+                SELECT DISTINCT CONVERT(NVARCHAR(256), j.[value]) COLLATE {TagCollation}
                 FROM inserted AS i
                 CROSS APPLY OPENJSON(CASE WHEN ISJSON(i.[Tags]) = 1 THEN i.[Tags] ELSE N'[]' END) AS j
+                WHERE j.[value] IS NOT NULL AND j.[value] <> N''
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM {_qTagRegistry} AS r
+                      WHERE r.[Tag] = CONVERT(NVARCHAR(256), j.[value]) COLLATE {TagCollation});
+
+                INSERT INTO {_qStreamTags} ([TagId], [StreamKey])
+                SELECT DISTINCT r.[Id], i.[StreamKey]
+                FROM inserted AS i
+                CROSS APPLY OPENJSON(CASE WHEN ISJSON(i.[Tags]) = 1 THEN i.[Tags] ELSE N'[]' END) AS j
+                INNER JOIN {_qTagRegistry} AS r
+                    ON r.[Tag] = CONVERT(NVARCHAR(256), j.[value]) COLLATE {TagCollation}
                 WHERE j.[value] IS NOT NULL AND j.[value] <> N'';
             END
             """;
@@ -160,25 +172,37 @@ public partial class SqlServerEventStore
 
     private string FillStreamTagsBatchSql() => $"""
         SET NOCOUNT ON;
-        DECLARE @ids TABLE ([StreamId] NVARCHAR(255) COLLATE {TagCollation} NOT NULL PRIMARY KEY);
-        INSERT INTO @ids ([StreamId])
-        SELECT TOP ({StreamTagBatchSize}) CONVERT(NVARCHAR(255), s.[StreamId]) COLLATE {TagCollation}
+        DECLARE @ids TABLE (
+            [StreamKey] BIGINT NOT NULL PRIMARY KEY,
+            [StreamId] NVARCHAR(255) COLLATE {TagCollation} NOT NULL);
+        INSERT INTO @ids ([StreamKey], [StreamId])
+        SELECT TOP ({StreamTagBatchSize}) s.[StreamKey], CONVERT(NVARCHAR(255), s.[StreamId]) COLLATE {TagCollation}
         FROM {_qRegistry} AS s
         WHERE (@After IS NULL OR s.[StreamIdBin] > @After COLLATE {TagCollation})
         ORDER BY s.[StreamIdBin];
 
-        INSERT INTO {_qStreamTags} ([Tag], [StreamId])
-        SELECT DISTINCT
-            CONVERT(NVARCHAR(256), j.[value]) COLLATE {TagCollation},
-            i.[StreamId]
+        INSERT INTO {_qTagRegistry} ([Tag])
+        SELECT DISTINCT CONVERT(NVARCHAR(256), j.[value]) COLLATE {TagCollation}
         FROM @ids AS i
-        INNER JOIN {_qRegistry} AS s ON s.[StreamIdBin] = i.[StreamId]
+        INNER JOIN {_qRegistry} AS s ON s.[StreamKey] = i.[StreamKey]
         CROSS APPLY OPENJSON(CASE WHEN ISJSON(s.[Tags]) = 1 THEN s.[Tags] ELSE N'[]' END) AS j
         WHERE j.[value] IS NOT NULL AND j.[value] <> N''
           AND NOT EXISTS (
+              SELECT 1
+              FROM {_qTagRegistry} AS r
+              WHERE r.[Tag] = CONVERT(NVARCHAR(256), j.[value]) COLLATE {TagCollation});
+
+        INSERT INTO {_qStreamTags} ([TagId], [StreamKey])
+        SELECT DISTINCT r.[Id], i.[StreamKey]
+        FROM @ids AS i
+        INNER JOIN {_qRegistry} AS s ON s.[StreamKey] = i.[StreamKey]
+        CROSS APPLY OPENJSON(CASE WHEN ISJSON(s.[Tags]) = 1 THEN s.[Tags] ELSE N'[]' END) AS j
+        INNER JOIN {_qTagRegistry} AS r
+            ON r.[Tag] = CONVERT(NVARCHAR(256), j.[value]) COLLATE {TagCollation}
+        WHERE j.[value] IS NOT NULL AND j.[value] <> N''
+          AND NOT EXISTS (
               SELECT 1 FROM {_qStreamTags} AS t
-              WHERE t.[Tag] = CONVERT(NVARCHAR(256), j.[value]) COLLATE {TagCollation}
-                AND t.[StreamId] = i.[StreamId]);
+              WHERE t.[TagId] = r.[Id] AND t.[StreamKey] = i.[StreamKey]);
 
         SELECT MAX([StreamId]) FROM @ids;
         """;
@@ -300,12 +324,17 @@ public partial class SqlServerEventStore
         sql.Append("SELECT TOP (@Take) ");
         sql.Append("s.StreamId, s.TenantId, s.AggregateType, s.AggregateId, s.CurrentVersion, s.LastSequencePosition, ");
         sql.Append("s.CreatedAt, s.LastEventAt, s.EventCount, s.Tags, s.Status ");
+        int? tagId = null;
         if (tag is not null)
         {
+            tagId = await FindTagIdAsync(connection, tag, cancellationToken).ConfigureAwait(false);
+            if (tagId is null)
+                return StreamPageToken.ToPage([], pageSize, filter);
+
             var tagKey = SqlIdentifier.Quote("PK_" + _streamTagsTableName);
             sql.Append("FROM ").Append(_qStreamTags).Append(" AS t WITH (INDEX(").Append(tagKey).Append(")) ");
-            sql.Append("INNER JOIN ").Append(_qRegistry).Append(" AS s ON s.StreamIdBin = t.StreamId ");
-            sql.Append("WHERE t.Tag = @Tag COLLATE ").Append(TagCollation).Append(" AND s.Status = 'Active'");
+            sql.Append("INNER JOIN ").Append(_qRegistry).Append(" AS s ON s.StreamKey = t.StreamKey ");
+            sql.Append("WHERE t.TagId = @TagId AND s.Status = 'Active'");
         }
         else if (aggregateType is not null)
         {
@@ -321,23 +350,19 @@ public partial class SqlServerEventStore
         }
 
         if (after is not null)
-        {
-            var column = tag is not null ? "t.StreamId" : "s.StreamIdBin";
-            sql.Append(" AND ").Append(column).Append(" > @After COLLATE ").Append(TagCollation);
-        }
+            sql.Append(" AND s.StreamIdBin > @After COLLATE ").Append(TagCollation);
 
         if (prefix is not null)
             sql.Append(" AND ").Append(StreamIdPrefixSql.Predicate("s.StreamId"));
         if (prefixUpper is not null)
         {
-            var column = tag is not null ? "t.StreamId" : "s.StreamIdBin";
-            sql.Append(" AND ").Append(column).Append(" >= @BinFrom COLLATE ").Append(TagCollation);
-            sql.Append(" AND ").Append(column).Append(" < @BinTo COLLATE ").Append(TagCollation);
+            sql.Append(" AND s.StreamIdBin >= @BinFrom COLLATE ").Append(TagCollation);
+            sql.Append(" AND s.StreamIdBin < @BinTo COLLATE ").Append(TagCollation);
         }
         if (aggregateType is not null)
             sql.Append(" AND s.AggregateType = @AggregateType");
 
-        sql.Append(" ORDER BY ").Append(tag is not null ? "t.StreamId" : "s.StreamIdBin");
+        sql.Append(" ORDER BY s.StreamIdBin");
 
         var command = new SqlCommand(sql.ToString(), connection);
         await using var commandDisposal = command.ConfigureAwait(false);
@@ -351,8 +376,8 @@ public partial class SqlServerEventStore
             command.Parameters.Add("@BinFrom", SqlDbType.NVarChar, 255).Value = prefix;
             command.Parameters.Add("@BinTo", SqlDbType.NVarChar, 255).Value = prefixUpper;
         }
-        if (tag is not null)
-            command.Parameters.Add("@Tag", SqlDbType.NVarChar, 256).Value = tag;
+        if (tagId is not null)
+            command.Parameters.Add("@TagId", SqlDbType.Int).Value = tagId.Value;
         if (aggregateType is not null)
             command.Parameters.Add("@AggregateType", SqlDbType.NVarChar, 100).Value = aggregateType;
 

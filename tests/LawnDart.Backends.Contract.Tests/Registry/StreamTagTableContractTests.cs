@@ -97,7 +97,12 @@ public abstract class StreamTagTableContractTests : BackendContractSuite
             await using var connection = new SqlConnection(hooks.ConnectionString);
             await connection.OpenAsync();
             await using var command = new SqlCommand(
-                $"SELECT Tag, StreamId FROM {sql.QualifiedStreamTagsTable}",
+                $"""
+                SELECT r.Tag, s.StreamId
+                FROM {sql.QualifiedStreamTagsTable} AS t
+                INNER JOIN {sql.QualifiedTagRegistryTable} AS r ON r.Id = t.TagId
+                INNER JOIN {sql.QualifiedRegistryTable} AS s ON s.StreamKey = t.StreamKey
+                """,
                 connection);
             var rows = new List<(string, string)>();
             await using var reader = await command.ExecuteReaderAsync();

@@ -18,7 +18,8 @@ public partial class SqlServerEventStore
     /// The stream registry is required. The check reads <c>StreamIdBin</c>, <c>UX_StreamIdBin</c>,
     /// <c>UX_StreamKey</c>, and the stream tag trigger.
     /// Events are clustered on <c>SequencePosition</c>. <c>IX_Events_StreamKey_Version</c> and
-    /// <c>UX_TenantId_EventId</c> are required.
+    /// <c>UX_TenantId_EventId</c> are required. The tag registry and the tag id columns
+    /// on <c>EventTags</c> and <c>StreamTags</c> are required.
     /// </remarks>
     public async Task<SchemaCheckResult> VerifySchemaAsync(CancellationToken cancellationToken = default)
     {
@@ -36,6 +37,12 @@ public partial class SqlServerEventStore
 
         await SqlSchemaProbe.AddMissingAsync(connection, _schemaName, _typesTableName, "U", missing, cancellationToken).ConfigureAwait(false);
         await SqlSchemaProbe.AddMissingAsync(connection, _schemaName, _tagsTableName, "U", missing, cancellationToken).ConfigureAwait(false);
+        await SqlSchemaProbe.AddMissingAsync(connection, _schemaName, _tagRegistryTableName, "U", missing, cancellationToken).ConfigureAwait(false);
+        await SqlSchemaProbe.AddMissingColumnAsync(connection, _qTags, "TagId", missing, cancellationToken).ConfigureAwait(false);
+        await SqlSchemaProbe.AddMissingColumnAsync(connection, _qTags, "EventTypeId", missing, cancellationToken).ConfigureAwait(false);
+        await SqlSchemaProbe.AddMissingColumnAsync(connection, _qTagRegistry, "Tag", missing, cancellationToken).ConfigureAwait(false);
+        await SqlSchemaProbe.AddMissingColumnAsync(connection, _qStreamTags, "TagId", missing, cancellationToken).ConfigureAwait(false);
+        await SqlSchemaProbe.AddMissingColumnAsync(connection, _qStreamTags, "StreamKey", missing, cancellationToken).ConfigureAwait(false);
         await SqlSchemaProbe.AddMissingAsync(connection, _schemaName, AppendFenceTableName, "U", missing, cancellationToken).ConfigureAwait(false);
         await SqlSchemaProbe.AddMissingAsync(connection, _schemaName, "EventSequencePosition", "SO", missing, cancellationToken).ConfigureAwait(false);
         await SqlSchemaProbe.AddMissingAsync(connection, _schemaName, "StreamKeySequence", "SO", missing, cancellationToken).ConfigureAwait(false);

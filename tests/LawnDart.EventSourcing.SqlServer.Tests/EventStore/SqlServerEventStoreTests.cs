@@ -460,6 +460,7 @@ public class SqlServerEventStoreTests : IAsyncLifetime
             "[dbo].[Streams]",
             Query.FromItems(QueryItem.ByType("no-such-family")),
             _ => null,
+            _ => null,
             fromSequencePosition: null,
             toSequencePosition: null,
             toTimestamp: null,
