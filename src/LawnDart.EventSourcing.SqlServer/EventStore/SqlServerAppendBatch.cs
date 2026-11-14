@@ -36,7 +36,7 @@ public partial class SqlServerEventStore
         var parameters = new List<SqlParameter>();
         var sql = new StringBuilder();
         sql.AppendLine("SET NOCOUNT ON;");
-        AppendLockStatements(sql);
+        AppendLockStatements(sql, parameters, AppendLockPlan(envelopes, condition));
         if (condition is not null)
             AppendConditionCheck(sql, parameters, condition);
 
@@ -46,7 +46,6 @@ public partial class SqlServerEventStore
             DECLARE @current bigint;
             DECLARE @eventTenant nvarchar(100);
             DECLARE @existingTags nvarchar(max);
-            DECLARE @newKey TABLE (StreamKey bigint NOT NULL);
 
             -- One read of the stream version. The check and the insert both use @current.
             SELECT
@@ -63,14 +62,16 @@ public partial class SqlServerEventStore
                     INSERT INTO {_qRegistry}
                         (StreamKey, StreamId, TenantId, AggregateType, AggregateId, CurrentVersion, LastSequencePosition,
                          CreatedAt, LastEventAt, EventCount, Tags, Status)
-                    OUTPUT INSERTED.StreamKey INTO @newKey
                     VALUES
                         (NEXT VALUE FOR {_qStreamKeySequence}, @StreamId, @TenantId, @AggregateType, @AggregateId, -1, 0,
                          @Now, @Now, 0, N'[]', N'Active');
-                    SELECT @streamKey = StreamKey FROM @newKey;
-                    SET @current = -1;
-                    SET @existingTags = N'[]';
-                    SET @eventTenant = @TenantId;
+                    SELECT
+                        @streamKey = StreamKey,
+                        @current = -1,
+                        @existingTags = N'[]',
+                        @eventTenant = @TenantId
+                    FROM {_qRegistry} WITH (UPDLOCK, ROWLOCK)
+                    WHERE StreamId = @StreamId;
                 END TRY
                 BEGIN CATCH
                     IF ERROR_NUMBER() IN (2601, 2627)
@@ -105,9 +106,8 @@ public partial class SqlServerEventStore
             END;
 
             -- Rowversion before any position is reserved, so a later commit stays behind this append.
-            DECLARE @fenceIds TABLE (Id bigint NOT NULL);
-            INSERT INTO {_qFence} OUTPUT INSERTED.Id INTO @fenceIds DEFAULT VALUES;
-            DECLARE @fenceId bigint = (SELECT TOP (1) Id FROM @fenceIds);
+            INSERT INTO {_qFence} DEFAULT VALUES;
+            DECLARE @fenceId bigint = CONVERT(bigint, SCOPE_IDENTITY());
 
             DECLARE @rangeFirst sql_variant;
             DECLARE @rangeIncrement sql_variant;
@@ -118,122 +118,72 @@ public partial class SqlServerEventStore
                 @sequence_increment = @rangeIncrement OUTPUT;
             DECLARE @first bigint = CONVERT(bigint, @rangeFirst);
             DECLARE @increment bigint = CONVERT(bigint, @rangeIncrement);
-
-            INSERT INTO {_qTable}
-                (StreamKey, TenantId, Version, SequencePosition, EventTypeId, EventData, SchemaVersion, CodecId,
-                 Tags, Metadata, Timestamp, PartitionHash, EventId)
-            SELECT
-                @streamKey,
-                @eventTenant,
-                @start + CONVERT(bigint, e.ordinal),
-                @first + CONVERT(bigint, e.ordinal) * @increment,
-                e.eventTypeId,
-                ISNULL(CAST(N'' AS xml).value('xs:base64Binary(sql:column("e.payload"))', 'varbinary(max)'), 0x),
-                e.schemaVersion,
-                CONVERT(tinyint, e.codecId),
-                e.tags,
-                e.metadata,
-                @Now,
-                @PartitionHash,
-                e.eventId
-            FROM OPENJSON(@Events) WITH (
-                ordinal int '$.o',
-                eventTypeId int '$.t',
-                payload nvarchar(max) '$.p',
-                schemaVersion int '$.s',
-                codecId int '$.c',
-                tags nvarchar(max) '$.g',
-                metadata nvarchar(max) '$.m',
-                eventId uniqueidentifier '$.i'
-            ) AS e;
-
-            INSERT INTO {_qTags} (GlobalSequencePosition, Tag)
-            SELECT
-                @first + CONVERT(bigint, e.ordinal) * @increment,
-                CONVERT(nvarchar(256), tag.[value])
-            FROM OPENJSON(@Events) WITH (
-                ordinal int '$.o',
-                tags nvarchar(max) '$.g'
-            ) AS e
-            CROSS APPLY OPENJSON(CASE WHEN ISJSON(e.tags) = 1 THEN e.tags ELSE N'[]' END) AS tag
-            WHERE tag.[value] IS NOT NULL AND tag.[value] <> N''
-            -- A merge join checks the parent key by scanning every event row.
-            -- Two appends then deadlock on those shared locks. A loop join seeks
-            -- only this batch's positions.
-            OPTION (LOOP JOIN);
             """);
 
+        AppendStoredEvents(sql, parameters, envelopes, eventIds);
         if (_options.EnableOutbox && BatchHasOutbound(envelopes))
-        {
-            var outbox = SqlIdentifier.Qualify(_schemaName, _options.OutboxTableName);
-            sql.AppendLine(
-                $"""
-                INSERT INTO {outbox}
-                    (Id, EventType, SchemaVersion, CodecId, Payload, Metadata, CreatedAt,
-                     Attempts, StreamId, SequencePosition)
-                SELECT
-                    o.eventId,
-                    o.eventType,
-                    o.schemaVersion,
-                    CONVERT(tinyint, o.codecId),
-                    ISNULL(CAST(N'' AS xml).value('xs:base64Binary(sql:column("o.payload"))', 'varbinary(max)'), 0x),
-                    o.metadata,
-                    @Now,
-                    0,
-                    @StreamId,
-                    @first + CONVERT(bigint, o.ordinal) * @increment
-                FROM OPENJSON(@Outbox) WITH (
-                    ordinal int '$.o',
-                    eventId uniqueidentifier '$.i',
-                    eventType nvarchar(500) '$.t',
-                    schemaVersion int '$.s',
-                    codecId int '$.c',
-                    payload nvarchar(max) '$.p',
-                    metadata nvarchar(max) '$.m'
-                ) AS o;
-                """);
-        }
+            AppendOutboxRows(sql, parameters, envelopes, eventIds);
 
         // A dynamic consistency boundary append stores current version 0.
         // Stream appends store the last event version.
+        // Tags are rewritten only when this append adds one. The stream-tag
+        // trigger then stays out of the hot path.
         sql.AppendLine(
             $"""
             DECLARE @registryVersion bigint = CASE WHEN @IsDcb = 1 THEN 0 ELSE @start + @EventCount - 1 END;
-            DECLARE @merged nvarchar(max);
-            ;WITH src AS (
-                SELECT CONVERT(nvarchar(4000), j.[value]) AS tag, CONVERT(int, j.[key]) AS pos
-                FROM OPENJSON(CASE WHEN ISJSON(@existingTags) = 1 THEN @existingTags ELSE N'[]' END) AS j
-                UNION ALL
-                SELECT CONVERT(nvarchar(4000), j.[value]) AS tag, 1000000 + CONVERT(int, j.[key]) AS pos
-                FROM OPENJSON(CASE WHEN ISJSON(@NewTags) = 1 THEN @NewTags ELSE N'[]' END) AS j
-            ),
-            ranked AS (
-                SELECT tag, pos,
-                       ROW_NUMBER() OVER (
-                           PARTITION BY tag COLLATE {TagCollation}
-                           ORDER BY pos) AS rn
-                FROM src
-                WHERE tag IS NOT NULL AND tag <> N''
+            DECLARE @lastPosition bigint = @first + (CONVERT(bigint, @EventCount) - 1) * @increment;
+            IF EXISTS (
+                SELECT 1
+                FROM OPENJSON(@NewTags) AS n
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM OPENJSON(CASE WHEN ISJSON(@existingTags) = 1 THEN @existingTags ELSE N'[]' END) AS e
+                    WHERE e.[value] COLLATE {TagCollation} = n.[value] COLLATE {TagCollation}
+                )
             )
-            SELECT @merged = N'[' + ISNULL(STUFF((
-                SELECT N',"' + STRING_ESCAPE(tag, 'json') + N'"'
-                FROM ranked
-                WHERE rn = 1
-                ORDER BY pos
-                FOR XML PATH(''), TYPE).value('.', 'nvarchar(max)'), 1, 1, N''), N'') + N']';
+            BEGIN
+                DECLARE @merged nvarchar(max);
+                ;WITH src AS (
+                    SELECT CONVERT(nvarchar(4000), j.[value]) AS tag, CONVERT(int, j.[key]) AS pos
+                    FROM OPENJSON(CASE WHEN ISJSON(@existingTags) = 1 THEN @existingTags ELSE N'[]' END) AS j
+                    UNION ALL
+                    SELECT CONVERT(nvarchar(4000), j.[value]) AS tag, 1000000 + CONVERT(int, j.[key]) AS pos
+                    FROM OPENJSON(@NewTags) AS j
+                ),
+                ranked AS (
+                    SELECT tag, pos,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY tag COLLATE {TagCollation}
+                               ORDER BY pos) AS rn
+                    FROM src
+                    WHERE tag IS NOT NULL AND tag <> N''
+                )
+                SELECT @merged = N'[' + ISNULL(STUFF((
+                    SELECT N',"' + STRING_ESCAPE(tag, 'json') + N'"'
+                    FROM ranked
+                    WHERE rn = 1
+                    ORDER BY pos
+                    FOR XML PATH(''), TYPE).value('.', 'nvarchar(max)'), 1, 1, N''), N'') + N']';
 
-            UPDATE {_qRegistry}
-            SET CurrentVersion = @registryVersion,
-                LastSequencePosition = @first + (CONVERT(bigint, @EventCount) - 1) * @increment,
-                LastEventAt = @Now,
-                EventCount = EventCount + @EventCount,
-                Tags = @merged
-            WHERE StreamId = @StreamId;
+                UPDATE {_qRegistry}
+                SET CurrentVersion = @registryVersion,
+                    LastSequencePosition = @lastPosition,
+                    LastEventAt = @Now,
+                    EventCount = EventCount + @EventCount,
+                    Tags = @merged
+                WHERE StreamId = @StreamId;
+            END
+            ELSE
+            BEGIN
+                UPDATE {_qRegistry}
+                SET CurrentVersion = @registryVersion,
+                    LastSequencePosition = @lastPosition,
+                    LastEventAt = @Now,
+                    EventCount = EventCount + @EventCount
+                WHERE StreamId = @StreamId;
+            END
 
-            -- Leave this fence row until a later append. Deleting it here holds a
-            -- lock that blocks the next append's fence insert until commit.
-            -- READPAST skips rows an open append still holds.
-            DELETE FROM {_qFence} WITH (READPAST) WHERE Id <> @fenceId;
+            DELETE FROM {_qFence} WHERE Id = @fenceId;
 
             SELECT
                 @first AS FirstPosition,
@@ -260,25 +210,10 @@ public partial class SqlServerEventStore
         {
             Value = PartitionHashUtility.GetDeterministicHashCode(streamId)
         });
-        parameters.Add(new SqlParameter("@Locks", SqlDbType.NVarChar, -1)
-        {
-            Value = LocksJson(AppendLockPlan(envelopes, condition))
-        });
-        parameters.Add(new SqlParameter("@Events", SqlDbType.NVarChar, -1)
-        {
-            Value = EventsJson(envelopes, eventIds)
-        });
         parameters.Add(new SqlParameter("@NewTags", SqlDbType.NVarChar, -1)
         {
             Value = JsonSerializer.Serialize(UnionTags(envelopes), _jsonOptions)
         });
-        if (_options.EnableOutbox && BatchHasOutbound(envelopes))
-        {
-            parameters.Add(new SqlParameter("@Outbox", SqlDbType.NVarChar, -1)
-            {
-                Value = OutboxJson(envelopes, eventIds)
-            });
-        }
 
         var command = new SqlCommand(sql.ToString(), connection, transaction);
         await using var commandDisposal = command.ConfigureAwait(false);
@@ -307,33 +242,166 @@ public partial class SqlServerEventStore
         return new AppendBatchOutcome(result, eventTenant);
     }
 
-    private static void AppendLockStatements(StringBuilder sql)
+    private static void AppendLockStatements(
+        StringBuilder sql,
+        List<SqlParameter> parameters,
+        IReadOnlyList<AppendLock> plan)
     {
-        sql.AppendLine(
-            $"""
-            DECLARE @lockCount int = (SELECT COUNT(*) FROM OPENJSON(@Locks));
-            DECLARE @lockIndex int = 0;
-            DECLARE @lockName nvarchar(255);
-            DECLARE @lockMode nvarchar(16);
-            DECLARE @lockCode int;
-            DECLARE @lockMessage nvarchar(200);
-            WHILE @lockIndex < @lockCount
-            BEGIN
-                SELECT
-                    @lockName = JSON_VALUE(@Locks, CONCAT('$[', @lockIndex, '].n')),
-                    @lockMode = JSON_VALUE(@Locks, CONCAT('$[', @lockIndex, '].m'));
-                EXEC @lockCode = sp_getapplock
-                    @Resource = @lockName,
-                    @LockMode = @lockMode,
-                    @LockOwner = N'Transaction';
-                IF @lockCode < 0
-                BEGIN
-                    SET @lockMessage = CONCAT(N'Append lock not granted, code ', @lockCode);
-                    THROW {AppendLockNotGrantedError}, @lockMessage, 1;
-                END
-                SET @lockIndex += 1;
-            END
-            """);
+        sql.AppendLine("DECLARE @lockCode int;");
+        sql.AppendLine("DECLARE @lockMessage nvarchar(200);");
+        for (var i = 0; i < plan.Count; i++)
+        {
+            var name = "@L" + i.ToString(CultureInfo.InvariantCulture);
+            var mode = plan[i].Exclusive ? "Exclusive" : "Shared";
+            sql.Append("EXEC @lockCode = sp_getapplock @Resource = ").Append(name)
+                .Append(", @LockMode = N'").Append(mode).AppendLine("', @LockOwner = N'Transaction';");
+            sql.Append("IF @lockCode < 0 BEGIN SET @lockMessage = CONCAT(N'Append lock not granted, code ', @lockCode); THROW ")
+                .Append(AppendLockNotGrantedError).AppendLine(", @lockMessage, 1; END");
+            parameters.Add(new SqlParameter(name, SqlDbType.NVarChar, 255) { Value = plan[i].Resource });
+        }
+    }
+
+    /// <summary>
+    /// Plain multi-row inserts. Parsing JSON inside the insert allocates tempdb
+    /// objects, and those pages latch under many writers.
+    /// </summary>
+    private void AppendStoredEvents(
+        StringBuilder sql,
+        List<SqlParameter> parameters,
+        IReadOnlyList<AppendEvent> envelopes,
+        IReadOnlyList<Guid> eventIds)
+    {
+        const int eventsPerInsert = 200;
+        for (var start = 0; start < envelopes.Count; start += eventsPerInsert)
+        {
+            var count = Math.Min(eventsPerInsert, envelopes.Count - start);
+            sql.Append("INSERT INTO ").Append(_qTable).AppendLine(
+                " (StreamKey, TenantId, Version, SequencePosition, EventTypeId, EventData, SchemaVersion, CodecId, Tags, Metadata, Timestamp, PartitionHash, EventId) VALUES");
+            for (var n = 0; n < count; n++)
+            {
+                var i = start + n;
+                var envelope = envelopes[i];
+                if (!_eventTypes.TryGetId(envelope.EventType, out var eventTypeId))
+                {
+                    throw new InvalidOperationException(
+                        $"Event type token '{envelope.EventType}' is not in {_qTypes}. " +
+                        "Foreign tokens must be registered before the append transaction opens.");
+                }
+
+                var index = i.ToString(CultureInfo.InvariantCulture);
+                if (n > 0)
+                    sql.AppendLine(",");
+                sql.Append("(@StreamKey, @eventTenant, @start + ").Append(index)
+                    .Append(", @first + ").Append(index).Append(" * @increment, @EvType").Append(index)
+                    .Append(", @EvPayload").Append(index)
+                    .Append(", @EvSchema").Append(index)
+                    .Append(", @EvCodec").Append(index)
+                    .Append(", @EvTags").Append(index)
+                    .Append(", @EvMeta").Append(index)
+                    .Append(", @Now, @PartitionHash, @EvId").Append(index).Append(')');
+                parameters.Add(new SqlParameter("@EvType" + index, SqlDbType.Int) { Value = eventTypeId });
+                parameters.Add(BinaryParameter("@EvPayload" + index, envelope.Payload));
+                parameters.Add(new SqlParameter("@EvSchema" + index, SqlDbType.Int) { Value = envelope.SchemaVersion });
+                parameters.Add(new SqlParameter("@EvCodec" + index, SqlDbType.TinyInt) { Value = envelope.CodecId });
+                parameters.Add(new SqlParameter("@EvTags" + index, SqlDbType.NVarChar, 4000)
+                {
+                    Value = JsonSerializer.Serialize(envelope.Tags, _jsonOptions)
+                });
+                parameters.Add(new SqlParameter("@EvMeta" + index, SqlDbType.NVarChar, -1)
+                {
+                    Value = envelope.Metadata.IsEmpty
+                        ? DBNull.Value
+                        : Encoding.UTF8.GetString(envelope.Metadata.Span)
+                });
+                parameters.Add(new SqlParameter("@EvId" + index, SqlDbType.UniqueIdentifier) { Value = eventIds[i] });
+            }
+
+            sql.AppendLine(";");
+        }
+
+        var tagOrdinal = 0;
+        var tagStart = 0;
+        var pending = new List<(int EventIndex, string Tag)>();
+        for (var i = 0; i < envelopes.Count; i++)
+        {
+            foreach (var tag in envelopes[i].Tags)
+            {
+                if (!string.IsNullOrEmpty(tag))
+                    pending.Add((i, tag));
+            }
+        }
+
+        while (tagStart < pending.Count)
+        {
+            var count = Math.Min(400, pending.Count - tagStart);
+            sql.Append("INSERT INTO ").Append(_qTags).AppendLine(" (GlobalSequencePosition, Tag) VALUES");
+            for (var n = 0; n < count; n++)
+            {
+                var row = pending[tagStart + n];
+                var index = tagOrdinal.ToString(CultureInfo.InvariantCulture);
+                if (n > 0)
+                    sql.AppendLine(",");
+                sql.Append("(@first + ").Append(row.EventIndex.ToString(CultureInfo.InvariantCulture))
+                    .Append(" * @increment, @EvTag").Append(index).Append(')');
+                parameters.Add(new SqlParameter("@EvTag" + index, SqlDbType.NVarChar, 256) { Value = row.Tag });
+                tagOrdinal++;
+            }
+
+            sql.AppendLine(";");
+            tagStart += count;
+        }
+    }
+
+    private void AppendOutboxRows(
+        StringBuilder sql,
+        List<SqlParameter> parameters,
+        IReadOnlyList<AppendEvent> envelopes,
+        IReadOnlyList<Guid> eventIds)
+    {
+        var rows = new List<int>();
+        for (var i = 0; i < envelopes.Count; i++)
+        {
+            if (envelopes[i].Outbound is not null)
+                rows.Add(i);
+        }
+
+        if (rows.Count == 0)
+            return;
+
+        var outbox = SqlIdentifier.Qualify(_schemaName, _options.OutboxTableName);
+        sql.Append("INSERT INTO ").Append(outbox).AppendLine(
+            " (Id, EventType, SchemaVersion, CodecId, Payload, Metadata, CreatedAt, Attempts, StreamId, SequencePosition) VALUES");
+        for (var n = 0; n < rows.Count; n++)
+        {
+            var i = rows[n];
+            var outbound = envelopes[i].Outbound!;
+            var index = i.ToString(CultureInfo.InvariantCulture);
+            if (n > 0)
+                sql.AppendLine(",");
+            sql.Append("(@EvId").Append(index)
+                .Append(", @ObType").Append(index)
+                .Append(", @ObSchema").Append(index)
+                .Append(", @ObCodec").Append(index)
+                .Append(", @ObPayload").Append(index)
+                .Append(", @ObMeta").Append(index)
+                .Append(", @Now, 0, @StreamId, @first + ").Append(index).Append(" * @increment)");
+            parameters.Add(new SqlParameter("@ObType" + index, SqlDbType.NVarChar, 500) { Value = outbound.EventType });
+            parameters.Add(new SqlParameter("@ObSchema" + index, SqlDbType.Int) { Value = outbound.SchemaVersion });
+            parameters.Add(new SqlParameter("@ObCodec" + index, SqlDbType.TinyInt) { Value = outbound.CodecId });
+            parameters.Add(BinaryParameter("@ObPayload" + index, outbound.Payload));
+            parameters.Add(new SqlParameter("@ObMeta" + index, SqlDbType.NVarChar, -1)
+            {
+                Value = outbound.Metadata.IsEmpty ? "{}" : Encoding.UTF8.GetString(outbound.Metadata.Span)
+            });
+        }
+
+        sql.AppendLine(";");
+    }
+
+    private static SqlParameter BinaryParameter(string name, ReadOnlyMemory<byte> payload)
+    {
+        var bytes = payload.IsEmpty ? Array.Empty<byte>() : payload.ToArray();
+        return new SqlParameter(name, SqlDbType.VarBinary, -1) { Value = bytes };
     }
 
     private void AppendConditionCheck(StringBuilder sql, List<SqlParameter> parameters, AppendCondition condition)
@@ -393,93 +461,6 @@ public partial class SqlServerEventStore
             .AppendLine(", @conditionMessage, 1; END");
     }
 
-    private string EventsJson(IReadOnlyList<AppendEvent> envelopes, IReadOnlyList<Guid> eventIds)
-    {
-        using var stream = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(stream))
-        {
-            writer.WriteStartArray();
-            for (var i = 0; i < envelopes.Count; i++)
-            {
-                var envelope = envelopes[i];
-                if (!_eventTypes.TryGetId(envelope.EventType, out var eventTypeId))
-                {
-                    throw new InvalidOperationException(
-                        $"Event type token '{envelope.EventType}' is not in {_qTypes}. " +
-                        "Foreign tokens must be registered before the append transaction opens.");
-                }
-
-                writer.WriteStartObject();
-                writer.WriteNumber("o", i);
-                writer.WriteNumber("t", eventTypeId);
-                writer.WriteString("p", Convert.ToBase64String(envelope.Payload.Span));
-                writer.WriteNumber("s", envelope.SchemaVersion);
-                writer.WriteNumber("c", envelope.CodecId);
-                writer.WriteString("g", JsonSerializer.Serialize(envelope.Tags, _jsonOptions));
-                if (envelope.Metadata.IsEmpty)
-                    writer.WriteNull("m");
-                else
-                    writer.WriteString("m", Encoding.UTF8.GetString(envelope.Metadata.Span));
-                writer.WriteString("i", eventIds[i]);
-                writer.WriteEndObject();
-            }
-
-            writer.WriteEndArray();
-        }
-
-        return Encoding.UTF8.GetString(stream.ToArray());
-    }
-
-    private string OutboxJson(IReadOnlyList<AppendEvent> envelopes, IReadOnlyList<Guid> eventIds)
-    {
-        using var stream = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(stream))
-        {
-            writer.WriteStartArray();
-            for (var i = 0; i < envelopes.Count; i++)
-            {
-                var outbound = envelopes[i].Outbound;
-                if (outbound is null)
-                    continue;
-
-                writer.WriteStartObject();
-                writer.WriteNumber("o", i);
-                writer.WriteString("i", eventIds[i]);
-                writer.WriteString("t", outbound.EventType);
-                writer.WriteNumber("s", outbound.SchemaVersion);
-                writer.WriteNumber("c", outbound.CodecId);
-                writer.WriteString("p", Convert.ToBase64String(outbound.Payload.Span));
-                writer.WriteString(
-                    "m",
-                    outbound.Metadata.IsEmpty ? "{}" : Encoding.UTF8.GetString(outbound.Metadata.Span));
-                writer.WriteEndObject();
-            }
-
-            writer.WriteEndArray();
-        }
-
-        return Encoding.UTF8.GetString(stream.ToArray());
-    }
-
-    private static string LocksJson(IReadOnlyList<AppendLock> plan)
-    {
-        using var stream = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(stream))
-        {
-            writer.WriteStartArray();
-            foreach (var entry in plan)
-            {
-                writer.WriteStartObject();
-                writer.WriteString("n", entry.Resource);
-                writer.WriteString("m", entry.Exclusive ? "Exclusive" : "Shared");
-                writer.WriteEndObject();
-            }
-
-            writer.WriteEndArray();
-        }
-
-        return Encoding.UTF8.GetString(stream.ToArray());
-    }
 
     private static bool HasError(SqlException exception, int number)
     {

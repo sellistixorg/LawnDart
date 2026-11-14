@@ -140,7 +140,8 @@ are part of a new format 5 table.
 
 `RowVersion` is the commit horizon. An append inserts an `AppendFence` row
 before it reserves a sequence, so the transaction owns a rowversion first.
-A later append removes fence rows whose transaction has already committed.
+The same batch deletes that fence row. The transaction still holds the
+rowversion until it commits.
 Global reads and `GetCurrentSequenceAsync` include a row only when its
 rowversion is below `MIN_ACTIVE_ROWVERSION()`. A sequence reserved by an
 open append stays invisible while that append is open. A later committed
