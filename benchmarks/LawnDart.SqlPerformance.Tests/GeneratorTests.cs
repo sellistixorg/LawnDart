@@ -12,6 +12,9 @@ public sealed class GeneratorTests
     public void Sizes_cover_the_configured_counts()
     {
         Assert.Equal(1_000_000, SizeParser.Parse("1M"));
+        Assert.Equal(10_000_000, SizeParser.Parse("10M"));
+        Assert.Equal(10_000_000, SizeParser.Parse("10m"));
+        Assert.Equal(10_000_000, DatasetPlan.TenMillion);
         Assert.Equal(100_000_000, SizeParser.Parse("100M"));
         Assert.Equal(1_000_000_000, SizeParser.Parse("1B"));
         Assert.Equal(1_000_000, SizeParser.Parse("1000000"));

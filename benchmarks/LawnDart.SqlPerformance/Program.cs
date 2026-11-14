@@ -326,7 +326,7 @@ internal static class Program
     {
         Console.WriteLine("Commands: self-check, load, save, restore, run, check, compare, compare-commits.");
         Console.WriteLine("Flags: --database postgres|sqlserver|both --size --seed --tenants --samples --save --from-saved --label --commit --left --right --baseline --candidate.");
-        Console.WriteLine("Size accepts an event count, 1M, 100M, or 1B. The default size is 1M.");
+        Console.WriteLine("Size accepts an event count, 1M, 10M, 100M, or 1B. The default size is 1M.");
         Console.WriteLine("load writes rows. save keeps that database. restore brings it back. run times the four workloads and writes a local result file.");
         Console.WriteLine("check loads and runs each workload without printing timings.");
         Console.WriteLine("compare reads two local result files for the same database. compare-commits runs two commits against the saved database.");

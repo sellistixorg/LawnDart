@@ -134,7 +134,7 @@ jobs:
     name: SQL performance check
     if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 30
     steps:
     - name: Checkout code
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -149,4 +149,4 @@ jobs:
     - name: Check load and workloads
       run: >
         dotnet run --project benchmarks/LawnDart.SqlPerformance
-        --configuration Release -- check
+        --configuration Release -- check --size 1M

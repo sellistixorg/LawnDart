@@ -2,7 +2,7 @@
 
 This folder loads a fixed data set and times four event store workloads on SQL Server and on Postgres. The short Postgres append counter stays in `LawnDart.Postgres.Benchmarks`.
 
-Timings are printed only when you run the harness yourself. They are written under `results/`, which is gitignored. The `check` command loads data and runs each workload, and it prints no timings.
+Timings are printed only when you run the harness yourself. They are written under `results/`, which is gitignored. The `check` command loads data and runs each workload. On Postgres it prints whether the cold stream load cleared shared buffers. It prints no timings.
 
 ## Load
 
@@ -10,13 +10,13 @@ Timings are printed only when you run the harness yourself. They are written und
 dotnet run --project benchmarks/LawnDart.SqlPerformance -c Release -- load --save
 ```
 
-The default size is one million events. Pass `--size 100M` for one hundred million. `--size 1B` is accepted for a later machine.
+The default size is one million events. Pass `--size 10M` for ten million, `--size 100M` for one hundred million, or `--size 1B` for one billion. One billion is accepted for a later machine.
 
 `--database postgres` or `--database sqlserver` runs one database. The default is both, one after the other.
 
 `--seed` and `--tenants` change the generator. The same seed and size produce the same rows.
 
-The one hundred million size raises the database memory cap. Give the container engine about forty gigabytes, and put its data on a large disk.
+Ten million events on SQL Server use an 8 gigabyte container. One hundred million events, and one billion, raise the cap again. Give the container engine about forty gigabytes for those sizes, and put its data on a large disk.
 
 ## Save and restore
 
@@ -33,16 +33,38 @@ dotnet run --project benchmarks/LawnDart.SqlPerformance -c Release -- save --dat
 dotnet run --project benchmarks/LawnDart.SqlPerformance -c Release -- run --from-saved
 ```
 
-`--from-saved` restores the copy, then times these workloads:
-
-1. Appends. Stream appends at several writer counts, a hot stream, and dynamic consistency boundary appends with conditions.
-2. Dynamic consistency boundary queries, plus append condition checks with a recent position and with an empty position.
-3. Aggregate stream loads. Each load reads the snapshot and the tail, cold and warm.
-4. Projection catch-up, reading the log in two batch sizes, and subscription polling while one writer transaction is open.
+`--from-saved` restores the copy, then runs the cases below.
 
 `--samples` sets how many operations a case records. Catch-up still reads the loaded log.
 
 The result file is under `results/`. It records the commit, the database, the size, and the timings.
+
+## Cases
+
+Appends:
+
+- `stream writers 1`, `stream writers 8`, `stream writers 32`, and `stream writers 128`. That many streams each append one event per round, at the same time.
+- `hot stream`. One stream appends one event after another.
+- `dcb append recent after`. One event is appended under a condition. The condition looks for the tag `bench-absent` after the loaded head. That tag is not in the loaded data.
+
+Queries:
+
+- `tag`, `tag and type`, and `two tags`. Each read asks for up to 50 events.
+- `condition recent after`. The same `bench-absent` condition, read from the index, starting after the loaded head. This is a read. No event is written.
+- `condition empty after`. The same read with no start position. This is a read. No event is written.
+
+`dcb append recent after` writes. `condition recent after` only reads. They are separate cases.
+
+Stream loads. Each load reads the snapshot and the tail.
+
+- `cold`. The buffer cache is cleared before the read. SQL Server runs `CHECKPOINT` and `DBCC DROPCLEANBUFFERS`. Postgres runs `CHECKPOINT` and `pg_buffercache_evict_all` when that function is available. On a container the harness started, when that function is not available, Postgres restarts so shared buffers start empty.
+- `connection-cold`. Postgres uses this name when shared buffers cannot be cleared. The harness runs `DISCARD ALL` on its own session. Shared buffers stay, and the timed read uses the store connection.
+- `warm`. The same read, with the cache left as it is.
+
+Catch-up:
+
+- `batch 1000` and `batch 5000`. Read the log in pages of that size.
+- `subscription poll`. One event is appended while another transaction is open. The subscription then waits until that transaction ends. The recorded time and the throughput are that wait. The open transaction and the append are outside the throughput.
 
 ## Compare
 
@@ -64,7 +86,7 @@ Save a database first. This command restores that copy, builds this harness agai
 dotnet run --project benchmarks/LawnDart.SqlPerformance -c Release -- check
 ```
 
-Continuous integration runs `check` in its own job. That job does not print timings.
+Continuous integration runs `check --size 1M` in its own job. That job does not print timings.
 
 ## Databases that are already running
 

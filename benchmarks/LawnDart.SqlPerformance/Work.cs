@@ -41,7 +41,7 @@ internal sealed class OperationLog
         }
     }
 
-    public CaseResult Freeze(string workload, string name)
+    public CaseResult Freeze(string workload, string name, bool throughputFromSamples = false)
     {
         double[] copy;
         long events;
@@ -52,9 +52,18 @@ internal sealed class OperationLog
         }
 
         Array.Sort(copy);
-        var wall = _started == 0 ? 0 : (Stopwatch.GetTimestamp() - _started) / (double)Stopwatch.Frequency;
-        if (wall <= 0)
-            wall = copy.Length == 0 ? 0 : copy.Sum() / 1000d;
+        double wall;
+        if (throughputFromSamples)
+        {
+            wall = copy.Sum() / 1000d;
+        }
+        else
+        {
+            wall = _started == 0 ? 0 : (Stopwatch.GetTimestamp() - _started) / (double)Stopwatch.Frequency;
+            if (wall <= 0)
+                wall = copy.Length == 0 ? 0 : copy.Sum() / 1000d;
+        }
+
         return new CaseResult
         {
             Workload = workload,
@@ -130,8 +139,8 @@ internal static class Workloads
         results.Add(await QueryAsync(log, Query.FromItems(QueryItem.ByTags(catalog.QueryTag)), samples, "queries", "tag", cancellationToken).ConfigureAwait(false));
         results.Add(await QueryAsync(log, Query.FromItems(QueryItem.ByTypeAndTags([catalog.QueryType], [catalog.QueryTag])), samples, "queries", "tag and type", cancellationToken).ConfigureAwait(false));
         results.Add(await QueryAsync(log, Query.FromItems(QueryItem.ByTags(catalog.MultiTagA, catalog.MultiTagB)), samples, "queries", "two tags", cancellationToken).ConfigureAwait(false));
-        results.Add(await DcbAppendsAsync(log, catalog, samples, recentAfter: true, "condition recent after", cancellationToken).ConfigureAwait(false));
-        results.Add(await DcbAppendsAsync(log, catalog, samples, recentAfter: false, "condition empty after", cancellationToken).ConfigureAwait(false));
+        results.Add(await ConditionReadAsync(log, catalog, samples, recentAfter: true, "condition recent after", cancellationToken).ConfigureAwait(false));
+        results.Add(await ConditionReadAsync(log, catalog, samples, recentAfter: false, "condition empty after", cancellationToken).ConfigureAwait(false));
         results.Add(await CatchUpAsync(log, 1000, fullCatchUp ? int.MaxValue : 2, cancellationToken).ConfigureAwait(false));
         results.Add(await CatchUpAsync(log, 5000, fullCatchUp ? int.MaxValue : 2, cancellationToken).ConfigureAwait(false));
         var trials = fullCatchUp ? 5 : 1;
@@ -257,8 +266,33 @@ internal static class Workloads
                 throw new InvalidOperationException("A conditional append returned no position.");
         }
 
-        var workload = name.StartsWith("condition", StringComparison.Ordinal) ? "queries" : "appends";
-        return operations.Freeze(workload, name);
+        return operations.Freeze("appends", name);
+    }
+
+    private static async Task<CaseResult> ConditionReadAsync(
+        IEventLog log,
+        DatasetCatalog catalog,
+        int samples,
+        bool recentAfter,
+        string name,
+        CancellationToken cancellationToken)
+    {
+        var operations = new OperationLog();
+        operations.Start();
+        var query = Query.FromItems(QueryItem.ByTags("bench-absent"));
+        // The append condition ignores positions at or before After. This read is inclusive, so start one past the loaded head.
+        long? from = recentAfter ? catalog.MaxPosition + 1 : null;
+        var rounds = Math.Max(1, samples);
+        for (var round = 0; round < rounds; round++)
+        {
+            var began = Stopwatch.GetTimestamp();
+            var position = await log.GetMaxSequencePositionAsync(query, from, cancellationToken: cancellationToken).ConfigureAwait(false);
+            operations.Add(began, Stopwatch.GetTimestamp(), 1);
+            if (position != 0)
+                throw new InvalidOperationException("The condition query matched a stored event.");
+        }
+
+        return operations.Freeze("queries", name);
     }
 
     private static async Task<CaseResult> QueryAsync(
@@ -295,13 +329,22 @@ internal static class Workloads
         if (streams.Count < 1)
             throw new InvalidOperationException("Not enough loaded streams to read.");
 
+        var flush = await ChooseFlushAsync(endpoint, cancellationToken).ConfigureAwait(false);
+        if (endpoint.Kind == DatabaseKind.Postgres)
+        {
+            Console.WriteLine(flush == CacheFlush.ConnectionOnly
+                ? "postgres stream load: connection-cold"
+                : "postgres stream load: cold");
+        }
+
+        var coldName = flush == CacheFlush.ConnectionOnly ? "connection-cold" : "cold";
         var coldRounds = Math.Max(1, Math.Min(samples, 20));
         var cold = new OperationLog();
         cold.Start();
         for (var round = 0; round < coldRounds; round++)
         {
             var sample = streams[round % streams.Count];
-            await FlushAsync(endpoint, cancellationToken).ConfigureAwait(false);
+            await ApplyFlushAsync(endpoint, flush, cancellationToken).ConfigureAwait(false);
             var began = Stopwatch.GetTimestamp();
             var events = await LoadTailAsync(log, snapshots, sample, cancellationToken).ConfigureAwait(false);
             cold.Add(began, Stopwatch.GetTimestamp(), events);
@@ -320,7 +363,7 @@ internal static class Workloads
 
         return
         [
-            cold.Freeze("stream loads", "cold"),
+            cold.Freeze("stream loads", coldName),
             warm.Freeze("stream loads", "warm")
         ];
     }
@@ -376,7 +419,6 @@ internal static class Workloads
         CancellationToken cancellationToken)
     {
         var operations = new OperationLog();
-        operations.Start();
         for (var trial = 0; trial < trials; trial++)
         {
             var head = await log.GetCurrentSequenceAsync(cancellationToken).ConfigureAwait(false);
@@ -405,6 +447,7 @@ internal static class Workloads
             }
 
             await writer.DisposeAsync().ConfigureAwait(false);
+            // The open writer and the append sit outside this sample.
             var began = Stopwatch.GetTimestamp();
             using var wait = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             using var linkedWait = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, wait.Token);
@@ -421,17 +464,96 @@ internal static class Workloads
             }
         }
 
-        return operations.Freeze("catch-up", "subscription poll");
+        // Throughput is the wait after commit, not the hold and not the append.
+        return operations.Freeze("catch-up", "subscription poll", throughputFromSamples: true);
     }
 
-    private static async Task FlushAsync(EngineEndpoint endpoint, CancellationToken cancellationToken)
+    private enum CacheFlush
     {
-        if (endpoint.Kind != DatabaseKind.SqlServer)
-            return;
+        SqlBuffers,
+        PostgresBuffers,
+        PostgresRestart,
+        ConnectionOnly
+    }
 
-        await using var connection = new SqlConnection(endpoint.DatabaseConnectionString);
+    private static async Task<CacheFlush> ChooseFlushAsync(EngineEndpoint endpoint, CancellationToken cancellationToken)
+    {
+        if (endpoint.Kind == DatabaseKind.SqlServer)
+            return CacheFlush.SqlBuffers;
+
+        await using var connection = new NpgsqlConnection(endpoint.DatabaseConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new SqlCommand("CHECKPOINT; DBCC DROPCLEANBUFFERS;", connection) { CommandTimeout = 0 };
+        await ExecuteNpgsqlAsync(connection, "CHECKPOINT", cancellationToken).ConfigureAwait(false);
+        if (await TryEvictSharedBuffersAsync(connection, cancellationToken).ConfigureAwait(false))
+            return CacheFlush.PostgresBuffers;
+        if (endpoint.OwnedContainer && !string.IsNullOrEmpty(endpoint.ContainerName))
+            return CacheFlush.PostgresRestart;
+        return CacheFlush.ConnectionOnly;
+    }
+
+    private static async Task ApplyFlushAsync(EngineEndpoint endpoint, CacheFlush flush, CancellationToken cancellationToken)
+    {
+        switch (flush)
+        {
+            case CacheFlush.SqlBuffers:
+            {
+                await using var connection = new SqlConnection(endpoint.DatabaseConnectionString);
+                await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+                await using var command = new SqlCommand("CHECKPOINT; DBCC DROPCLEANBUFFERS;", connection) { CommandTimeout = 0 };
+                await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                return;
+            }
+            case CacheFlush.PostgresBuffers:
+            {
+                await using var connection = new NpgsqlConnection(endpoint.DatabaseConnectionString);
+                await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+                await ExecuteNpgsqlAsync(connection, "CHECKPOINT", cancellationToken).ConfigureAwait(false);
+                if (!await TryEvictSharedBuffersAsync(connection, cancellationToken).ConfigureAwait(false))
+                    throw new InvalidOperationException("Postgres could not evict shared buffers.");
+                return;
+            }
+            case CacheFlush.PostgresRestart:
+            {
+                await using (var connection = new NpgsqlConnection(endpoint.DatabaseConnectionString))
+                {
+                    await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+                    await ExecuteNpgsqlAsync(connection, "CHECKPOINT", cancellationToken).ConfigureAwait(false);
+                }
+
+                await Engines.RestartOwnedAsync(endpoint, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+            default:
+            {
+                await using var connection = new NpgsqlConnection(endpoint.DatabaseConnectionString);
+                await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+                await ExecuteNpgsqlAsync(connection, "DISCARD ALL", cancellationToken).ConfigureAwait(false);
+                NpgsqlConnection.ClearAllPools();
+                return;
+            }
+        }
+    }
+
+    private static async Task<bool> TryEvictSharedBuffersAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await ExecuteNpgsqlAsync(connection, "CREATE EXTENSION IF NOT EXISTS pg_buffercache", cancellationToken).ConfigureAwait(false);
+            await ExecuteNpgsqlAsync(connection, "SELECT buffers_evicted FROM public.pg_buffercache_evict_all()", cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        catch (PostgresException ex) when (IsUnavailableColdCache(ex))
+        {
+            return false;
+        }
+    }
+
+    private static bool IsUnavailableColdCache(PostgresException exception)
+        => exception.SqlState is "42883" or "42501" or "0A000" or "58P01" or "3F000";
+
+    private static async Task ExecuteNpgsqlAsync(NpgsqlConnection connection, string sql, CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(sql, connection) { CommandTimeout = 0 };
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
