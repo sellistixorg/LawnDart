@@ -88,6 +88,22 @@ public sealed class SqlServerAppendBatchTests : IAsyncLifetime
         Assert.True(
             batch.IndexOf("THROW " + SqlServerEventStore.AppendConditionConflictError, StringComparison.Ordinal)
             < batch.IndexOf("sp_sequence_get_range", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains("INSERT INTO [batchdcb].[StreamTags]", batch, StringComparison.Ordinal);
+
+        await using (var connection = new SqlConnection(_connectionString))
+        {
+            await connection.OpenAsync();
+            await using var command = new SqlCommand(
+                """
+                SELECT COUNT(*)
+                FROM [batchdcb].[StreamTags] AS t
+                INNER JOIN [batchdcb].[TagRegistry] AS r ON r.Id = t.TagId
+                WHERE r.Tag = @Tag
+                """,
+                connection);
+            command.Parameters.AddWithValue("@Tag", tag);
+            Assert.Equal(1, Convert.ToInt32(await command.ExecuteScalarAsync()));
+        }
 
         var conflictCommands = new List<string>();
         using (Capture(conflictCommands))

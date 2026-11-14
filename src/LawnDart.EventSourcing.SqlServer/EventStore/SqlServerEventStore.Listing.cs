@@ -134,6 +134,9 @@ public partial class SqlServerEventStore
             AS
             BEGIN
                 SET NOCOUNT ON;
+                -- The append batch writes stream tag ids itself. Skip the text lookup.
+                IF TRY_CONVERT(int, SESSION_CONTEXT(N'LawnDart.SkipStreamTags')) = 1
+                    RETURN;
                 IF EXISTS (SELECT 1 FROM inserted) AND EXISTS (SELECT 1 FROM deleted)
                    AND NOT (UPDATE([Tags]) OR UPDATE([StreamId]))
                     RETURN;

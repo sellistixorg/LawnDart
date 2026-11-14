@@ -16,8 +16,12 @@ internal static class DcbQuerySql
     internal const string EventColumns =
         "s.StreamId, e.Version, e.SequencePosition, e.EventTypeId, e.EventData, e.SchemaVersion, e.CodecId, e.Tags, e.Metadata, e.Timestamp";
 
+    /// <summary>
+    /// One seek per event. A hash of the stream registry would read every stream
+    /// before a short page stopped.
+    /// </summary>
     private static string StreamJoin(string qRegistry) =>
-        $"INNER JOIN {qRegistry} s ON s.StreamKey = e.StreamKey";
+        $"INNER LOOP JOIN {qRegistry} s ON s.StreamKey = e.StreamKey";
 
     /// <summary>
     /// Rows whose rowversion is still owned by an open transaction, or that

@@ -1828,6 +1828,7 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         catch (SqlException ex) when (IsDuplicateKey(ex))
         {
             await RollbackQuietlyAsync(transaction, cancellationToken).ConfigureAwait(false);
+            await ClearStreamTagSkipAsync(connection, cancellationToken).ConfigureAwait(false);
             var duplicate = await FindExistingEventIdAsync(ExtractTenantId(streamId), eventIds, cancellationToken)
                 .ConfigureAwait(false);
             if (duplicate is { } eventId)
@@ -1844,7 +1845,30 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
                 catch { /* already rolled back */ }
             }
 
+            await ClearStreamTagSkipAsync(connection, cancellationToken).ConfigureAwait(false);
             throw;
+        }
+    }
+
+    /// <summary>
+    /// A failed batch stops before it clears the skip flag. The flag is not undone by rollback.
+    /// </summary>
+    private static async Task ClearStreamTagSkipAsync(SqlConnection connection, CancellationToken cancellationToken)
+    {
+        if (connection.State != System.Data.ConnectionState.Open)
+            return;
+
+        try
+        {
+            var command = new SqlCommand(
+                "EXEC sp_set_session_context @key = N'LawnDart.SkipStreamTags', @value = NULL;",
+                connection);
+            await using var commandDisposal = command.ConfigureAwait(false);
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The connection is already unusable. Reset on return to the pool drops the flag.
         }
     }
 

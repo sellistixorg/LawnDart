@@ -25,6 +25,10 @@ public partial class SqlServerEventStore
     /// <summary>Raised when a tag id cannot be stored. The append wrote nothing.</summary>
     internal const int AppendTagRegistrationError = 51209;
 
+    /// <summary>Clears the flag that tells the stream-tag trigger to return. Run before a batch abort.</summary>
+    private const string ClearStreamTagSkipSql =
+        "EXEC sp_set_session_context @key = N'LawnDart.SkipStreamTags', @value = NULL;";
+
     /// <summary>
     /// One round trip. Locks, the condition or version check, one position range,
     /// and the inserts all run in this command. Commit is a later call.
@@ -44,6 +48,8 @@ public partial class SqlServerEventStore
         var parameters = new List<SqlParameter>();
         var sql = new StringBuilder();
         sql.AppendLine("SET NOCOUNT ON;");
+        // The stream-tag trigger reads this and returns. The batch inserts those rows from the ids it already holds.
+        sql.AppendLine("EXEC sp_set_session_context @key = N'LawnDart.SkipStreamTags', @value = 1;");
         AppendLockStatements(sql, parameters, AppendLockPlan(envelopes, condition));
         if (condition is not null)
             AppendConditionCheck(sql, parameters, condition);
@@ -100,12 +106,16 @@ public partial class SqlServerEventStore
             END
 
             IF @streamKey IS NULL
+            BEGIN
+                {ClearStreamTagSkipSql}
                 THROW 51208, N'The stream row could not be locked.', 1;
+            END
 
             IF @HasExpected = 1 AND @current <> @Expected
             BEGIN
                 DECLARE @versionMessage nvarchar(200) =
                     CONCAT(N'Expected version ', @Expected, N' but current version is ', @current);
+                {ClearStreamTagSkipSql}
                 THROW {AppendVersionConflictError}, @versionMessage, 1;
             END
 
@@ -200,7 +210,9 @@ public partial class SqlServerEventStore
                 WHERE StreamId = @StreamId;
             END
 
+            {BuildStreamTagInsert(writtenTags)}
             DELETE FROM {_qFence} WHERE Id = @fenceId;
+            EXEC sp_set_session_context @key = N'LawnDart.SkipStreamTags', @value = NULL;
 
             SELECT
                 @first AS FirstPosition,
@@ -533,6 +545,31 @@ public partial class SqlServerEventStore
         return new SqlParameter(name, SqlDbType.VarBinary, -1) { Value = bytes };
     }
 
+    /// <summary>
+    /// Inserts stream tag ids the batch already resolved. The trigger sees
+    /// session context <c>LawnDart.SkipStreamTags</c> and does not look the text up again.
+    /// </summary>
+    private string BuildStreamTagInsert(IReadOnlyList<WrittenTag> writtenTags)
+    {
+        if (writtenTags.Count == 0)
+            return string.Empty;
+
+        var sql = new StringBuilder();
+        sql.Append("INSERT INTO ").Append(_qStreamTags).AppendLine(" (TagId, StreamKey)");
+        sql.AppendLine("SELECT v.TagId, @streamKey FROM (VALUES");
+        for (var i = 0; i < writtenTags.Count; i++)
+        {
+            if (i > 0)
+                sql.AppendLine(",");
+            sql.Append('(').Append(writtenTags[i].Expression).Append(')');
+        }
+
+        sql.AppendLine(") AS v(TagId)");
+        sql.Append("WHERE v.TagId IS NOT NULL AND NOT EXISTS (SELECT 1 FROM ").Append(_qStreamTags)
+            .AppendLine(" AS t WHERE t.TagId = v.TagId AND t.StreamKey = @streamKey);");
+        return sql.ToString();
+    }
+
     private void AppendConditionCheck(StringBuilder sql, List<SqlParameter> parameters, AppendCondition condition)
     {
         var items = condition.FailIfEventsMatch.Items;
@@ -548,9 +585,16 @@ public partial class SqlServerEventStore
                 if (tagVars.ContainsKey(text))
                     continue;
                 var variable = "@CId" + nextTag.ToString(CultureInfo.InvariantCulture);
-                var param = "@CTag" + nextTag.ToString(CultureInfo.InvariantCulture);
                 nextTag++;
                 tagVars[text] = variable;
+                if (_tagIds.TryGetId(text, out var cached))
+                {
+                    sql.Append("DECLARE ").Append(variable).Append(" int = ")
+                        .Append(cached.ToString(CultureInfo.InvariantCulture)).AppendLine(";");
+                    continue;
+                }
+
+                var param = "@CTag" + (nextTag - 1).ToString(CultureInfo.InvariantCulture);
                 parameters.Add(new SqlParameter(param, SqlDbType.NVarChar, 256) { Value = text });
                 sql.Append("DECLARE ").Append(variable).Append(" int = (SELECT Id FROM ").Append(_qTagRegistry)
                     .Append(" WHERE Tag = ").Append(param).Append(" COLLATE ").Append(TagCollation).AppendLine(");");
@@ -580,7 +624,8 @@ public partial class SqlServerEventStore
             sql.Append("IF ").Append(string.Join(" OR ", branches)).AppendLine();
         }
 
-        sql.Append("BEGIN DECLARE @conditionMessage nvarchar(200) = N'Append condition failed: matching events exist'; THROW ")
+        sql.Append("BEGIN ").Append(ClearStreamTagSkipSql)
+            .Append("DECLARE @conditionMessage nvarchar(200) = N'Append condition failed: matching events exist'; THROW ")
             .Append(AppendConditionConflictError)
             .AppendLine(", @conditionMessage, 1; END");
     }
@@ -600,7 +645,10 @@ public partial class SqlServerEventStore
         if (hasTags)
         {
             var sql = new StringBuilder();
-            sql.Append("(EXISTS (SELECT 1 FROM ").Append(_qTags).Append(" AS et0");
+            var tag0 = tagVars[item.Tags![0] ?? string.Empty];
+            // A missing tag id matches nothing. The seek runs only when the id is known.
+            sql.Append('(').Append(tag0).Append(" IS NOT NULL AND EXISTS (SELECT 1 FROM ").Append(_qTags)
+                .Append(" AS et0 WITH (FORCESEEK)");
             for (var j = 1; j < item.Tags!.Count; j++)
             {
                 var alias = "et" + j.ToString(CultureInfo.InvariantCulture);
