@@ -605,9 +605,9 @@ public partial class SqlServerEventStore
             {
                 var alias = "et" + j.ToString(CultureInfo.InvariantCulture);
                 var tagVar = tagVars[item.Tags[j] ?? string.Empty];
-                sql.Append(" INNER JOIN ").Append(_qTags).Append(" AS ").Append(alias)
-                    .Append(" ON ").Append(alias).Append(".GlobalSequencePosition = et0.GlobalSequencePosition AND ")
-                    .Append(alias).Append(".TagId = ").Append(tagVar);
+                sql.Append(" INNER LOOP JOIN ").Append(_qTags).Append(" AS ").Append(alias).Append(" WITH (FORCESEEK)")
+                    .Append(" ON ").Append(alias).Append(".TagId = ").Append(tagVar)
+                    .Append(" AND ").Append(alias).Append(".GlobalSequencePosition = et0.GlobalSequencePosition");
             }
 
             sql.Append(" WHERE et0.TagId = ").Append(tagVars[item.Tags[0] ?? string.Empty]);

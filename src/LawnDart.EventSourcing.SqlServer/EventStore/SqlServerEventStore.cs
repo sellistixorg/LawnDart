@@ -667,6 +667,7 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
 
         await EnsureTagRegistryAsync(connection, cancellationToken).ConfigureAwait(false);
         await EnsureEventTagsAsync(connection, cancellationToken).ConfigureAwait(false);
+        await WarmTagIdsAsync(connection, cancellationToken).ConfigureAwait(false);
 
         // Create stream registry table if enabled
         if (_enableRegistry)
@@ -949,6 +950,16 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         var command = new SqlCommand(sql, connection);
         await using var commandDisposal = command.ConfigureAwait(false);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task WarmTagIdsAsync(SqlConnection connection, CancellationToken cancellationToken)
+    {
+        var command = new SqlCommand($"SELECT Id, Tag FROM {_qTagRegistry}", connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
+        var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var readerDisposal = reader.ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            _tagIds.Add(reader.GetInt32(0), reader.GetString(1));
     }
 
     private async Task WarmEventTypesAsync(SqlConnection connection, CancellationToken cancellationToken)

@@ -32,6 +32,13 @@ internal static class DcbQuerySql
     private static string EventsLookupHint(bool applyStableHorizon)
         => applyStableHorizon ? " WITH (FORCESEEK)" : " WITH (READPAST, FORCESEEK)";
 
+    /// <summary>
+    /// Seek of one tag id. A later tag in the same item is a point seek on
+    /// (tag id, global position), so a short page stops after the first matches.
+    /// </summary>
+    private static string TagSeekHint(bool applyStableHorizon)
+        => applyStableHorizon ? " WITH (FORCESEEK)" : " WITH (READPAST, FORCESEEK)";
+
     internal enum Mode
     {
         Events,
@@ -204,18 +211,22 @@ internal static class DcbQuerySql
         var from = new StringBuilder();
         var where = new StringBuilder("WHERE 1=1");
         var readPast = applyStableHorizon ? "" : " WITH (READPAST)";
+        var tagHint = TagSeekHint(applyStableHorizon);
         string seqColumn;
 
         if (hasTags)
         {
-            from.Append(qTags).Append(" et").Append(itemIndex).Append("_0").Append(readPast);
+            from.Append(qTags).Append(" et").Append(itemIndex).Append("_0").Append(tagHint);
             for (var j = 1; j < tagIds!.Length; j++)
             {
                 var alias = $"et{itemIndex}_{j}";
                 var paramName = $"@Tag{itemIndex}_{j}";
-                from.Append(" INNER JOIN ").Append(qTags).Append(' ').Append(alias).Append(readPast)
-                    .Append(" ON ").Append(alias).Append(".GlobalSequencePosition = et").Append(itemIndex)
-                    .Append("_0.GlobalSequencePosition AND ").Append(alias).Append(".TagId = ").Append(paramName);
+                // Point seek on (tag id, position). A hash of every row for the tag
+                // would read the whole tag before the page limit stops it.
+                from.Append(" INNER LOOP JOIN ").Append(qTags).Append(' ').Append(alias).Append(tagHint)
+                    .Append(" ON ").Append(alias).Append(".TagId = ").Append(paramName)
+                    .Append(" AND ").Append(alias).Append(".GlobalSequencePosition = et").Append(itemIndex)
+                    .Append("_0.GlobalSequencePosition");
                 parameters.Add(new SqlParameter(paramName, tagIds[j]));
             }
 
@@ -228,7 +239,7 @@ internal static class DcbQuerySql
 
             if (needsEvents)
             {
-                from.Append(" INNER JOIN ").Append(qTable).Append(" e").Append(EventsLookupHint(applyStableHorizon))
+                from.Append(" INNER LOOP JOIN ").Append(qTable).Append(" e").Append(EventsLookupHint(applyStableHorizon))
                     .Append(" ON e.SequencePosition = et")
                     .Append(itemIndex).Append("_0.GlobalSequencePosition");
                 if (toTimestamp.HasValue)
@@ -306,7 +317,7 @@ internal static class DcbQuerySql
             sql = $"""
                 SELECT {EventColumns}
                 FROM {source.FromClause}
-                INNER JOIN {qTable} e{lookup} ON e.SequencePosition = {source.SequenceColumn}
+                INNER LOOP JOIN {qTable} e{lookup} ON e.SequencePosition = {source.SequenceColumn}
                 {StreamJoin(qRegistry)}
                 {source.WhereClause}
                   {horizonAnd}
@@ -346,7 +357,7 @@ internal static class DcbQuerySql
                 FROM (
                 {union}
                 ) m
-                INNER JOIN {qTable} e{lookup} ON e.SequencePosition = m.SequencePosition
+                INNER LOOP JOIN {qTable} e{lookup} ON e.SequencePosition = m.SequencePosition
                 WHERE 1 = 1
                   {horizonAnd}
                 """;
@@ -357,7 +368,7 @@ internal static class DcbQuerySql
             FROM (
             {union}
             ) m
-            INNER JOIN {qTable} e{lookup} ON e.SequencePosition = m.SequencePosition
+            INNER LOOP JOIN {qTable} e{lookup} ON e.SequencePosition = m.SequencePosition
             {StreamJoin(qRegistry)}
             WHERE 1 = 1
               {horizonAnd}

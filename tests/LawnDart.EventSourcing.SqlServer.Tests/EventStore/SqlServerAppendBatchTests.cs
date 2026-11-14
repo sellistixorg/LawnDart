@@ -147,6 +147,31 @@ public sealed class SqlServerAppendBatchTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task TagMatch_CaseAndAccent_StayDistinct()
+    {
+        var store = await OpenAsync("tagmatch");
+        var streamId = "s-" + Guid.NewGuid().ToString("N");
+        await store.AppendAsync(streamId, [
+            Event("warmup", "Student:1"),
+            Event("warmup", "student:1"),
+            Event("warmup", "café"),
+            Event("warmup", "cafe")
+        ]);
+
+        var log = (IEventLog)store;
+        Assert.Equal(1, await CountAsync(log, "Student:1"));
+        Assert.Equal(1, await CountAsync(log, "student:1"));
+        Assert.Equal(1, await CountAsync(log, "café"));
+        Assert.Equal(1, await CountAsync(log, "cafe"));
+    }
+
+    private static async Task<int> CountAsync(IEventLog log, string tag)
+    {
+        var page = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(tag)), limit: 10);
+        return page.Events.Count;
+    }
+
+    [Fact]
     public async Task WrongExpectedVersion_ConflictsWithoutASecondVersionRead()
     {
         var store = await OpenAsync("batchver");

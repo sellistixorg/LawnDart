@@ -22,8 +22,8 @@ public class DcbQuerySqlTests
             DcbQuerySql.Mode.Events);
 
         Assert.False(built.ShortCircuited);
-        Assert.Contains("INNER JOIN [dbo].[EventTags]", built.Sql, StringComparison.Ordinal);
-        Assert.Contains("[dbo].[EventTags] et0_0", built.Sql, StringComparison.Ordinal);
+        Assert.Contains("INNER LOOP JOIN [dbo].[EventTags] et0_1 WITH (FORCESEEK)", built.Sql, StringComparison.Ordinal);
+        Assert.Contains("[dbo].[EventTags] et0_0 WITH (FORCESEEK)", built.Sql, StringComparison.Ordinal);
         Assert.Contains("et0_0.TagId = @Tag0_0", built.Sql, StringComparison.Ordinal);
         Assert.Contains("et0_1.TagId = @Tag0_1", built.Sql, StringComparison.Ordinal);
         Assert.Equal(1, built.Parameters.Single(p => p.ParameterName == "@Tag0_0").Value);
