@@ -1,6 +1,5 @@
 using System.Security.Cryptography;
 using System.Text;
-using Microsoft.Data.SqlClient;
 using LawnDart.EventStore;
 
 namespace LawnDart.EventSourcing.SqlServer.EventStore;
@@ -23,8 +22,11 @@ namespace LawnDart.EventSourcing.SqlServer.EventStore;
 /// appends always ask in the same order. Lock names are a short prefix plus a hash
 /// of the schema, the events table and the tag. Two names that hash the same only
 /// make two appends wait for each other.</para>
-/// <para>The condition check then runs as a plain read. Any event it must see was
-/// committed before the locks were granted, or its append is still waiting.</para>
+    /// <para>The locks, the condition or version check, and the inserts run as one
+    /// batch. The condition check is a plain read after the locks in that batch.
+    /// Any event it must see was committed before the locks were granted, or its
+    /// append is still waiting. Event type names in the condition are read from
+    /// the types table in that same read.</para>
 /// </remarks>
 public partial class SqlServerEventStore
 {
@@ -33,8 +35,11 @@ public partial class SqlServerEventStore
 
     internal const string AppendLockPrefix = "LawnDart.append:";
 
-    /// <summary>Most locks asked for in one command, to stay under the parameter limit.</summary>
-    private const int AppendLocksPerCommand = 1000;
+    /// <summary>Version check failed. The message names the expected and current versions.</summary>
+    internal const int AppendVersionConflictError = 51206;
+
+    /// <summary>Append condition matched an event. The batch wrote nothing.</summary>
+    internal const int AppendConditionConflictError = 51207;
 
     internal readonly record struct AppendLock(string Resource, bool Exclusive);
 
@@ -132,69 +137,4 @@ public partial class SqlServerEventStore
         return Convert.ToHexString(digest[..16]);
     }
 
-    /// <summary>
-    /// Takes every lock in <paramref name="plan"/> with the transaction as owner.
-    /// A lock that is not granted raises <see cref="AppendLockNotGrantedError"/>.
-    /// </summary>
-    private static async Task AcquireAppendLocksAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
-        IReadOnlyList<AppendLock> plan,
-        CancellationToken cancellationToken)
-    {
-        for (var start = 0; start < plan.Count; start += AppendLocksPerCommand)
-        {
-            var end = Math.Min(start + AppendLocksPerCommand, plan.Count);
-            var sql = new StringBuilder("DECLARE @r int;\n");
-            var command = new SqlCommand { Connection = connection, Transaction = transaction };
-            await using var commandDisposal = command.ConfigureAwait(false);
-            for (var i = start; i < end; i++)
-            {
-                var name = "@L" + (i - start);
-                var mode = plan[i].Exclusive ? "Exclusive" : "Shared";
-                sql.Append("EXEC @r = sp_getapplock @Resource = ").Append(name)
-                    .Append(", @LockMode = N'").Append(mode).Append("', @LockOwner = N'Transaction';\n")
-                    .Append("IF @r < 0 BEGIN DECLARE @m").Append(i - start)
-                    .Append(" nvarchar(200) = CONCAT(N'Append lock not granted, code ', @r); THROW ")
-                    .Append(AppendLockNotGrantedError).Append(", @m").Append(i - start).Append(", 1; END;\n");
-                command.Parameters.Add(new SqlParameter(name, System.Data.SqlDbType.NVarChar, 255) { Value = plan[i].Resource });
-            }
-
-            command.CommandText = sql.ToString();
-            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        }
-    }
-
-    /// <summary>
-    /// Looks up condition type names again inside the append transaction, after
-    /// the locks. A name first stored by another append between the earlier
-    /// look-up and the locks is then part of the check.
-    /// </summary>
-    private async Task ResolveConditionTypesUnderLockAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
-        AppendCondition condition,
-        CancellationToken cancellationToken)
-    {
-        var missing = QueryTypeTokens(condition.FailIfEventsMatch)
-            .Where(token => _eventTypes.FindId(token) is null)
-            .ToList();
-        if (missing.Count == 0)
-            return;
-
-        var command = new SqlCommand { Connection = connection, Transaction = transaction };
-        await using var commandDisposal = command.ConfigureAwait(false);
-        var names = new string[missing.Count];
-        for (var i = 0; i < missing.Count; i++)
-        {
-            names[i] = "@T" + i;
-            command.Parameters.Add(new SqlParameter(names[i], missing[i]));
-        }
-
-        command.CommandText = $"SELECT Id, Token FROM {_qTypes} WHERE Token IN ({string.Join(", ", names)})";
-        var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        await using var readerDisposal = reader.ConfigureAwait(false);
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-            _eventTypes.Add(reader.GetInt32(0), reader.GetString(1));
-    }
 }

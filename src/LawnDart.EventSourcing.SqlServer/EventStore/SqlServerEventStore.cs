@@ -101,8 +101,9 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
     private readonly string _qFence;
 
     /// <summary>
-    /// Test seam. Invoked inside the append transaction after the commit fence
-    /// is held and the events are inserted, before <c>Commit</c>.
+    /// Test seam. Invoked inside the append transaction after the events are
+    /// inserted, before <c>Commit</c>. The transaction still holds the rowversion
+    /// taken before the position range was reserved.
     /// </summary>
     internal Func<CancellationToken, Task>? BeforeAppendCommit { get; set; }
 
@@ -266,245 +267,6 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         CancellationToken cancellationToken = default)
         => _adapter.AppendAsync(events, condition, metadata, cancellationToken);
 
-    private readonly record struct StreamHead(long StreamKey, long CurrentVersion, string? TenantId);
-
-    /// <summary>
-    /// Locks the registry row for <paramref name="streamId"/> and returns its key.
-    /// A missing row is inserted. The lock is held until the transaction ends.
-    /// </summary>
-    private async Task<StreamHead> LockStreamHeadAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
-        string streamId,
-        CancellationToken cancellationToken)
-    {
-        var existing = await ReadLockedStreamHeadAsync(connection, transaction, streamId, cancellationToken).ConfigureAwait(false);
-        if (existing is not null)
-            return existing.Value;
-
-        var now = DateTime.UtcNow;
-        var tenantId = ExtractTenantId(streamId);
-        var aggregateType = ExtractAggregateType(streamId);
-        var aggregateId = ExtractAggregateId(streamId);
-        var insert = new SqlCommand(
-            $"""
-            DECLARE @keys TABLE (StreamKey BIGINT NOT NULL);
-            INSERT INTO {_qRegistry}
-            (StreamKey, StreamId, TenantId, AggregateType, AggregateId, CurrentVersion, LastSequencePosition,
-             CreatedAt, LastEventAt, EventCount, Tags, Status)
-            OUTPUT INSERTED.StreamKey INTO @keys
-            VALUES
-            (NEXT VALUE FOR {_qStreamKeySequence}, @StreamId, @TenantId, @AggregateType, @AggregateId, -1, 0,
-             @CreatedAt, @LastEventAt, 0, N'[]', N'Active');
-            SELECT StreamKey FROM @keys;
-            """,
-            connection,
-            transaction);
-        await using var insertDisposal = insert.ConfigureAwait(false);
-        insert.Parameters.Add(new SqlParameter("@StreamId", streamId));
-        insert.Parameters.Add(new SqlParameter("@TenantId", SqlDbType.NVarChar, 100) { Value = (object?)tenantId ?? DBNull.Value });
-        insert.Parameters.Add(new SqlParameter("@AggregateType", aggregateType));
-        insert.Parameters.Add(new SqlParameter("@AggregateId", SqlDbType.UniqueIdentifier) { Value = aggregateId.HasValue ? aggregateId.Value : DBNull.Value });
-        insert.Parameters.Add(new SqlParameter("@CreatedAt", now));
-        insert.Parameters.Add(new SqlParameter("@LastEventAt", now));
-        try
-        {
-            var key = Convert.ToInt64(await insert.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false));
-            return new StreamHead(key, -1, tenantId);
-        }
-        catch (SqlException ex) when (IsDuplicateKey(ex))
-        {
-            var raced = await ReadLockedStreamHeadAsync(connection, transaction, streamId, cancellationToken).ConfigureAwait(false);
-            if (raced is null)
-                throw;
-            return raced.Value;
-        }
-    }
-
-    private async Task<StreamHead?> ReadLockedStreamHeadAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
-        string streamId,
-        CancellationToken cancellationToken)
-    {
-        var command = new SqlCommand(
-            $"""
-            SELECT StreamKey, CurrentVersion, TenantId
-            FROM {_qRegistry} WITH (UPDLOCK, ROWLOCK)
-            WHERE StreamId = @StreamId
-            """,
-            connection,
-            transaction);
-        await using var commandDisposal = command.ConfigureAwait(false);
-        command.Parameters.Add(new SqlParameter("@StreamId", streamId));
-        var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        await using var readerDisposal = reader.ConfigureAwait(false);
-        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-            return null;
-        var tenant = reader.IsDBNull(2) ? null : reader.GetString(2);
-        return new StreamHead(reader.GetInt64(0), reader.GetInt64(1), tenant);
-    }
-
-    private async Task<long> GetNextSequencePositionAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
-        CancellationToken cancellationToken)
-    {
-        // Use SEQUENCE object for better performance (no table lock)
-        var sql = $"SELECT NEXT VALUE FOR {_qSequence}";
-
-        var command = new SqlCommand(sql, connection, transaction);
-        await using var commandDisposal = command.ConfigureAwait(false);
-
-        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        return Convert.ToInt64(result);
-    }
-
-    private async Task<IReadOnlyList<long>> InsertEventsBatchAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
-        string streamId,
-        long streamKey,
-        string? tenantId,
-        long startingVersion,
-        IReadOnlyList<AppendEvent> envelopes,
-        IReadOnlyList<Guid> eventIds,
-        CancellationToken cancellationToken)
-    {
-        // 10 parameters per frame, plus the shared stream key and tenant. Stay under SQL Server's 2100-parameter limit.
-        const int maxEventsPerBatch = 170;
-
-        var allSequencePositions = new List<long>();
-        var commitTimestamp = DateTime.UtcNow;
-        var partitionHash = PartitionHashUtility.GetDeterministicHashCode(streamId);
-
-        for (int chunkStart = 0; chunkStart < envelopes.Count; chunkStart += maxEventsPerBatch)
-        {
-            var chunkEnd = Math.Min(chunkStart + maxEventsPerBatch, envelopes.Count);
-            var chunkSize = chunkEnd - chunkStart;
-
-            var sequencePositions = new List<long>(chunkSize);
-            for (int i = 0; i < chunkSize; i++)
-            {
-                sequencePositions.Add(await GetNextSequencePositionAsync(connection, transaction, cancellationToken).ConfigureAwait(false));
-            }
-
-            var values = new List<string>(chunkSize);
-            var parameters = new List<SqlParameter>();
-
-            for (int i = 0; i < chunkSize; i++)
-            {
-                var eventIndex = chunkStart + i;
-                var envelope = envelopes[eventIndex];
-                var version = startingVersion + eventIndex;
-                var metadataText = envelope.Metadata.IsEmpty
-                    ? null
-                    : Encoding.UTF8.GetString(envelope.Metadata.Span);
-                var tagsJson = JsonSerializer.Serialize(envelope.Tags, _jsonOptions);
-
-                var versionParam = $"@Version{eventIndex}";
-                var seqPosParam = $"@SequencePosition{eventIndex}";
-                var eventTypeIdParam = $"@EventTypeId{eventIndex}";
-                var eventDataParam = $"@EventData{eventIndex}";
-                var schemaVersionParam = $"@SchemaVersion{eventIndex}";
-                var codecIdParam = $"@CodecId{eventIndex}";
-                var tagsParam = $"@Tags{eventIndex}";
-                var metadataParam = $"@Metadata{eventIndex}";
-                var timestampParam = $"@Timestamp{eventIndex}";
-                var eventIdParam = $"@EventId{eventIndex}";
-
-                values.Add($"(@StreamKey, @TenantId, {versionParam}, {seqPosParam}, {eventTypeIdParam}, {eventDataParam}, {schemaVersionParam}, {codecIdParam}, {tagsParam}, {metadataParam}, {timestampParam}, @PartitionHash, {eventIdParam})");
-
-                if (!_eventTypes.TryGetId(envelope.EventType, out var eventTypeId))
-                {
-                    throw new InvalidOperationException(
-                        $"Event type token '{envelope.EventType}' is not in {_qTypes}. " +
-                        "Foreign tokens must be registered before the append transaction opens.");
-                }
-
-                parameters.Add(new SqlParameter(versionParam, version));
-                parameters.Add(new SqlParameter(seqPosParam, sequencePositions[i]));
-                parameters.Add(new SqlParameter(eventTypeIdParam, eventTypeId));
-                parameters.Add(PayloadParameter(eventDataParam, envelope.Payload));
-                parameters.Add(new SqlParameter(schemaVersionParam, envelope.SchemaVersion));
-                parameters.Add(new SqlParameter(codecIdParam, SqlDbType.TinyInt) { Value = envelope.CodecId });
-                parameters.Add(new SqlParameter(tagsParam, tagsJson));
-                parameters.Add(new SqlParameter(metadataParam, (object?)metadataText ?? DBNull.Value));
-                parameters.Add(new SqlParameter(timestampParam, commitTimestamp));
-                parameters.Add(new SqlParameter(eventIdParam, eventIds[eventIndex]));
-            }
-
-            var sql = $@"
-                INSERT INTO {_qTable}
-                (StreamKey, TenantId, Version, SequencePosition, EventTypeId, EventData, SchemaVersion, CodecId, Tags, Metadata, Timestamp, PartitionHash, EventId)
-                VALUES {string.Join(", ", values)}";
-
-            var command = new SqlCommand(sql, connection, transaction);
-            command.Parameters.Add(new SqlParameter("@StreamKey", streamKey));
-            command.Parameters.Add(new SqlParameter("@TenantId", SqlDbType.NVarChar, 100) { Value = (object?)tenantId ?? DBNull.Value });
-            command.Parameters.Add(new SqlParameter("@PartitionHash", partitionHash));
-            await using var commandDisposal = command.ConfigureAwait(false);
-            command.Parameters.AddRange(parameters.ToArray());
-            try
-            {
-                await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-            }
-            catch (SqlException ex) when (IsDuplicateKey(ex))
-            {
-                // The version check and this insert are not one lock. A concurrent
-                // append of the same stream version lands here as 2627 or 2601.
-                throw new EventsTableDuplicateKeyException(ex);
-            }
-
-            await InsertEventTagsAsync(connection, transaction, envelopes, chunkStart, chunkSize, sequencePositions, cancellationToken)
-                .ConfigureAwait(false);
-
-            allSequencePositions.AddRange(sequencePositions);
-        }
-
-        return allSequencePositions.AsReadOnly();
-    }
-
-    private async Task InsertEventTagsAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
-        IReadOnlyList<AppendEvent> envelopes,
-        int chunkStart,
-        int chunkSize,
-        IReadOnlyList<long> sequencePositions,
-        CancellationToken cancellationToken)
-    {
-        var tagValues = new List<string>();
-        var tagParameters = new List<SqlParameter>();
-        var tagIdx = 0;
-        for (var i = 0; i < chunkSize; i++)
-        {
-            foreach (var tag in envelopes[chunkStart + i].Tags)
-            {
-                tagValues.Add($"(@SeqPos{tagIdx}, @TagVal{tagIdx})");
-                tagParameters.Add(new SqlParameter($"@SeqPos{tagIdx}", sequencePositions[i]));
-                tagParameters.Add(new SqlParameter($"@TagVal{tagIdx}", tag));
-                tagIdx++;
-            }
-        }
-
-        if (tagValues.Count == 0)
-            return;
-
-        var tagSql = $@"
-            INSERT INTO {_qTags} (GlobalSequencePosition, Tag)
-            VALUES {string.Join(", ", tagValues)}";
-        var tagCmd = new SqlCommand(tagSql, connection, transaction);
-        await using var tagCmdDisposal = tagCmd.ConfigureAwait(false);
-        tagCmd.Parameters.AddRange(tagParameters.ToArray());
-        await tagCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    private static SqlParameter PayloadParameter(string name, ReadOnlyMemory<byte> payload)
-    {
-        var bytes = payload.IsEmpty ? Array.Empty<byte>() : payload.ToArray();
-        return new SqlParameter(name, SqlDbType.VarBinary, -1) { Value = bytes };
-    }
 
     private readonly record struct EventRow(
         string StreamId,
@@ -576,93 +338,6 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
     private static IReadOnlyList<string> UnionTags(IReadOnlyList<AppendEvent> envelopes)
         => envelopes.SelectMany(e => e.Tags).Distinct(StringComparer.Ordinal).ToList();
 
-    /// <summary>
-    /// Existence-only condition check: no event payload deserialize.
-    /// Runs after <see cref="AcquireAppendLocksAsync"/>, so it needs no lock hints.
-    /// </summary>
-    private async Task<bool> AppendConditionMatchesAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
-        AppendCondition condition,
-        CancellationToken cancellationToken)
-    {
-        var sql = $@"
-            SELECT TOP 1 1
-            FROM {_qTable} e
-            WHERE 1=1";
-
-        var parameters = new List<SqlParameter>();
-
-        if (condition.After.HasValue)
-        {
-            sql += " AND e.SequencePosition > @After";
-            parameters.Add(new SqlParameter("@After", condition.After.Value));
-        }
-
-        if (condition.FailIfEventsMatch.Items.Count > 0)
-        {
-            var conditions = new List<string>();
-            for (int i = 0; i < condition.FailIfEventsMatch.Items.Count; i++)
-            {
-                var item = condition.FailIfEventsMatch.Items[i];
-                var conditionParts = new List<string>();
-
-                if (item.Types != null && item.Types.Count > 0)
-                {
-                    var typeIds = new List<int>(item.Types.Count);
-                    foreach (var typeName in item.Types)
-                    {
-                        if (_eventTypes.TryGetId(typeName, out var typeId))
-                            typeIds.Add(typeId);
-                    }
-
-                    if (typeIds.Count == 0)
-                    {
-                        conditionParts.Add("1 = 0");
-                    }
-                    else
-                    {
-                        var names = new string[typeIds.Count];
-                        for (int j = 0; j < typeIds.Count; j++)
-                        {
-                            var paramName = $"@Type{i}_{j}";
-                            names[j] = paramName;
-                            parameters.Add(new SqlParameter(paramName, typeIds[j]));
-                        }
-
-                        conditionParts.Add($"e.EventTypeId IN ({string.Join(", ", names)})");
-                    }
-                }
-
-                if (item.Tags != null && item.Tags.Count > 0)
-                {
-                    for (int j = 0; j < item.Tags.Count; j++)
-                    {
-                        var tag = item.Tags[j];
-                        var paramName = $"@Tag{i}_{j}";
-                        conditionParts.Add($"EXISTS (SELECT 1 FROM {_qTags} et WHERE et.GlobalSequencePosition = e.SequencePosition AND et.Tag = {paramName})");
-                        parameters.Add(new SqlParameter(paramName, tag));
-                    }
-                }
-
-                if (conditionParts.Count > 0)
-                {
-                    conditions.Add($"({string.Join(" AND ", conditionParts)})");
-                }
-            }
-
-            if (conditions.Count > 0)
-            {
-                sql += $" AND ({string.Join(" OR ", conditions)})";
-            }
-        }
-
-        var command = new SqlCommand(sql, connection, transaction);
-        await using var commandDisposal = command.ConfigureAwait(false);
-        command.Parameters.AddRange(parameters.ToArray());
-        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        return result is not null && result is not DBNull;
-    }
 
     private static string? DetermineStreamIdFromTags(IReadOnlyList<string> tags)
     {
@@ -689,7 +364,6 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
     private async Task<AppendResult> FinishAppendAsync(
         SqlConnection connection,
         SqlTransaction transaction,
-        long fenceId,
         string? tenantId,
         IReadOnlyList<Guid> eventIds,
         AppendResult result,
@@ -697,7 +371,6 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
     {
         if (BeforeAppendCommit is { } gate)
             await gate(cancellationToken).ConfigureAwait(false);
-        await ReleaseAppendFenceAsync(connection, transaction, fenceId, cancellationToken).ConfigureAwait(false);
 
         try
         {
@@ -943,13 +616,6 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
             actual);
     }
 
-    private sealed class EventsTableDuplicateKeyException : Exception
-    {
-        public EventsTableDuplicateKeyException(SqlException inner)
-            : base(inner.Message, inner)
-        {
-        }
-    }
 
     /// <summary>
     /// Creates the events table if it doesn't exist.
@@ -1138,38 +804,6 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<long> TouchAppendFenceAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
-        CancellationToken cancellationToken)
-    {
-        var command = new SqlCommand(
-            $"""
-            INSERT INTO {_qFence}
-            OUTPUT INSERTED.[Id]
-            DEFAULT VALUES
-            """,
-            connection,
-            transaction);
-        await using var commandDisposal = command.ConfigureAwait(false);
-        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        return Convert.ToInt64(result);
-    }
-
-    private async Task ReleaseAppendFenceAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
-        long fenceId,
-        CancellationToken cancellationToken)
-    {
-        var command = new SqlCommand(
-            $"DELETE FROM {_qFence} WHERE [Id] = @Id",
-            connection,
-            transaction);
-        await using var commandDisposal = command.ConfigureAwait(false);
-        command.Parameters.Add(new SqlParameter("@Id", fenceId));
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-    }
 
     private async Task EnsureSequenceAsync(SqlConnection connection, CancellationToken cancellationToken)
     {
@@ -1736,103 +1370,6 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         => _adapter.GetMaxSequencePositionAsync(
             query, fromSequencePosition, toSequencePosition, toTimestamp, cancellationToken);
 
-    private async Task UpsertStreamMetadataAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
-        string streamId,
-        long currentVersion,
-        long lastSequencePosition,
-        int eventCountDelta,
-        IReadOnlyList<string> tags,
-        CancellationToken cancellationToken)
-    {
-        var existing = await GetStreamMetadataAsync(connection, transaction, streamId, cancellationToken).ConfigureAwait(false);
-        var now = DateTime.UtcNow;
-        var tenantId = ExtractTenantId(streamId);
-        var aggregateType = ExtractAggregateType(streamId);
-        var aggregateId = ExtractAggregateId(streamId);
-        var tagsJson = JsonSerializer.Serialize(tags, _jsonOptions);
-
-        if (existing == null)
-        {
-            // Create new stream entry
-            var sql = $@"
-            INSERT INTO {_qRegistry}
-            (StreamKey, StreamId, TenantId, AggregateType, AggregateId, CurrentVersion, LastSequencePosition,
-             CreatedAt, LastEventAt, EventCount, Tags, Status)
-            VALUES
-            (NEXT VALUE FOR {_qStreamKeySequence}, @StreamId, @TenantId, @AggregateType, @AggregateId, @CurrentVersion, @LastSequencePosition,
-             @CreatedAt, @LastEventAt, @EventCount, @Tags, @Status)";
-
-            var command = new SqlCommand(sql, connection, transaction);
-            await using var commandDisposal = command.ConfigureAwait(false);
-            command.Parameters.AddWithValue("@StreamId", streamId);
-            command.Parameters.AddWithValue("@TenantId", tenantId ?? (object)DBNull.Value);
-            command.Parameters.AddWithValue("@AggregateType", aggregateType);
-            command.Parameters.AddWithValue("@AggregateId", aggregateId.HasValue ? (object)aggregateId.Value : DBNull.Value);
-            command.Parameters.AddWithValue("@CurrentVersion", currentVersion);
-            command.Parameters.AddWithValue("@LastSequencePosition", lastSequencePosition);
-            command.Parameters.AddWithValue("@CreatedAt", now);
-            command.Parameters.AddWithValue("@LastEventAt", now);
-            command.Parameters.AddWithValue("@EventCount", eventCountDelta);
-            command.Parameters.AddWithValue("@Tags", tagsJson);
-            command.Parameters.AddWithValue("@Status", "Active");
-
-            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        }
-        else
-        {
-            // Update existing stream entry
-            var mergedTags = existing.Tags.Union(tags).Distinct().ToList();
-            var mergedTagsJson = JsonSerializer.Serialize(mergedTags, _jsonOptions);
-
-            var sql = $@"
-                UPDATE {_qRegistry}
-                SET CurrentVersion = @CurrentVersion,
-                    LastSequencePosition = @LastSequencePosition,
-                    LastEventAt = @LastEventAt,
-                    EventCount = EventCount + @EventCountDelta,
-                    Tags = @Tags
-                WHERE StreamId = @StreamId";
-
-            var command = new SqlCommand(sql, connection, transaction);
-            await using var commandDisposal = command.ConfigureAwait(false);
-            command.Parameters.AddWithValue("@StreamId", streamId);
-            command.Parameters.AddWithValue("@CurrentVersion", currentVersion);
-            command.Parameters.AddWithValue("@LastSequencePosition", lastSequencePosition);
-            command.Parameters.AddWithValue("@LastEventAt", now);
-            command.Parameters.AddWithValue("@EventCountDelta", eventCountDelta);
-            command.Parameters.AddWithValue("@Tags", mergedTagsJson);
-
-            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        }
-    }
-
-    private async Task<StreamMetadata?> GetStreamMetadataAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
-        string streamId,
-        CancellationToken cancellationToken)
-    {
-        var sql = $@"
-            SELECT StreamId, TenantId, AggregateType, AggregateId, CurrentVersion, LastSequencePosition,
-                   CreatedAt, LastEventAt, EventCount, Tags, Status
-            FROM {_qRegistry}
-            WHERE StreamId = @StreamId";
-
-        var command = new SqlCommand(sql, connection, transaction);
-        await using var commandDisposal = command.ConfigureAwait(false);
-        command.Parameters.AddWithValue("@StreamId", streamId);
-
-        var reader = (await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false));
-        await using var readerDisposal = reader.ConfigureAwait(false);
-        if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            return ReadStreamMetadata(reader);
-        }
-
-        return null;
-    }
 
     private StreamMetadata ReadStreamMetadata(SqlDataReader reader)
     {
@@ -1904,75 +1441,6 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         _hasLoggedConnection = true;
     }
 
-    /// <summary>
-    /// Copies <see cref="AppendEvent.Outbound"/> into the outbox in the same transaction.
-    /// An envelope with no outbound value is skipped. Does not re-serialize a CLR event.
-    /// </summary>
-    private async Task WriteEventsToOutboxAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
-        IReadOnlyList<AppendEvent> envelopes,
-        IReadOnlyList<long> sequencePositions,
-        IReadOnlyList<Guid> eventIds,
-        string streamId,
-        CancellationToken cancellationToken)
-    {
-        var written = 0;
-        for (int i = 0; i < envelopes.Count; i++)
-        {
-            var outbound = envelopes[i].Outbound;
-            if (outbound is null)
-                continue;
-
-            var metadataText = outbound.Metadata.IsEmpty
-                ? "{}"
-                : Encoding.UTF8.GetString(outbound.Metadata.Span);
-
-            var outboxMessage = new OutboxMessage
-            {
-                Id = eventIds[i],
-                EventType = outbound.EventType,
-                SchemaVersion = outbound.SchemaVersion,
-                CodecId = outbound.CodecId,
-                Payload = outbound.Payload,
-                Metadata = metadataText,
-                StreamId = streamId,
-                SequencePosition = sequencePositions[i],
-                CreatedAt = DateTime.UtcNow,
-                Attempts = 0
-            };
-
-            var qOutbox = SqlIdentifier.Qualify(_schemaName, _options.OutboxTableName);
-            var sql = $@"
-                INSERT INTO {qOutbox} (
-                    Id, EventType, SchemaVersion, CodecId, Payload, Metadata, CreatedAt,
-                    Attempts, StreamId, SequencePosition
-                )
-                VALUES (
-                    @Id, @EventType, @SchemaVersion, @CodecId, @Payload, @Metadata, @CreatedAt,
-                    @Attempts, @StreamId, @SequencePosition
-                )";
-
-            var command = new SqlCommand(sql, connection, transaction);
-            await using var commandDisposal = command.ConfigureAwait(false);
-            command.Parameters.AddWithValue("@Id", outboxMessage.Id);
-            command.Parameters.AddWithValue("@EventType", outboxMessage.EventType);
-            command.Parameters.AddWithValue("@SchemaVersion", outboxMessage.SchemaVersion);
-            command.Parameters.Add(new SqlParameter("@CodecId", SqlDbType.TinyInt) { Value = outboxMessage.CodecId });
-            command.Parameters.Add(PayloadParameter("@Payload", outboxMessage.Payload));
-            command.Parameters.AddWithValue("@Metadata", outboxMessage.Metadata);
-            command.Parameters.AddWithValue("@CreatedAt", outboxMessage.CreatedAt);
-            command.Parameters.AddWithValue("@Attempts", outboxMessage.Attempts);
-            command.Parameters.AddWithValue("@StreamId", outboxMessage.StreamId);
-            command.Parameters.AddWithValue("@SequencePosition", outboxMessage.SequencePosition);
-
-            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-            written++;
-        }
-
-        if (_logger is not null && written > 0)
-            SqlServerEventStoreLog.OutboxEventsWritten(_logger, written, streamId);
-    }
 
     private static bool BatchHasOutbound(IReadOnlyList<AppendEvent> envelopes)
     {
@@ -2239,82 +1707,9 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         return await AppendWithRetryAsync(async ct =>
         {
             await EnsureEventTypeIdsAsync(envelopes, ct).ConfigureAwait(false);
-
-            var connection = new SqlConnection(_connectionString);
-            await using var connectionDisposal = connection.ConfigureAwait(false);
-            await connection.OpenAsync(ct).ConfigureAwait(false);
-            var transaction = connection.BeginTransaction();
-            await using var transactionDisposal = transaction.ConfigureAwait(false);
-
-            try
-            {
-                await AcquireAppendLocksAsync(connection, transaction, AppendLockPlan(envelopes, null), ct)
-                    .ConfigureAwait(false);
-
-                var head = await LockStreamHeadAsync(connection, transaction, streamId, ct).ConfigureAwait(false);
-                if (expectedVersion.HasValue && head.CurrentVersion != expectedVersion.Value)
-                {
-                    throw new ConcurrencyException(
-                        $"Expected version {expectedVersion.Value} but current version is {head.CurrentVersion}",
-                        expectedVersion.Value,
-                        head.CurrentVersion);
-                }
-
-                var startingVersion = head.CurrentVersion < 0 ? 1 : head.CurrentVersion + 1;
-                var fenceId = await TouchAppendFenceAsync(connection, transaction, ct).ConfigureAwait(false);
-                IReadOnlyList<long> sequencePositions;
-                try
-                {
-                    sequencePositions = await InsertEventsBatchAsync(
-                        connection, transaction, streamId, head.StreamKey, head.TenantId, startingVersion, envelopes, eventIds, ct).ConfigureAwait(false);
-                }
-                catch (EventsTableDuplicateKeyException ex)
-                {
-                    await RollbackQuietlyAsync(transaction, ct).ConfigureAwait(false);
-                    var duplicate = await FindExistingEventIdAsync(head.TenantId, eventIds, ct).ConfigureAwait(false);
-                    if (duplicate is { } eventId)
-                        throw new EventAlreadyAppendedException(eventId);
-                    var expected = expectedVersion ?? head.CurrentVersion;
-                    throw await EventVersionConflictAsync(
-                        connection, transaction, streamId, expected, ex.InnerException ?? ex, ct)
-                        .ConfigureAwait(false);
-                }
-
-                await UpsertStreamMetadataAsync(
-                    connection,
-                    transaction,
-                    streamId,
-                    startingVersion + envelopes.Count - 1,
-                    sequencePositions.Last(),
-                    envelopes.Count,
-                    UnionTags(envelopes),
-                    ct).ConfigureAwait(false);
-
-                if (_options.EnableOutbox && BatchHasOutbound(envelopes))
-                {
-                    await WriteEventsToOutboxAsync(
-                        connection, transaction, envelopes, sequencePositions, eventIds, streamId, ct)
-                        .ConfigureAwait(false);
-                }
-
-                return await FinishAppendAsync(
-                    connection,
-                    transaction,
-                    fenceId,
-                    head.TenantId,
-                    eventIds,
-                    new AppendResult(sequencePositions, null, startingVersion + envelopes.Count - 1),
-                    ct).ConfigureAwait(false);
-            }
-            catch
-            {
-                if (transaction.Connection != null)
-                {
-                    try { await transaction.RollbackAsync(ct).ConfigureAwait(false); }
-                    catch { /* already rolled back */ }
-                }
-                throw;
-            }
+            return await AppendInTransactionAsync(
+                streamId, envelopes, eventIds, expectedVersion, condition: null, isDcb: false, ct)
+                .ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
     }
 
@@ -2346,81 +1741,94 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
             if (BeforeAppendLocks is { } beforeLocks)
                 await beforeLocks(ct).ConfigureAwait(false);
 
-            var connection = new SqlConnection(_connectionString);
-            await using var connectionDisposal = connection.ConfigureAwait(false);
-            await connection.OpenAsync(ct).ConfigureAwait(false);
-            var transaction = connection.BeginTransaction();
-            await using var transactionDisposal = transaction.ConfigureAwait(false);
-
-            try
-            {
-                await AcquireAppendLocksAsync(connection, transaction, AppendLockPlan(envelopes, condition), ct)
-                    .ConfigureAwait(false);
-                await ResolveConditionTypesUnderLockAsync(connection, transaction, condition, ct).ConfigureAwait(false);
-
-                if (await AppendConditionMatchesAsync(connection, transaction, condition, ct).ConfigureAwait(false))
-                {
-                    await transaction.RollbackAsync(ct).ConfigureAwait(false);
-                    throw new ConcurrencyException(
-                        "Append condition failed: matching events exist",
-                        condition.After);
-                }
-
-                var head = await LockStreamHeadAsync(connection, transaction, streamId, ct).ConfigureAwait(false);
-                var fenceId = await TouchAppendFenceAsync(connection, transaction, ct).ConfigureAwait(false);
-                IReadOnlyList<long> sequencePositions;
-                try
-                {
-                    sequencePositions = await InsertEventsBatchAsync(
-                        connection, transaction, streamId, head.StreamKey, head.TenantId, 0, envelopes, eventIds, ct).ConfigureAwait(false);
-                }
-                catch (EventsTableDuplicateKeyException ex)
-                {
-                    await RollbackQuietlyAsync(transaction, ct).ConfigureAwait(false);
-                    var duplicate = await FindExistingEventIdAsync(head.TenantId, eventIds, ct).ConfigureAwait(false);
-                    if (duplicate is { } eventId)
-                        throw new EventAlreadyAppendedException(eventId);
-                    throw await EventVersionConflictAsync(
-                        connection, transaction, streamId, -1, ex.InnerException ?? ex, ct)
-                        .ConfigureAwait(false);
-                }
-
-                await UpsertStreamMetadataAsync(
-                    connection,
-                    transaction,
-                    streamId,
-                    0,
-                    sequencePositions.Last(),
-                    envelopes.Count,
-                    UnionTags(envelopes),
-                    ct).ConfigureAwait(false);
-
-                if (_options.EnableOutbox && BatchHasOutbound(envelopes))
-                {
-                    await WriteEventsToOutboxAsync(
-                        connection, transaction, envelopes, sequencePositions, eventIds, streamId, ct)
-                        .ConfigureAwait(false);
-                }
-
-                return await FinishAppendAsync(
-                    connection,
-                    transaction,
-                    fenceId,
-                    head.TenantId,
-                    eventIds,
-                    new AppendResult(sequencePositions),
-                    ct).ConfigureAwait(false);
-            }
-            catch
-            {
-                if (transaction.Connection != null)
-                {
-                    try { await transaction.RollbackAsync(ct).ConfigureAwait(false); }
-                    catch { /* already rolled back */ }
-                }
-                throw;
-            }
+            return await AppendInTransactionAsync(
+                streamId, envelopes, eventIds, expectedVersion: null, condition, isDcb: true, ct)
+                .ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<AppendResult> AppendInTransactionAsync(
+        string streamId,
+        IReadOnlyList<AppendEvent> envelopes,
+        IReadOnlyList<Guid> eventIds,
+        long? expectedVersion,
+        AppendCondition? condition,
+        bool isDcb,
+        CancellationToken cancellationToken)
+    {
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        var transaction = connection.BeginTransaction();
+        await using var transactionDisposal = transaction.ConfigureAwait(false);
+
+        try
+        {
+            var outcome = await ExecuteAppendBatchAsync(
+                connection,
+                transaction,
+                streamId,
+                envelopes,
+                eventIds,
+                expectedVersion,
+                condition,
+                isDcb,
+                cancellationToken).ConfigureAwait(false);
+
+            var written = 0;
+            if (_options.EnableOutbox)
+            {
+                foreach (var envelope in envelopes)
+                {
+                    if (envelope.Outbound is not null)
+                        written++;
+                }
+            }
+
+            if (_logger is not null && written > 0)
+                SqlServerEventStoreLog.OutboxEventsWritten(_logger, written, streamId);
+
+            return await FinishAppendAsync(
+                connection,
+                transaction,
+                outcome.TenantId,
+                eventIds,
+                outcome.Result,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (SqlException ex) when (HasError(ex, AppendVersionConflictError))
+        {
+            await RollbackQuietlyAsync(transaction, cancellationToken).ConfigureAwait(false);
+            throw VersionConflict(ex);
+        }
+        catch (SqlException ex) when (HasError(ex, AppendConditionConflictError))
+        {
+            await RollbackQuietlyAsync(transaction, cancellationToken).ConfigureAwait(false);
+            throw new ConcurrencyException(
+                "Append condition failed: matching events exist",
+                condition?.After);
+        }
+        catch (SqlException ex) when (IsDuplicateKey(ex))
+        {
+            await RollbackQuietlyAsync(transaction, cancellationToken).ConfigureAwait(false);
+            var duplicate = await FindExistingEventIdAsync(ExtractTenantId(streamId), eventIds, cancellationToken)
+                .ConfigureAwait(false);
+            if (duplicate is { } eventId)
+                throw new EventAlreadyAppendedException(eventId);
+            var expected = expectedVersion ?? -1;
+            throw await EventVersionConflictAsync(
+                connection, transaction, streamId, expected, ex, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            if (transaction.Connection != null)
+            {
+                try { await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false); }
+                catch { /* already rolled back */ }
+            }
+
+            throw;
+        }
     }
 
     private async Task<IReadOnlyList<RecordedEvent>> ReadRecordedStreamCoreAsync(
