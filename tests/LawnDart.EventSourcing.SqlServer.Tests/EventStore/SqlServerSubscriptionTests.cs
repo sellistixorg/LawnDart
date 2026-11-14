@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using LawnDart;
 using LawnDart.EventSourcing.Serialization;
@@ -75,6 +76,68 @@ public class SqlServerSubscriptionTests : IAsyncLifetime
         var unkeyed = sp.GetRequiredService<IEventStoreSubscriptions>();
         Assert.Same(keyed, unkeyed);
         Assert.Same(store, keyed);
+    }
+
+    [Fact]
+    public async Task HiddenCommit_DeliversWhenTheOpenFenceEnds_WithoutThePollInterval()
+    {
+        var schema = "h" + Guid.NewGuid().ToString("N")[..10];
+        var store = new SqlServerEventStore(
+            _connectionString,
+            null,
+            "Events",
+            "Streams",
+            true,
+            new SqlServerEventStoreOptions
+            {
+                RequireTenantId = false,
+                SchemaName = schema,
+                ContextName = schema,
+                SqlSubscriptionPollInterval = TimeSpan.FromSeconds(30),
+                ReadHorizonGracePeriod = TimeSpan.FromMinutes(5)
+            },
+            null,
+            null);
+        await store.InitializeSchemaAsync();
+
+        var log = (IEventLog)store;
+        var stream = "s-" + Guid.NewGuid().ToString("N");
+        await log.AppendAsync(stream, [new AppendEvent("hidden-probe", new byte[] { 1 })]);
+        var head = await log.GetCurrentSequenceAsync();
+        await using var handle = ((IEventLogSubscriptions)store).Subscribe("hidden", head + 1);
+        await WaitForWaitersAsync(store.NewEvents, 1);
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+        var transaction = (SqlTransaction)await connection.BeginTransactionAsync();
+        await using var transactionDisposal = transaction.ConfigureAwait(false);
+        await using (var insert = new SqlCommand(
+            "INSERT INTO [" + schema + "].[AppendFence] DEFAULT VALUES", connection, transaction))
+            await insert.ExecuteNonQueryAsync();
+
+        var appended = await log.AppendAsync(stream, [new AppendEvent("hidden-probe", new byte[] { 2 })]);
+        using (var duringHold = new CancellationTokenSource(TimeSpan.FromMilliseconds(400)))
+        {
+            var sawEarly = false;
+            try
+            {
+                sawEarly = await handle.Events.WaitToReadAsync(duringHold.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                sawEarly = false;
+            }
+
+            Assert.False(sawEarly);
+        }
+
+        var began = Stopwatch.GetTimestamp();
+        await transaction.RollbackAsync();
+        using var wait = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        var received = await handle.Events.ReadAsync(wait.Token);
+        var elapsed = Stopwatch.GetElapsedTime(began);
+        Assert.True(elapsed < TimeSpan.FromSeconds(2), "delivered after " + elapsed);
+        Assert.Equal(appended.SequencePositions[0], received.SequencePosition);
     }
 
 

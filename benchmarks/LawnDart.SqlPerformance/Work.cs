@@ -157,6 +157,10 @@ internal static class Workloads
         var results = new List<CaseResult>();
         var versions = new Dictionary<string, long>(StringComparer.Ordinal);
         var cursor = 0;
+        // Cold stream loads clear the buffer pool. The first appends then pay
+        // for plan compilation and for the pages the append path keeps hot.
+        // Write those before the clock starts.
+        versions[streams[0].Id] = await WarmAppendPathAsync(log, streams[0], cancellationToken).ConfigureAwait(false);
         foreach (var writers in Writers)
         {
             if (streams.Count < writers)
@@ -184,6 +188,28 @@ internal static class Workloads
         }
 
         return results;
+    }
+
+    private static async Task<long> WarmAppendPathAsync(
+        IEventLog log,
+        StreamSample sample,
+        CancellationToken cancellationToken)
+    {
+        var version = sample.Version;
+        var metadata = Encoding.UTF8.GetBytes("{\"TenantId\":\"" + TenantOf(sample.Id) + "\"}");
+        for (var i = 0; i < 32; i++)
+        {
+            var result = await log.AppendAsync(
+                sample.Id,
+                [new AppendEvent("order-placed", Payload, metadata, tags: sample.Tags)],
+                version,
+                cancellationToken).ConfigureAwait(false);
+            if (result.SequencePositions.Count < 1)
+                throw new InvalidOperationException("A warm-up append returned no position.");
+            version++;
+        }
+
+        return version;
     }
 
     private static async Task AppendWriterAsync(

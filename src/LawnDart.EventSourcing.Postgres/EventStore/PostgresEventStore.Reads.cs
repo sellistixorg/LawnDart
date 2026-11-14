@@ -14,6 +14,12 @@ public sealed partial class PostgresEventStore
     /// <inheritdoc />
     public async Task<long> GetCurrentSequenceAsync(CancellationToken cancellationToken = default)
     {
+        var visible = await ReadVisibleHeadAsync(cancellationToken).ConfigureAwait(false);
+        return visible.Head;
+    }
+
+    private async Task<PostgresReadHorizon.HorizonRead> ReadVisibleHeadAsync(CancellationToken cancellationToken)
+    {
         var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var connectionDisposal = connection.ConfigureAwait(false);
         return await _horizon.ResolveAsync(connection, cancellationToken).ConfigureAwait(false);
@@ -68,7 +74,7 @@ public sealed partial class PostgresEventStore
         await using var connectionDisposal = connection.ConfigureAwait(false);
         // The limit comes first. A name stored after it is not part of this read,
         // so a later event cannot hide an earlier one whose name was not loaded yet.
-        var head = await _horizon.ResolveAsync(connection, cancellationToken).ConfigureAwait(false);
+        var head = (await _horizon.ResolveAsync(connection, cancellationToken).ConfigureAwait(false)).Head;
         var to = Cap(toSequencePosition, head);
         await EnsureQueryTypesResolvedAsync(query, cancellationToken).ConfigureAwait(false);
         var built = PostgresQuerySql.Build(
@@ -213,7 +219,8 @@ public sealed partial class PostgresEventStore
                 {
                     var ticket = _newEvents.TakeTicket();
                     var delivered = 0;
-                    var head = await GetCurrentSequenceAsync(cancellation).ConfigureAwait(false);
+                    var visible = await ReadVisibleHeadAsync(cancellation).ConfigureAwait(false);
+                    var head = visible.Head;
                     var page = await ReadQueryCoreAsync(query, lastDelivered + 1, batch, head, toCommitTimestamp: null, cancellation).ConfigureAwait(false);
                     if (lossAttempts > 0)
                     {
@@ -245,7 +252,7 @@ public sealed partial class PostgresEventStore
                     if (!page.TypesResolved)
                     {
                         if (page.Events.Count < batch)
-                            await WaitPollAsync(ticket, CurrentPoll(), cancellation).ConfigureAwait(false);
+                            await WaitPollAsync(ticket, IdleWait(head, visible.Held), cancellation).ConfigureAwait(false);
                         continue;
                     }
 
@@ -253,7 +260,7 @@ public sealed partial class PostgresEventStore
                         lastDelivered = head;
                     if (delivered > 0 || page.Events.Count >= batch)
                         continue;
-                    await WaitPollAsync(ticket, CurrentPoll(), cancellation).ConfigureAwait(false);
+                    await WaitPollAsync(ticket, IdleWait(head, visible.Held), cancellation).ConfigureAwait(false);
                 }
                 catch (Exception ex) when (IsRetryableReadFailure(ex, hadSuccessfulRead) && !cancellation.IsCancellationRequested)
                 {
@@ -299,6 +306,9 @@ public sealed partial class PostgresEventStore
         _listener.Mode == PostgresListenMode.Listening
             ? _options.BackupPollInterval
             : _options.PollOnlyInterval;
+
+    private TimeSpan IdleWait(long head, bool held) =>
+        SubscriptionWake.IdleWait(CurrentPoll(), head, _newEvents.Position, held);
 
     internal static bool IsRetryableReadFailure(Exception exception, bool hadSuccessfulRead)
     {
@@ -450,7 +460,7 @@ public sealed partial class PostgresEventStore
         await using var connectionDisposal = connection.ConfigureAwait(false);
         // The limit comes first. A name stored after it is not part of this read,
         // so a later event cannot hide an earlier one whose name was not loaded yet.
-        var head = await _horizon.ResolveAsync(connection, cancellationToken).ConfigureAwait(false);
+        var head = (await _horizon.ResolveAsync(connection, cancellationToken).ConfigureAwait(false)).Head;
         var to = Cap(toSequencePosition, head);
         var typesResolved = await EnsureQueryTypesResolvedAsync(query, cancellationToken).ConfigureAwait(false);
         var built = PostgresQuerySql.Build(

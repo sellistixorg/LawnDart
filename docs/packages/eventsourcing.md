@@ -104,6 +104,9 @@ A reader calls `TakeTicket` before it reads. It then waits on that ticket or
 on `SubscriptionPollInterval` (default 1 second), whichever comes first, and
 reads again from its own checkpoint. A save that commits after the ticket
 wakes the reader at once. A missed or extra signal still delivers on the timer.
+When the signaled position is still ahead of the gap-free head, the
+subscription reads again on a short retry. The idle poll stays the wait
+after that position is visible.
 
 The same object is public. Code outside the store can call `Notify` on it.
 The Postgres listener does that when a wake-up arrives from another process.

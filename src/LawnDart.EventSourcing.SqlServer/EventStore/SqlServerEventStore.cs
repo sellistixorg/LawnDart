@@ -1716,13 +1716,21 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
     /// </remarks>
     public async Task<long> GetCurrentSequenceAsync(CancellationToken cancellationToken = default)
     {
+        var visible = await ReadVisibleHeadAsync(cancellationToken).ConfigureAwait(false);
+        return visible.Head;
+    }
+
+    private async Task<ReadHorizon> ReadVisibleHeadAsync(CancellationToken cancellationToken)
+    {
         var connection = new SqlConnection(_connectionString);
         await using var connectionDisposal = connection.ConfigureAwait(false);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        var horizon = await _readHorizon.ResolveAsync(
+        return await _readHorizon.ResolveAsync(
             connection, LateWatch.Head, cancellationToken).ConfigureAwait(false);
-        return horizon.Head;
     }
+
+    private TimeSpan IdleWait(long head, bool held) =>
+        SubscriptionWake.IdleWait(_options.SqlSubscriptionPollInterval, head, _newEvents.Position, held);
 
     /// <inheritdoc />
     public Task<long> GetMaxSequencePositionAsync(
@@ -2032,7 +2040,6 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         var ct = handle.CancellationToken;
         long lastDelivered = handle.FromSequence - 1;
         var batchSize = _options.SqlSubscriptionBatchSize;
-        var pollInterval = _options.SqlSubscriptionPollInterval;
         var readQuery = ResolveSubscriptionQuery(handle.Filter);
 
         try
@@ -2042,7 +2049,8 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
                 var ticket = _newEvents.TakeTicket();
                 var delivered = 0;
                 var from = lastDelivered + 1;
-                var head = await GetCurrentSequenceAsync(ct).ConfigureAwait(false);
+                var visible = await ReadVisibleHeadAsync(ct).ConfigureAwait(false);
+                var head = visible.Head;
                 var page = await ReadRecordedQueryCoreAsync(
                     readQuery,
                     fromSequencePosition: from,
@@ -2078,7 +2086,7 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
                     {
                         try
                         {
-                            await _newEvents.WaitAsync(ticket, pollInterval, ct).ConfigureAwait(false);
+                            await _newEvents.WaitAsync(ticket, IdleWait(head, visible.Held), ct).ConfigureAwait(false);
                         }
                         catch (OperationCanceledException) when (ct.IsCancellationRequested)
                         {
@@ -2096,9 +2104,10 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
                     continue; // More pages may remain. Keep catching up without an idle delay.
 
                 // Idle until a same-process commit signals, or until the poll interval elapses.
+                // A committed position that an open transaction still hides uses a short retry.
                 try
                 {
-                    await _newEvents.WaitAsync(ticket, pollInterval, ct).ConfigureAwait(false);
+                    await _newEvents.WaitAsync(ticket, IdleWait(head, visible.Held), ct).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
                 {
