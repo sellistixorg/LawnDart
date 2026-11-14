@@ -53,7 +53,7 @@ internal sealed class ReadHorizonGate
         }
 
         if (WaitsForever(_options.ReadHorizonGracePeriod))
-            return new ReadHorizon(stable, Advanced: false);
+            return new ReadHorizon(stable, Advanced: false, Held: true);
 
         var blocker = await TryReadBlockerAsync(connection, cancellationToken).ConfigureAwait(false);
         bool advanced;
@@ -90,7 +90,7 @@ internal sealed class ReadHorizonGate
         }
 
         if (!advanced)
-            return new ReadHorizon(stable, Advanced: false);
+            return new ReadHorizon(stable, Advanced: false, Held: true);
 
         await CaptureGapsAsync(connection, stable, rawHead, cancellationToken).ConfigureAwait(false);
         return new ReadHorizon(rawHead, Advanced: true);
@@ -352,7 +352,7 @@ internal sealed class ReadHorizonGate
 }
 
 /// <summary>Head a global reader may treat as caught up.</summary>
-internal readonly record struct ReadHorizon(long Head, bool Advanced);
+internal readonly record struct ReadHorizon(long Head, bool Advanced, bool Held = false);
 
 /// <summary>
 /// How a caller participates in late-commit detection.

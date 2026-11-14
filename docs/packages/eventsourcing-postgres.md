@@ -190,11 +190,15 @@ drops, it waits with a growing pause, connects again, and subscribers read
 from their checkpoints.
 
 `BackupPollInterval` (default 1 second) is how long a subscription waits
-between reads while the listener is connected. A wake-up ends the wait
-early. `PollOnlyInterval` (default 100 milliseconds) is the wait when the
-listener is not used. A save in this process also ends the wait early, on
-either interval. The wait is chosen again each time. An outage uses the
-poll-only interval.
+between reads while the listener is connected and the visible head has
+caught up. A wake-up ends the wait early. `PollOnlyInterval` (default 100
+milliseconds) is the wait when the listener is not used. A save in this
+process also ends the wait early, on either interval. The wait is chosen
+again each time. An outage uses the poll-only interval.
+
+A wake-up names a committed position. When an open transaction still hides
+that position, the read misses the row and that wake-up is spent. The
+subscription reads again on a short retry until the position is visible.
 
 At startup the listener opens its connection and sends a probe wake-up.
 If that connection cannot be opened, the listener keeps trying for as long

@@ -56,7 +56,7 @@ internal sealed class PostgresReadHorizon
         _logger = logger;
     }
 
-    internal async Task<long> ResolveAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
+    internal async Task<HorizonRead> ResolveAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
     {
         for (var pass = 0; pass < 16; pass++)
         {
@@ -67,7 +67,7 @@ internal sealed class PostgresReadHorizon
             {
                 MoveMark(sample.Contiguous);
                 ClearHold();
-                return Mark;
+                return new HorizonRead(Mark, Held: false);
             }
 
             var open = await StillOpenAsync(connection, sample.InProgress, cancellationToken).ConfigureAwait(false);
@@ -88,16 +88,16 @@ internal sealed class PostgresReadHorizon
             MoveMark(sample.Contiguous);
             var held = await HoldMillisecondsAsync(connection, open, cancellationToken).ConfigureAwait(false);
             if (WaitsForever(_options.ReadHorizonGracePeriod) || held <= _options.ReadHorizonGracePeriod.TotalMilliseconds)
-                return Mark;
+                return new HorizonRead(Mark, Held: true);
 
             Remember(sample.Contiguous, sample.Committed, await PositionsBetweenAsync(
                 connection, sample.Contiguous, sample.Committed + 1, cancellationToken).ConfigureAwait(false));
             Warn(held, open, sample.Contiguous, sample.Committed);
             MoveMark(sample.Committed);
-            return Mark;
+            return new HorizonRead(Mark, Held: false);
         }
 
-        return Mark;
+        return new HorizonRead(Mark, Held: false);
     }
 
     private long Mark
@@ -371,6 +371,8 @@ internal sealed class PostgresReadHorizon
 
     private static bool WaitsForever(TimeSpan grace) =>
         grace < TimeSpan.Zero || grace == TimeSpan.MaxValue;
+
+    internal readonly record struct HorizonRead(long Head, bool Held);
 
     private readonly record struct Sample(long Contiguous, long? NextAfter, long Committed, IReadOnlyList<string> InProgress);
 

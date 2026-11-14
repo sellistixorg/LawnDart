@@ -43,7 +43,7 @@ The result file is under `results/`. It records the commit, the database, the si
 
 Appends:
 
-- `stream writers 1`, `stream writers 8`, `stream writers 32`, and `stream writers 128`. That many streams each append one event per round, at the same time.
+- `stream writers 1`, `stream writers 8`, `stream writers 32`, and `stream writers 128`. That many streams each append one event per round, at the same time. The harness writes an untimed series on the first stream before these cases, so the timed appends are not the first use of that path.
 - `hot stream`. One stream appends one event after another.
 - `dcb append recent after`. One event is appended under a condition. The condition looks for the tag `bench-absent` after the loaded head. That tag is not in the loaded data.
 

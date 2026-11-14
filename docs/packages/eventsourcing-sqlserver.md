@@ -48,8 +48,11 @@ position (`ISignalsNewEvents`). The subscription takes a ticket before it
 reads. It then waits on that ticket or `SqlSubscriptionPollInterval`,
 whichever comes first, and reads again from its checkpoint. A save that
 commits after the ticket wakes it at once. The signal carries no events.
-A save from another process is still picked up on the poll interval. A
-listener outside the store can raise the same signal.
+When that position is still ahead of the gap-free head, the subscription
+reads again on a short retry. The open transaction that hides the row does
+not signal when it ends. A save from another process is still picked up on
+the poll interval once the head has caught up. A listener outside the store
+can raise the same signal.
 
 A type filter reloads `EventTypes` when a name is missing from the
 process cache. The current end is taken before that reload. A name that is

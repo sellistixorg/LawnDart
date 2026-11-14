@@ -54,6 +54,59 @@ public sealed class PostgresSubscriptionTests
     }
 
     [Fact]
+    public async Task HiddenCommit_DeliversWhenTheOpenTransactionEnds_WithoutTheBackupPoll()
+    {
+        var schema = NewSchema();
+        var store = await OpenStoreAsync(schema, configure: options =>
+        {
+            options.BackupPollInterval = TimeSpan.FromSeconds(30);
+            options.PollOnlyInterval = TimeSpan.FromSeconds(30);
+            options.ReadHorizonGracePeriod = TimeSpan.FromMinutes(5);
+        });
+        var stream = Stream();
+        await store.AppendAsync(stream, [ContractEvent.Tick()]);
+        var subscriptions = (IEventLogSubscriptions)store;
+        await using var handle = subscriptions.Subscribe("hidden", fromSequence: 1);
+        var primed = await ReadRecordedAsync(handle, TimeSpan.FromSeconds(15));
+        Assert.Equal(1, primed.SequencePosition);
+        await WaitUntilAsync(() => store.Listener.Mode == PostgresListenMode.Listening && store.Listener.IsWaitingForNotification);
+        await WaitForWaitersAsync(store.NewEvents, 1);
+
+        await using var holder = new NpgsqlConnection(_fixture.ConnectionString);
+        await holder.OpenAsync();
+        await using var transaction = await holder.BeginTransactionAsync();
+        await using (var current = new NpgsqlCommand("SELECT pg_current_xact_id()", holder, transaction))
+            await current.ExecuteScalarAsync();
+        await using (var next = new NpgsqlCommand(
+            "SELECT nextval('" + Quote(schema) + ".event_position')", holder, transaction))
+            await next.ExecuteScalarAsync();
+
+        var appended = await store.AppendAsync(stream, [ContractEvent.Tick()]);
+        using (var duringHold = new CancellationTokenSource(TimeSpan.FromMilliseconds(400)))
+        {
+            var sawEarly = false;
+            try
+            {
+                sawEarly = await handle.Events.WaitToReadAsync(duringHold.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                sawEarly = false;
+            }
+
+            Assert.False(sawEarly);
+        }
+
+        var began = Stopwatch.GetTimestamp();
+        await transaction.RollbackAsync();
+        var received = await ReadRecordedAsync(handle, TimeSpan.FromSeconds(2));
+        var elapsed = Stopwatch.GetElapsedTime(began);
+        Assert.True(elapsed < TimeSpan.FromSeconds(2), "delivered after " + elapsed);
+        Assert.Equal(appended.SequencePositions[0], received.SequencePosition);
+        Assert.Equal(PostgresListenMode.Listening, store.Listener.Mode);
+    }
+
+    [Fact]
     public async Task MissedWakeUp_BeforeListenAndWhileDown_IsDeliveredOnCatchUp()
     {
         var logger = new ListLogger<PostgresEventStore>();
@@ -629,6 +682,12 @@ public sealed class PostgresSubscriptionTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         while (signal.WaitingCount < count)
             await Task.Delay(10, cts.Token);
+    }
+
+    private static async Task<RecordedEvent> ReadRecordedAsync(IEventLogSubscriptionHandle handle, TimeSpan timeout)
+    {
+        using var cts = new CancellationTokenSource(timeout);
+        return await handle.Events.ReadAsync(cts.Token);
     }
 
     private static async Task<List<SequencedEvent>> ReadExactlyAsync(ISubscriptionHandle handle, int count, TimeSpan timeout)
