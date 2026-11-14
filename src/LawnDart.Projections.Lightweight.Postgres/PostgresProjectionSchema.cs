@@ -22,7 +22,8 @@ internal static class PostgresProjectionSchema
         CancellationToken cancellationToken)
     {
         var sql = SchemaSql(names);
-        await using (var command = new NpgsqlCommand(sql, connection))
+        var command = new NpgsqlCommand(sql, connection);
+        await using (command.ConfigureAwait(false))
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(appRole))
@@ -33,7 +34,8 @@ internal static class PostgresProjectionSchema
             GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA {PgIdentifier.Quote(names.Schema)} TO {PgIdentifier.Quote(appRole)};
             GRANT EXECUTE ON ALL ROUTINES IN SCHEMA {PgIdentifier.Quote(names.Schema)} TO {PgIdentifier.Quote(appRole)};
             """;
-        await using var grantCommand = new NpgsqlCommand(grant, connection);
+        var grantCommand = new NpgsqlCommand(grant, connection);
+        await using var grantCommandDisposal = grantCommand.ConfigureAwait(false);
         await grantCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 

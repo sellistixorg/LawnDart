@@ -201,8 +201,10 @@ public sealed class PostgresProjectionRunnerLock : IProjectionRunnerLock
             )
             SELECT leader_epoch FROM raised
             """;
-        await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        var command = new NpgsqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("type", projectionType);
         command.Parameters.AddWithValue("node", nodeId);
         command.Parameters.AddWithValue("holder", holder);
@@ -222,7 +224,8 @@ public sealed class PostgresProjectionRunnerLock : IProjectionRunnerLock
             SET leader_epoch = c.leader_epoch + 1
             RETURNING leader_epoch
             """;
-        await using var command = new NpgsqlCommand(sql, connection);
+        var command = new NpgsqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("type", projectionType);
         command.Parameters.AddWithValue("node", nodeId);
         return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false));
@@ -232,13 +235,14 @@ public sealed class PostgresProjectionRunnerLock : IProjectionRunnerLock
     {
         try
         {
-            await using var command = new NpgsqlCommand(
+            var command = new NpgsqlCommand(
                 """
                 SELECT set_config('tcp_keepalives_idle', @idle, false),
                        set_config('tcp_keepalives_interval', @interval, false),
                        set_config('tcp_keepalives_count', @count, false)
                 """,
                 connection);
+            await using var commandDisposal = command.ConfigureAwait(false);
             command.Parameters.AddWithValue("idle", _options.LockTcpKeepAliveIdleSeconds.ToString());
             command.Parameters.AddWithValue("interval", _options.LockTcpKeepAliveIntervalSeconds.ToString());
             command.Parameters.AddWithValue("count", _options.LockTcpKeepAliveCount.ToString());
@@ -256,8 +260,10 @@ public sealed class PostgresProjectionRunnerLock : IProjectionRunnerLock
             SELECT expires_at FROM {_names.Leases}
             WHERE projection_type = @type AND node_id = @node
             """;
-        await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        var command = new NpgsqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("type", projectionType);
         command.Parameters.AddWithValue("node", nodeId);
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
@@ -286,14 +292,16 @@ public sealed class PostgresProjectionRunnerLock : IProjectionRunnerLock
 
     private async Task LockAsync(NpgsqlConnection connection, string projectionType, int nodeId, CancellationToken cancellationToken)
     {
-        await using var command = AdvisoryCommand(connection, "pg_advisory_lock", projectionType, nodeId);
+        var command = AdvisoryCommand(connection, "pg_advisory_lock", projectionType, nodeId);
+        await using var commandDisposal = command.ConfigureAwait(false);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<bool> AdvisoryAsync(
         NpgsqlConnection connection, string function, string projectionType, int nodeId, CancellationToken cancellationToken)
     {
-        await using var command = AdvisoryCommand(connection, function, projectionType, nodeId);
+        var command = AdvisoryCommand(connection, function, projectionType, nodeId);
+        await using var commandDisposal = command.ConfigureAwait(false);
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return result is true;
     }
@@ -309,7 +317,8 @@ public sealed class PostgresProjectionRunnerLock : IProjectionRunnerLock
 
     private static async Task<int> BackendPidAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
     {
-        await using var command = new NpgsqlCommand("SELECT pg_backend_pid()", connection);
+        var command = new NpgsqlCommand("SELECT pg_backend_pid()", connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false));
     }
 
@@ -395,8 +404,9 @@ internal sealed class PostgresSessionLease : IProjectionRunnerLease
         {
             if (_connection.State == System.Data.ConnectionState.Open)
             {
-                await using var command = new NpgsqlCommand(
+                var command = new NpgsqlCommand(
                     "SELECT pg_advisory_unlock(hashtext(@schema), hashtext(@slot))", _connection);
+                await using var commandDisposal = command.ConfigureAwait(false);
                 command.Parameters.AddWithValue("schema", _schema);
                 command.Parameters.AddWithValue("slot", _projectionType + ":" + _nodeId.ToString());
                 try
@@ -427,7 +437,8 @@ internal sealed class PostgresSessionLease : IProjectionRunnerLease
                 await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
                 try
                 {
-                    await using var command = new NpgsqlCommand("SELECT 1", _connection);
+                    var command = new NpgsqlCommand("SELECT 1", _connection);
+                    await using var commandDisposal = command.ConfigureAwait(false);
                     await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
                 }
                 finally
@@ -555,8 +566,10 @@ internal sealed class PostgresPooledLease : IProjectionRunnerLease
             WHERE projection_type = @type AND node_id = @node
               AND holder_id = @holder AND expires_at > now()
             """;
-        await using var connection = await PostgresProjectionConnections.Shared(_options.ConnectionString!).OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        var connection = await PostgresProjectionConnections.Shared(_options.ConnectionString!).OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        var command = new NpgsqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("type", _projectionType);
         command.Parameters.AddWithValue("node", _nodeId);
         command.Parameters.AddWithValue("holder", _holder);
@@ -573,8 +586,10 @@ internal sealed class PostgresPooledLease : IProjectionRunnerLease
                 DELETE FROM {_names.Leases}
                 WHERE projection_type = @type AND node_id = @node AND holder_id = @holder
                 """;
-            await using var connection = await PostgresProjectionConnections.Shared(_options.ConnectionString!).OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-            await using var command = new NpgsqlCommand(sql, connection);
+            var connection = await PostgresProjectionConnections.Shared(_options.ConnectionString!).OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var connectionDisposal = connection.ConfigureAwait(false);
+            var command = new NpgsqlCommand(sql, connection);
+            await using var commandDisposal = command.ConfigureAwait(false);
             command.Parameters.AddWithValue("type", _projectionType);
             command.Parameters.AddWithValue("node", _nodeId);
             command.Parameters.AddWithValue("holder", _holder);

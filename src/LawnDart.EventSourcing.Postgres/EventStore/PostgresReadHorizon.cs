@@ -153,9 +153,11 @@ internal sealed class PostgresReadHorizon
                 (SELECT global_position FROM nxt) AS next_after,
                 COALESCE((SELECT MAX(global_position) FROM {_names.Events}), 0) AS committed
             """;
-        await using var command = new NpgsqlCommand(sql, connection);
+        var command = new NpgsqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.Add(new NpgsqlParameter("mark", NpgsqlDbType.Bigint) { Value = mark });
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var readerDisposal = reader.ConfigureAwait(false);
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             return new Sample(mark, null, 0, []);
 
@@ -186,10 +188,12 @@ internal sealed class PostgresReadHorizon
             SELECT id, pg_xact_status(id::xid8)
             FROM unnest(@ids::text[]) AS id
             """;
-        await using var command = new NpgsqlCommand(sql, connection);
+        var command = new NpgsqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.Add(new NpgsqlParameter("ids", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = xids.ToArray() });
         var open = new List<string>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var readerDisposal = reader.ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             if (!reader.IsDBNull(1) && reader.GetString(1) == "in progress")
@@ -218,10 +222,12 @@ internal sealed class PostgresReadHorizon
             ORDER BY xact_start
             LIMIT 1
             """;
-        await using (var command = new NpgsqlCommand(sql, connection))
+        var command = new NpgsqlCommand(sql, connection);
+        await using (command.ConfigureAwait(false))
         {
             command.Parameters.Add(new NpgsqlParameter("ids", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = open.ToArray() });
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            await using var readerDisposal = reader.ConfigureAwait(false);
             if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
                 session = reader.GetString(0);
@@ -337,11 +343,13 @@ internal sealed class PostgresReadHorizon
             WHERE global_position > @after AND global_position < @before
             ORDER BY global_position
             """;
-        await using var command = new NpgsqlCommand(sql, connection);
+        var command = new NpgsqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.Add(new NpgsqlParameter("after", NpgsqlDbType.Bigint) { Value = after });
         command.Parameters.Add(new NpgsqlParameter("before", NpgsqlDbType.Bigint) { Value = before });
         var rows = new List<(long, string)>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var readerDisposal = reader.ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             rows.Add((reader.GetInt64(0), reader.GetString(1)));
         return rows;

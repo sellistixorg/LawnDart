@@ -211,9 +211,10 @@ public sealed class PostgresInboxStore : IInboxStore
 
         if (await ScalarExistsAsync(connection, "SELECT to_regclass(@name) IS NOT NULL", schemaInfo, cancellationToken).ConfigureAwait(false))
         {
-            await using var format = new NpgsqlCommand(
+            var format = new NpgsqlCommand(
                 $"SELECT format FROM {schemaInfo} WHERE component = @component",
                 connection);
+            await using var formatDisposal = format.ConfigureAwait(false);
             format.Parameters.AddWithValue("component", Component);
             var result = await format.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
             if (result is not null and not DBNull)
@@ -236,7 +237,8 @@ public sealed class PostgresInboxStore : IInboxStore
         string name,
         CancellationToken cancellationToken)
     {
-        await using var command = new NpgsqlCommand(sql, connection);
+        var command = new NpgsqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("name", name);
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return result is true;

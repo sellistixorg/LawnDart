@@ -14,7 +14,8 @@ public sealed partial class PostgresEventStore
     /// <inheritdoc />
     public async Task<long> GetCurrentSequenceAsync(CancellationToken cancellationToken = default)
     {
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
         return await _horizon.ResolveAsync(connection, cancellationToken).ConfigureAwait(false);
     }
 
@@ -23,7 +24,8 @@ public sealed partial class PostgresEventStore
     {
         if (string.IsNullOrWhiteSpace(streamId))
             throw new ArgumentException("Stream ID cannot be null or empty", nameof(streamId));
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
         return await ReadStreamCoreAsync(connection, streamId, fromVersion, toVersion, toCommitTimestamp, cancellationToken).ConfigureAwait(false);
     }
 
@@ -62,7 +64,8 @@ public sealed partial class PostgresEventStore
         Query query, long? fromSequencePosition, long? toSequencePosition, DateTime? toCommitTimestamp, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(query);
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
         // The limit comes first. A name stored after it is not part of this read,
         // so a later event cannot hide an earlier one whose name was not loaded yet.
         var head = await _horizon.ResolveAsync(connection, cancellationToken).ConfigureAwait(false);
@@ -73,7 +76,8 @@ public sealed partial class PostgresEventStore
         if (built.ShortCircuited)
             return 0L;
 
-        await using var command = new NpgsqlCommand(built.Sql, connection);
+        var command = new NpgsqlCommand(built.Sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         foreach (var parameter in built.Parameters)
             command.Parameters.Add(parameter);
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
@@ -104,12 +108,15 @@ public sealed partial class PostgresEventStore
     {
         var (where, parameters) = ActivePrefix(prefix);
         var sql = $"SELECT stream_id FROM {_names.Streams} {where} ORDER BY stream_id";
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        var command = new NpgsqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         foreach (var parameter in parameters)
             command.Parameters.Add(parameter);
         var ids = new List<string>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var readerDisposal = reader.ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             ids.Add(reader.GetString(0));
         return ids;
@@ -136,8 +143,10 @@ public sealed partial class PostgresEventStore
     public async Task<long> GetStreamCountAsync(string? prefix = null, CancellationToken cancellationToken = default)
     {
         var (where, parameters) = ActivePrefix(prefix);
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand($"SELECT COUNT(*) FROM {_names.Streams} {where}", connection);
+        var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        var command = new NpgsqlCommand($"SELECT COUNT(*) FROM {_names.Streams} {where}", connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         foreach (var parameter in parameters)
             command.Parameters.Add(parameter);
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
@@ -414,7 +423,8 @@ public sealed partial class PostgresEventStore
             sql += " AND e.recorded_at <= @ts";
         sql += " ORDER BY e.version";
 
-        await using var command = new NpgsqlCommand(sql, connection);
+        var command = new NpgsqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.Add(new NpgsqlParameter("tenant", tenant));
         command.Parameters.Add(new NpgsqlParameter("stream", streamId));
         command.Parameters.Add(new NpgsqlParameter("from", fromVersion));
@@ -436,7 +446,8 @@ public sealed partial class PostgresEventStore
         DateTime? toCommitTimestamp,
         CancellationToken cancellationToken)
     {
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
         // The limit comes first. A name stored after it is not part of this read,
         // so a later event cannot hide an earlier one whose name was not loaded yet.
         var head = await _horizon.ResolveAsync(connection, cancellationToken).ConfigureAwait(false);
@@ -447,7 +458,8 @@ public sealed partial class PostgresEventStore
         if (built.ShortCircuited)
             return new QueryRead([], typesResolved);
 
-        await using var command = new NpgsqlCommand(built.Sql, connection);
+        var command = new NpgsqlCommand(built.Sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         foreach (var parameter in built.Parameters)
             command.Parameters.Add(parameter);
         var rows = await ReadRowsAsync(command, cancellationToken).ConfigureAwait(false);
@@ -460,7 +472,8 @@ public sealed partial class PostgresEventStore
     private async Task<List<EventRow>> ReadRowsAsync(NpgsqlCommand command, CancellationToken cancellationToken)
     {
         var rows = new List<EventRow>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var readerDisposal = reader.ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             var tags = reader.IsDBNull(7) ? [] : reader.GetFieldValue<string[]>(7);
@@ -535,11 +548,14 @@ public sealed partial class PostgresEventStore
             """;
         if (one)
             sql += " LIMIT 1";
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        var command = new NpgsqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         bind(command);
         var list = new List<StreamMetadata>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var readerDisposal = reader.ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             list.Add(ReadStream(reader));
         return list;
@@ -653,13 +669,16 @@ public sealed partial class PostgresEventStore
             sql.Append(" ORDER BY s.stream_id LIMIT @take");
         }
 
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql.ToString(), connection);
+        var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        var command = new NpgsqlCommand(sql.ToString(), connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         foreach (var parameter in parameters)
             command.Parameters.Add(parameter);
 
         var rows = new List<StreamMetadata>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var readerDisposal = reader.ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             rows.Add(ReadStream(reader));
 

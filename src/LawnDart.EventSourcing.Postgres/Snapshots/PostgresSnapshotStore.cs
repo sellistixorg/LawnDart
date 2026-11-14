@@ -71,7 +71,8 @@ public sealed class PostgresSnapshotStore : ISnapshotStore, IDcbSnapshotStore, I
         var migration = string.IsNullOrWhiteSpace(_options.MigrationConnectionString)
             ? _options.ConnectionString!
             : _options.MigrationConnectionString;
-        await using var connection = await PostgresEventStore.Source(migration).OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = await PostgresEventStore.Source(migration).OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
         await PostgresSnapshotSchema.EnsureAsync(connection, transaction: null, _options, cancellationToken).ConfigureAwait(false);
         await GrantAsync(connection, cancellationToken).ConfigureAwait(false);
     }
@@ -90,7 +91,8 @@ public sealed class PostgresSnapshotStore : ISnapshotStore, IDcbSnapshotStore, I
     public async Task<SchemaCheckResult> VerifySchemaAsync(CancellationToken cancellationToken = default)
     {
         var schema = PgIdentifier.RequireSchema(_options.SchemaName);
-        await using var connection = await PostgresEventStore.Source(_options.ConnectionString!).OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = await PostgresEventStore.Source(_options.ConnectionString!).OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
         return await PostgresSchemaProbe.CheckAsync(
             connection,
             expectedFormat: null,
@@ -112,8 +114,10 @@ public sealed class PostgresSnapshotStore : ISnapshotStore, IDcbSnapshotStore, I
     /// </summary>
     public async Task<IReadOnlyList<string>?> LoadDcbSnapshotTagsAsync(string dcbId, CancellationToken ct = default)
     {
-        await using var connection = await OpenAsync(ct).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand($"SELECT tags FROM {_dcb} WHERE dcb_id = @id", connection);
+        var connection = await OpenAsync(ct).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        var command = new NpgsqlCommand($"SELECT tags FROM {_dcb} WHERE dcb_id = @id", connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("id", dcbId);
         var result = await command.ExecuteScalarAsync(ct).ConfigureAwait(false);
         if (result is null or DBNull)
@@ -127,15 +131,18 @@ public sealed class PostgresSnapshotStore : ISnapshotStore, IDcbSnapshotStore, I
     {
         try
         {
-            await using var connection = await OpenAsync(ct).ConfigureAwait(false);
-            await using var command = new NpgsqlCommand(
+            var connection = await OpenAsync(ct).ConfigureAwait(false);
+            await using var connectionDisposal = connection.ConfigureAwait(false);
+            var command = new NpgsqlCommand(
                 $"""
                 SELECT global_position, taken_at, state_data, checksum
                 FROM {_dcb} WHERE dcb_id = @id
                 """,
                 connection);
+            await using var commandDisposal = command.ConfigureAwait(false);
             command.Parameters.AddWithValue("id", dcbId);
-            await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+            var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+            await using var readerDisposal = reader.ConfigureAwait(false);
             if (!await reader.ReadAsync(ct).ConfigureAwait(false))
                 return (default, null);
 
@@ -181,8 +188,9 @@ public sealed class PostgresSnapshotStore : ISnapshotStore, IDcbSnapshotStore, I
         var data = JsonSerializer.SerializeToUtf8Bytes(state, JsonOptions);
         var checksum = ComputeChecksum(data);
         var stateType = typeof(TState).FullName ?? typeof(TState).Name;
-        await using var connection = await OpenAsync(ct).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(
+        var connection = await OpenAsync(ct).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        var command = new NpgsqlCommand(
             $"""
             INSERT INTO {_dcb} AS s
                 (dcb_id, global_position, taken_at, state_type, state_data, tags, consistency_marker, checksum)
@@ -197,6 +205,7 @@ public sealed class PostgresSnapshotStore : ISnapshotStore, IDcbSnapshotStore, I
                 checksum = EXCLUDED.checksum
             """,
             connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("id", dcbId);
         command.Parameters.AddWithValue("seq", globalSequence);
         command.Parameters.AddWithValue("state_type", stateType);
@@ -222,16 +231,19 @@ public sealed class PostgresSnapshotStore : ISnapshotStore, IDcbSnapshotStore, I
         try
         {
             var tenant = TenantKey.ForStream(streamId);
-            await using var connection = await OpenAsync(ct).ConfigureAwait(false);
-            await using var command = new NpgsqlCommand(
+            var connection = await OpenAsync(ct).ConfigureAwait(false);
+            await using var connectionDisposal = connection.ConfigureAwait(false);
+            var command = new NpgsqlCommand(
                 $"""
                 SELECT version, global_position, taken_at, state_data, checksum
                 FROM {_events} WHERE tenant_id = @tenant AND stream_id = @stream
                 """,
                 connection);
+            await using var commandDisposal = command.ConfigureAwait(false);
             command.Parameters.AddWithValue("tenant", tenant);
             command.Parameters.AddWithValue("stream", streamId);
-            await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+            var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+            await using var readerDisposal = reader.ConfigureAwait(false);
             if (!await reader.ReadAsync(ct).ConfigureAwait(false))
                 return (default, null);
 
@@ -285,8 +297,9 @@ public sealed class PostgresSnapshotStore : ISnapshotStore, IDcbSnapshotStore, I
         var data = JsonSerializer.SerializeToUtf8Bytes(state, JsonOptions);
         var checksum = ComputeChecksum(data);
         var stateType = typeof(TState).FullName ?? typeof(TState).Name;
-        await using var connection = await OpenAsync(ct).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(
+        var connection = await OpenAsync(ct).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        var command = new NpgsqlCommand(
             $"""
             INSERT INTO {_events}
                 (tenant_id, stream_id, version, global_position, taken_at, state_type, state_data, checksum)
@@ -300,6 +313,7 @@ public sealed class PostgresSnapshotStore : ISnapshotStore, IDcbSnapshotStore, I
                 checksum = EXCLUDED.checksum
             """,
             connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("tenant", tenant);
         command.Parameters.AddWithValue("stream", streamId);
         command.Parameters.AddWithValue("version", version);
@@ -316,13 +330,15 @@ public sealed class PostgresSnapshotStore : ISnapshotStore, IDcbSnapshotStore, I
     public async Task DeleteSnapshotAsync(string streamId, CancellationToken ct = default)
     {
         var tenant = TenantKey.ForStream(streamId);
-        await using var connection = await OpenAsync(ct).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(
+        var connection = await OpenAsync(ct).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        var command = new NpgsqlCommand(
             $"""
             DELETE FROM {_events} WHERE tenant_id = @tenant AND stream_id = @id;
             DELETE FROM {_dcb} WHERE dcb_id = @id;
             """,
             connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("tenant", tenant);
         command.Parameters.AddWithValue("id", streamId);
         await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
@@ -331,8 +347,10 @@ public sealed class PostgresSnapshotStore : ISnapshotStore, IDcbSnapshotStore, I
     /// <inheritdoc/>
     public async Task DeleteAllSnapshotsAsync(CancellationToken ct = default)
     {
-        await using var connection = await OpenAsync(ct).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand($"DELETE FROM {_events}; DELETE FROM {_dcb};", connection);
+        var connection = await OpenAsync(ct).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        var command = new NpgsqlCommand($"DELETE FROM {_events}; DELETE FROM {_dcb};", connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
@@ -340,8 +358,9 @@ public sealed class PostgresSnapshotStore : ISnapshotStore, IDcbSnapshotStore, I
     public async Task<SnapshotInfo?> GetSnapshotInfoAsync(string streamId, CancellationToken ct = default)
     {
         var tenant = TenantKey.ForStream(streamId);
-        await using var connection = await OpenAsync(ct).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(
+        var connection = await OpenAsync(ct).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        var command = new NpgsqlCommand(
             $"""
             SELECT version, global_position, taken_at FROM {_events}
             WHERE tenant_id = @tenant AND stream_id = @id
@@ -349,9 +368,11 @@ public sealed class PostgresSnapshotStore : ISnapshotStore, IDcbSnapshotStore, I
             SELECT 0::bigint, global_position, taken_at FROM {_dcb} WHERE dcb_id = @id
             """,
             connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("tenant", tenant);
         command.Parameters.AddWithValue("id", streamId);
-        await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        await using var readerDisposal = reader.ConfigureAwait(false);
         if (!await reader.ReadAsync(ct).ConfigureAwait(false))
             return null;
         return new SnapshotInfo(
@@ -364,15 +385,18 @@ public sealed class PostgresSnapshotStore : ISnapshotStore, IDcbSnapshotStore, I
     public async IAsyncEnumerable<string> EnumerateSnapshotStreamsAsync(
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        await using var connection = await OpenAsync(ct).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(
+        var connection = await OpenAsync(ct).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        var command = new NpgsqlCommand(
             $"""
             SELECT stream_id FROM {_events}
             UNION ALL
             SELECT dcb_id FROM {_dcb}
             """,
             connection);
-        await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        await using var commandDisposal = command.ConfigureAwait(false);
+        var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        await using var readerDisposal = reader.ConfigureAwait(false);
         while (await reader.ReadAsync(ct).ConfigureAwait(false))
             yield return reader.GetString(0).Trim();
     }
@@ -389,12 +413,13 @@ public sealed class PostgresSnapshotStore : ISnapshotStore, IDcbSnapshotStore, I
 
         var schema = PgIdentifier.Quote(PgIdentifier.RequireSchema(_options.SchemaName));
         var role = PgIdentifier.Quote(app);
-        await using var command = new NpgsqlCommand(
+        var command = new NpgsqlCommand(
             $"""
             GRANT USAGE ON SCHEMA {schema} TO {role};
             GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA {schema} TO {role};
             """,
             connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 

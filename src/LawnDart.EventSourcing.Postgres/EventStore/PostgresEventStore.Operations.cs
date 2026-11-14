@@ -273,7 +273,8 @@ public sealed partial class PostgresEventStore
             SELECT global_position, version
             FROM {call}
             """;
-        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        var command = new NpgsqlCommand(sql, connection, transaction);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.Add(new NpgsqlParameter("stream_id", streamId));
         command.Parameters.Add(new NpgsqlParameter("tenant_id", tenant));
         command.Parameters.Add(new NpgsqlParameter("expected", NpgsqlDbType.Bigint) { Value = (object?)expectedVersion ?? DBNull.Value });
@@ -328,7 +329,8 @@ public sealed partial class PostgresEventStore
         var rowsRead = 0;
         try
         {
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            await using var readerDisposal = reader.ConfigureAwait(false);
             try
             {
                 var positions = new List<long>(envelopes.Count);
@@ -775,12 +777,15 @@ public sealed partial class PostgresEventStore
             JOIN {_names.Types} t ON t.id = e.event_type_id
             WHERE e.tenant_id = @tenant AND e.event_id = ANY(@ids)
             """;
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        var command = new NpgsqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.Add(new NpgsqlParameter("tenant", tenant));
         command.Parameters.Add(new NpgsqlParameter("ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid) { Value = eventIds.ToArray() });
         var rows = new Dictionary<Guid, StoredAppendRow>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var readerDisposal = reader.ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             rows[reader.GetGuid(0)] = new StoredAppendRow(
@@ -854,10 +859,12 @@ public sealed partial class PostgresEventStore
             if (missing.Length == 0)
                 return;
 
-            await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-            await using var insert = new NpgsqlCommand(
+            var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var connectionDisposal = connection.ConfigureAwait(false);
+            var insert = new NpgsqlCommand(
                 $"INSERT INTO {_names.Types} (token) SELECT unnest(@tokens) ON CONFLICT (token) DO NOTHING",
                 connection);
+            await using var insertDisposal = insert.ConfigureAwait(false);
             insert.Parameters.Add(new NpgsqlParameter("tokens", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = missing });
             await insert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             await ReloadEventTypeCacheAsync(connection, cancellationToken).ConfigureAwait(false);
@@ -886,7 +893,7 @@ public sealed partial class PostgresEventStore
         if (tokens.Length == 0)
             return;
 
-        await using var insert = new NpgsqlCommand(
+        var insert = new NpgsqlCommand(
             $"""
             INSERT INTO {_names.Types} (token)
             SELECT incoming.token
@@ -898,6 +905,7 @@ public sealed partial class PostgresEventStore
             """,
             connection,
             transaction);
+        await using var insertDisposal = insert.ConfigureAwait(false);
         insert.Parameters.Add(new NpgsqlParameter("tokens", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = tokens });
         await insert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -962,15 +970,18 @@ public sealed partial class PostgresEventStore
 
     private async Task ReloadEventTypeCacheAsync(CancellationToken cancellationToken)
     {
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
         await ReloadEventTypeCacheAsync(connection, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task ReloadEventTypeCacheAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
     {
-        await using var command = new NpgsqlCommand($"SELECT id, token FROM {_names.Types}", connection);
+        var command = new NpgsqlCommand($"SELECT id, token FROM {_names.Types}", connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         var rows = new List<(int, string)>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var readerDisposal = reader.ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             rows.Add((reader.GetInt32(0), reader.GetString(1)));
         _eventTypes.ReplaceAll(rows.Select(row => (row.Item1, row.Item2)));
@@ -982,7 +993,8 @@ public sealed partial class PostgresEventStore
         string sql,
         CancellationToken cancellationToken)
     {
-        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        var command = new NpgsqlCommand(sql, connection, transaction);
+        await using var commandDisposal = command.ConfigureAwait(false);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -992,8 +1004,10 @@ public sealed partial class PostgresEventStore
         CancellationToken cancellationToken)
     {
         var sql = $"SELECT format, partition_count, partitioning FROM {_names.SchemaInfo} WHERE component = 'events'";
-        await using var command = new NpgsqlCommand(sql, connection, transaction);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var command = new NpgsqlCommand(sql, connection, transaction);
+        await using var commandDisposal = command.ConfigureAwait(false);
+        var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var readerDisposal = reader.ConfigureAwait(false);
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             return null;
         return new Stamp(reader.GetInt32(0), reader.GetInt32(1), reader.GetBoolean(2));
@@ -1005,7 +1019,8 @@ public sealed partial class PostgresEventStore
         string qualifiedName,
         CancellationToken cancellationToken)
     {
-        await using var command = new NpgsqlCommand("SELECT to_regclass(@name)::text", connection, transaction);
+        var command = new NpgsqlCommand("SELECT to_regclass(@name)::text", connection, transaction);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.Add(new NpgsqlParameter("name", qualifiedName));
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return result is string { Length: > 0 };

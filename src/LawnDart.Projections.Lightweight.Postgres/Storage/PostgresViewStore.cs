@@ -41,7 +41,8 @@ public sealed class PostgresViewStore : IViewStore
     /// </remarks>
     public async Task InitializeSchemaAsync(CancellationToken cancellationToken = default)
     {
-        await using var connection = await OpenMigrationAsync(cancellationToken).ConfigureAwait(false);
+        var connection = await OpenMigrationAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
         await PostgresProjectionSchema.EnsureAsync(
             connection, _names, PostgresProjectionSchema.AppRole(_options), cancellationToken).ConfigureAwait(false);
         if (_logger is not null)
@@ -64,7 +65,8 @@ public sealed class PostgresViewStore : IViewStore
     /// </remarks>
     public async Task<SchemaCheckResult> VerifySchemaAsync(CancellationToken cancellationToken = default)
     {
-        await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
         return await PostgresProjectionSchema.VerifyAsync(connection, _names, cancellationToken).ConfigureAwait(false);
     }
 
@@ -97,8 +99,10 @@ public sealed class PostgresViewStore : IViewStore
                 checkpoint = EXCLUDED.checkpoint,
                 last_updated = EXCLUDED.last_updated
             """;
-        await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        var command = new NpgsqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("projection_type", projectionType);
         command.Parameters.Add(new NpgsqlParameter("instance_ids", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = ids });
         command.Parameters.Add(new NpgsqlParameter("view_data", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = json });
@@ -118,8 +122,10 @@ public sealed class PostgresViewStore : IViewStore
             FROM {_names.Views}
             WHERE projection_type = @projection_type AND instance_id = @instance_id
             """;
-        await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        var command = new NpgsqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("projection_type", projectionType);
         command.Parameters.AddWithValue("instance_id", instanceId);
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
@@ -137,11 +143,14 @@ public sealed class PostgresViewStore : IViewStore
             WHERE projection_type = @projection_type
             ORDER BY last_updated DESC, instance_id
             """;
-        await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        var command = new NpgsqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("projection_type", projectionType);
         var results = new List<(string, string)>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var readerDisposal = reader.ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             results.Add((reader.GetString(0), reader.GetString(1)));
         return results;
@@ -157,8 +166,10 @@ public sealed class PostgresViewStore : IViewStore
             DELETE FROM {_names.Views}
             WHERE projection_type = @projection_type AND instance_id = @instance_id
             """;
-        await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        var command = new NpgsqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("projection_type", projectionType);
         command.Parameters.AddWithValue("instance_id", instanceId);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -175,11 +186,14 @@ public sealed class PostgresViewStore : IViewStore
             FROM {_names.Views}
             WHERE projection_type = @projection_type AND instance_id = @instance_id
             """;
-        await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        var command = new NpgsqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("projection_type", projectionType);
         command.Parameters.AddWithValue("instance_id", instanceId);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var readerDisposal = reader.ConfigureAwait(false);
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             return null;
         return (reader.GetString(0), reader.GetInt64(1));
@@ -189,8 +203,10 @@ public sealed class PostgresViewStore : IViewStore
     public async Task DeleteAllViewsAsync(string projectionType, CancellationToken cancellationToken = default)
     {
         var sql = $"DELETE FROM {_names.Views} WHERE projection_type = @projection_type";
-        await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        var command = new NpgsqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("projection_type", projectionType);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }

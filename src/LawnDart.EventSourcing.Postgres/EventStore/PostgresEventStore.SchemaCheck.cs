@@ -24,7 +24,8 @@ public sealed partial class PostgresEventStore
         var expected = CurrentSchemaFormat.ToString(CultureInfo.InvariantCulture);
         var eventSnapshots = PgIdentifier.Qualify(_names.Schema, PostgresSnapshotSchema.EventTable(_options));
         var dcbSnapshots = PgIdentifier.Qualify(_names.Schema, PostgresSnapshotSchema.DcbTable(_options));
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
         return await PostgresSchemaProbe.CheckAsync(
             connection,
             expected,

@@ -186,10 +186,13 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
     /// </remarks>
     public async Task InitializeSchemaAsync(CancellationToken cancellationToken = default)
     {
-        await using var connection = await _migration.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        await using (var gate = new NpgsqlCommand(
-            "SELECT pg_advisory_xact_lock(hashtextextended(@key, 0))", connection, transaction))
+        var connection = await _migration.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transactionDisposal = transaction.ConfigureAwait(false);
+        var gate = new NpgsqlCommand(
+            "SELECT pg_advisory_xact_lock(hashtextextended(@key, 0))", connection, transaction);
+        await using (gate.ConfigureAwait(false))
         {
             gate.Parameters.AddWithValue("key", _names.Schema + ":init");
             await gate.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -254,8 +257,9 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
         if (await StreamTagsMarkerExistsAsync(connection, cancellationToken).ConfigureAwait(false))
             return;
 
-        await using (var acquire = new NpgsqlCommand(
-            "SELECT pg_advisory_lock(hashtextextended(@key, 0))", connection))
+        var acquire = new NpgsqlCommand(
+            "SELECT pg_advisory_lock(hashtextextended(@key, 0))", connection);
+        await using (acquire.ConfigureAwait(false))
         {
             acquire.Parameters.AddWithValue("key", _names.Schema + ":stream_tags");
             await acquire.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -270,24 +274,28 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
             var streamId = "";
             while (true)
             {
-                await using var batch = new NpgsqlCommand(PostgresSchema.BackfillStreamTagsBatch(_names), connection);
+                var batch = new NpgsqlCommand(PostgresSchema.BackfillStreamTagsBatch(_names), connection);
+                await using var batchDisposal = batch.ConfigureAwait(false);
                 batch.Parameters.Add(new NpgsqlParameter("tenant", NpgsqlDbType.Text) { Value = tenant });
                 batch.Parameters.Add(new NpgsqlParameter("stream", NpgsqlDbType.Text) { Value = streamId });
-                await using var reader = await batch.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                var reader = await batch.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                await using var readerDisposal = reader.ConfigureAwait(false);
                 if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
                     break;
                 tenant = reader.GetString(0);
                 streamId = reader.GetString(1);
             }
 
-            await using var marker = new NpgsqlCommand(
+            var marker = new NpgsqlCommand(
                 PostgresSchema.InsertStreamTagsMarker(_names, _options), connection);
+            await using var markerDisposal = marker.ConfigureAwait(false);
             await marker.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
         {
-            await using var release = new NpgsqlCommand(
+            var release = new NpgsqlCommand(
                 "SELECT pg_advisory_unlock(hashtextextended(@key, 0))", connection);
+            await using var releaseDisposal = release.ConfigureAwait(false);
             release.Parameters.AddWithValue("key", _names.Schema + ":stream_tags");
             await release.ExecuteNonQueryAsync(CancellationToken.None).ConfigureAwait(false);
         }
@@ -295,7 +303,8 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
 
     private async Task<bool> StreamTagsMarkerExistsAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
     {
-        await using var command = new NpgsqlCommand(PostgresSchema.StreamTagsMarkerExists(_names), connection);
+        var command = new NpgsqlCommand(PostgresSchema.StreamTagsMarkerExists(_names), connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return result is not null and not DBNull;
     }
@@ -367,8 +376,10 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
     {
         await EnsureEventTypeIdsAsync(events, cancellationToken).ConfigureAwait(false);
         var ids = EventIdResolver.ResolveBatch(events.Select(e => e.Metadata).ToList());
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transactionDisposal = transaction.ConfigureAwait(false);
         await ExecuteAppendAsync(connection, transaction, streamId, events, ids, null, null, false, cancellationToken).ConfigureAwait(false);
         await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -388,7 +399,8 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
             await EnsureQueryTypesResolvedAsync(condition.FailIfEventsMatch, cancellationToken).ConfigureAwait(false);
 
         var useTransaction = BeforeAppendCommit is not null || CommitHook is not null;
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
         if (!useTransaction)
         {
             AppendWrite written;
