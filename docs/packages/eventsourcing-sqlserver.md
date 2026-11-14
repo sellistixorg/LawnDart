@@ -91,6 +91,11 @@ no table pages:
 - An append with more distinct tags than `AppendLockTagThreshold` (default
   64) takes the store lock exclusive and no tag locks.
 
+The locks, the condition or version check, and the inserts go to SQL Server
+as one batch. The batch reserves every event position with one call to
+`sp_sequence_get_range`. Commit is the next call. The expected version check
+and the insert both use the stream version read while that stream row is locked.
+
 The store lock comes first, then the tag locks sorted by name, so appends
 always ask in the same order. Lock names are a short prefix and a hash of
 the schema, the events table and the tag, so any tag length fits. Two names
@@ -135,6 +140,7 @@ are part of a new format 5 table.
 
 `RowVersion` is the commit horizon. An append inserts an `AppendFence` row
 before it reserves a sequence, so the transaction owns a rowversion first.
+A later append removes fence rows whose transaction has already committed.
 Global reads and `GetCurrentSequenceAsync` include a row only when its
 rowversion is below `MIN_ACTIVE_ROWVERSION()`. A sequence reserved by an
 open append stays invisible while that append is open. A later committed
