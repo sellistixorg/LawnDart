@@ -116,6 +116,9 @@ per tenant. `EnableStreamRegistry` and `AutoMaintainRegistry` are still
 accepted. The registry is maintained either way. An append locks that
 stream's registry row until it commits, so a second append of the same
 stream waits. An append of a different stream does not wait on that row.
+When both name the same expected version, the one that waits throws
+`ConcurrencyException` after the first commits. The stream keeps that first
+append.
 
 `EventSnapshots` uses that same `StreamKey`. One row per stream.
 

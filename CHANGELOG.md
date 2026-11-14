@@ -12,7 +12,7 @@ changes to the public API.
 
 ### Changed
 
-- Breaking: SQL Server events are schema format 5. The events table is clustered on global position. Each event stores a numeric stream key and a tenant id. The stream id text lives on the stream registry, which is always maintained. Event ids are unique for one tenant. Stream snapshots use the stream key. `Events_Readable` still shows the stream id text. An append of a stream waits while another append of that same stream is open. An events table with an older stamp is left as it is. Drop those tables and create them again.
+- Breaking: SQL Server events are schema format 5. The events table is clustered on global position. Each event stores a numeric stream key and a tenant id. The stream id text lives on the stream registry, which is always maintained. Event ids are unique for one tenant. Stream snapshots use the stream key. `Events_Readable` still shows the stream id text. An append of a stream waits while another append of that same stream is open. When both name the same expected version, the one that waits throws `ConcurrencyException` after the first commits. An events table with an older stamp is left as it is. Drop those tables and create them again.
 
 ### Fixed
 
