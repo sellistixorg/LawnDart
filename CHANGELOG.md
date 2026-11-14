@@ -10,6 +10,10 @@ changes to the public API.
 
 ## [Unreleased]
 
+## [0.7.0-alpha.6] - 2026-11-13
+
+This release publishes an outbox row only for an event the context declares. That is a breaking change. [Moving to declared events](docs/OUTBOX_PATTERN.md#moving-to-declared-events) shows how to move.
+
 ### Breaking
 
 - With the outbox on, an append writes an outbox row only for an event the context declares with `PublishEvents`. An undeclared event is stored and gets no row. In-memory, SQL Server, and Postgres follow this rule on a stream append and on a dynamic consistency boundary append. There is no setting that publishes every event. The host fails when the store is resolved if the outbox is on and nothing is declared. The message names the context and lists its event types.
