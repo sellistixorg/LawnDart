@@ -1,0 +1,252 @@
+using System.Text.Json;
+using LawnDart.EventSourcing.Outbox;
+using LawnDart.EventStore;
+using LawnDart.Messaging;
+using LawnDart.Messaging.InMemory;
+using LawnDart.Messaging.Outbox;
+using LawnDart.Outbox;
+using LawnDart.Patterns.Reaction;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+
+namespace LawnDart.EventSourcing.Tests.Outbox;
+
+public class OutboxHostOrderTests
+{
+    [Fact]
+    public async Task Outbox_registered_before_the_reactor_delivers_once()
+    {
+        var reactor = new CountingReactor();
+        using var host = BuildHost(reactor, subscribe: true);
+        var writer = Writer(host);
+        var id = Guid.NewGuid();
+        await writer.WriteAsync(Message(id));
+
+        await host.StartAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        try
+        {
+            await WaitUntilAsync(() => reactor.CallCount == 1);
+            var row = Assert.Single(writer.Snapshot());
+            Assert.Equal(id, row.Id);
+            Assert.Equal(0, row.Attempts);
+            Assert.NotNull(row.ProcessedAt);
+        }
+        finally
+        {
+            await host.StopAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        }
+    }
+
+    [Fact]
+    public async Task Shutdown_stops_sending_before_listeners_unsubscribe()
+    {
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var inside = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var reactor = new CountingReactor();
+        reactor.OnHandle = async transport =>
+        {
+            inside.TrySetResult();
+            await release.Task;
+            reactor.SubscribersWhenHandled = transport.SubscriberCount<PingEvent>();
+        };
+        using var host = BuildHost(reactor, subscribe: true);
+        var transport = host.Services.GetRequiredService<InMemoryMessageTransport>();
+        reactor.Transport = transport;
+        var writer = Writer(host);
+        await writer.WriteAsync(Message(Guid.NewGuid()));
+
+        await host.StartAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        await inside.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        var stop = Task.Run(async () => await host.StopAsync());
+        await Task.Delay(TimeSpan.FromMilliseconds(200));
+        Assert.False(stop.IsCompleted);
+        Assert.Equal(1, transport.SubscriberCount<PingEvent>());
+
+        release.TrySetResult();
+        await stop.WaitAsync(TimeSpan.FromSeconds(10));
+
+        var row = Assert.Single(writer.Snapshot());
+        Assert.Equal(0, row.Attempts);
+        Assert.NotNull(row.ProcessedAt);
+        Assert.Equal(1, reactor.CallCount);
+        Assert.Equal(1, reactor.SubscribersWhenHandled);
+    }
+
+    [Fact]
+    public async Task Startup_warns_when_a_published_type_has_no_listener()
+    {
+        var warnings = new WarningLog();
+        using var host = BuildHost(new CountingReactor(), subscribe: false, warnings);
+        var writer = Writer(host);
+        var id = Guid.NewGuid();
+        await writer.WriteAsync(Message(id));
+        await host.StartAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        try
+        {
+            await WaitUntilAsync(() => writer.Snapshot().Single(row => row.Id == id).Attempts >= 1);
+            Assert.Contains(
+                warnings.Lines,
+                line => line.Contains("outbox-host.ping", StringComparison.Ordinal) &&
+                        line.Contains("no listener", StringComparison.Ordinal));
+        }
+        finally
+        {
+            await host.StopAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        }
+    }
+
+    [Fact]
+    public async Task Startup_does_not_warn_when_a_reactor_is_subscribed()
+    {
+        var reactor = new CountingReactor();
+        var warnings = new WarningLog();
+        using var host = BuildHost(reactor, subscribe: true, warnings);
+        var writer = Writer(host);
+        await writer.WriteAsync(Message(Guid.NewGuid()));
+        await host.StartAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        try
+        {
+            try
+            {
+                await WaitUntilAsync(() => reactor.CallCount == 1);
+            }
+            catch (TaskCanceledException)
+            {
+                var row = writer.Snapshot().Single();
+                var subs = host.Services.GetRequiredService<InMemoryMessageTransport>().SubscriberCount<PingEvent>();
+                throw new Xunit.Sdk.XunitException(
+                    $"calls={reactor.CallCount} attempts={row.Attempts} processed={row.ProcessedAt} subs={subs} logs={string.Join(" | ", warnings.Lines)}");
+            }
+            Assert.DoesNotContain(
+                warnings.Lines,
+                line => line.Contains("no listener", StringComparison.Ordinal));
+        }
+        finally
+        {
+            await host.StopAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        }
+    }
+
+    private static IHost BuildHost(CountingReactor reactor, bool subscribe, WarningLog? warnings = null)
+    {
+        var builder = Host.CreateApplicationBuilder();
+        builder.Logging.ClearProviders();
+        builder.Logging.SetMinimumLevel(LogLevel.Warning);
+        if (warnings is not null)
+            builder.Logging.AddProvider(warnings);
+
+        builder.Services.Configure<LawnDart.LawnDartOptions>(options => options.RequireTenantId = false);
+        builder.Services.AddInMemoryMessaging();
+        builder.Services.AddMessageTransportOutboxPublisher(typeof(PingEvent));
+        builder.Services.AddSingleton(reactor);
+        builder.Services.AddBoundedContext("default")
+            .WithEventTypes(typeof(PingEvent))
+            .PublishEvents(events => events.Publish<PingEvent>())
+            .UseInMemory(options => options.EnableOutbox = true);
+        if (subscribe)
+            builder.Services.AddReactor<CountingReactor, PingEvent>();
+        return builder.Build();
+    }
+
+    private static InMemoryOutboxWriter Writer(IHost host)
+        => (InMemoryOutboxWriter)host.Services.GetRequiredKeyedService<IOutboxWriter>("default");
+
+    private static OutboxMessage Message(Guid id)
+    {
+        var evt = new PingEvent(Guid.NewGuid(), DateTime.UtcNow);
+        return new OutboxMessage
+        {
+            Id = id,
+            EventType = MessageTypeNames.Require(typeof(PingEvent)),
+            SchemaVersion = 1,
+            CodecId = EventCodec.Json,
+            Payload = JsonSerializer.SerializeToUtf8Bytes(evt, MessagingJson.Options),
+            Metadata = "{}",
+            CreatedAt = DateTime.UtcNow,
+            StreamId = "outbox-host",
+            SequencePosition = 1
+        };
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition)
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while (!condition())
+            await Task.Delay(20, cts.Token);
+    }
+
+    [EventTypeName("outbox-host.ping")]
+    private sealed record PingEvent(Guid Id, DateTime Timestamp) : IEvent;
+
+    private sealed class CountingReactor : IReactor<PingEvent>
+    {
+        private int _calls;
+
+        public InMemoryMessageTransport? Transport { get; set; }
+
+        public int CallCount => Volatile.Read(ref _calls);
+
+        public int SubscribersWhenHandled { get; set; }
+
+        public Func<InMemoryMessageTransport, Task>? OnHandle { get; set; }
+
+        public async Task<IEnumerable<ICommand>> ReactAsync(
+            PingEvent @event,
+            MessageContext context,
+            CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _calls);
+            if (OnHandle is not null && Transport is not null)
+                await OnHandle(Transport);
+            return [];
+        }
+    }
+
+    private sealed class WarningLog : ILoggerProvider, ILogger
+    {
+        private readonly List<string> _lines = [];
+
+        public IReadOnlyList<string> Lines
+        {
+            get
+            {
+                lock (_lines)
+                    return _lines.ToArray();
+            }
+        }
+
+        public ILogger CreateLogger(string categoryName) => this;
+
+        public void Dispose()
+        {
+        }
+
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull => Empty.Instance;
+
+        public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Warning;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel < LogLevel.Warning)
+                return;
+            lock (_lines)
+                _lines.Add(formatter(state, exception));
+        }
+
+        private sealed class Empty : IDisposable
+        {
+            public static readonly Empty Instance = new();
+
+            public void Dispose()
+            {
+            }
+        }
+    }
+}

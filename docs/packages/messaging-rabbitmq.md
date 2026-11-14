@@ -122,11 +122,17 @@ The cancellation token passed to `SubscribeAsync` is the token the handler
 receives. Cancelling it stops that subscription. The in-flight message waits
 on the retry queue for `RetryDelay`. The attempt count does not increase.
 
-A mandatory publish with no queue bound logs a warning and returns. That
-publish is not a successful `messaging.publish.duration` measurement. It
-increments `messaging.publish.errors` with `messaging.publish.outcome` set
-to `unroutable`. Set `UnroutablePublish` to `Throw` when the caller should
-see that failure.
+A listener is a queue bound to the event type. A queue another service owns
+counts. A stopped consumer whose queue still exists still receives. The
+publish is mandatory. When no queue is bound, the broker returns the message.
+
+`UnroutablePublish` defaults to `Throw`. The call throws. The outbox keeps
+the row and tries it again until the attempt limit. Set `UnroutablePublish`
+to `Warn` to log and return. `Warn` does not queue the message, and the
+outbox marks the row processed. A `Warn` publish is not a successful
+`messaging.publish.duration` measurement. It increments
+`messaging.publish.errors` with `messaging.publish.outcome` set to
+`unroutable`.
 
 `OperationTimeout` is how long to wait for automatic connection recovery
 before opening a new connection. The default is 30 seconds. The value must

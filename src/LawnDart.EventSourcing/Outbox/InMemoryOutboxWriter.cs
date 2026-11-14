@@ -17,6 +17,13 @@ public sealed class InMemoryOutboxWriter : IOutboxWriter
     private readonly Dictionary<Guid, DateTime> _claims = [];
     private readonly object _lock = new();
 
+    /// <summary>Copies the messages currently held. Tests read attempt counts after a host run.</summary>
+    internal OutboxMessage[] Snapshot()
+    {
+        lock (_lock)
+            return _messages.ToArray();
+    }
+
     /// <summary>Creates a writer. <paramref name="claimLease"/> defaults to 30 seconds.</summary>
     public InMemoryOutboxWriter(TimeSpan? claimLease = null)
     {

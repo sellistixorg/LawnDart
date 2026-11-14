@@ -23,7 +23,7 @@ namespace LawnDart.Messaging.RabbitMQ;
 /// When dead-letter handling is on, the last failure is nacked to the dead-letter exchange.
 /// When it is off, the message waits and returns to the same queue.
 /// </summary>
-public sealed class RabbitMqMessageTransport : IMessageTransport, IDisposable, IAsyncDisposable
+public sealed class RabbitMqMessageTransport : IMessageTransport, IOutboundListenerProbe, IDisposable, IAsyncDisposable
 {
     /// <summary>Value stored on <see cref="MessageContext.TransportType"/>. The value is <c>RabbitMQ</c>.</summary>
     public const string TransportTypeName = "RabbitMQ";
@@ -173,6 +173,21 @@ public sealed class RabbitMqMessageTransport : IMessageTransport, IDisposable, I
             publish?.SetStatus(ActivityStatusCode.Error, ex.Message);
             throw;
         }
+    }
+
+    async Task<bool> IOutboundListenerProbe.HasListenerAsync(Type messageType, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(messageType);
+        var declaredName = MessageTypeNames.Require(messageType);
+        var exchange = _topicMapper.TopicFor(declaredName);
+        var routingKey = RabbitMqNames.RoutingKey(declaredName);
+        RabbitMqNames.RequireExchange(exchange);
+        RabbitMqNames.RequireRoutingKey(routingKey);
+        var bound = await _connector.QueueIsBoundAsync(exchange, routingKey, cancellationToken).ConfigureAwait(false);
+        if (bound is null)
+            throw new InvalidOperationException(
+                $"Could not read queue bindings for '{declaredName}'.");
+        return bound.Value;
     }
 
     /// <inheritdoc />

@@ -202,23 +202,43 @@ processor tries it again until its own limit (default 10), then marks the
 row with `DeadLetteredAt`. That processor limit is separate from the
 transport flag.
 
-On the in-process transport, the handler runs inside the publish call.
-A publish with no subscriber throws. The outbox keeps the row and tries it
-again. That is what happens when the processor runs before a reactor has
-subscribed. After `MaxDeliveryAttempts` the last exception is thrown, so the
-outbox keeps the row. Set `DeadLetterFailedMessages` to true when the transport
-should park the message and return. The outbox then marks the row processed.
+The outbox processor waits until the host has started every hosted service
+before the first poll. A reactor registered before or after the processor
+is subscribed by then. On shutdown the processor stops publishing before
+listeners unsubscribe. A row that was not published stays unprocessed.
 
-On RabbitMQ, Azure Service Bus, and Amazon SQS, a publish the broker rejects
-throws, and the outbox keeps the row. RabbitMQ's default for a publish that
-reaches no queue is `UnroutablePublish` `Warn`: the call returns, the message
-was not queued, and the outbox marks the row processed. Amazon SQS uses the
-same default when no queue is subscribed to the topic: the call returns, the
-message was not sent, and the outbox marks the row processed. Set
-`UnroutablePublish` to `Throw` when that case should stay on the outbox. A
-handler failure after the broker accepted the message is the transport's
-retry. With the flag left false, that message is not parked. See
-[Message transports](MESSAGE_TRANSPORTS.md).
+On the in-process transport, the handler runs inside the publish call.
+A publish with no in-process subscriber throws. The outbox keeps the row
+and tries it again until the attempt limit (default 10), then marks the
+row with `DeadLetteredAt`. After `MaxDeliveryAttempts` the last handler
+exception is thrown, so the outbox keeps the row. Set
+`DeadLetterFailedMessages` to true when the transport should park the
+message and return. The outbox then marks the row processed.
+
+A listener is one of these:
+
+- In-process: a subscriber registered in this process. When that subscriber
+  stops, the next publish has no listener.
+- RabbitMQ: a queue bound to the event type, so a mandatory publish is not
+  returned. A queue another service owns counts. A stopped consumer whose
+  queue still exists still receives.
+- Amazon SQS: a live queue subscription on the topic. The transport remembers
+  a topic after it has seen a queue there. A queue another service owns
+  counts. A stopped consumer whose queue subscription still exists still
+  receives.
+
+`UnroutablePublish` defaults to `Throw` on RabbitMQ and Amazon SQS. The
+publish throws, and the outbox keeps the row. Set `UnroutablePublish` to
+`Warn` to log and return. `Warn` does not queue the message, and the outbox
+marks the row processed.
+
+Startup logs one warning for each published event type that has no listener.
+The host still starts. The outbox keeps that row and tries it again.
+
+On Azure Service Bus, a publish the broker rejects throws, and the outbox
+keeps the row. A handler failure after the broker accepted the message is
+the transport's retry. With the flag left false, that message is not parked.
+See [Message transports](MESSAGE_TRANSPORTS.md).
 
 Delivery to the transport is at least once. A consumer that must ignore a
 redelivery after a restart stores that fact in SQL Server:

@@ -96,7 +96,7 @@ public class RabbitMqTransportOptionsTests
     {
         Assert.Equal(TimeSpan.FromSeconds(5), new RabbitMqTransportOptions().RetryDelay);
         Assert.Equal(TimeSpan.FromSeconds(30), new RabbitMqTransportOptions().OperationTimeout);
-        Assert.Equal(RabbitMqUnroutablePublish.Warn, new RabbitMqTransportOptions().UnroutablePublish);
+        Assert.Equal(RabbitMqUnroutablePublish.Throw, new RabbitMqTransportOptions().UnroutablePublish);
 
         var options = new RabbitMqTransportOptions { RetryDelay = TimeSpan.Zero };
         var ex = Assert.Throws<InvalidOperationException>(options.EnsureValid);
@@ -130,5 +130,20 @@ public class RabbitMqTransportOptionsTests
         var options = new RabbitMqTransportOptions { HostName = " " };
         var ex = Assert.Throws<InvalidOperationException>(options.EnsureValid);
         Assert.Contains("HostName", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Binding_list_counts_a_queue_for_the_routing_key()
+    {
+        const string json = """
+            [
+              {"destination_type":"exchange","routing_key":"order-placed","destination":"other"},
+              {"destination_type":"queue","routing_key":"order-placed","destination":"billing"}
+            ]
+            """;
+
+        Assert.True(RabbitMqBindingProbe.BindingListHasQueue(json, "order-placed"));
+        Assert.False(RabbitMqBindingProbe.BindingListHasQueue(json, "missing"));
+        Assert.False(RabbitMqBindingProbe.BindingListHasQueue("[]", "order-placed"));
     }
 }

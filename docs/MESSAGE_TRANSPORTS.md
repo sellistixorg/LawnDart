@@ -470,22 +470,39 @@ current delivery, so this cap is separate from `MaxDeliveryAttempts`.
 
 ## Unroutable publish
 
-RabbitMQ publishes as mandatory. `UnroutablePublish` defaults to `Warn`.
-When no queue is bound, the call logs a warning and returns. The broker did
-not queue the message. That publish is not recorded on
-`messaging.publish.duration`. It increments `messaging.publish.errors` with
-`messaging.publish.outcome` set to `unroutable`. The publish span gets that
-tag and status Error. Set `UnroutablePublish` to `Throw` when the caller
-should see that failure. The outbox keeps the row when publish throws. A
+A publish has no listener in these cases:
+
+- In-process: no subscriber is registered for that message type in this process.
+  When the subscriber stops, the next publish has no listener and throws.
+- RabbitMQ: no queue is bound for that event type. The publish is mandatory,
+  and the broker returns it. A queue another service owns counts. A stopped
+  consumer whose queue still exists still receives.
+- Amazon SQS: no live queue is subscribed to the topic. The transport remembers
+  a topic after it has seen a queue there, and it does not ask again for that
+  topic. A queue another service owns counts. A stopped consumer whose queue
+  subscription still exists still receives.
+
+RabbitMQ publishes as mandatory. `UnroutablePublish` defaults to `Throw`.
+When no queue is bound, the call throws. The outbox keeps the row and tries
+it again until the attempt limit. Set `UnroutablePublish` to `Warn` to log
+and return. `Warn` does not queue the message, and the outbox marks the row
+processed. A `Warn` publish is not recorded on `messaging.publish.duration`.
+It increments `messaging.publish.errors` with `messaging.publish.outcome`
+set to `unroutable`. The publish span gets that tag and status Error. A
 thrown publish is a `messaging.publish.errors` count without the unroutable
 outcome tag.
 
-Amazon SQS checks for an SQS subscription before it publishes. When none is
-subscribed, `UnroutablePublish` defaults to `Warn`. The call logs a warning
-and returns. The message was not sent. That publish is not recorded on
-`messaging.publish.duration`. It increments `messaging.publish.errors` with
-`messaging.publish.outcome` set to `unroutable`. Set `UnroutablePublish` to
-`Throw` when the caller should see that failure. The outbox keeps the row
-when publish throws. A thrown publish is a `messaging.publish.errors` count
-without the unroutable outcome tag. SNS would accept a publish that has no
-subscriber and then drop it. The check avoids counting that as success.
+Amazon SQS checks for a queue subscription before it publishes.
+`UnroutablePublish` defaults to `Throw`. When none is subscribed, the call
+throws and the message is not sent. The outbox keeps the row and tries it
+again until the attempt limit. Set `UnroutablePublish` to `Warn` to log and
+return. `Warn` does not send the message, and the outbox marks the row
+processed. A `Warn` publish is not recorded on `messaging.publish.duration`.
+It increments `messaging.publish.errors` with `messaging.publish.outcome`
+set to `unroutable`. A thrown publish is a `messaging.publish.errors` count
+without the unroutable outcome tag. The topic service would accept a publish
+that has no subscriber and then drop it. The check avoids counting that as
+success.
+
+Startup logs one warning for each published event type that has no listener.
+The host still starts. See [Outbox](OUTBOX_PATTERN.md).

@@ -22,6 +22,13 @@ internal sealed class RabbitMqConnector : IDisposable, IAsyncDisposable
         _options = options;
     }
 
+    /// <summary>
+    /// True when a queue is bound to <paramref name="routingKey"/> on <paramref name="exchange"/>.
+    /// Null when the broker's binding list cannot be read.
+    /// </summary>
+    public Task<bool?> QueueIsBoundAsync(string exchange, string routingKey, CancellationToken cancellationToken)
+        => RabbitMqBindingProbe.QueueIsBoundAsync(_options, exchange, routingKey, cancellationToken);
+
     public Task DeclareExchangeAsync(string exchange, CancellationToken cancellationToken)
         => DeclareOnceAsync(
             "exchange\n" + exchange,

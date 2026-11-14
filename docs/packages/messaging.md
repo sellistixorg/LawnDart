@@ -34,6 +34,15 @@ services.AddTaskProcessor<OverdueRegistrationProcessor>();
 Reactors and processors require `[EventTypeName]` on the event. Host startup
 fails when the attribute is missing. The message type is that token.
 
+The outbox processor waits until the host has started every hosted service
+before it publishes. It stops publishing when the host starts shutting down,
+before listeners unsubscribe. Startup logs a warning for each published
+event type that has no listener. The host still starts. The outbox keeps
+that row and tries it again until the attempt limit. An in-process listener
+is a subscriber in this process. A broker listener is a queue that can
+receive the message, including a queue another service owns and a queue
+whose consumer is stopped.
+
 `MessagingJson.Options` is the JSON setting for message bodies and the outbox
 publisher. Property names are PascalCase. Reads ignore case. Null values are
 omitted.

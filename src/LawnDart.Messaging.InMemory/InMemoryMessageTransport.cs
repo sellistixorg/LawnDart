@@ -15,7 +15,7 @@ namespace LawnDart.Messaging.InMemory;
 /// The last failure is thrown unless <see cref="MessageTransportOptions.DeadLetterFailedMessages"/> is true.
 /// Concurrency and prefetch are validated at startup and do not parallelize this transport.
 /// </summary>
-public sealed class InMemoryMessageTransport : IMessageTransport
+public sealed class InMemoryMessageTransport : IMessageTransport, IOutboundListenerProbe
 {
     private readonly ConcurrentDictionary<Type, List<Delegate>> _handlers = new();
     private readonly ILogger<InMemoryMessageTransport> _logger;
@@ -118,6 +118,16 @@ public sealed class InMemoryMessageTransport : IMessageTransport
             declaredName, messageId);
         return new InvalidOperationException(
             $"No subscriber is registered for '{declaredName}'. The message was not published.");
+    }
+
+    Task<bool> IOutboundListenerProbe.HasListenerAsync(Type messageType, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(messageType);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!_handlers.TryGetValue(messageType, out var handlers))
+            return Task.FromResult(false);
+        lock (handlers)
+            return Task.FromResult(handlers.Count > 0);
     }
 
     /// <summary>

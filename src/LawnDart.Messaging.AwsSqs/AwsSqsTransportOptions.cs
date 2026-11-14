@@ -7,12 +7,12 @@ namespace LawnDart.Messaging.AwsSqs;
 public enum AwsSqsUnroutablePublish
 {
     /// <summary>
-    /// Log a warning and return. The publish is not recorded as a success.
+    /// Log a warning and return. The message is not sent. An outbox row is marked processed.
     /// </summary>
     Warn = 0,
 
     /// <summary>
-    /// Throw. The caller, including the outbox, still has the message.
+    /// Throw. The message is not sent. An outbox row stays unprocessed. This is the default.
     /// </summary>
     Throw = 1,
 }
@@ -118,10 +118,12 @@ public sealed class AwsSqsTransportOptions : MessageTransportOptions
 
     /// <summary>
     /// What to do when no SQS queue is subscribed to the topic.
-    /// Defaults to <see cref="AwsSqsUnroutablePublish.Warn"/>.
-    /// The call does not record a successful publish in either mode.
+    /// Defaults to <see cref="AwsSqsUnroutablePublish.Throw"/>.
+    /// Set <see cref="AwsSqsUnroutablePublish.Warn"/> to log and return.
+    /// <see cref="AwsSqsUnroutablePublish.Warn"/> marks an outbox row processed.
+    /// The call does not record a successful publish in either mode when the message is not sent.
     /// </summary>
-    public AwsSqsUnroutablePublish UnroutablePublish { get; set; } = AwsSqsUnroutablePublish.Warn;
+    public AwsSqsUnroutablePublish UnroutablePublish { get; set; } = AwsSqsUnroutablePublish.Throw;
 
     /// <summary>
     /// Checks the shared settings and the SQS settings.

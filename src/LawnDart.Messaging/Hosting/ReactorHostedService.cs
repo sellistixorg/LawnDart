@@ -27,6 +27,8 @@ public sealed class ReactorHostedService<TReactor, TEvent> : BackgroundService
 
     private static readonly string ReactorTypeName = typeof(TReactor).Name;
     private string _eventTypeName = "";
+    private CancellationTokenSource? _subscriptionStop;
+    private Task? _subscription;
 
     public ReactorHostedService(
         TReactor reactor,
@@ -78,11 +80,26 @@ public sealed class ReactorHostedService<TReactor, TEvent> : BackgroundService
             throw;
         }
 
+        // Subscribe before StartAsync returns. BackgroundService runs ExecuteAsync
+        // on another thread, after the host may already have started.
+        _subscriptionStop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _subscription = _transport.SubscribeAsync<TEvent>(HandleAsync, _subscriptionStop.Token);
         return base.StartAsync(cancellationToken);
     }
 
+    /// <summary>Stops the subscription before the base service stops.</summary>
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        if (_subscriptionStop is not null)
+        {
+            await _subscriptionStop.CancelAsync().ConfigureAwait(false);
+        }
+
+        await base.StopAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
-        => _transport.SubscribeAsync<TEvent>(HandleAsync, stoppingToken);
+        => _subscription ?? Task.CompletedTask;
 
     private async Task HandleAsync(TEvent @event, MessageContext context, CancellationToken ct)
     {

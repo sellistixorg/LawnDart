@@ -85,12 +85,13 @@ Package: `LawnDart.Messaging`.
 | `messaging.deadlettered` | Counter of long | `count` | `messaging.message_type`, `messaging.subscription_name` |
 
 `messaging.publish.duration` is recorded when a publish finishes and the
-broker accepted it. A RabbitMQ publish in `UnroutablePublish` `Warn` mode
-that reached no queue is not recorded there. An Amazon SQS publish in
-`UnroutablePublish` `Warn` mode that found no queue subscription is not
-recorded there either. Those publishes increment `messaging.publish.errors`
-with `messaging.publish.outcome` set to `unroutable`. A publish that throws
-increments the same counter with `messaging.message_type` only.
+broker accepted it. `UnroutablePublish` defaults to `Throw`. A publish in
+`Warn` mode that reached no queue is not recorded on the duration histogram.
+That includes a mandatory publish the broker returned and a topic publish
+that found no queue subscription. Those publishes increment
+`messaging.publish.errors` with `messaging.publish.outcome` set to
+`unroutable`. A publish that throws increments the same counter with
+`messaging.message_type` only.
 
 `messaging.deferred` counts a delivery that waited because its handler was
 not subscribed yet. Azure Service Bus and Amazon SQS do this for a recorded

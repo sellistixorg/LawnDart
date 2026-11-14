@@ -19,7 +19,12 @@ public class OutboxProcessor : BackgroundService
     private readonly int _batchSize;
     private readonly int _maxAttempts;
     private readonly NewEventsSignal? _newEvents;
-    
+    private readonly IHostApplicationLifetime? _lifetime;
+    private readonly OutboxSendBarrier? _barrier;
+    private readonly CancellationTokenSource _sendStop = new();
+    private readonly TaskCompletionSource _sendIdle = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private int _loopEntered;
+
     /// <summary>
     /// Initializes a new instance of the OutboxProcessor.
     /// </summary>
@@ -42,40 +47,122 @@ public class OutboxProcessor : BackgroundService
         int batchSize = 100,
         int maxAttempts = 10,
         NewEventsSignal? newEvents = null)
+        : this(outboxWriter, outboxPublisher, logger, null, null, pollingInterval, batchSize, maxAttempts, newEvents)
+    {
+    }
+
+    /// <summary>
+    /// Host registration. Waits until every hosted service has started, then publishes.
+    /// Stops publishing when the host begins to shut down, before other hosted services stop.
+    /// </summary>
+    internal OutboxProcessor(
+        IOutboxWriter outboxWriter,
+        IOutboxPublisher outboxPublisher,
+        ILogger<OutboxProcessor> logger,
+        IHostApplicationLifetime? lifetime,
+        OutboxSendBarrier? barrier,
+        TimeSpan? pollingInterval = null,
+        int batchSize = 100,
+        int maxAttempts = 10,
+        NewEventsSignal? newEvents = null)
     {
         _outboxWriter = outboxWriter ?? throw new ArgumentNullException(nameof(outboxWriter));
         _outboxPublisher = outboxPublisher ?? throw new ArgumentNullException(nameof(outboxPublisher));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _lifetime = lifetime;
+        _barrier = barrier;
         _pollingInterval = pollingInterval ?? TimeSpan.FromSeconds(5);
         _batchSize = batchSize;
         _maxAttempts = maxAttempts;
         _newEvents = newEvents;
+        lifetime?.ApplicationStopping.Register(StopBeforeListeners);
     }
-    
+
     /// <inheritdoc/>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Outbox processor starting");
-        
-        while (!stoppingToken.IsCancellationRequested)
+        Interlocked.Exchange(ref _loopEntered, 1);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, _sendStop.Token);
+        var send = linked.Token;
+        try
         {
-            var ticket = _newEvents?.TakeTicket();
-            try
-            {
-                await ProcessBatchAsync(stoppingToken).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error processing outbox batch");
-            }
+            if (_lifetime is not null)
+                await WaitForHostStartAsync(_lifetime, send).ConfigureAwait(false);
+            if (_barrier is not null)
+                await _barrier.WaitAsync(send).ConfigureAwait(false);
 
-            if (_newEvents is { } signal && ticket is { } since)
-                await signal.WaitAsync(since, _pollingInterval, stoppingToken).ConfigureAwait(false);
-            else
-                await Task.Delay(_pollingInterval, stoppingToken).ConfigureAwait(false);
+            _logger.LogInformation("Outbox processor starting");
+
+            while (!send.IsCancellationRequested)
+            {
+                var ticket = _newEvents?.TakeTicket();
+                try
+                {
+                    // Finish the batch already in hand. Shutdown must not cancel it,
+                    // because listeners are still subscribed until this method goes idle.
+                    await ProcessBatchAsync(_lifetime is null ? send : CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogError(ex, "Error processing outbox batch");
+                }
+
+                if (send.IsCancellationRequested)
+                    break;
+
+                try
+                {
+                    if (_newEvents is { } signal && ticket is { } since)
+                        await signal.WaitAsync(since, _pollingInterval, send).ConfigureAwait(false);
+                    else
+                        await Task.Delay(_pollingInterval, send).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (send.IsCancellationRequested)
+                {
+                    break;
+                }
+            }
         }
-        
-        _logger.LogInformation("Outbox processor stopping");
+        catch (OperationCanceledException) when (send.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            _sendIdle.TrySetResult();
+            _logger.LogInformation("Outbox processor stopping");
+        }
+    }
+
+    private static async Task WaitForHostStartAsync(IHostApplicationLifetime lifetime, CancellationToken cancellationToken)
+    {
+        if (lifetime.ApplicationStarted.IsCancellationRequested)
+            return;
+
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var ready = lifetime.ApplicationStarted.Register(() => started.TrySetResult());
+        using var cancel = cancellationToken.Register(() => started.TrySetCanceled(cancellationToken));
+        if (lifetime.ApplicationStarted.IsCancellationRequested)
+            started.TrySetResult();
+        await started.Task.ConfigureAwait(false);
+    }
+
+    private void StopBeforeListeners()
+    {
+        _sendStop.Cancel();
+        if (Volatile.Read(ref _loopEntered) == 0 || _sendIdle.Task.IsCompleted)
+            return;
+
+        try
+        {
+            if (!_sendIdle.Task.Wait(TimeSpan.FromSeconds(30)))
+            {
+                _logger.LogDebug("Outbox processor was still publishing when the host stopped listeners.");
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogDebug(ex, "Outbox processor was still publishing when the host stopped listeners.");
+        }
     }
     
     /// <summary>

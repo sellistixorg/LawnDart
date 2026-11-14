@@ -149,14 +149,20 @@ send. Over that limit the call throws `AwsSqsMessageTooLargeException`.
 A retry that cannot be sent is dead-lettered when that handling is on.
 When it is off, the message is deleted and logged. It is not sent again.
 
-A publish the service rejects is counted as a publish error. The duration
-histogram records a publish after SNS accepts it. When no queue is subscribed,
-the default `UnroutablePublish` is `Warn`: the call logs a warning and returns,
-and the message was not sent. That publish is not recorded on
-`messaging.publish.duration`. It increments `messaging.publish.errors` with
-`messaging.publish.outcome` set to `unroutable`. Set `UnroutablePublish` to
-`Throw` when the caller should see that failure. The caller sees the
-exception, so an outbox row stays for another try.
+A listener is a live queue subscription on the topic. A queue another
+service owns counts. A stopped consumer whose queue subscription still
+exists still receives. The transport remembers a topic after it has seen a
+queue there, and it does not ask again for that topic.
+
+`UnroutablePublish` defaults to `Throw`. When no queue is subscribed, the
+call throws and the message is not sent. The outbox keeps the row and tries
+it again until the attempt limit. Set `UnroutablePublish` to `Warn` to log
+and return. `Warn` does not send the message, and the outbox marks the row
+processed. A publish the service rejects is counted as a publish error. The
+duration histogram records a publish after the topic accepts it. A `Warn`
+publish is not recorded on `messaging.publish.duration`. It increments
+`messaging.publish.errors` with `messaging.publish.outcome` set to
+`unroutable`.
 
 Publish and consume durations are recorded on the `LawnDart.Messaging` meter.
 Consume spans carry `messaging.sns.topic`, `messaging.sqs.queue`,
