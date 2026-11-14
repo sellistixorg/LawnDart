@@ -65,7 +65,10 @@ Return false when the key was processed inside
 inside `InboxClaimLease` (default 30 seconds). `ReleaseClaimAsync` deletes
 a claim that has not been marked processed. Leave a processed key in
 place. Hosted reactors and processors claim before the handler and
-release when the handler throws.
+release when the handler throws. A hosted reactor skips a message only
+when that message was already processed. When another attempt still holds
+the claim, handling throws. The outbox keeps the row and tries again after
+the claim lease ends.
 
 `IEventStore` and `IEventLog` have the same members as 0.6.0-alpha.2.
 `QueryResult.TypesResolved` and `EventLogQueryResult.TypesResolved`

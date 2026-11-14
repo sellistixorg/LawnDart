@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using LawnDart.Messaging.Telemetry;
@@ -17,7 +18,8 @@ public sealed class ReactorHostedService<TReactor, TEvent> : BackgroundService
     where TReactor : class, IReactor<TEvent>
     where TEvent : class, IEvent
 {
-    private readonly TReactor _reactor;
+    private readonly TReactor? _reactor;
+    private readonly IServiceScopeFactory? _scopeFactory;
     private readonly IMessageTransport _transport;
     private readonly IInboxStore _inboxStore;
     private readonly ICommandDispatcher? _commandDispatcher;
@@ -38,6 +40,22 @@ public sealed class ReactorHostedService<TReactor, TEvent> : BackgroundService
         _inboxStore = inboxStore;
         _logger = logger;
         _commandDispatcher = commandDispatcher;
+    }
+
+    /// <summary>
+    /// Creates a host that resolves <typeparamref name="TReactor"/> from a new scope for each message.
+    /// The scope is disposed when handling finishes.
+    /// </summary>
+    internal ReactorHostedService(
+        IServiceScopeFactory scopeFactory,
+        IMessageTransport transport,
+        IInboxStore inboxStore,
+        ILogger<ReactorHostedService<TReactor, TEvent>> logger)
+    {
+        _scopeFactory = scopeFactory;
+        _transport = transport;
+        _inboxStore = inboxStore;
+        _logger = logger;
     }
 
     /// <summary>
@@ -77,26 +95,49 @@ public sealed class ReactorHostedService<TReactor, TEvent> : BackgroundService
             claimed = await _inboxStore.TryClaimAsync(inboxKey, ct).ConfigureAwait(false);
             if (!claimed)
             {
-                MessagingTelemetry.RecordInboxDuplicate(_eventTypeName);
-                _logger.LogDebug(
-                    "Reactor {Reactor} skipping duplicate message {MessageId} for event {EventType}",
-                    ReactorTypeName, messageId, _eventTypeName);
-                return;
+                if (await _inboxStore.IsProcessedAsync(inboxKey, ct).ConfigureAwait(false))
+                {
+                    MessagingTelemetry.RecordInboxDuplicate(_eventTypeName);
+                    _logger.LogDebug(
+                        "Reactor {Reactor} skipping duplicate message {MessageId} for event {EventType}",
+                        ReactorTypeName, messageId, _eventTypeName);
+                    return;
+                }
+
+                throw new InvalidOperationException(
+                    $"Reactor {ReactorTypeName} could not claim message '{messageId}' for '{_eventTypeName}'. Another attempt still holds the claim.");
             }
         }
 
+        AsyncServiceScope scope = default;
+        var scoped = false;
         using var activity = ReactorTelemetry.StartHandle(ReactorTypeName, _eventTypeName, context);
         var start = TimeProvider.System.GetTimestamp();
 
         try
         {
-            var commands = (await _reactor.ReactAsync(@event, context, ct).ConfigureAwait(false)).ToList();
+            TReactor reactor;
+            ICommandDispatcher? dispatcher;
+            if (_scopeFactory is not null)
+            {
+                scope = _scopeFactory.CreateAsyncScope();
+                scoped = true;
+                reactor = scope.ServiceProvider.GetRequiredService<TReactor>();
+                dispatcher = scope.ServiceProvider.GetService<ICommandDispatcher>();
+            }
+            else
+            {
+                reactor = _reactor!;
+                dispatcher = _commandDispatcher;
+            }
 
-            if (_commandDispatcher is not null)
+            var commands = (await reactor.ReactAsync(@event, context, ct).ConfigureAwait(false)).ToList();
+
+            if (dispatcher is not null)
             {
                 foreach (var command in commands)
                 {
-                    await _commandDispatcher.DispatchAsync(command, context.CreateChild(), ct).ConfigureAwait(false);
+                    await dispatcher.DispatchAsync(command, context.CreateChild(), ct).ConfigureAwait(false);
                 }
             }
             else if (commands.Count > 0)
@@ -138,6 +179,11 @@ public sealed class ReactorHostedService<TReactor, TEvent> : BackgroundService
                 "Reactor {Reactor} failed while handling {EventType} (MessageId={MessageId})",
                 ReactorTypeName, _eventTypeName, messageId);
             throw;
+        }
+        finally
+        {
+            if (scoped)
+                await scope.DisposeAsync().ConfigureAwait(false);
         }
     }
 }

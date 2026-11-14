@@ -43,6 +43,8 @@ A RabbitMQ host calls `AddRabbitMqTransport` with the same `AddReactor`
 line. An Azure Service Bus host calls `AddAzureServiceBusTransport`.
 
 `AddReactor` registers a hosted service that pulls from `IMessageTransport`.
+Each message is handled in its own scope. A scoped service the reactor takes
+is created for that message and disposed when handling finishes.
 The event type must declare `[EventTypeName]`. Host startup fails when that
 attribute is missing. The message type is that token.
 You can also call the reactor directly to see the command it emits:

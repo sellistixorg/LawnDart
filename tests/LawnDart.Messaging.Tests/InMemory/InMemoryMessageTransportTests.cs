@@ -43,13 +43,14 @@ public class InMemoryMessageTransportTests
     }
 
     [Fact]
-    public async Task PublishAsync_WithNoSubscribers_DoesNotThrow()
+    public async Task PublishAsync_WithNoSubscribers_Throws()
     {
         var context = MessageContext.New();
         var @event = new OrderPlacedEvent(Guid.NewGuid(), DateTime.UtcNow, "order-1");
 
-        var ex = await Record.ExceptionAsync(() => _transport.PublishAsync(@event, context));
-        Assert.Null(ex);
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => _transport.PublishAsync(@event, context));
+        Assert.Contains("subscriber", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("test-types.order-placed-event", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -94,9 +95,9 @@ public class InMemoryMessageTransportTests
         await cts.CancelAsync();
         await subscriptionTask;
 
-        // Publish after cancellation — handler should not fire.
-        await _transport.PublishAsync(
-            new OrderPlacedEvent(Guid.NewGuid(), DateTime.UtcNow, "y"), MessageContext.New());
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => _transport.PublishAsync(
+            new OrderPlacedEvent(Guid.NewGuid(), DateTime.UtcNow, "y"), MessageContext.New()));
+        Assert.Contains("subscriber", ex.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(1, callCount);
     }
 

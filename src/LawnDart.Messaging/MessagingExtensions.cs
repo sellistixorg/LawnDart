@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using LawnDart.Messaging.Hosting;
 using LawnDart.Patterns.EventProcessing;
@@ -54,6 +55,7 @@ public static class MessagingExtensions
     /// Registers a reactor and its hosting infrastructure.
     /// The reactor is invoked for each <typeparamref name="TEvent"/> message received
     /// from the registered <see cref="IMessageTransport"/>.
+    /// Each message is handled in a new scope, which is disposed when handling finishes.
     /// </summary>
     /// <typeparam name="TReactor">The reactor implementation.</typeparam>
     /// <typeparam name="TEvent">The event type the reactor handles.</typeparam>
@@ -63,7 +65,11 @@ public static class MessagingExtensions
     {
         services.TryAddTransient<TReactor>();
         services.AddSingleton(new MessageSubscription(typeof(TEvent)));
-        services.AddHostedService<ReactorHostedService<TReactor, TEvent>>();
+        services.AddHostedService(sp => new ReactorHostedService<TReactor, TEvent>(
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            sp.GetRequiredService<IMessageTransport>(),
+            sp.GetRequiredService<IInboxStore>(),
+            sp.GetRequiredService<ILogger<ReactorHostedService<TReactor, TEvent>>>()));
         return services;
     }
 

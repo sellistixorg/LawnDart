@@ -203,8 +203,10 @@ row with `DeadLetteredAt`. That processor limit is separate from the
 transport flag.
 
 On the in-process transport, the handler runs inside the publish call.
-After `MaxDeliveryAttempts` the last exception is thrown, so the outbox
-keeps the row. Set `DeadLetterFailedMessages` to true when the transport
+A publish with no subscriber throws. The outbox keeps the row and tries it
+again. That is what happens when the processor runs before a reactor has
+subscribed. After `MaxDeliveryAttempts` the last exception is thrown, so the
+outbox keeps the row. Set `DeadLetterFailedMessages` to true when the transport
 should park the message and return. The outbox then marks the row processed.
 
 On RabbitMQ, Azure Service Bus, and Amazon SQS, a publish the broker rejects
