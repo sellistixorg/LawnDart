@@ -20,10 +20,8 @@ public class OutboxProcessor : BackgroundService
     private readonly int _maxAttempts;
     private readonly NewEventsSignal? _newEvents;
     private readonly IHostApplicationLifetime? _lifetime;
-    private readonly OutboxSendBarrier? _barrier;
     private readonly CancellationTokenSource _sendStop = new();
     private readonly TaskCompletionSource _sendIdle = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private int _loopEntered;
 
     /// <summary>
     /// Initializes a new instance of the OutboxProcessor.
@@ -47,20 +45,18 @@ public class OutboxProcessor : BackgroundService
         int batchSize = 100,
         int maxAttempts = 10,
         NewEventsSignal? newEvents = null)
-        : this(outboxWriter, outboxPublisher, logger, null, null, pollingInterval, batchSize, maxAttempts, newEvents)
+        : this(outboxWriter, outboxPublisher, logger, null, pollingInterval, batchSize, maxAttempts, newEvents)
     {
     }
 
     /// <summary>
     /// Host registration. Waits until every hosted service has started, then publishes.
-    /// Stops publishing when the host begins to shut down, before other hosted services stop.
     /// </summary>
     internal OutboxProcessor(
         IOutboxWriter outboxWriter,
         IOutboxPublisher outboxPublisher,
         ILogger<OutboxProcessor> logger,
         IHostApplicationLifetime? lifetime,
-        OutboxSendBarrier? barrier,
         TimeSpan? pollingInterval = null,
         int batchSize = 100,
         int maxAttempts = 10,
@@ -70,26 +66,52 @@ public class OutboxProcessor : BackgroundService
         _outboxPublisher = outboxPublisher ?? throw new ArgumentNullException(nameof(outboxPublisher));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _lifetime = lifetime;
-        _barrier = barrier;
         _pollingInterval = pollingInterval ?? TimeSpan.FromSeconds(5);
         _batchSize = batchSize;
         _maxAttempts = maxAttempts;
         _newEvents = newEvents;
-        lifetime?.ApplicationStopping.Register(StopBeforeListeners);
+    }
+
+    /// <summary>Stops the loop from starting another row. The current row finishes.</summary>
+    internal void RequestStop()
+    {
+        try
+        {
+            _sendStop.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }
+
+    /// <summary>
+    /// Completes when the loop is idle, or when <paramref name="cancellationToken"/> fires.
+    /// A fired token is the host shutdown timeout. The current row is left running.
+    /// </summary>
+    internal async Task WaitUntilIdleAsync(CancellationToken cancellationToken)
+    {
+        if (_sendIdle.Task.IsCompleted)
+            return;
+
+        try
+        {
+            await _sendIdle.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogWarning("Outbox processor was still publishing when the host shutdown timed out.");
+        }
     }
 
     /// <inheritdoc/>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        Interlocked.Exchange(ref _loopEntered, 1);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, _sendStop.Token);
         var send = linked.Token;
         try
         {
             if (_lifetime is not null)
                 await WaitForHostStartAsync(_lifetime, send).ConfigureAwait(false);
-            if (_barrier is not null)
-                await _barrier.WaitAsync(send).ConfigureAwait(false);
 
             _logger.LogInformation("Outbox processor starting");
 
@@ -98,11 +120,13 @@ public class OutboxProcessor : BackgroundService
                 var ticket = _newEvents?.TakeTicket();
                 try
                 {
-                    // Finish the batch already in hand. Shutdown must not cancel it,
-                    // because listeners are still subscribed until this method goes idle.
-                    await ProcessBatchAsync(_lifetime is null ? send : CancellationToken.None).ConfigureAwait(false);
+                    await ProcessBatchAsync(send).ConfigureAwait(false);
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException)
+                catch (OperationCanceledException) when (send.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception ex)
                 {
                     _logger.LogError(ex, "Error processing outbox batch");
                 }
@@ -129,6 +153,7 @@ public class OutboxProcessor : BackgroundService
         finally
         {
             _sendIdle.TrySetResult();
+            _sendStop.Dispose();
             _logger.LogInformation("Outbox processor stopping");
         }
     }
@@ -146,70 +171,55 @@ public class OutboxProcessor : BackgroundService
         await started.Task.ConfigureAwait(false);
     }
 
-    private void StopBeforeListeners()
-    {
-        _sendStop.Cancel();
-        if (Volatile.Read(ref _loopEntered) == 0 || _sendIdle.Task.IsCompleted)
-            return;
-
-        try
-        {
-            if (!_sendIdle.Task.Wait(TimeSpan.FromSeconds(30)))
-            {
-                _logger.LogDebug("Outbox processor was still publishing when the host stopped listeners.");
-            }
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _logger.LogDebug(ex, "Outbox processor was still publishing when the host stopped listeners.");
-        }
-    }
-    
     /// <summary>
     /// Processes a batch of outbox messages.
+    /// A stop requested through <paramref name="cancellationToken"/> finishes the current row
+    /// and leaves later rows unprocessed.
     /// </summary>
-    private async Task ProcessBatchAsync(CancellationToken cancellationToken)
+    internal async Task ProcessBatchAsync(CancellationToken cancellationToken)
     {
         var messages = await _outboxWriter.GetUnprocessedAsync(_batchSize, cancellationToken).ConfigureAwait(false);
-        
+
         if (messages.Count == 0)
-        {
             return;
-        }
-        
+
         _logger.LogDebug("Processing {Count} outbox messages", messages.Count);
-        
+
         foreach (var message in messages)
         {
+            if (cancellationToken.IsCancellationRequested || _sendStop.IsCancellationRequested)
+                return;
+
             if (message.Attempts >= _maxAttempts)
             {
                 _logger.LogWarning(
                     "Outbox message {MessageId} has exceeded max attempts ({MaxAttempts}), dead-lettering",
                     message.Id, _maxAttempts);
                 OutboxTelemetry.RecordDeadLettered(message.EventType);
-                await _outboxWriter.MarkAsDeadLetteredAsync(message.Id, cancellationToken).ConfigureAwait(false);
+                await _outboxWriter.MarkAsDeadLetteredAsync(message.Id, CancellationToken.None).ConfigureAwait(false);
                 continue;
             }
-            
+
             try
             {
-                await _outboxPublisher.PublishAsync(message, cancellationToken).ConfigureAwait(false);
-                await _outboxWriter.MarkAsProcessedAsync(message.Id, cancellationToken).ConfigureAwait(false);
-                
+                // The current row runs to completion. Shutdown cancels the next row, not this one.
+                await _outboxPublisher.PublishAsync(message, CancellationToken.None).ConfigureAwait(false);
+                await _outboxWriter.MarkAsProcessedAsync(message.Id, CancellationToken.None).ConfigureAwait(false);
+
                 _logger.LogDebug("Successfully published outbox message {MessageId}", message.Id);
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to publish outbox message {MessageId}", message.Id);
                 OutboxTelemetry.RecordPublishFailure(message.EventType);
-                await _outboxWriter.RecordFailureAsync(message.Id, ex.Message, cancellationToken).ConfigureAwait(false);
+                await _outboxWriter.RecordFailureAsync(message.Id, ex.Message, CancellationToken.None).ConfigureAwait(false);
                 if (message.Attempts + 1 >= _maxAttempts)
                 {
                     _logger.LogWarning(
                         "Outbox message {MessageId} reached max attempts ({MaxAttempts}), dead-lettering",
                         message.Id, _maxAttempts);
                     OutboxTelemetry.RecordDeadLettered(message.EventType);
-                    await _outboxWriter.MarkAsDeadLetteredAsync(message.Id, cancellationToken).ConfigureAwait(false);
+                    await _outboxWriter.MarkAsDeadLetteredAsync(message.Id, CancellationToken.None).ConfigureAwait(false);
                 }
             }
         }

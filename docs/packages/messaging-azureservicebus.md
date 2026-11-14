@@ -49,6 +49,10 @@ handles, and the processor gives each message to the handler for that type.
 `SetupTopology` true runs the same creation at startup for every event
 type recorded by `AddReactor` and `AddEventProcessor`.
 
+Startup does not list subscriptions for Azure Service Bus. The host logs
+that the listener check is not available for this transport and continues.
+A publish the broker rejects throws, and the outbox keeps the row.
+
 A topic is 1 to 260 characters. A subscription name is 1 to 50. Both use
 letters, digits, periods, hyphens, and underscores, and start and end with
 a letter or digit. A SQL filter is at most 1024 characters. Topic mapping

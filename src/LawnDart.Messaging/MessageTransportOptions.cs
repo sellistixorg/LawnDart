@@ -44,6 +44,15 @@ public class MessageTransportOptions
     public bool SetupTopology { get; set; }
 
     /// <summary>
+    /// What startup does when a declared published type has no listener.
+    /// Defaults to <see cref="MissingListenerBehavior.Warn"/>.
+    /// <see cref="MissingListenerBehavior.Throw"/> stops host startup only when the check
+    /// finds a type with no listener. When the transport cannot report listeners,
+    /// or the check fails to read them, startup logs that and continues.
+    /// </summary>
+    public MissingListenerBehavior OnMissingListenerAtStartup { get; set; } = MissingListenerBehavior.Warn;
+
+    /// <summary>
     /// Maps a declared message type name to the topic or exchange that carries it.
     /// Defaults to <see cref="DeclaredTypeTopicMapper"/>, so each type has its own topic.
     /// RabbitMQ, Azure Service Bus, and Amazon SQS read this when they publish, subscribe, and set up topology.
@@ -80,6 +89,12 @@ public class MessageTransportOptions
         {
             throw new InvalidOperationException(
                 "MessageTransportOptions.MaxDeliveryAttempts must be at least 1.");
+        }
+
+        if (!Enum.IsDefined(OnMissingListenerAtStartup))
+        {
+            throw new InvalidOperationException(
+                "MessageTransportOptions.OnMissingListenerAtStartup is not a known value.");
         }
     }
 }

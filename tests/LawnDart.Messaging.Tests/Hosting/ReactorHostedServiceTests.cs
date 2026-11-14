@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using LawnDart.Messaging;
@@ -117,6 +118,98 @@ public class ReactorHostedServiceTests
 
         await cts.CancelAsync();
         await service.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Scope_is_disposed_when_the_reactor_throws()
+    {
+        var marker = new ScopeMarker();
+        var transport = new InMemoryMessageTransport(NullLogger<InMemoryMessageTransport>.Instance);
+        var inbox = new InMemoryInboxStore(Options.Create(new MessagingOptions()));
+        var services = new ServiceCollection();
+        services.AddScoped(_ => marker);
+        services.AddScoped<ThrowingReactor>();
+        using var provider = services.BuildServiceProvider();
+        var service = new ReactorHostedService<ThrowingReactor, OrderPlacedEvent>(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            transport,
+            inbox,
+            NullLogger<ReactorHostedService<ThrowingReactor, OrderPlacedEvent>>.Instance);
+        using var cts = new CancellationTokenSource();
+        await service.StartAsync(cts.Token);
+        Assert.Equal(1, transport.SubscriberCount<OrderPlacedEvent>());
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => transport.PublishAsync(
+            new OrderPlacedEvent(Guid.NewGuid(), DateTime.UtcNow, "scope"),
+            new MessageContext { MessageId = "scope-1" }));
+
+        Assert.Equal("react failed", ex.Message);
+        Assert.True(marker.Seen);
+        Assert.True(marker.Disposed > 0);
+
+        await cts.CancelAsync();
+        await service.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Scope_dispose_failure_does_not_hide_the_reactor_exception()
+    {
+        var marker = new ScopeMarker { ThrowOnDispose = true };
+        var transport = new InMemoryMessageTransport(NullLogger<InMemoryMessageTransport>.Instance);
+        var inbox = new InMemoryInboxStore(Options.Create(new MessagingOptions()));
+        var services = new ServiceCollection();
+        services.AddScoped(_ => marker);
+        services.AddScoped<ThrowingReactor>();
+        using var provider = services.BuildServiceProvider();
+        var service = new ReactorHostedService<ThrowingReactor, OrderPlacedEvent>(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            transport,
+            inbox,
+            NullLogger<ReactorHostedService<ThrowingReactor, OrderPlacedEvent>>.Instance);
+        using var cts = new CancellationTokenSource();
+        await service.StartAsync(cts.Token);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => transport.PublishAsync(
+            new OrderPlacedEvent(Guid.NewGuid(), DateTime.UtcNow, "scope"),
+            new MessageContext { MessageId = "scope-2" }));
+
+        Assert.Equal("react failed", ex.Message);
+
+        await cts.CancelAsync();
+        await service.StopAsync(CancellationToken.None);
+    }
+
+    private sealed class ScopeMarker : IAsyncDisposable
+    {
+        public bool Seen { get; set; }
+
+        public bool ThrowOnDispose { get; init; }
+
+        public int Disposed { get; private set; }
+
+        public ValueTask DisposeAsync()
+        {
+            Disposed++;
+            if (ThrowOnDispose)
+                throw new InvalidOperationException("dispose failed");
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class ThrowingReactor : IReactor<OrderPlacedEvent>
+    {
+        private readonly ScopeMarker _marker;
+
+        public ThrowingReactor(ScopeMarker marker) => _marker = marker;
+
+        public Task<IEnumerable<ICommand>> ReactAsync(
+            OrderPlacedEvent @event,
+            MessageContext context,
+            CancellationToken cancellationToken = default)
+        {
+            _marker.Seen = true;
+            throw new InvalidOperationException("react failed");
+        }
     }
 
     private static async Task WaitForCountingSubscriberAsync(InMemoryMessageTransport transport)

@@ -66,19 +66,32 @@ public sealed class EventProcessorHostedService<TProcessor, TEvent> : Background
         return base.StartAsync(cancellationToken);
     }
 
-    /// <summary>Stops the subscription before the base service stops.</summary>
-    public override async Task StopAsync(CancellationToken cancellationToken)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (_subscriptionStop is not null)
+        if (_subscription is null || _subscriptionStop is null)
+            return;
+
+        using var stop = stoppingToken.Register(static state =>
         {
-            await _subscriptionStop.CancelAsync().ConfigureAwait(false);
+            var source = (CancellationTokenSource)state!;
+            try
+            {
+                source.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+        }, _subscriptionStop);
+        try
+        {
+            await _subscription.ConfigureAwait(false);
         }
-
-        await base.StopAsync(cancellationToken).ConfigureAwait(false);
+        finally
+        {
+            _subscriptionStop.Dispose();
+            _subscriptionStop = null;
+        }
     }
-
-    protected override Task ExecuteAsync(CancellationToken stoppingToken)
-        => _subscription ?? Task.CompletedTask;
 
     private async Task HandleAsync(TEvent @event, MessageContext context, CancellationToken ct)
     {

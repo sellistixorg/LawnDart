@@ -431,12 +431,5 @@ public class TestableOutboxProcessor : OutboxProcessor
     }
 
     public Task ProcessBatchPublicAsync(CancellationToken cancellationToken)
-    {
-        // Access the private ProcessBatchAsync method via reflection
-        var method = typeof(OutboxProcessor).GetMethod(
-            "ProcessBatchAsync",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        
-        return (Task)method!.Invoke(this, new object[] { cancellationToken })!;
-    }
+        => ProcessBatchAsync(cancellationToken);
 }

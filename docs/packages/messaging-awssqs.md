@@ -151,18 +151,31 @@ When it is off, the message is deleted and logged. It is not sent again.
 
 A listener is a live queue subscription on the topic. A queue another
 service owns counts. A stopped consumer whose queue subscription still
-exists still receives. The transport remembers a topic after it has seen a
-queue there, and it does not ask again for that topic.
+exists still receives. The transport remembers a topic has a listener for
+the life of the process, and it does not ask again for that topic. Removing
+the last queue later is not detected until the process starts again. A
+publish after that removal is accepted, and the outbox marks the row
+processed.
 
 `UnroutablePublish` defaults to `Throw`. When no queue is subscribed, the
 call throws and the message is not sent. The outbox keeps the row and tries
-it again until the attempt limit. Set `UnroutablePublish` to `Warn` to log
-and return. `Warn` does not send the message, and the outbox marks the row
-processed. A publish the service rejects is counted as a publish error. The
-duration histogram records a publish after the topic accepts it. A `Warn`
-publish is not recorded on `messaging.publish.duration`. It increments
-`messaging.publish.errors` with `messaging.publish.outcome` set to
-`unroutable`.
+it again until the attempt limit. The processor polls every 5 seconds by
+default, allows 10 attempts, and has no extra delay between attempts. A row
+with no queue is marked `DeadLetteredAt` after about 10 polls.
+`ResetDeadLetteredAsync` puts that row back. Set `UnroutablePublish` to
+`Warn` to log and return. `Warn` does not send the message, and the outbox
+marks the row processed. A publish the service rejects is counted as a
+publish error. The duration histogram records a publish after the topic
+accepts it. A `Warn` publish is not recorded on
+`messaging.publish.duration`. It increments `messaging.publish.errors` with
+`messaging.publish.outcome` set to `unroutable`.
+
+Startup lists topics and subscriptions for each published type. It does not
+create a topic. The list needs permission to list topics and subscriptions.
+When the list fails, the host logs that and continues. `Warn` logs a type
+with no queue and the host still starts. `Throw` stops host startup only
+when the list shows that no queue is subscribed. `Throw` does not stop
+startup when the list fails.
 
 Publish and consume durations are recorded on the `LawnDart.Messaging` meter.
 Consume spans carry `messaging.sns.topic`, `messaging.sqs.queue`,

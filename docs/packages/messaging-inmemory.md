@@ -23,6 +23,9 @@ Every `PublishAsync` throws when that message type has no subscriber in this
 process. The caller still has the message. When that subscriber stops, the
 next publish has no listener and throws. A queue on a broker is a different
 check: a stopped consumer whose queue still exists still receives.
+Startup counts in-process subscribers for each published type. `Warn` logs
+a missing subscriber and the host still starts. `Throw` stops host startup
+when that count is zero. See [Outbox pattern](../OUTBOX_PATTERN.md).
 A handler that throws is called again until `MaxDeliveryAttempts` (default 5).
 The last exception is then thrown to the caller. Set `DeadLetterFailedMessages`
 to true to park the message instead. Set `SetupTopology` to true to record one

@@ -429,13 +429,7 @@ public class MessageTransportOutboxPublisherTests
         }
 
         public Task ProcessBatchPublicAsync(CancellationToken cancellationToken)
-        {
-            var method = typeof(OutboxProcessor).GetMethod(
-                "ProcessBatchAsync",
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-
-            return (Task)method!.Invoke(this, [cancellationToken])!;
-        }
+            => ProcessBatchAsync(cancellationToken);
     }
 
     [EventTypeName("order-placed", version: 1)]

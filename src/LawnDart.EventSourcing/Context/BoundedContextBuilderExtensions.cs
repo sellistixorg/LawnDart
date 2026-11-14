@@ -163,13 +163,12 @@ public static class BoundedContextBuilderExtensions
                 IOutboxPublisher publisher = publishers.Length == 1
                     ? publishers[0]
                     : new CompositeOutboxPublisher(publishers);
-                return new OutboxProcessor(
+                return new OutboxHost(new OutboxProcessor(
                     writer,
                     publisher,
                     sp.GetService<ILogger<OutboxProcessor>>() ?? NullLogger<OutboxProcessor>.Instance,
                     sp.GetService<IHostApplicationLifetime>(),
-                    sp.GetService<OutboxSendBarrier>(),
-                    newEvents: (store as ISignalsNewEvents)?.NewEvents);
+                    newEvents: (store as ISignalsNewEvents)?.NewEvents));
             });
         }
 

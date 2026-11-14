@@ -2,7 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using LawnDart.EventStore;
+using Microsoft.Extensions.Options;
 using LawnDart.Outbox;
 using LawnDart.Publishing;
 
@@ -34,7 +34,7 @@ public static class MessageTransportOutboxPublisherExtensions
         ArgumentNullException.ThrowIfNull(eventTypes);
 
         var captured = eventTypes.ToArray();
-        EnsureListenerWarning(services, captured);
+        EnsureListenerCheck(services, captured);
         services.TryAddSingleton<IOutboxPublisher>(sp =>
         {
             var transport = sp.GetRequiredService<IMessageTransport>();
@@ -51,22 +51,26 @@ public static class MessageTransportOutboxPublisherExtensions
         return services;
     }
 
-    private static void EnsureListenerWarning(IServiceCollection services, Type[] explicitTypes)
+    private static void EnsureListenerCheck(IServiceCollection services, Type[] explicitTypes)
     {
         foreach (var descriptor in services)
         {
-            if (descriptor.ServiceType == typeof(OutboxSendBarrier))
+            if (descriptor.ServiceType == typeof(OutboundListenerPlan) &&
+                descriptor.ImplementationInstance is OutboundListenerPlan existing)
+            {
+                existing.Add(explicitTypes);
                 return;
+            }
         }
 
-        var barrier = new OutboxSendBarrier();
-        barrier.Hold();
-        services.AddSingleton(barrier);
-        services.AddSingleton<IHostedService>(sp => new OutboundListenerWarning(
-            barrier,
+        var plan = new OutboundListenerPlan();
+        plan.Add(explicitTypes);
+        services.AddSingleton(plan);
+        services.AddSingleton<IHostedService>(sp => new OutboundListenerCheck(
+            plan,
             sp.GetRequiredService<IMessageTransport>(),
+            sp.GetRequiredService<IOptions<MessageTransportOptions>>(),
             sp,
-            explicitTypes,
-            sp.GetRequiredService<ILogger<OutboundListenerWarning>>()));
+            sp.GetRequiredService<ILogger<OutboundListenerCheck>>()));
     }
 }

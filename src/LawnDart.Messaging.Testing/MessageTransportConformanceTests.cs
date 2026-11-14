@@ -263,7 +263,8 @@ public abstract class MessageTransportConformanceTests
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("subscriber", StringComparison.OrdinalIgnoreCase))
         {
-            // The in-process transport fails a publish that has no subscriber.
+            // Only the in-process transport fails a publish that has no subscriber.
+            // A broker transport keeps the publish and delivers it to a queue that still exists.
         }
 
         await Task.Delay(50);

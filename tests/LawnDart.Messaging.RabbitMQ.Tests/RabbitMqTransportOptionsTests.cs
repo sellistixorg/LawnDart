@@ -132,18 +132,4 @@ public class RabbitMqTransportOptionsTests
         Assert.Contains("HostName", ex.Message, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void Binding_list_counts_a_queue_for_the_routing_key()
-    {
-        const string json = """
-            [
-              {"destination_type":"exchange","routing_key":"order-placed","destination":"other"},
-              {"destination_type":"queue","routing_key":"order-placed","destination":"billing"}
-            ]
-            """;
-
-        Assert.True(RabbitMqBindingProbe.BindingListHasQueue(json, "order-placed"));
-        Assert.False(RabbitMqBindingProbe.BindingListHasQueue(json, "missing"));
-        Assert.False(RabbitMqBindingProbe.BindingListHasQueue("[]", "order-placed"));
-    }
 }

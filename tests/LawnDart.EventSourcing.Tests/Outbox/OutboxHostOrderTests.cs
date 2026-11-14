@@ -39,7 +39,7 @@ public class OutboxHostOrderTests
     }
 
     [Fact]
-    public async Task Shutdown_stops_sending_before_listeners_unsubscribe()
+    public async Task Shutdown_finishes_the_current_row_and_leaves_the_rest()
     {
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var inside = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -54,24 +54,47 @@ public class OutboxHostOrderTests
         var transport = host.Services.GetRequiredService<InMemoryMessageTransport>();
         reactor.Transport = transport;
         var writer = Writer(host);
-        await writer.WriteAsync(Message(Guid.NewGuid()));
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        await writer.WriteAsync(Message(first, 1));
+        await writer.WriteAsync(Message(second, 2));
 
         await host.StartAsync().WaitAsync(TimeSpan.FromSeconds(10));
         await inside.Task.WaitAsync(TimeSpan.FromSeconds(10));
 
-        var stop = Task.Run(async () => await host.StopAsync());
-        await Task.Delay(TimeSpan.FromMilliseconds(200));
+        var stop = host.StopAsync();
         Assert.False(stop.IsCompleted);
         Assert.Equal(1, transport.SubscriberCount<PingEvent>());
 
         release.TrySetResult();
         await stop.WaitAsync(TimeSpan.FromSeconds(10));
 
-        var row = Assert.Single(writer.Snapshot());
-        Assert.Equal(0, row.Attempts);
-        Assert.NotNull(row.ProcessedAt);
+        var rows = writer.Snapshot().OrderBy(row => row.SequencePosition).ToArray();
+        Assert.Equal(2, rows.Length);
+        Assert.Equal(first, rows[0].Id);
+        Assert.NotNull(rows[0].ProcessedAt);
+        Assert.Equal(0, rows[0].Attempts);
+        Assert.Equal(second, rows[1].Id);
+        Assert.Null(rows[1].ProcessedAt);
+        Assert.Equal(0, rows[1].Attempts);
+        Assert.Null(rows[1].DeadLetteredAt);
         Assert.Equal(1, reactor.CallCount);
         Assert.Equal(1, reactor.SubscribersWhenHandled);
+    }
+
+    [Fact]
+    public async Task Throw_on_a_missing_listener_stops_host_startup()
+    {
+        using var host = BuildHost(
+            new CountingReactor(),
+            subscribe: false,
+            configure: services => services.Configure<MessageTransportOptions>(options =>
+                options.OnMissingListenerAtStartup = MissingListenerBehavior.Throw));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => host.StartAsync());
+        Assert.Contains("outbox-host.ping", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("no listener", ex.Message, StringComparison.Ordinal);
+        await host.StopAsync().WaitAsync(TimeSpan.FromSeconds(10));
     }
 
     [Fact]
@@ -108,17 +131,7 @@ public class OutboxHostOrderTests
         await host.StartAsync().WaitAsync(TimeSpan.FromSeconds(10));
         try
         {
-            try
-            {
-                await WaitUntilAsync(() => reactor.CallCount == 1);
-            }
-            catch (TaskCanceledException)
-            {
-                var row = writer.Snapshot().Single();
-                var subs = host.Services.GetRequiredService<InMemoryMessageTransport>().SubscriberCount<PingEvent>();
-                throw new Xunit.Sdk.XunitException(
-                    $"calls={reactor.CallCount} attempts={row.Attempts} processed={row.ProcessedAt} subs={subs} logs={string.Join(" | ", warnings.Lines)}");
-            }
+            await WaitUntilAsync(() => reactor.CallCount == 1);
             Assert.DoesNotContain(
                 warnings.Lines,
                 line => line.Contains("no listener", StringComparison.Ordinal));
@@ -129,7 +142,11 @@ public class OutboxHostOrderTests
         }
     }
 
-    private static IHost BuildHost(CountingReactor reactor, bool subscribe, WarningLog? warnings = null)
+    private static IHost BuildHost(
+        CountingReactor reactor,
+        bool subscribe,
+        WarningLog? warnings = null,
+        Action<IServiceCollection>? configure = null)
     {
         var builder = Host.CreateApplicationBuilder();
         builder.Logging.ClearProviders();
@@ -147,13 +164,14 @@ public class OutboxHostOrderTests
             .UseInMemory(options => options.EnableOutbox = true);
         if (subscribe)
             builder.Services.AddReactor<CountingReactor, PingEvent>();
+        configure?.Invoke(builder.Services);
         return builder.Build();
     }
 
     private static InMemoryOutboxWriter Writer(IHost host)
         => (InMemoryOutboxWriter)host.Services.GetRequiredKeyedService<IOutboxWriter>("default");
 
-    private static OutboxMessage Message(Guid id)
+    private static OutboxMessage Message(Guid id, long sequence = 1)
     {
         var evt = new PingEvent(Guid.NewGuid(), DateTime.UtcNow);
         return new OutboxMessage
@@ -166,7 +184,7 @@ public class OutboxHostOrderTests
             Metadata = "{}",
             CreatedAt = DateTime.UtcNow,
             StreamId = "outbox-host",
-            SequencePosition = 1
+            SequencePosition = sequence
         };
     }
 

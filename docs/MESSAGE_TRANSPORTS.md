@@ -478,9 +478,12 @@ A publish has no listener in these cases:
   and the broker returns it. A queue another service owns counts. A stopped
   consumer whose queue still exists still receives.
 - Amazon SQS: no live queue is subscribed to the topic. The transport remembers
-  a topic after it has seen a queue there, and it does not ask again for that
-  topic. A queue another service owns counts. A stopped consumer whose queue
-  subscription still exists still receives.
+  a topic after it has seen a queue there, for the life of the process, and
+  it does not ask again for that topic. Removing the last queue later is not
+  detected until the process starts again. A publish after that removal is
+  accepted, and the outbox marks the row processed. A queue another service
+  owns counts. A stopped consumer whose queue subscription still exists still
+  receives.
 
 RabbitMQ publishes as mandatory. `UnroutablePublish` defaults to `Throw`.
 When no queue is bound, the call throws. The outbox keeps the row and tries
@@ -504,5 +507,16 @@ without the unroutable outcome tag. The topic service would accept a publish
 that has no subscriber and then drop it. The check avoids counting that as
 success.
 
-Startup logs one warning for each published event type that has no listener.
-The host still starts. See [Outbox](OUTBOX_PATTERN.md).
+Startup checks each published event type for a listener before the outbox
+polls. The check runs for the in-process transport and for Amazon SQS.
+RabbitMQ and Azure Service Bus do not report listeners at startup. The host
+logs that and continues. Amazon SQS lists topics and subscriptions. That
+list needs permission to list them. When the list fails, the host logs that
+and continues. `OnMissingListenerAtStartup` defaults to `Warn`. `Warn` logs
+one warning for each type the check finds with no listener, and the host
+still starts. `Throw` stops host startup when the check finds a type with
+no listener. `Throw` does not stop startup when the check cannot tell.
+The outbox polls every 5 seconds by default, allows 10 attempts, and has no
+extra delay between attempts. A row with no listener is marked
+`DeadLetteredAt` after about 10 polls. `ResetDeadLetteredAsync` puts that
+row back. See [Outbox](OUTBOX_PATTERN.md).

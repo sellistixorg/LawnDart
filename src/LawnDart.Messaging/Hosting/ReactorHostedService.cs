@@ -87,19 +87,32 @@ public sealed class ReactorHostedService<TReactor, TEvent> : BackgroundService
         return base.StartAsync(cancellationToken);
     }
 
-    /// <summary>Stops the subscription before the base service stops.</summary>
-    public override async Task StopAsync(CancellationToken cancellationToken)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (_subscriptionStop is not null)
+        if (_subscription is null || _subscriptionStop is null)
+            return;
+
+        using var stop = stoppingToken.Register(static state =>
         {
-            await _subscriptionStop.CancelAsync().ConfigureAwait(false);
+            var source = (CancellationTokenSource)state!;
+            try
+            {
+                source.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+        }, _subscriptionStop);
+        try
+        {
+            await _subscription.ConfigureAwait(false);
         }
-
-        await base.StopAsync(cancellationToken).ConfigureAwait(false);
+        finally
+        {
+            _subscriptionStop.Dispose();
+            _subscriptionStop = null;
+        }
     }
-
-    protected override Task ExecuteAsync(CancellationToken stoppingToken)
-        => _subscription ?? Task.CompletedTask;
 
     private async Task HandleAsync(TEvent @event, MessageContext context, CancellationToken ct)
     {
@@ -121,6 +134,10 @@ public sealed class ReactorHostedService<TReactor, TEvent> : BackgroundService
                     return;
                 }
 
+                ReactorTelemetry.RecordError(ReactorTypeName, _eventTypeName);
+                _logger.LogDebug(
+                    "Reactor {Reactor} could not claim message {MessageId} for event {EventType}. Another attempt still holds the claim.",
+                    ReactorTypeName, messageId, _eventTypeName);
                 throw new InvalidOperationException(
                     $"Reactor {ReactorTypeName} could not claim message '{messageId}' for '{_eventTypeName}'. Another attempt still holds the claim.");
             }
@@ -130,6 +147,7 @@ public sealed class ReactorHostedService<TReactor, TEvent> : BackgroundService
         var scoped = false;
         using var activity = ReactorTelemetry.StartHandle(ReactorTypeName, _eventTypeName, context);
         var start = TimeProvider.System.GetTimestamp();
+        System.Runtime.ExceptionServices.ExceptionDispatchInfo? failure = null;
 
         try
         {
@@ -178,6 +196,7 @@ public sealed class ReactorHostedService<TReactor, TEvent> : BackgroundService
         }
         catch (Exception ex)
         {
+            failure = System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex);
             if (claimed && inboxKey is not null)
             {
                 try
@@ -195,12 +214,23 @@ public sealed class ReactorHostedService<TReactor, TEvent> : BackgroundService
             _logger.LogError(ex,
                 "Reactor {Reactor} failed while handling {EventType} (MessageId={MessageId})",
                 ReactorTypeName, _eventTypeName, messageId);
-            throw;
         }
         finally
         {
             if (scoped)
-                await scope.DisposeAsync().ConfigureAwait(false);
+            {
+                try
+                {
+                    await scope.DisposeAsync().ConfigureAwait(false);
+                }
+                catch (Exception disposeEx)
+                {
+                    _logger.LogDebug(disposeEx, "Reactor {Reactor} failed to dispose the message scope", ReactorTypeName);
+                    failure ??= System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(disposeEx);
+                }
+            }
         }
+
+        failure?.Throw();
     }
 }

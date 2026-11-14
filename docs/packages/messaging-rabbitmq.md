@@ -127,12 +127,19 @@ counts. A stopped consumer whose queue still exists still receives. The
 publish is mandatory. When no queue is bound, the broker returns the message.
 
 `UnroutablePublish` defaults to `Throw`. The call throws. The outbox keeps
-the row and tries it again until the attempt limit. Set `UnroutablePublish`
-to `Warn` to log and return. `Warn` does not queue the message, and the
-outbox marks the row processed. A `Warn` publish is not a successful
-`messaging.publish.duration` measurement. It increments
+the row and tries it again until the attempt limit. The processor polls
+every 5 seconds by default, allows 10 attempts, and has no extra delay
+between attempts. A row with no queue is marked `DeadLetteredAt` after
+about 10 polls. `ResetDeadLetteredAsync` puts that row back. Set
+`UnroutablePublish` to `Warn` to log and return. `Warn` does not queue the
+message, and the outbox marks the row processed. A `Warn` publish is not a
+successful `messaging.publish.duration` measurement. It increments
 `messaging.publish.errors` with `messaging.publish.outcome` set to
 `unroutable`.
+
+Startup does not list queues for RabbitMQ. The host logs that the listener
+check is not available for this transport and continues. The mandatory
+publish, with `Throw` as the default, is the check that a queue is bound.
 
 `OperationTimeout` is how long to wait for automatic connection recovery
 before opening a new connection. The default is 30 seconds. The value must

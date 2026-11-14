@@ -169,7 +169,7 @@ public sealed class AwsSqsMessageTransport : IMessageTransport, IOutboundListene
         if (_connector.IsRoutable(topic))
             return true;
 
-        var found = await _connector.HasQueueSubscriptionAsync(topic, cancellationToken).ConfigureAwait(false);
+        var found = await _connector.HasExistingQueueSubscriptionAsync(topic, cancellationToken).ConfigureAwait(false);
         if (found)
             _connector.MarkRoutable(topic);
         return found;
