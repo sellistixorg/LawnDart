@@ -10,6 +10,27 @@ changes to the public API.
 
 ## [Unreleased]
 
+### Breaking
+
+- With the outbox on, an append writes an outbox row only for an event the context declares with `PublishEvents`. An undeclared event is stored and gets no row. In-memory, SQL Server, and Postgres follow this rule on a stream append and on a dynamic consistency boundary append. There is no setting that publishes every event. The host fails when the store is resolved if the outbox is on and nothing is declared. The message names the context and lists its event types.
+- A raw `IEventLog` append writes an outbox row only when the caller sets `AppendEvent.Outbound`. The store does not translate that append.
+- The outbox row is the declared integration event, with reduced metadata. It keeps the source event id (this is the message id), tenant, correlation, causation, trace id, span id, the source event's business time, and the notice's event name and schema version. `Custom` holds only `lawndart.source-event-id` and `lawndart.source-event-type`. User, network, account, and authorization fields are not copied. A notice that needs a user id carries it on the event.
+- The outbox row id is the source event id. `MessageTransportOutboxPublisher` uses that id as the message id and adds the header `outbox.sourceEventId`.
+- `PublishedEventCatalog` fails when two contexts publish one event name with different .NET types.
+- The six-argument `AppendEvent` constructor was removed. A program already compiled against that constructor must be rebuilt. Source that calls `AppendEvent` still compiles. The constructor takes an optional `OutboundEvent` at the end.
+
+### Added
+
+- `PublishEvents` on the bounded context builder declares what leaves the context. `Publish<T>()` sends an event that already lives in a contracts project as stored. `Translate<TInternal, TPublic>(...)` is the normal case: it turns one internal event into one integration event, and returns null to publish nothing for that event. `WithUpcasters<TMarker>()` inside `PublishEvents` reads an outbox row written with an older version of a published event. `AddTranslator<T>()` and `AddTranslators<TMarker>()` register those translations as classes.
+- `PublishedEventMap.NothingDeclaredMessage` is public. A store throws `InvalidOperationException` with that text when the outbox is on and the context declares nothing. The text names the context and lists its event types.
+- `LawnDart.EventSourcing.Testing` ships `OutboxPublicationContractTests` (11 tests) and `ContractOutboxMaps`. An outside store calls `ContractOutboxMaps.For` to build the published-event map. With the outbox on and nothing declared, that call throws `PublishedEventMap.NothingDeclaredMessage`. The in-memory, SQL Server, and Postgres stores run the same 11 tests.
+- `UseInMemory` takes `EnableOutbox`. When it is true, the in-memory store records a message for each declared event, and the outbox processor publishes those messages.
+
+### Changed
+
+- `EnableOutbox` lives on `EventSourcingOptions`. `SqlServerEventStoreOptions` and `PostgresEventStoreOptions` inherit it, so existing `o.EnableOutbox = true` on those options still compiles.
+- `AddMessageTransportOutboxPublisher()` with no event types reads `PublishedEventCatalog`, the union of every context's published types. Pass types when that catalog is not registered. Resolution fails when neither is present.
+
 ## [0.7.0-alpha.5] - 2026-11-09
 
 This release loads a Dynamic Consistency Boundary decision with a query. `GetOrCreateEntityAsync` and `CreateEntityAsync` take that query, and the same query guards the append. The Library borrow loads the book and the member's loans. Docs show the Academy decision query, and Academy enrollment sees another student's seat, so one remaining seat cannot be taken twice. The build kit targets LawnDart 0.7.

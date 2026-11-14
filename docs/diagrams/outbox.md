@@ -10,7 +10,9 @@ flowchart LR
     Bus --> Reactor["IReactor"]
 ```
 
-Use SQL Server plus `EnableOutbox` when the consumer is another process.
+Use SQL Server or Postgres plus `EnableOutbox` when the consumer is another
+process. Declare the events with `PublishEvents`. `Translate` is the normal
+case. `Publish<T>()` sends an event that already lives in a contracts project.
 The publisher hands each row to `IMessageTransport`. The in-process
 transport delivers in the same process. RabbitMQ, Azure Service Bus, and
 Amazon SQS deliver through a broker. A dead-lettered row returns to the publisher

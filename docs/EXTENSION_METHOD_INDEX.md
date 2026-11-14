@@ -44,6 +44,7 @@ These live on `IAggregateRepository` in Core (not `Add*` extensions). Guid overl
 | `AddSnapshotWriteInfrastructure` | `LawnDart.EventSourcing` | Snapshot write channel + hosted consumer. `UseInMemory` / `UseSqlServer` already call it; third-party `Use*` methods must |
 | `EventSourcingRepositories.Create*` | `LawnDart.EventSourcing` | Build repositories with the write queue. Public constructors omit the queue. |
 | `WithCommandHandlers` / `WithCommandHandlers<TMarker>` | `LawnDart.EventSourcing` | The only handler registrar. Scan `ICommandHandler<T>` and register `ICommandDispatcher` (`LawnDart.Messaging` namespace, Core package) |
+| `PublishEvents` | `LawnDart` | Declares which events the outbox publishes. After `WithEventTypes`. `Translate` is the normal case. `Publish<T>()` is for an event that already lives in a contracts project |
 | `WithTagProvider` | `LawnDart.EventSourcing` | Context `ITagProvider` |
 | `WithTagFormat` | `LawnDart.EventSourcing` | Context `ITagFormat` |
 
@@ -76,7 +77,7 @@ These live on `IAggregateRepository` in Core (not `Add*` extensions). Guid overl
 | `AddReactor<TReactor, TEvent>` | `LawnDart.Messaging` | Event → command |
 | `AddEventProcessor<TProcessor, TEvent>` | `LawnDart.Messaging` | Event → event / work |
 | `AddTaskProcessor<TProcessor>` | `LawnDart.Messaging` | State → command |
-| `AddMessageTransportOutboxPublisher` | `LawnDart.Messaging` | Outbox → transport |
+| `AddMessageTransportOutboxPublisher` | `LawnDart.Messaging` | Outbox → transport. With no types, reads `PublishedEventCatalog` |
 
 ## HTTP
 

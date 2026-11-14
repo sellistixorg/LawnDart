@@ -20,7 +20,9 @@ Call `InitializeSchemaAsync` from a deploy or admin step before the first
 append. Normal app startup calls `VerifySchemaAsync` instead. That call only
 reads. `WithSnapshots` stores
 snapshot state as bytes. `EnableOutbox = true` writes an outbox row for each
-event the context declares with `PublishEvents`, in that same transaction. See
+event the context declares with `PublishEvents`, in that same transaction.
+`Translate` is the normal case. `Publish<T>()` sends an event that already
+lives in a contracts project. There is no publish-everything option. See
 [Schema initialization](https://github.com/sellistixorg/LawnDart/blob/main/docs/SCHEMA_INITIALIZATION.md).
 
 See [the package page](https://github.com/sellistixorg/LawnDart/blob/main/docs/packages/eventsourcing-postgres.md).

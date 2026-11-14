@@ -9,6 +9,7 @@ Take it first. It does not include an event-store implementation.
 
 - `ICommand`, `IEvent`, `IState`
 - `[EventTypeName]` event names, `WithEventTypes` / `EventTypeCatalog.Materialize`, and `WithUpcasters` / `IEventUpcaster<TTo, TFrom>`. See [Event schema versioning](../EVENT_SCHEMA_VERSIONING.md).
+- `PublishEvents` declares which events leave a context through the outbox. `Translate` is the normal case. `Publish<T>()` sends an event that already lives in a contracts project. See [Outbox pattern](../OUTBOX_PATTERN.md).
 - `EventMetadata` / `CommandMetadata` (`TraceId`, `SpanId`, correlation, causation). See [Metadata](../METADATA.md).
 - `ICommandDispatcher` routes reactor/processor commands to `ICommandHandler<T>` (same `LawnDart.Messaging` namespace as `MessageContext`)
 - `AggregateRoot<TState>`, `DcbEntity<TState>`, and their repository interfaces

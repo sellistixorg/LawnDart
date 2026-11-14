@@ -14,3 +14,8 @@ Pair with `LawnDart.Messaging.RabbitMQ` for a RabbitMQ broker.
 Pair with `LawnDart.Messaging.AzureServiceBus` for Azure Service Bus.
 Pair with `LawnDart.Messaging.AwsSqs` for Amazon SQS.
 Pair with `LawnDart.Messaging.SqlServer` or `LawnDart.Messaging.Postgres` when inbox dedup must survive a restart.
+
+`AddMessageTransportOutboxPublisher()` with no types reads `PublishedEventCatalog`.
+Register `PublishEvents` on each context that turns the outbox on. `Translate` is
+the normal case. `Publish<T>()` sends an event that already lives in a contracts
+project. There is no publish-everything option.

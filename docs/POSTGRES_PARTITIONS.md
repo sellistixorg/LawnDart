@@ -54,8 +54,8 @@ tenant: `(event_id, tenant_id)`. Global position is unique per tenant:
 `(global_position, tenant_id)`. One sequence, `event_position`, numbers
 every event in the schema. A losing version check does not take a number.
 
-With the outbox on, the outbox row id is the event id, so that id is unique
-in the whole schema. See [Backend differences](BACKEND_DIFFERENCES.md).
+With the outbox on, the outbox row id is the source event id, so that id is
+unique in the whole schema. See [Backend differences](BACKEND_DIFFERENCES.md).
 
 ## Related
 

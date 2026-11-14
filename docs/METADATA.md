@@ -89,6 +89,16 @@ When `LawnDartOptions.EnableAuthorization` is on and the check succeeds,
 `AuthorizedBy` to `UserId`. The DCB path writes `AuthorizationPolicies`
 from the auth result (empty on success).
 
+## Outbox notice
+
+The outbox row is the integration event, not a full copy of the stored
+metadata. It keeps the source event id, tenant, correlation, causation, trace
+id, span id, the source event's business time, and the notice's event name and
+schema version. `Custom` holds only `lawndart.source-event-id` and
+`lawndart.source-event-type`. User, network, account, and authorization fields
+stay on the stored event. The row id is the source event id, and that id is
+the message id. See [Outbox pattern](OUTBOX_PATTERN.md).
+
 ## Schema name and version
 
 The typed session (`EventSession`) stamps `SchemaVersion` from the current

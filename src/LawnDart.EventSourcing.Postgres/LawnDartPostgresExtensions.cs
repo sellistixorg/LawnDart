@@ -35,7 +35,7 @@ public static class LawnDartPostgresExtensions
     /// Keyed services use <see cref="BoundedContextBuilder.ContextName"/>.
     /// The context named <c>default</c> also gets unkeyed aliases.
     /// The callback must set <see cref="PostgresEventStoreOptions.ConnectionString"/>.
-    /// <see cref="PostgresEventStoreOptions.EnableOutbox"/> writes an outbox row for each event this context declares with <c>PublishEvents</c>.
+    /// <see cref="EventSourcingOptions.EnableOutbox"/> writes an outbox row for each event this context declares with <c>PublishEvents</c>.
     /// Call <c>InitializeSchemaAsync</c> from a deploy or admin step so the outbox table
     /// exists before the first append. Normal app startup does not call it.
     /// </remarks>

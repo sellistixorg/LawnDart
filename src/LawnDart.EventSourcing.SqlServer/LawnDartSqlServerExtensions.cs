@@ -53,6 +53,7 @@ public static class LawnDartSqlServerExtensions
     /// <param name="builder">The bounded-context builder.</param>
     /// <param name="configure">
     /// Callback that must provide at least <see cref="SqlServerEventStoreOptions.ConnectionString"/>.
+    /// <see cref="EventSourcingOptions.EnableOutbox"/> writes an outbox row for each event this context declares with <c>PublishEvents</c>.
     /// <see cref="EventSourcingOptions.WarnOnUnknownTag"/> set to false and
     /// <see cref="EventSourcingOptions.FormatAggregateFallbackTag"/> set to true
     /// are copied onto <c>IOptions&lt;EventSourcingOptions&gt;</c> for the repositories.

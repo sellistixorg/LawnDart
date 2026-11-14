@@ -141,6 +141,12 @@ no `current: true`, `LDT003` incomplete upcaster chain). One-arg
 `[EventTypeName("token")]` is not a diagnostic. A green analyzer still
 needs warmup.
 
+An outbox row for a translated event uses the integration event's name and
+version. Register older versions of that published event with
+`WithUpcasters<TMarker>()` inside `PublishEvents`. Upcasters for internal
+events are not used when the publisher reads the row. See
+[Outbox pattern](OUTBOX_PATTERN.md).
+
 A typed read (`IEventStore` / `EventSession` / outbox publish) deserializes
 the stored version, then applies that chain. The value on
 `EventMetadata.SchemaVersion` stays the integer on the stored record.

@@ -158,11 +158,14 @@ SELECT EventJson, EventType, EventTypeId, SchemaVersion, CodecId
 FROM dbo.Events_Readable;
 ```
 
-Outbox rows copy the stored record in the same transaction: payload
-bytes (`VARBINARY`), payload-format number `CodecId` (`TINYINT`), and `SchemaVersion` (`INT`),
-none of them with a column default. Opening an older outbox table throws
-and names drop-and-recreate. `EnableOutbox = true` writes those rows
-whether or not an `IOutboxWriter` was injected. `OutboxClaimLease`
+With `EnableOutbox` true, an append writes an outbox row for each event the
+context declares with `PublishEvents`. The row is the integration event:
+payload bytes (`VARBINARY`), payload-format number `CodecId` (`TINYINT`), and
+`SchemaVersion` (`INT`), none of them with a column default. An undeclared
+event is stored and gets no row. There is no publish-everything option.
+Opening an older outbox table throws and names drop-and-recreate.
+`EnableOutbox = true` writes those rows whether or not an `IOutboxWriter` was
+injected. `OutboxClaimLease`
 (default 30 seconds) is how long a claim hides a row. A row that exhausts
 publish attempts is dead-lettered. `ResetDeadLetteredAsync` and
 `ResetAllDeadLetteredAsync` clear that state on this context's table so
@@ -182,7 +185,10 @@ ctx.UseSqlServer(o =>
 Registers the same store as keyed `IEventStore`, `IEventLog`, `IStreamRegistry`,
 and `IEventStoreSubscriptions`.
 
-Optional `WithSnapshots` and outbox (`EnableOutbox`). Snapshot write
+Optional `WithSnapshots` and outbox (`EnableOutbox` on `EventSourcingOptions`,
+which this options type inherits). Call `PublishEvents` after `WithEventTypes`
+when the outbox is on. `Publish<T>()` sends an event that already lives in a
+contracts project. `Translate` is the normal case. Snapshot write
 durability is the same channel + hosted consumer as InMemory; see
 [SNAPSHOTS.md](../SNAPSHOTS.md). Integration tests use Testcontainers and
 are tagged `Category=Integration`. The shared contract

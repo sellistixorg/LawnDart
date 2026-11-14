@@ -247,20 +247,26 @@ services.AddLawnDart(o => o.RequireTenantId = false);
 services.AddPostgresProjectionStores("default", appConnectionString);
 services.AddPostgresInboxStore(appConnectionString);
 services.AddBoundedContext("default")
+    .WithEventTypes<CounterCreated>()
+    .PublishEvents(events => events.Publish<CounterCreated>())
     .UsePostgres(o =>
     {
         o.ConnectionString = appConnectionString;
         o.RequireTenantId = false;
         o.EnableOutbox = true;
-    })
-    .WithEventTypes<CounterCreated>();
+    });
 
 [EventTypeName("counter-created")]
 public sealed record CounterCreated(Guid Id, DateTime Timestamp, Guid CounterId) : IEvent;
 ```
 
+`Publish<CounterCreated>()` sends that event as stored. Use `Publish<T>()`
+when the event already lives in a contracts project. `Translate` is the
+normal case. There is no publish-everything option. See
+[Outbox](OUTBOX_PATTERN.md).
+
 `UseSqlServer` is the same registration for SQL Server. It does not call
-`InitializeSchemaAsync`.
+`InitializeSchemaAsync`. `UseInMemory` takes the same `EnableOutbox` flag.
 
 After the host is built, read the schema through the registered stores.
 `provider` is that built service provider.

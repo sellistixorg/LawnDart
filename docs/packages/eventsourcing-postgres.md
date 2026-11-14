@@ -241,14 +241,16 @@ snapshot.
 
 ## Outbox
 
-`EnableOutbox` writes one outbox row for each appended event in the same
-append statement as the events. A rolled-back append leaves no outbox row.
-The row id is the event id. The payload is the bytes that were appended.
-Metadata is jsonb, the same value stored on the event.
+`EnableOutbox` writes an outbox row for each event this context declares with
+`PublishEvents`, in the same append statement as the events. An undeclared
+event is stored and gets no row. There is no publish-everything option. A
+rolled-back append leaves no outbox row. The row id is the source event id.
+The payload is the integration event. Metadata is the reduced notice, stored
+as jsonb. See [Outbox pattern](../OUTBOX_PATTERN.md).
 
-With the outbox on, that id is unique in the whole schema. The same event id
-on two tenants throws `EventAlreadyAppendedException`. With the outbox off,
-event ids are unique per tenant.
+With the outbox on, that source event id is unique in the whole schema. The
+same event id on two tenants throws `EventAlreadyAppendedException`. With the
+outbox off, event ids are unique per tenant.
 
 `GetUnprocessedAsync` claims rows in position order. It sets `claimed_until`
 to the current time plus `OutboxClaimLease` (default 30 seconds) and skips a
@@ -280,12 +282,19 @@ initialize a schema that the new inbox created first.
 
 ```csharp
 services.AddBoundedContext("default")
+    .WithEventTypes<CounterCreated>()
+    .PublishEvents(events => events.Publish<CounterCreated>())
     .UsePostgres(o =>
     {
         o.ConnectionString = connectionString;
         o.EnableOutbox = true;
     });
 ```
+
+`Publish<CounterCreated>()` sends that event as stored. Use `Publish<T>()`
+when the event already lives in a contracts project. `Translate` is the
+normal case. The store fails to open when `EnableOutbox` is true and nothing
+is declared. The message lists the context's event types.
 
 Register an `IOutboxPublisher` before the host starts. `UsePostgres` starts
 the outbox processor for that context when `EnableOutbox` is true.

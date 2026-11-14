@@ -29,6 +29,7 @@ app.MapProjectionQueries("default");
 | `UseInMemory` / `UseSqlServer` / `UsePostgres` | Event store + repositories for that name. `UseInMemory` also registers `ICommandDispatcher` (`ContextAwareCommandDispatcher`). |
 | `WithCommandHandlers<TMarker>()` | The only handler registrar. Scans `ICommandHandler<T>` in the marker's assembly and registers `ICommandDispatcher`. The `"default"` context also gets an unkeyed handler alias built through `ContextServiceProvider`. |
 | `WithEventTypes<TMarker>()` | Event catalog for that assembly. A scan that finds no `IEvent` types fails at warmup. |
+| `PublishEvents` | Which events leave this context through the outbox. Call it after `WithEventTypes`. `Translate` is the normal case. `Publish<T>()` sends an event that already lives in a contracts project. |
 | `WithUpcasters<TMarker>()` | Upcast hops for that assembly. Required when an event name has historical types. An incomplete chain throws at warmup. |
 | `WithProjections` | Lightweight projection runners (keyed) |
 | `MapProjectionQueries(name)` | HTTP GETs for the keyed projection path |
@@ -51,4 +52,4 @@ Academy is the copy-paste host: `demos/LawnDart.Demo.Academy` (console) and
 2. **Aggregates / DCB** declare closed `Handle(TCommand)`. `HandleCommandAsync` is persistence + authorization. The obsolete entity `HandleAsync<TCommand>` switch is not the authoring form.
 3. **Load** with `GetOrCreateAsync<T>(id)` when the stream is `{type}:{guid}` (or `{tenant}:{type}:{guid}`). Use `GetAsync` / `CreateAsync` / `GetOrCreateAsync` with `string streamId` otherwise.
 4. **Projections:** `ProjectionBase<TView>` plus attributes. Multi-stream views implement `IMultiStreamEntityResolver`.
-5. **Stores:** `AddBoundedContext(name).UseInMemory()` / `UseSqlServer(...)` / `UsePostgres(...)`.
+5. **Stores:** `AddBoundedContext(name).UseInMemory()` / `UseSqlServer(...)` / `UsePostgres(...)`. When `EnableOutbox` is true, call `PublishEvents` after `WithEventTypes`.

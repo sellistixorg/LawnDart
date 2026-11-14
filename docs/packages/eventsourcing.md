@@ -48,6 +48,7 @@ public object Deserialize(ReadOnlyMemory<byte> data, Type type)
         ?? throw new InvalidOperationException($"Failed to deserialize {type.Name}");
 }
 ```
+
 `WithTagFormat<T>()` registers the context `ITagFormat`. `AddLawnDart`
 already registered `LowercaseTagFormat`. `WarnOnUnknownTag` (default true)
 logs once per tag type in that context when a queried tag does not
@@ -73,6 +74,25 @@ Snapshot write durability (synchronous capture, wait-free enqueue, drop-oldest,
 health) and replace-in-place retention: [SNAPSHOTS.md](../SNAPSHOTS.md). Custom stores use
 `EventSourcingRepositories` and `AddSnapshotWriteInfrastructure` so snapshot
 writes still enqueue.
+
+## Outbox
+
+`UseInMemory(o => o.EnableOutbox = true)` records an outbox message for each
+event the context declares with `PublishEvents`. The outbox processor publishes
+those messages. A context that declares nothing fails when the store is
+resolved. The message lists its event types. SQL Server and Postgres use the
+same flag and the same rule. There is no publish-everything option.
+
+```csharp
+services.AddBoundedContext("default")
+    .WithEventTypes<CounterCreated>()
+    .PublishEvents(events => events.Publish<CounterCreated>())
+    .UseInMemory(o => o.EnableOutbox = true);
+```
+
+`Publish<CounterCreated>()` sends that event as stored. Use `Publish<T>()`
+when the event already lives in a contracts project. `Translate` is the
+normal case. See [Outbox pattern](../OUTBOX_PATTERN.md).
 
 ## New events signal
 

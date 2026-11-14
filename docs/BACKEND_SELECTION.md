@@ -150,8 +150,8 @@ Required: a local SQL Server and `ConnectionStrings__Academy`, or
 Create the database first. The Academy demo creates event-store and outbox
 tables when that process starts. A deployed app runs schema setup from a
 deploy or admin step. See [Schema initialization](SCHEMA_INITIALIZATION.md).
-Both SQL profiles set `EnableOutbox` and register the in-memory
-outbox publisher. Academy WebApi also creates view and checkpoint tables and
+Both SQL profiles set `EnableOutbox`, declare `PublishEvents`, and register
+the in-memory outbox publisher. Academy WebApi also creates view and checkpoint tables and
 reads those views from SQL Server. Academy console keeps hand-written
 projectors, so that profile does not register Lightweight projection stores.
 
@@ -184,7 +184,11 @@ registry, the read horizon, and live subscriptions are in
 Snapshots are opt-in (`WithSnapshots` on the Postgres builder, plus a
 strategy). State is stored as bytes. A missing snapshot, a bad checksum, or
 a snapshot that cannot be read returns empty and the repository replays the
-events. `EnableOutbox = true` writes outbox rows in the append transaction.
+events. `EnableOutbox = true` writes an outbox row for each event the context
+declares with `PublishEvents`, in the append transaction. `Translate` is the
+normal case. `Publish<T>()` sends an event that already lives in a contracts
+project. There is no publish-everything option.
+
 The inbox is `LawnDart.Messaging.Postgres` (`AddPostgresInboxStore`, then
 `InitializePostgresInboxStoreAsync`).
 
