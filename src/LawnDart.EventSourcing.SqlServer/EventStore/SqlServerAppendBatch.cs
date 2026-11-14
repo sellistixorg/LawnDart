@@ -15,7 +15,15 @@ public partial class SqlServerEventStore
         @"Expected version (-?\d+) but current version is (-?\d+)",
         RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
-    private readonly record struct AppendBatchOutcome(AppendResult Result, string? TenantId);
+    private readonly record struct AppendBatchOutcome(
+        AppendResult Result,
+        string? TenantId,
+        IReadOnlyList<(string Tag, int Id)> LearnedTags);
+
+    private readonly record struct WrittenTag(string Text, string Expression, bool Learned);
+
+    /// <summary>Raised when a tag id cannot be stored. The append wrote nothing.</summary>
+    internal const int AppendTagRegistrationError = 51209;
 
     /// <summary>
     /// One round trip. Locks, the condition or version check, one position range,
@@ -39,6 +47,8 @@ public partial class SqlServerEventStore
         AppendLockStatements(sql, parameters, AppendLockPlan(envelopes, condition));
         if (condition is not null)
             AppendConditionCheck(sql, parameters, condition);
+
+        var writtenTags = AppendWrittenTagRegistration(sql, parameters, envelopes);
 
         sql.AppendLine(
             $"""
@@ -120,7 +130,14 @@ public partial class SqlServerEventStore
             DECLARE @increment bigint = CONVERT(bigint, @rangeIncrement);
             """);
 
-        AppendStoredEvents(sql, parameters, envelopes, eventIds);
+        AppendStoredEvents(sql, parameters, envelopes, eventIds, writtenTags);
+        var learnedTags = new List<WrittenTag>();
+        foreach (var written in writtenTags)
+        {
+            if (written.Learned)
+                learnedTags.Add(written);
+        }
+
         if (_options.EnableOutbox && BatchHasOutbound(envelopes))
             AppendOutboxRows(sql, parameters, envelopes, eventIds);
 
@@ -192,6 +209,20 @@ public partial class SqlServerEventStore
                 @eventTenant AS EventTenant;
             """);
 
+        if (learnedTags.Count > 0)
+        {
+            sql.AppendLine("SELECT Ord, TagId FROM (VALUES");
+            for (var i = 0; i < learnedTags.Count; i++)
+            {
+                if (i > 0)
+                    sql.AppendLine(",");
+                sql.Append('(').Append(i.ToString(CultureInfo.InvariantCulture))
+                    .Append(", ").Append(learnedTags[i].Expression).Append(')');
+            }
+
+            sql.AppendLine(") AS v(Ord, TagId) ORDER BY Ord;");
+        }
+
         var tenantId = ExtractTenantId(streamId);
         parameters.Add(new SqlParameter("@StreamId", SqlDbType.NVarChar, 255) { Value = streamId });
         parameters.Add(new SqlParameter("@TenantId", SqlDbType.NVarChar, 100) { Value = (object?)tenantId ?? DBNull.Value });
@@ -236,10 +267,29 @@ public partial class SqlServerEventStore
         for (var i = 0; i < positions.Length; i++)
             positions[i] = first + (i * increment);
 
+        var learned = new List<(string Tag, int Id)>(learnedTags.Count);
+        if (learnedTags.Count > 0)
+        {
+            if (!await reader.NextResultAsync(cancellationToken).ConfigureAwait(false))
+                throw new InvalidOperationException("The append batch did not return tag ids.");
+
+            var index = 0;
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                if (index >= learnedTags.Count)
+                    break;
+                learned.Add((learnedTags[index].Text, reader.GetInt32(reader.GetOrdinal("TagId"))));
+                index++;
+            }
+
+            if (index != learnedTags.Count)
+                throw new InvalidOperationException("The append batch returned the wrong number of tag ids.");
+        }
+
         var result = isDcb
             ? new AppendResult(positions)
             : new AppendResult(positions, null, start + envelopes.Count - 1);
-        return new AppendBatchOutcome(result, eventTenant);
+        return new AppendBatchOutcome(result, eventTenant, learned);
     }
 
     private static void AppendLockStatements(
@@ -269,7 +319,8 @@ public partial class SqlServerEventStore
         StringBuilder sql,
         List<SqlParameter> parameters,
         IReadOnlyList<AppendEvent> envelopes,
-        IReadOnlyList<Guid> eventIds)
+        IReadOnlyList<Guid> eventIds,
+        IReadOnlyList<WrittenTag> writtenTags)
     {
         const int eventsPerInsert = 200;
         for (var start = 0; start < envelopes.Count; start += eventsPerInsert)
@@ -319,37 +370,115 @@ public partial class SqlServerEventStore
             sql.AppendLine(";");
         }
 
-        var tagOrdinal = 0;
+        var byTag = new Dictionary<string, string>(writtenTags.Count, StringComparer.Ordinal);
+        foreach (var written in writtenTags)
+            byTag[written.Text] = written.Expression;
+
         var tagStart = 0;
-        var pending = new List<(int EventIndex, string Tag)>();
+        var pending = new List<(int EventIndex, string Expression)>();
         for (var i = 0; i < envelopes.Count; i++)
         {
             foreach (var tag in envelopes[i].Tags)
             {
-                if (!string.IsNullOrEmpty(tag))
-                    pending.Add((i, tag));
+                if (string.IsNullOrEmpty(tag))
+                    continue;
+                if (!byTag.TryGetValue(tag, out var expression))
+                    throw new InvalidOperationException("A written tag was not registered.");
+                pending.Add((i, expression));
             }
         }
 
         while (tagStart < pending.Count)
         {
             var count = Math.Min(400, pending.Count - tagStart);
-            sql.Append("INSERT INTO ").Append(_qTags).AppendLine(" (GlobalSequencePosition, Tag) VALUES");
+            sql.Append("INSERT INTO ").Append(_qTags).AppendLine(" (TagId, GlobalSequencePosition, EventTypeId) VALUES");
             for (var n = 0; n < count; n++)
             {
                 var row = pending[tagStart + n];
-                var index = tagOrdinal.ToString(CultureInfo.InvariantCulture);
+                var eventIndex = row.EventIndex.ToString(CultureInfo.InvariantCulture);
                 if (n > 0)
                     sql.AppendLine(",");
-                sql.Append("(@first + ").Append(row.EventIndex.ToString(CultureInfo.InvariantCulture))
-                    .Append(" * @increment, @EvTag").Append(index).Append(')');
-                parameters.Add(new SqlParameter("@EvTag" + index, SqlDbType.NVarChar, 256) { Value = row.Tag });
-                tagOrdinal++;
+                sql.Append('(').Append(row.Expression)
+                    .Append(", @first + ").Append(eventIndex)
+                    .Append(" * @increment, @EvType").Append(eventIndex).Append(')');
             }
 
             sql.AppendLine(";");
             tagStart += count;
         }
+    }
+
+    /// <summary>
+    /// Resolves written tag text to ids before the stream row is locked.
+    /// A tag that is already cached is a parameter. A new tag is inserted in this batch.
+    /// </summary>
+    private List<WrittenTag> AppendWrittenTagRegistration(
+        StringBuilder sql,
+        List<SqlParameter> parameters,
+        IReadOnlyList<AppendEvent> envelopes)
+    {
+        var written = new List<WrittenTag>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var envelope in envelopes)
+        {
+            foreach (var tag in envelope.Tags)
+            {
+                if (string.IsNullOrEmpty(tag) || !seen.Add(tag))
+                    continue;
+
+                var ordinal = written.Count.ToString(CultureInfo.InvariantCulture);
+                if (_tagIds.TryGetId(tag, out var id))
+                {
+                    var name = "@KTag" + ordinal;
+                    parameters.Add(new SqlParameter(name, SqlDbType.Int) { Value = id });
+                    written.Add(new WrittenTag(tag, name, Learned: false));
+                    continue;
+                }
+
+                var variable = "@NTag" + ordinal;
+                var param = "@NText" + ordinal;
+                var gate = "@NGate" + ordinal;
+                parameters.Add(new SqlParameter(param, SqlDbType.NVarChar, 256) { Value = tag });
+                parameters.Add(new SqlParameter(gate, SqlDbType.NVarChar, 255)
+                {
+                    Value = "LawnDart.tagid:" + TagLockName(AppendLockScope, tag)
+                });
+                sql.Append("DECLARE ").Append(variable).Append(" int = (SELECT Id FROM ").Append(_qTagRegistry)
+                    .Append(" WHERE Tag = ").Append(param).Append(" COLLATE ").Append(TagCollation).AppendLine(");");
+                // The insert runs only for a tag that is not stored yet. The exclusive lock
+                // keeps two such inserts from colliding, so this batch has no TRY/CATCH.
+                sql.Append("IF ").Append(variable).AppendLine(" IS NULL");
+                sql.AppendLine("BEGIN");
+                sql.Append("    EXEC @lockCode = sp_getapplock @Resource = ").Append(gate)
+                    .AppendLine(", @LockMode = N'Exclusive', @LockOwner = N'Transaction';");
+                sql.AppendLine("    IF @lockCode < 0 BEGIN SET @lockMessage = CONCAT(N'Append lock not granted, code ', @lockCode); THROW ")
+                    .Append(AppendLockNotGrantedError).AppendLine(", @lockMessage, 1; END");
+                sql.Append("    SET ").Append(variable).Append(" = (SELECT Id FROM ").Append(_qTagRegistry)
+                    .Append(" WHERE Tag = ").Append(param).Append(" COLLATE ").Append(TagCollation).AppendLine(");");
+                sql.Append("    IF ").Append(variable).AppendLine(" IS NULL");
+                sql.AppendLine("    BEGIN");
+                sql.Append("        INSERT INTO ").Append(_qTagRegistry).Append(" (Tag) VALUES (").Append(param).AppendLine(");");
+                sql.Append("        SET ").Append(variable).AppendLine(" = CONVERT(int, SCOPE_IDENTITY());");
+                sql.AppendLine("    END");
+                sql.AppendLine("END");
+                sql.Append("IF ").Append(variable).Append(" IS NULL THROW ").Append(AppendTagRegistrationError)
+                    .AppendLine(", N'A tag id could not be registered.', 1;");
+                written.Add(new WrittenTag(tag, variable, Learned: true));
+            }
+        }
+
+        return written;
+    }
+
+    /// <summary>
+    /// The condition statement for tests. It is the same text the append batch sends.
+    /// </summary>
+    internal (string Sql, List<SqlParameter> Parameters) PreviewAppendCondition(AppendCondition condition)
+    {
+        var sql = new StringBuilder();
+        var parameters = new List<SqlParameter>();
+        AppendConditionCheck(sql, parameters, condition);
+        return (sql.ToString(), parameters);
     }
 
     private void AppendOutboxRows(
@@ -406,59 +535,122 @@ public partial class SqlServerEventStore
 
     private void AppendConditionCheck(StringBuilder sql, List<SqlParameter> parameters, AppendCondition condition)
     {
-        sql.Append("IF EXISTS (SELECT TOP 1 1 FROM ").Append(_qTable).Append(" AS e WHERE 1 = 1");
-        if (condition.After is { } after)
+        var items = condition.FailIfEventsMatch.Items;
+        var tagVars = new Dictionary<string, string>(StringComparer.Ordinal);
+        var nextTag = 0;
+        foreach (var item in items)
         {
-            sql.Append(" AND e.SequencePosition > @After");
-            parameters.Add(new SqlParameter("@After", SqlDbType.BigInt) { Value = after });
+            if (item.Tags is not { Count: > 0 })
+                continue;
+            foreach (var tag in item.Tags)
+            {
+                var text = tag ?? string.Empty;
+                if (tagVars.ContainsKey(text))
+                    continue;
+                var variable = "@CId" + nextTag.ToString(CultureInfo.InvariantCulture);
+                var param = "@CTag" + nextTag.ToString(CultureInfo.InvariantCulture);
+                nextTag++;
+                tagVars[text] = variable;
+                parameters.Add(new SqlParameter(param, SqlDbType.NVarChar, 256) { Value = text });
+                sql.Append("DECLARE ").Append(variable).Append(" int = (SELECT Id FROM ").Append(_qTagRegistry)
+                    .Append(" WHERE Tag = ").Append(param).Append(" COLLATE ").Append(TagCollation).AppendLine(");");
+            }
         }
 
-        var predicates = new List<string>();
-        var items = condition.FailIfEventsMatch.Items;
+        if (condition.After is { } after)
+            parameters.Add(new SqlParameter("@After", SqlDbType.BigInt) { Value = after });
+
+        var branches = new List<string>();
         for (var i = 0; i < items.Count; i++)
         {
-            var item = items[i];
-            var parts = new List<string>();
-            if (item.Types is { Count: > 0 })
-            {
-                var names = new List<string>();
-                for (var j = 0; j < item.Types.Count; j++)
-                {
-                    var token = item.Types[j];
-                    if (string.IsNullOrEmpty(token))
-                        continue;
-                    var name = "@CType" + i.ToString(CultureInfo.InvariantCulture) + "_" + j.ToString(CultureInfo.InvariantCulture);
-                    names.Add(name);
-                    parameters.Add(new SqlParameter(name, SqlDbType.NVarChar, 500) { Value = token });
-                }
-
-                parts.Add(names.Count == 0
-                    ? "1 = 0"
-                    : "e.EventTypeId IN (SELECT Id FROM " + _qTypes + " WHERE Token IN (" + string.Join(", ", names) + "))");
-            }
-
-            if (item.Tags is { Count: > 0 })
-            {
-                for (var j = 0; j < item.Tags.Count; j++)
-                {
-                    var name = "@CTag" + i.ToString(CultureInfo.InvariantCulture) + "_" + j.ToString(CultureInfo.InvariantCulture);
-                    parts.Add(
-                        "EXISTS (SELECT 1 FROM " + _qTags + " AS et WHERE et.GlobalSequencePosition = e.SequencePosition AND et.Tag = " + name + ")");
-                    parameters.Add(new SqlParameter(name, SqlDbType.NVarChar, 256) { Value = item.Tags[j] ?? string.Empty });
-                }
-            }
-
-            if (parts.Count > 0)
-                predicates.Add("(" + string.Join(" AND ", parts) + ")");
+            var branch = BuildConditionBranch(items[i], i, tagVars, parameters, condition.After.HasValue);
+            if (branch is not null)
+                branches.Add(branch);
         }
 
-        if (predicates.Count > 0)
-            sql.Append(" AND (").Append(string.Join(" OR ", predicates)).Append(')');
+        if (branches.Count == 0)
+        {
+            sql.Append("IF EXISTS (SELECT TOP 1 1 FROM ").Append(_qTable).Append(" AS e WHERE 1 = 1");
+            if (condition.After.HasValue)
+                sql.Append(" AND e.SequencePosition > @After");
+            sql.AppendLine(")");
+        }
+        else
+        {
+            sql.Append("IF ").Append(string.Join(" OR ", branches)).AppendLine();
+        }
 
-        sql.AppendLine(")");
         sql.Append("BEGIN DECLARE @conditionMessage nvarchar(200) = N'Append condition failed: matching events exist'; THROW ")
             .Append(AppendConditionConflictError)
             .AppendLine(", @conditionMessage, 1; END");
+    }
+
+    private string? BuildConditionBranch(
+        QueryItem item,
+        int itemIndex,
+        Dictionary<string, string> tagVars,
+        List<SqlParameter> parameters,
+        bool hasAfter)
+    {
+        var hasTags = item.Tags is { Count: > 0 };
+        var hasTypes = item.Types is { Count: > 0 };
+        if (!hasTags && !hasTypes)
+            return null;
+
+        if (hasTags)
+        {
+            var sql = new StringBuilder();
+            sql.Append("(EXISTS (SELECT 1 FROM ").Append(_qTags).Append(" AS et0");
+            for (var j = 1; j < item.Tags!.Count; j++)
+            {
+                var alias = "et" + j.ToString(CultureInfo.InvariantCulture);
+                var tagVar = tagVars[item.Tags[j] ?? string.Empty];
+                sql.Append(" INNER JOIN ").Append(_qTags).Append(" AS ").Append(alias)
+                    .Append(" ON ").Append(alias).Append(".GlobalSequencePosition = et0.GlobalSequencePosition AND ")
+                    .Append(alias).Append(".TagId = ").Append(tagVar);
+            }
+
+            sql.Append(" WHERE et0.TagId = ").Append(tagVars[item.Tags[0] ?? string.Empty]);
+            if (hasAfter)
+                sql.Append(" AND et0.GlobalSequencePosition > @After");
+            if (hasTypes)
+                AppendConditionTypeIn(sql, "et0.EventTypeId", item, itemIndex, parameters);
+            sql.Append("))");
+            return sql.ToString();
+        }
+
+        var events = new StringBuilder();
+        events.Append("(EXISTS (SELECT 1 FROM ").Append(_qTable).Append(" AS e WHERE 1 = 1");
+        if (hasAfter)
+            events.Append(" AND e.SequencePosition > @After");
+        AppendConditionTypeIn(events, "e.EventTypeId", item, itemIndex, parameters);
+        events.Append("))");
+        return events.ToString();
+    }
+
+    private void AppendConditionTypeIn(
+        StringBuilder sql,
+        string column,
+        QueryItem item,
+        int itemIndex,
+        List<SqlParameter> parameters)
+    {
+        var names = new List<string>();
+        for (var j = 0; j < item.Types!.Count; j++)
+        {
+            var token = item.Types[j];
+            if (string.IsNullOrEmpty(token))
+                continue;
+            var name = "@CType" + itemIndex.ToString(CultureInfo.InvariantCulture) + "_" + j.ToString(CultureInfo.InvariantCulture);
+            names.Add(name);
+            parameters.Add(new SqlParameter(name, SqlDbType.NVarChar, 500) { Value = token });
+        }
+
+        if (names.Count == 0)
+            sql.Append(" AND 1 = 0");
+        else
+            sql.Append(" AND ").Append(column).Append(" IN (SELECT Id FROM ").Append(_qTypes)
+                .Append(" WHERE Token IN (").Append(string.Join(", ", names)).Append("))");
     }
 
 

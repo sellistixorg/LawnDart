@@ -32,11 +32,11 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
     internal const string SchemaFormatPropertyName = "LawnDart_SchemaFormat";
 
     /// <summary>
-    /// Format 5: events are clustered on global position. A stream id is a
-    /// <c>Streams.StreamKey</c>, and event ids are unique per tenant.
+    /// Format 6: event tags store a tag id and an event type id. Stream tags
+    /// store a tag id and a stream key. Events stay clustered on global position.
     /// An older stamp is not opened.
     /// </summary>
-    internal const string CurrentSchemaFormat = "5";
+    internal const string CurrentSchemaFormat = "6";
 
     /// <summary>Single-use rows that hold a rowversion for the life of an append transaction.</summary>
     internal const string AppendFenceTableName = "AppendFence";
@@ -63,6 +63,7 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
     private readonly string _typesTableName;
     private readonly bool _enableRegistry;
     private readonly EventTypeIdCache _eventTypes = new();
+    private readonly TagIdCache _tagIds = new();
     private readonly SemaphoreSlim _typeCacheRefresh = new(1, 1);
     private readonly SqlServerEventStoreOptions _options;
     private readonly ILogger<SqlServerEventStore>? _logger;
@@ -95,6 +96,8 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
     private readonly string _qStreamTags;
     private readonly string _streamTagsTableName;
     private readonly string _qTags;
+    private readonly string _qTagRegistry;
+    private readonly string _tagRegistryTableName;
     private readonly string _qTypes;
     private readonly string _qSequence;
     private readonly string _qStreamKeySequence;
@@ -119,6 +122,10 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
     internal string QualifiedStreamTagsTable => _qStreamTags;
 
     internal string QualifiedTagsTable => _qTags;
+
+    internal string QualifiedTagRegistryTable => _qTagRegistry;
+
+    internal string TagRegistryTableName => _tagRegistryTableName;
 
     internal string QualifiedTypesTable => _qTypes;
 
@@ -164,6 +171,10 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
             !string.Equals(_tableName, "Events", StringComparison.OrdinalIgnoreCase)
                 ? $"EventTypes_{_tableName}"
                 : "EventTypes";
+        _tagRegistryTableName =
+            !string.Equals(_tableName, "Events", StringComparison.OrdinalIgnoreCase)
+                ? "TagRegistry_" + _tableName
+                : "TagRegistry";
         _ = outboxWriter;
         _logger = logger;
 
@@ -177,6 +188,7 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
             : "StreamTags_" + _registryTableName;
         _qStreamTags = SqlIdentifier.Qualify(_schemaName, _streamTagsTableName);
         _qTags      = SqlIdentifier.Qualify(_schemaName, _tagsTableName);
+        _qTagRegistry = SqlIdentifier.Qualify(_schemaName, _tagRegistryTableName);
         _qTypes     = SqlIdentifier.Qualify(_schemaName, _typesTableName);
         _qSequence  = SqlIdentifier.Qualify(_schemaName, "EventSequencePosition");
         _qStreamKeySequence = SqlIdentifier.Qualify(_schemaName, "StreamKeySequence");
@@ -653,23 +665,8 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         await EnsureAppendFenceAsync(connection, cancellationToken).ConfigureAwait(false);
         await WarmEventTypesAsync(connection, cancellationToken).ConfigureAwait(false);
 
-        var tagsSql = $@"
-            IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qTags)}') AND type in (N'U'))
-            BEGIN
-                CREATE TABLE {_qTags} (
-                    [GlobalSequencePosition] BIGINT NOT NULL,
-                    [Tag]                    NVARCHAR(256) COLLATE {TagCollation} NOT NULL,
-                    CONSTRAINT {SqlIdentifier.Quote("PK_" + _tagsTableName)} PRIMARY KEY CLUSTERED ([Tag], [GlobalSequencePosition]),
-                    CONSTRAINT {SqlIdentifier.Quote("FK_" + _tagsTableName + "_Events")} FOREIGN KEY ([GlobalSequencePosition])
-                        REFERENCES {_qTable}([SequencePosition]) ON DELETE CASCADE
-                );
-                CREATE NONCLUSTERED INDEX {SqlIdentifier.Quote("IX_" + _tagsTableName + "_GlobalSequencePosition")}
-                    ON {_qTags}([GlobalSequencePosition]);
-            END";
-        var tagsCmd = new SqlCommand(tagsSql, connection);
-        await using var tagsCmdDisposal = tagsCmd.ConfigureAwait(false);
-        await tagsCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        await UpgradeTagCollationAsync(connection, cancellationToken).ConfigureAwait(false);
+        await EnsureTagRegistryAsync(connection, cancellationToken).ConfigureAwait(false);
+        await EnsureEventTagsAsync(connection, cancellationToken).ConfigureAwait(false);
 
         // Create stream registry table if enabled
         if (_enableRegistry)
@@ -766,37 +763,44 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task UpgradeTagCollationAsync(SqlConnection connection, CancellationToken cancellationToken)
+    private async Task EnsureTagRegistryAsync(SqlConnection connection, CancellationToken cancellationToken)
     {
-        var pkName = "PK_" + _tagsTableName;
+        var pk = SqlIdentifier.Quote("PK_" + _tagRegistryTableName);
+        var unique = SqlIdentifier.Quote("UX_" + _tagRegistryTableName + "_Tag");
         var sql = $"""
-            IF OBJECT_ID(N'{SqlIdentifier.Literal(_qTags)}', 'U') IS NOT NULL
-               AND EXISTS (
-                    SELECT 1 FROM sys.columns
-                    WHERE object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qTags)}')
-                      AND name = N'Tag'
-                      AND collation_name <> N'{TagCollation}')
+            IF OBJECT_ID(N'{SqlIdentifier.Literal(_qTagRegistry)}', 'U') IS NULL
             BEGIN
-                DECLARE @pk sysname;
-                SELECT @pk = kc.name
-                FROM sys.key_constraints kc
-                WHERE kc.parent_object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qTags)}')
-                  AND kc.[type] = N'PK';
-                IF @pk IS NOT NULL
-                BEGIN
-                    DECLARE @drop nvarchar(max) =
-                        N'ALTER TABLE {SqlIdentifier.Literal(_qTags)} DROP CONSTRAINT ' + QUOTENAME(@pk);
-                    EXEC sys.sp_executesql @drop;
-                END
-                ALTER TABLE {_qTags} ALTER COLUMN [Tag] NVARCHAR(256) COLLATE {TagCollation} NOT NULL;
-                IF NOT EXISTS (
-                    SELECT 1 FROM sys.key_constraints
-                    WHERE parent_object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qTags)}')
-                      AND [type] = N'PK')
-                BEGIN
-                    ALTER TABLE {_qTags}
-                        ADD CONSTRAINT {SqlIdentifier.Quote(pkName)} PRIMARY KEY CLUSTERED ([Tag], [GlobalSequencePosition]);
-                END
+                CREATE TABLE {_qTagRegistry} (
+                    [Id] INT IDENTITY(1, 1) NOT NULL,
+                    [Tag] NVARCHAR(256) COLLATE {TagCollation} NOT NULL,
+                    CONSTRAINT {pk} PRIMARY KEY NONCLUSTERED ([Id]),
+                    CONSTRAINT {unique} UNIQUE CLUSTERED ([Tag])
+                );
+            END
+            """;
+        var command = new SqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task EnsureEventTagsAsync(SqlConnection connection, CancellationToken cancellationToken)
+    {
+        var pk = SqlIdentifier.Quote("PK_" + _tagsTableName);
+        var fk = SqlIdentifier.Quote("FK_" + _tagsTableName + "_Events");
+        var position = SqlIdentifier.Quote("IX_" + _tagsTableName + "_GlobalSequencePosition");
+        var sql = $"""
+            IF OBJECT_ID(N'{SqlIdentifier.Literal(_qTags)}', 'U') IS NULL
+            BEGIN
+                CREATE TABLE {_qTags} (
+                    [TagId] INT NOT NULL,
+                    [GlobalSequencePosition] BIGINT NOT NULL,
+                    [EventTypeId] INT NOT NULL,
+                    CONSTRAINT {pk} PRIMARY KEY CLUSTERED ([TagId], [GlobalSequencePosition]),
+                    CONSTRAINT {fk} FOREIGN KEY ([GlobalSequencePosition])
+                        REFERENCES {_qTable}([SequencePosition]) ON DELETE CASCADE
+                );
+                CREATE NONCLUSTERED INDEX {position}
+                    ON {_qTags}([GlobalSequencePosition]);
             END
             """;
         var command = new SqlCommand(sql, connection);
@@ -1788,13 +1792,15 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
             if (_logger is not null && written > 0)
                 SqlServerEventStoreLog.OutboxEventsWritten(_logger, written, streamId);
 
-            return await FinishAppendAsync(
+            var result = await FinishAppendAsync(
                 connection,
                 transaction,
                 outcome.TenantId,
                 eventIds,
                 outcome.Result,
                 cancellationToken).ConfigureAwait(false);
+            RememberTags(outcome.LearnedTags);
+            return result;
         }
         catch (SqlException ex) when (HasError(ex, AppendVersionConflictError))
         {
@@ -1892,6 +1898,7 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         CancellationToken cancellationToken)
     {
         var resolution = await EnsureQueryTypesResolvedAsync(query, cancellationToken).ConfigureAwait(false);
+        await EnsureTagIdsAsync(query, cancellationToken).ConfigureAwait(false);
         var to = CapUnresolvedRead(toSequencePosition, resolution);
 
         var connection = new SqlConnection(_connectionString);
@@ -1907,6 +1914,7 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
             _qRegistry,
             query,
             _eventTypes.FindId,
+            _tagIds.FindId,
             fromSequencePosition,
             window.ToSequencePosition,
             toCommitTimestamp,
@@ -1979,6 +1987,82 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
 
     private readonly record struct TypeResolution(bool Resolved, long? HeadBeforeReload);
 
+    private void RememberTags(IReadOnlyList<(string Tag, int Id)> learned)
+    {
+        foreach (var (tag, id) in learned)
+            _tagIds.Add(id, tag);
+    }
+
+    private async Task EnsureTagIdsAsync(Query query, CancellationToken cancellationToken)
+    {
+        var missing = MissingTags(query);
+        if (missing.Count == 0)
+            return;
+
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await LookupTagIdsAsync(connection, missing, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<int?> FindTagIdAsync(SqlConnection connection, string tag, CancellationToken cancellationToken)
+    {
+        if (_tagIds.TryGetId(tag, out var cached))
+            return cached;
+
+        await LookupTagIdsAsync(connection, [tag], cancellationToken).ConfigureAwait(false);
+        return _tagIds.TryGetId(tag, out var id) ? id : null;
+    }
+
+    private async Task LookupTagIdsAsync(
+        SqlConnection connection,
+        IReadOnlyList<string> tags,
+        CancellationToken cancellationToken)
+    {
+        const int chunkSize = 100;
+        for (var start = 0; start < tags.Count; start += chunkSize)
+        {
+            var count = Math.Min(chunkSize, tags.Count - start);
+            var sql = new StringBuilder();
+            var command = new SqlCommand { Connection = connection };
+            for (var n = 0; n < count; n++)
+            {
+                if (n > 0)
+                    sql.AppendLine().AppendLine("UNION ALL");
+                var name = "@T" + n.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                sql.Append("SELECT Id, Tag FROM ").Append(_qTagRegistry)
+                    .Append(" WHERE Tag = ").Append(name).Append(" COLLATE ").Append(TagCollation);
+                command.Parameters.Add(name, SqlDbType.NVarChar, 256).Value = tags[start + n];
+            }
+
+            command.CommandText = sql.ToString();
+            await using var commandDisposal = command.ConfigureAwait(false);
+            var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            await using var readerDisposal = reader.ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                _tagIds.Add(reader.GetInt32(0), reader.GetString(1));
+        }
+    }
+
+    private List<string> MissingTags(Query query)
+    {
+        var missing = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var item in query.Items)
+        {
+            if (item.Tags is not { Count: > 0 })
+                continue;
+            foreach (var tag in item.Tags)
+            {
+                if (string.IsNullOrEmpty(tag) || _tagIds.TryGetId(tag, out _) || !seen.Add(tag))
+                    continue;
+                missing.Add(tag);
+            }
+        }
+
+        return missing;
+    }
+
     private static List<string> QueryTypeTokens(Query query)
     {
         var tokens = new List<string>();
@@ -2023,6 +2107,7 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         CancellationToken cancellationToken)
     {
         var resolution = await EnsureQueryTypesResolvedAsync(query, cancellationToken).ConfigureAwait(false);
+        await EnsureTagIdsAsync(query, cancellationToken).ConfigureAwait(false);
         var to = CapUnresolvedRead(toSequencePosition, resolution);
 
         var connection = new SqlConnection(_connectionString);
@@ -2038,6 +2123,7 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
             _qRegistry,
             query,
             _eventTypes.FindId,
+            _tagIds.FindId,
             fromSequencePosition,
             window.ToSequencePosition,
             toCommitTimestamp,

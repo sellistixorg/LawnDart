@@ -218,7 +218,7 @@ need `USAGE` on the schema.
 
 | Call | What it reads |
 |---|---|
-| `SqlServerEventStore.VerifySchemaAsync`, `VerifySqlServerEventStoreAsync` | Events stamp `LawnDart_SchemaFormat`, tables, the clustered position key, `IX_Events_StreamKey_Version`, `UX_TenantId_EventId`, `StreamKey`, `StreamIdBin`, `UX_StreamIdBin`, `UX_Streams_StreamKey`, and the stream tag trigger |
+| `SqlServerEventStore.VerifySchemaAsync`, `VerifySqlServerEventStoreAsync` | Events stamp `LawnDart_SchemaFormat`, tables, the clustered position key, `IX_Events_StreamKey_Version`, `UX_TenantId_EventId`, `StreamKey`, `StreamIdBin`, `UX_StreamIdBin`, `UX_Streams_StreamKey`, `TagRegistry`, `EventTags.TagId`, `EventTags.EventTypeId`, `StreamTags.TagId`, `StreamTags.StreamKey`, and the stream tag trigger |
 | `SqlServerOutboxWriter.VerifySchemaAsync` | Outbox stamp `LawnDart_OutboxSchemaFormat` and the outbox table |
 | `SqlServerSnapshotStore.VerifySchemaAsync` | `EventSnapshots` and `DcbSnapshots` |
 | `SqlViewStore.VerifySchemaAsync`, `SqlCheckpointStore.VerifySchemaAsync`, `VerifySqlProjectionStoresAsync` | `ProjectionViews` and `ProjectionCheckpoints` |

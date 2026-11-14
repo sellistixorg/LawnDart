@@ -37,10 +37,11 @@ A load, a fence, and an index compare the whole string.
 `student:0ad2f06e-fc65-4394-bfa1-f3116bf68808` matches only that spelling.
 `Student:0ad2f06e-fc65-4394-bfa1-f3116bf68808` is a different tag.
 
-SQL Server stores `EventTags.Tag` with the `Latin1_General_100_BIN2`
-collation. In-memory reads and subscription filters use ordinal
-comparison (`EventQueryMatcher`). `GetStreamsByTagAsync` uses the same
-key.
+SQL Server stores each distinct tag in `TagRegistry` with the
+`Latin1_General_100_BIN2` collation. An event tag row stores the tag id,
+the global position, and the event type id. In-memory reads and
+subscription filters use ordinal comparison (`EventQueryMatcher`).
+`GetStreamsByTagAsync` uses the same key.
 
 `GetOrCreateEntityAsync` loads the query you pass. One item still
 requires every tag in that item. Several items match an event that fits
