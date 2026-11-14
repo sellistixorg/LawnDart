@@ -11,6 +11,7 @@ public class DcbQuerySqlTests
         var built = DcbQuerySql.Build(
             "[dbo].[Events]",
             "[dbo].[EventTags]",
+            "[dbo].[Streams]",
             Query.FromItems(QueryItem.ByTags("alpha", "beta")),
             _ => null,
             fromSequencePosition: null,
@@ -36,6 +37,7 @@ public class DcbQuerySqlTests
         var built = DcbQuerySql.Build(
             "[dbo].[Events]",
             "[dbo].[EventTags]",
+            "[dbo].[Streams]",
             Query.FromItems(QueryItem.ByType("order-placed", "order-cancelled")),
             token => token switch
             {
@@ -66,6 +68,7 @@ public class DcbQuerySqlTests
         var built = DcbQuerySql.Build(
             "[dbo].[Events]",
             "[dbo].[EventTags]",
+            "[dbo].[Streams]",
             Query.FromItems(QueryItem.ByType("no-such-family")),
             _ => null,
             fromSequencePosition: null,
@@ -85,6 +88,7 @@ public class DcbQuerySqlTests
         var all = DcbQuerySql.Build(
             "[dbo].[Events]",
             "[dbo].[EventTags]",
+            "[dbo].[Streams]",
             Query.All(),
             _ => null,
             fromSequencePosition: 1,
@@ -97,6 +101,7 @@ public class DcbQuerySqlTests
         var tags = DcbQuerySql.Build(
             "[dbo].[Events]",
             "[dbo].[EventTags]",
+            "[dbo].[Streams]",
             Query.FromItems(QueryItem.ByTags("Customer:ABC")),
             _ => null,
             fromSequencePosition: null,
@@ -109,6 +114,7 @@ public class DcbQuerySqlTests
         var max = DcbQuerySql.Build(
             "[dbo].[Events]",
             "[dbo].[EventTags]",
+            "[dbo].[Streams]",
             Query.FromItems(QueryItem.ByType("order-placed")),
             token => token == "order-placed" ? 4 : null,
             fromSequencePosition: null,
@@ -121,6 +127,7 @@ public class DcbQuerySqlTests
         var advanced = DcbQuerySql.Build(
             "[dbo].[Events]",
             "[dbo].[EventTags]",
+            "[dbo].[Streams]",
             Query.All(),
             _ => null,
             fromSequencePosition: 1,

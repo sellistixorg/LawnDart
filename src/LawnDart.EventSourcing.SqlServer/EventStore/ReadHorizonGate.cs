@@ -12,6 +12,7 @@ namespace LawnDart.EventSourcing.SqlServer.EventStore;
 internal sealed class ReadHorizonGate
 {
     private readonly string _qTable;
+    private readonly string _qRegistry;
     private readonly SqlServerEventStoreOptions _options;
     private readonly ILogger? _logger;
     private readonly object _sync = new();
@@ -25,9 +26,14 @@ internal sealed class ReadHorizonGate
     private bool _warned;
     private bool _dmvDenied;
 
-    internal ReadHorizonGate(string qualifiedEventsTable, SqlServerEventStoreOptions options, ILogger? logger)
+    internal ReadHorizonGate(
+        string qualifiedEventsTable,
+        string qualifiedRegistryTable,
+        SqlServerEventStoreOptions options,
+        ILogger? logger)
     {
         _qTable = qualifiedEventsTable;
+        _qRegistry = qualifiedRegistryTable;
         _options = options;
         _logger = logger;
     }
@@ -237,10 +243,11 @@ internal sealed class ReadHorizonGate
         foreach (var gap in gaps)
         {
             var sql = $"""
-                SELECT SequencePosition, StreamId
-                FROM {_qTable} WITH (READPAST)
-                WHERE SequencePosition > @After AND SequencePosition < @Before
-                ORDER BY SequencePosition
+                SELECT e.SequencePosition, s.StreamId
+                FROM {_qTable} e WITH (READPAST)
+                INNER JOIN {_qRegistry} s ON s.StreamKey = e.StreamKey
+                WHERE e.SequencePosition > @After AND e.SequencePosition < @Before
+                ORDER BY e.SequencePosition
                 """;
             var command = new SqlCommand(sql, connection);
             await using var commandDisposal = command.ConfigureAwait(false);

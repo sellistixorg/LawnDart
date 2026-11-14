@@ -13,7 +13,10 @@ namespace LawnDart.EventSourcing.SqlServer.EventStore;
 internal static class DcbQuerySql
 {
     internal const string EventColumns =
-        "e.StreamId, e.Version, e.SequencePosition, e.EventTypeId, e.EventData, e.SchemaVersion, e.CodecId, e.Tags, e.Metadata, e.Timestamp";
+        "s.StreamId, e.Version, e.SequencePosition, e.EventTypeId, e.EventData, e.SchemaVersion, e.CodecId, e.Tags, e.Metadata, e.Timestamp";
+
+    private static string StreamJoin(string qRegistry) =>
+        $"INNER JOIN {qRegistry} s ON s.StreamKey = e.StreamKey";
 
     /// <summary>
     /// Rows whose rowversion is still owned by an open transaction, or that
@@ -36,6 +39,7 @@ internal static class DcbQuerySql
     public static Result Build(
         string qTable,
         string qTags,
+        string qRegistry,
         Query query,
         Func<string, int?> resolveTypeId,
         long? fromSequencePosition,
@@ -53,7 +57,7 @@ internal static class DcbQuerySql
         var items = query.Items;
         if (items.Count == 0)
         {
-            var allSql = BuildEventsScan(qTable, fromSequencePosition, toSequencePosition, toTimestamp, limit, mode, parameters, applyStableHorizon);
+            var allSql = BuildEventsScan(qTable, qRegistry, fromSequencePosition, toSequencePosition, toTimestamp, limit, mode, parameters, applyStableHorizon);
             return new Result(allSql, parameters);
         }
 
@@ -73,11 +77,11 @@ internal static class DcbQuerySql
         string sql;
         if (sources.Count == 1)
         {
-            sql = ComposeSingle(sources[0], qTable, limit, mode, parameters, applyStableHorizon);
+            sql = ComposeSingle(sources[0], qTable, qRegistry, limit, mode, parameters, applyStableHorizon);
         }
         else
         {
-            sql = ComposeUnion(sources, qTable, limit, mode, parameters, applyStableHorizon);
+            sql = ComposeUnion(sources, qTable, qRegistry, limit, mode, parameters, applyStableHorizon);
         }
 
         return new Result(sql, parameters);
@@ -99,6 +103,7 @@ internal static class DcbQuerySql
 
     private static string BuildEventsScan(
         string qTable,
+        string qRegistry,
         long? fromSequencePosition,
         long? toSequencePosition,
         DateTime? toTimestamp,
@@ -121,6 +126,7 @@ internal static class DcbQuerySql
         var sql = $"""
             SELECT {EventColumns}
             FROM {qTable} e{readPast}
+            {StreamJoin(qRegistry)}
             {where}
             ORDER BY e.SequencePosition
             """;
@@ -222,6 +228,7 @@ internal static class DcbQuerySql
     private static string ComposeSingle(
         ItemSource source,
         string qTable,
+        string qRegistry,
         int? limit,
         Mode mode,
         List<SqlParameter> parameters,
@@ -255,6 +262,7 @@ internal static class DcbQuerySql
             sql = $"""
                 SELECT {EventColumns}
                 FROM {source.FromClause}
+                {StreamJoin(qRegistry)}
                 {source.WhereClause}
                 ORDER BY {source.SequenceColumn}
                 """;
@@ -265,6 +273,7 @@ internal static class DcbQuerySql
                 SELECT {EventColumns}
                 FROM {source.FromClause}
                 INNER JOIN {qTable} e{readPast} ON e.SequencePosition = {source.SequenceColumn}
+                {StreamJoin(qRegistry)}
                 {source.WhereClause}
                   {horizonAnd}
                 ORDER BY {source.SequenceColumn}
@@ -277,6 +286,7 @@ internal static class DcbQuerySql
     private static string ComposeUnion(
         List<ItemSource> sources,
         string qTable,
+        string qRegistry,
         int? limit,
         Mode mode,
         List<SqlParameter> parameters,
@@ -314,6 +324,7 @@ internal static class DcbQuerySql
             {union}
             ) m
             INNER JOIN {qTable} e{readPast} ON e.SequencePosition = m.SequencePosition
+            {StreamJoin(qRegistry)}
             WHERE 1 = 1
               {horizonAnd}
             ORDER BY e.SequencePosition

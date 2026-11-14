@@ -10,6 +10,10 @@ changes to the public API.
 
 ## [Unreleased]
 
+### Changed
+
+- Breaking: SQL Server events are schema format 5. The events table is clustered on global position. Each event stores a numeric stream key and a tenant id. The stream id text lives on the stream registry, which is always maintained. Event ids are unique for one tenant. Stream snapshots use the stream key. `Events_Readable` still shows the stream id text. An append of a stream waits while another append of that same stream is open. When both name the same expected version, the one that waits throws `ConcurrencyException` after the first commits. An events table with an older stamp is left as it is. Drop those tables and create them again.
+
 ### Fixed
 
 - A subscription reads again when a wake-up names a position that an open transaction still hides. The wake-up is consumed by the read that misses the row, and the transaction that clears the head does not signal. Postgres and SQL Server both retry that read. The idle poll is unchanged.

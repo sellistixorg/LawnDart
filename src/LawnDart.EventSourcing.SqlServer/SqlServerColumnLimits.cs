@@ -6,8 +6,8 @@ namespace LawnDart.EventSourcing.SqlServer;
 internal static class SqlServerColumnLimits
 {
     /// <summary>
-    /// <c>Events.StreamId</c>, <c>Streams.StreamId</c>, and <c>EventSnapshots.StreamId</c>
-    /// are <c>NVARCHAR(255)</c>.
+    /// <c>Streams.StreamId</c> is <c>NVARCHAR(255)</c>. Events and snapshots store
+    /// <c>StreamKey</c> instead of the text.
     /// </summary>
     internal const int StreamId = 255;
 
@@ -21,7 +21,7 @@ internal static class SqlServerColumnLimits
             return;
 
         throw new ArgumentException(
-            $"Stream id is {streamId.Length} characters. SQL Server stores stream ids in NVARCHAR({StreamId}) on Events, Streams, and EventSnapshots. Shorten the id.",
+            $"Stream id is {streamId.Length} characters. SQL Server stores stream ids in NVARCHAR({StreamId}) on Streams. Shorten the id.",
             paramName);
     }
 }

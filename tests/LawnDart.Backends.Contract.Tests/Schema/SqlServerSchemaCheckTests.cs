@@ -24,7 +24,7 @@ public sealed class SqlServerSchemaCheckTests(SqlServerSchemaCheckFixture fixtur
     {
         var bundle = await fixture.CreateAsync("chk_match");
 
-        AssertMatch(await bundle.Store.VerifySchemaAsync(), "4");
+        AssertMatch(await bundle.Store.VerifySchemaAsync(), SqlServerEventStore.CurrentSchemaFormat);
         AssertMatch(await bundle.Outbox.VerifySchemaAsync(), "2");
         AssertMatch(await bundle.Snapshots.VerifySchemaAsync(), null);
         AssertMatch(await bundle.Views.VerifySchemaAsync(), null);
@@ -48,8 +48,8 @@ public sealed class SqlServerSchemaCheckTests(SqlServerSchemaCheckFixture fixtur
         var result = await bundle.Store.VerifySchemaAsync();
 
         Assert.False(result.Matches);
-        Assert.Equal("4", result.ExpectedFormat);
-        Assert.Equal("4", result.FoundFormat);
+        Assert.Equal(SqlServerEventStore.CurrentSchemaFormat, result.ExpectedFormat);
+        Assert.Equal(SqlServerEventStore.CurrentSchemaFormat, result.FoundFormat);
         Assert.Contains("EventTags", result.Missing);
         Assert.Throws<SchemaMismatchException>(result.ThrowIfMismatch);
     }
@@ -62,10 +62,12 @@ public sealed class SqlServerSchemaCheckTests(SqlServerSchemaCheckFixture fixtur
         var streams = Qualify(bundle.Schema, "Streams");
         var tags = Qualify(bundle.Schema, "EventTags");
         await fixture.ExecuteAsync($"""
-            DROP INDEX [UX_EventId] ON {events};
             ALTER TABLE {tags} DROP CONSTRAINT [FK_EventTags_Events];
-            DROP INDEX [UX_SequencePosition] ON {events};
+            ALTER TABLE {events} DROP CONSTRAINT [PK_Events];
+            DROP INDEX [IX_Events_StreamKey_Version] ON {events};
+            DROP INDEX [UX_TenantId_EventId] ON {events};
             DROP INDEX [UX_StreamIdBin] ON {streams};
+            ALTER TABLE {streams} DROP CONSTRAINT [UX_Streams_StreamKey];
             IF EXISTS (
                 SELECT 1
                 FROM sys.indexes i
@@ -79,9 +81,11 @@ public sealed class SqlServerSchemaCheckTests(SqlServerSchemaCheckFixture fixtur
         var result = await bundle.Store.VerifySchemaAsync();
 
         Assert.False(result.Matches);
-        Assert.Contains("UX_EventId", result.Missing);
-        Assert.Contains("UX_SequencePosition", result.Missing);
+        Assert.Contains("PK_Events", result.Missing);
+        Assert.Contains("IX_Events_StreamKey_Version", result.Missing);
+        Assert.Contains("UX_TenantId_EventId", result.Missing);
         Assert.Contains("UX_StreamIdBin", result.Missing);
+        Assert.Contains("UX_Streams_StreamKey", result.Missing);
         Assert.Contains("StreamIdBin", result.Missing);
     }
 
@@ -146,7 +150,7 @@ public sealed class SqlServerSchemaCheckTests(SqlServerSchemaCheckFixture fixtur
         var inbox = await bundle.Inbox.VerifySchemaAsync();
 
         Assert.False(events.Matches);
-        Assert.Equal("4", events.ExpectedFormat);
+        Assert.Equal(SqlServerEventStore.CurrentSchemaFormat, events.ExpectedFormat);
         Assert.Equal("2", events.FoundFormat);
         Assert.False(outbox.Matches);
         Assert.Equal("2", outbox.ExpectedFormat);
@@ -181,7 +185,7 @@ public sealed class SqlServerSchemaCheckTests(SqlServerSchemaCheckFixture fixtur
         var read = fixture.Open(reader, bundle.Schema);
         var before = await fixture.CatalogAsync(bundle.Schema);
 
-        AssertMatch(await read.Store.VerifySchemaAsync(), "4");
+        AssertMatch(await read.Store.VerifySchemaAsync(), SqlServerEventStore.CurrentSchemaFormat);
         AssertMatch(await read.Outbox.VerifySchemaAsync(), "2");
         AssertMatch(await read.Snapshots.VerifySchemaAsync(), null);
         AssertMatch(await read.Views.VerifySchemaAsync(), null);
@@ -194,7 +198,7 @@ public sealed class SqlServerSchemaCheckTests(SqlServerSchemaCheckFixture fixtur
         await using var connection = new SqlConnection(reader);
         await connection.OpenAsync();
         await using var write = new SqlCommand(
-            $"UPDATE {Qualify(bundle.Schema, "Events")} SET [StreamId] = [StreamId]",
+            $"UPDATE {Qualify(bundle.Schema, "Events")} SET [SequencePosition] = [SequencePosition]",
             connection);
         await Assert.ThrowsAsync<SqlException>(() => write.ExecuteNonQueryAsync());
     }

@@ -58,7 +58,8 @@ public abstract class EventStoreContractTests : ContractSuite
     {
         SkipUnless(
             Cap.ParallelAppendCanConflict,
-            "This backend runs one append to a stream at a time, so a parallel append does not hit a duplicate version.");
+            "This backend runs one append to a stream at a time, so a parallel append does not hit a duplicate version. "
+            + "Same expected version is covered by AppendAsync_SameExpectedVersion_WaiterConflicts.");
 
         var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
         var streamId = Stream();
@@ -107,6 +108,47 @@ public abstract class EventStoreContractTests : ContractSuite
         Assert.NotEmpty(stored);
         for (var i = 0; i < stored.Count; i++)
             Assert.Equal(i + 1, stored[i].Version);
+    }
+
+    /// <summary>
+    /// Two appends name the same expected version. One commits. The other waits
+    /// or loses the race, then throws <see cref="ConcurrencyException"/>. The stream
+    /// keeps the first append.
+    /// </summary>
+    [ContractFact(Timeout = 20_000)]
+    public async Task AppendAsync_SameExpectedVersion_WaiterConflicts()
+    {
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var streamId = Stream();
+        await store.AppendAsync(streamId, [ContractEvent.Tick()]);
+
+        var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var tasks = Enumerable.Range(0, 2).Select(_ => Task.Run(async () =>
+        {
+            await start.Task.ConfigureAwait(false);
+            try
+            {
+                await store.AppendAsync(streamId, [ContractEvent.Tick()], expectedVersion: 1).ConfigureAwait(false);
+                return (Exception?)null;
+            }
+            catch (Exception ex)
+            {
+                return ex;
+            }
+        })).ToArray();
+
+        start.SetResult();
+        var results = await Task.WhenAll(tasks).WaitAsync(TimeSpan.FromSeconds(15)).ConfigureAwait(false);
+
+        Assert.Equal(1, results.Count(ex => ex is null));
+        var conflict = Assert.IsType<ConcurrencyException>(Assert.Single(results, ex => ex is not null));
+        Assert.Equal(1, conflict.ExpectedPosition);
+        Assert.Equal(2, conflict.ActualPosition);
+
+        var stored = await store.ReadStreamAsync(streamId);
+        Assert.Equal(2, stored.Count);
+        Assert.Equal(1, stored[0].Version);
+        Assert.Equal(2, stored[1].Version);
     }
 
     [Fact]

@@ -89,6 +89,6 @@ Postgres matches a prefix exactly, including case. When the prefix has three or 
 
 ## Length
 
-SQL Server stores a stream id in `NVARCHAR(255)` on `Events`, `Streams`, and `EventSnapshots`. A longer id throws `ArgumentException` before the write.
+SQL Server stores a stream id in `NVARCHAR(255)` on `Streams`. Events and stream snapshots store the registry's `StreamKey` instead. A longer id throws `ArgumentException` before the write.
 
 `AddSqlProjectionStores` (package `LawnDart.Projections.Lightweight.SqlServer`) uses the context name as the SQL Server schema when you omit the schema. The name rule fits a schema identifier. Pass `schemaName: "dbo"` to keep the `dbo` schema.

@@ -87,7 +87,7 @@ public sealed class SqlServerEventStoreCorrectnessTests : IAsyncLifetime
 
 
     [Fact]
-    public async Task Format2_UpgradesInPlace_AndKeepsRows()
+    public async Task Format2_IsLeftInPlace()
     {
         const string schema = "upg";
         await using (var connection = new SqlConnection(_connectionString))
@@ -98,38 +98,29 @@ public sealed class SqlServerEventStoreCorrectnessTests : IAsyncLifetime
         }
 
         var store = CreateStore(_connectionString, schema);
-        await store.InitializeSchemaAsync();
+        var ex = await Assert.ThrowsAsync<IncompatibleEventStoreSchemaException>(
+            () => store.InitializeSchemaAsync());
+        Assert.Equal("2", ex.FoundFormat);
+        Assert.Equal(SqlServerEventStore.CurrentSchemaFormat, ex.RequiredFormat);
 
         await using (var connection = new SqlConnection(_connectionString))
         {
             await connection.OpenAsync();
-            Assert.Equal(SqlServerEventStore.CurrentSchemaFormat, await ScalarAsync(connection, """
+            Assert.Equal("2", await ScalarAsync(connection, """
                 SELECT CAST(value AS nvarchar(20))
                 FROM sys.extended_properties
                 WHERE major_id = OBJECT_ID(N'[upg].[Events]')
                   AND name = N'LawnDart_SchemaFormat'
                   AND minor_id = 0
                 """));
-            Assert.Equal(1, Convert.ToInt32(await ScalarAsync(connection, """
+            Assert.Equal(0, Convert.ToInt32(await ScalarAsync(connection, """
                 SELECT COUNT(*) FROM sys.columns
-                WHERE object_id = OBJECT_ID(N'[upg].[Events]') AND name = N'RowVersion'
+                WHERE object_id = OBJECT_ID(N'[upg].[Events]') AND name = N'StreamKey'
                 """)));
-            Assert.Equal(SqlServerEventStore.TagCollation, (string)(await ScalarAsync(connection, """
-                SELECT collation_name FROM sys.columns
-                WHERE object_id = OBJECT_ID(N'[upg].[EventTags]') AND name = N'Tag'
-                """))!);
-            Assert.NotNull(await ScalarAsync(connection,
-                "SELECT OBJECT_ID(N'[upg].[AppendFence]', 'U')"));
+            Assert.Equal(1, Convert.ToInt32(await ScalarAsync(connection, """
+                SELECT COUNT(*) FROM [upg].[Events]
+                """)));
         }
-
-        var log = (IEventLog)store;
-        var exact = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags("Customer:ABC")));
-        Assert.Contains(exact.Events, e => e.StreamId == "kept");
-        var other = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags("customer:abc")));
-        Assert.DoesNotContain(other.Events, e => e.StreamId == "kept");
-
-        var appended = await store.AppendAsync("s2", [Evt()]);
-        Assert.True(appended.SequencePositions[0] > 1);
     }
 
     private SqlServerEventStore CreateStore(
