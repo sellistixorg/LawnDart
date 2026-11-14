@@ -25,7 +25,8 @@ internal static class SqlSchemaProbe
         var command = new SqlCommand(sql, connection);
         await using var disposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("@schema", schema);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var readerDisposal = reader.ConfigureAwait(false);
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             throw Permission(schema);
 

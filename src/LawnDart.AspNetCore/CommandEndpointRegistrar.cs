@@ -221,14 +221,14 @@ internal static class CommandEndpointRegistrar
                     CancellationToken ct) =>
                 {
                     var handler = http.RequestServices.GetRequiredKeyedService<ICommandHandler<TCommand>>(key!);
-                    var authResult = await authService.AuthorizeCommandAsync(command, ct);
+                    var authResult = await authService.AuthorizeCommandAsync(command, ct).ConfigureAwait(false);
                     if (!authResult.IsAuthorized)
                         return Results.Problem(
                             title: "Forbidden",
                             detail: string.Join("; ", authResult.FailedChecks),
                             statusCode: StatusCodes.Status403Forbidden);
 
-                    return await ExecuteHttpCommandAsync(command, http, handler, ct);
+                    return await ExecuteHttpCommandAsync(command, http, handler, ct).ConfigureAwait(false);
                 };
             }
 
@@ -239,14 +239,14 @@ internal static class CommandEndpointRegistrar
                 AuthorizationService authService,
                 CancellationToken ct) =>
             {
-                var authResult = await authService.AuthorizeCommandAsync(command, ct);
+                var authResult = await authService.AuthorizeCommandAsync(command, ct).ConfigureAwait(false);
                 if (!authResult.IsAuthorized)
                     return Results.Problem(
                         title: "Forbidden",
                         detail: string.Join("; ", authResult.FailedChecks),
                         statusCode: StatusCodes.Status403Forbidden);
 
-                return await ExecuteHttpCommandAsync(command, http, handler, ct);
+                return await ExecuteHttpCommandAsync(command, http, handler, ct).ConfigureAwait(false);
             };
         }
 
@@ -258,7 +258,7 @@ internal static class CommandEndpointRegistrar
                 CancellationToken ct) =>
             {
                 var handler = http.RequestServices.GetRequiredKeyedService<ICommandHandler<TCommand>>(key!);
-                return await ExecuteHttpCommandAsync(command, http, handler, ct);
+                return await ExecuteHttpCommandAsync(command, http, handler, ct).ConfigureAwait(false);
             };
         }
 
@@ -269,7 +269,7 @@ internal static class CommandEndpointRegistrar
             ICommandHandler<TCommand> handler,
             CancellationToken ct) =>
         {
-            return await ExecuteHttpCommandAsync(command, http, handler, ct);
+            return await ExecuteHttpCommandAsync(command, http, handler, ct).ConfigureAwait(false);
         };
     }
 
@@ -292,7 +292,7 @@ internal static class CommandEndpointRegistrar
             message,
             ActivityKind.Server);
         using var ambient = AmbientMessageContext.Push(message);
-        return await ExecuteHandlerAsync(command, handler, ct);
+        return await ExecuteHandlerAsync(command, handler, ct).ConfigureAwait(false);
     }
 
     private static void AssignCommandIdIfEmpty<TCommand>(TCommand command, HttpContext http)
@@ -373,7 +373,7 @@ internal static class CommandEndpointRegistrar
     {
         try
         {
-            await handler.HandleAsync(command, ct);
+            await handler.HandleAsync(command, ct).ConfigureAwait(false);
             return Results.Accepted();
         }
         catch (DomainException ex)

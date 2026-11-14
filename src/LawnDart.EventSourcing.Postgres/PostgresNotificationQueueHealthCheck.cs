@@ -74,9 +74,11 @@ public sealed class PostgresNotificationQueueHealthCheck : IHealthCheck
     {
         try
         {
-            await using var connection = new NpgsqlConnection(_connectionString);
+            var connection = new NpgsqlConnection(_connectionString);
+            await using var connectionDisposal = connection.ConfigureAwait(false);
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-            await using var command = new NpgsqlCommand("SELECT pg_notification_queue_usage()", connection);
+            var command = new NpgsqlCommand("SELECT pg_notification_queue_usage()", connection);
+            await using var commandDisposal = command.ConfigureAwait(false);
             var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
             var usage = result switch
             {

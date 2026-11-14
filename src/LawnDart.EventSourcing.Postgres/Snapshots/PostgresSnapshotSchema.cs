@@ -56,7 +56,8 @@ internal static class PostgresSnapshotSchema
                 PRIMARY KEY (dcb_id)
             );
             """;
-        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        var command = new NpgsqlCommand(sql, connection, transaction);
+        await using var commandDisposal = command.ConfigureAwait(false);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 }

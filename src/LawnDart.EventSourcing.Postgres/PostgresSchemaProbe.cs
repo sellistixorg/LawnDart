@@ -89,7 +89,8 @@ internal static class PostgresSchemaProbe
         string qualified,
         CancellationToken cancellationToken)
     {
-        await using var command = new NpgsqlCommand("SELECT to_regclass(@name) IS NOT NULL", connection);
+        var command = new NpgsqlCommand("SELECT to_regclass(@name) IS NOT NULL", connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("name", qualified);
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return result is true;
@@ -101,9 +102,10 @@ internal static class PostgresSchemaProbe
         string component,
         CancellationToken cancellationToken)
     {
-        await using var command = new NpgsqlCommand(
+        var command = new NpgsqlCommand(
             $"SELECT format FROM {stampTable} WHERE component = @component",
             connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("component", component);
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return result is null or DBNull ? null : Convert.ToInt32(result);
@@ -115,7 +117,7 @@ internal static class PostgresSchemaProbe
         string name,
         CancellationToken cancellationToken)
     {
-        await using var command = new NpgsqlCommand(
+        var command = new NpgsqlCommand(
             """
             SELECT 1
             FROM pg_type t
@@ -123,6 +125,7 @@ internal static class PostgresSchemaProbe
             WHERE n.nspname = @schema AND t.typname = @name
             """,
             connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("schema", schema);
         command.Parameters.AddWithValue("name", name);
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
@@ -136,7 +139,7 @@ internal static class PostgresSchemaProbe
         List<string> missing,
         CancellationToken cancellationToken)
     {
-        await using var command = new NpgsqlCommand(
+        var command = new NpgsqlCommand(
             """
             SELECT p.prosrc
             FROM pg_proc p
@@ -144,10 +147,12 @@ internal static class PostgresSchemaProbe
             WHERE n.nspname = @schema AND p.proname = @name
             """,
             connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("schema", schema);
         command.Parameters.AddWithValue("name", function.Name);
         var bodies = new List<string>();
-        await using (var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
+        var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using (reader.ConfigureAwait(false))
         {
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
                 bodies.Add(reader.GetString(0));
@@ -206,7 +211,8 @@ internal static class PostgresSchemaProbe
         string body,
         CancellationToken cancellationToken)
     {
-        await using var command = new NpgsqlCommand("SELECT md5(@body)", connection);
+        var command = new NpgsqlCommand("SELECT md5(@body)", connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.Add(new NpgsqlParameter("body", body) { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text });
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return Convert.ToString(result, CultureInfo.InvariantCulture) ?? "";
@@ -218,7 +224,7 @@ internal static class PostgresSchemaProbe
         Trigger trigger,
         CancellationToken cancellationToken)
     {
-        await using var command = new NpgsqlCommand(
+        var command = new NpgsqlCommand(
             """
             SELECT 1
             FROM pg_trigger t
@@ -230,6 +236,7 @@ internal static class PostgresSchemaProbe
               AND c.oid = to_regclass(@table)
             """,
             connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("schema", schema);
         command.Parameters.AddWithValue("name", trigger.Name);
         command.Parameters.AddWithValue("table", trigger.TableQualified);

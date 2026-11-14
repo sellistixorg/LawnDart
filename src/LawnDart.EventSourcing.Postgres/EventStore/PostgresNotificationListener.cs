@@ -353,8 +353,10 @@ internal sealed class PostgresNotificationListener
         _probePayload = payload;
         try
         {
-            await using var probe = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-            await using var command = new NpgsqlCommand("SELECT pg_notify(@channel, @payload)", probe);
+            var probe = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var probeDisposal = probe.ConfigureAwait(false);
+            var command = new NpgsqlCommand("SELECT pg_notify(@channel, @payload)", probe);
+            await using var commandDisposal = command.ConfigureAwait(false);
             command.Parameters.AddWithValue("channel", _channel);
             command.Parameters.AddWithValue("payload", payload);
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -415,7 +417,8 @@ internal sealed class PostgresNotificationListener
 
             if (!got)
             {
-                await using var ping = new NpgsqlCommand("SELECT 1", connection);
+                var ping = new NpgsqlCommand("SELECT 1", connection);
+                await using var pingDisposal = ping.ConfigureAwait(false);
                 ping.CommandTimeout = 2;
                 await ping.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
                 continue;
@@ -475,7 +478,8 @@ internal sealed class PostgresNotificationListener
 
     private async Task ExecuteListenAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
     {
-        await using var command = new NpgsqlCommand($"LISTEN {PgIdentifier.Quote(_channel)}", connection);
+        var command = new NpgsqlCommand($"LISTEN {PgIdentifier.Quote(_channel)}", connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 

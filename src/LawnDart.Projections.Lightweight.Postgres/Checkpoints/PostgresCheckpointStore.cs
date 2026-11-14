@@ -59,7 +59,8 @@ public sealed class PostgresCheckpointStore : ICheckpointStore, IAtomicProjectio
     /// </remarks>
     public async Task InitializeSchemaAsync(CancellationToken cancellationToken = default)
     {
-        await using var connection = await OpenMigrationAsync(cancellationToken).ConfigureAwait(false);
+        var connection = await OpenMigrationAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
         await PostgresProjectionSchema.EnsureAsync(
             connection, _names, PostgresProjectionSchema.AppRole(_options), cancellationToken).ConfigureAwait(false);
         if (_logger is not null)
@@ -82,7 +83,8 @@ public sealed class PostgresCheckpointStore : ICheckpointStore, IAtomicProjectio
     /// </remarks>
     public async Task<SchemaCheckResult> VerifySchemaAsync(CancellationToken cancellationToken = default)
     {
-        await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
         return await PostgresProjectionSchema.VerifyAsync(connection, _names, cancellationToken).ConfigureAwait(false);
     }
 
@@ -107,11 +109,14 @@ public sealed class PostgresCheckpointStore : ICheckpointStore, IAtomicProjectio
             FROM {_names.Checkpoints}
             WHERE projection_type = @type AND node_id = @node
             """;
-        await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        var command = new NpgsqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("type", projectionType);
         command.Parameters.AddWithValue("node", nodeId);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var readerDisposal = reader.ConfigureAwait(false);
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             return null;
         var row = ReadCheckpoint(reader);
@@ -143,8 +148,10 @@ public sealed class PostgresCheckpointStore : ICheckpointStore, IAtomicProjectio
         var requireEpoch = _epochs.TryGetValue((projectionType, checkpoint.NodeId), out var epoch);
         if (Interlocked.Exchange(ref _failNextFlush, 0) == 1)
         {
-            await using var failing = await OpenAsync(cancellationToken).ConfigureAwait(false);
-            await using var transaction = await failing.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            var failing = await OpenAsync(cancellationToken).ConfigureAwait(false);
+            await using var failingDisposal = failing.ConfigureAwait(false);
+            var transaction = await failing.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            await using var transactionDisposal = transaction.ConfigureAwait(false);
             if (ids.Length > 0)
                 await WriteViewsAsync(failing, transaction, projectionType, ids, json, viewCheckpoints, checkpoint.LastUpdated, cancellationToken).ConfigureAwait(false);
             throw new InvalidOperationException(
@@ -152,8 +159,10 @@ public sealed class PostgresCheckpointStore : ICheckpointStore, IAtomicProjectio
         }
 
         var sql = $"SELECT {_names.Flush}(@type, @node, @position, @updated, @total, @require_epoch, @epoch, @ids, @json, @view_checkpoints)";
-        await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        var command = new NpgsqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("type", projectionType);
         command.Parameters.AddWithValue("node", checkpoint.NodeId);
         command.Parameters.AddWithValue("position", checkpoint.LastSequencePosition);
@@ -193,7 +202,8 @@ public sealed class PostgresCheckpointStore : ICheckpointStore, IAtomicProjectio
                 checkpoint = EXCLUDED.checkpoint,
                 last_updated = EXCLUDED.last_updated
             """;
-        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        var command = new NpgsqlCommand(sql, connection, transaction);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("projection_type", projectionType);
         command.Parameters.Add(new NpgsqlParameter("instance_ids", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = ids });
         command.Parameters.Add(new NpgsqlParameter("view_data", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = json });
@@ -213,8 +223,10 @@ public sealed class PostgresCheckpointStore : ICheckpointStore, IAtomicProjectio
             WHERE projection_type = @type
             ORDER BY node_id
             """;
-        await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        var command = new NpgsqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         command.Parameters.AddWithValue("type", projectionType);
         return await ReadAllAsync(command, cancellationToken).ConfigureAwait(false);
     }
@@ -228,8 +240,10 @@ public sealed class PostgresCheckpointStore : ICheckpointStore, IAtomicProjectio
             FROM {_names.Checkpoints}
             ORDER BY projection_type, node_id
             """;
-        await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        var command = new NpgsqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
         return await ReadAllAsync(command, cancellationToken).ConfigureAwait(false);
     }
 
@@ -259,13 +273,16 @@ public sealed class PostgresCheckpointStore : ICheckpointStore, IAtomicProjectio
         string projectionType,
         CancellationToken cancellationToken = default)
     {
-        await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transactionDisposal = transaction.ConfigureAwait(false);
         await ResetCheckpointsAsync(connection, transaction, projectionType, nodeId: null, cancellationToken).ConfigureAwait(false);
         if (BeforeDeletingViews is { } beforeViews)
             await beforeViews(connection, transaction, cancellationToken).ConfigureAwait(false);
         var deleteViews = $"DELETE FROM {_names.Views} WHERE projection_type = @type";
-        await using (var command = new NpgsqlCommand(deleteViews, connection, transaction))
+        var command = new NpgsqlCommand(deleteViews, connection, transaction);
+        await using (command.ConfigureAwait(false))
         {
             command.Parameters.AddWithValue("type", projectionType);
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -305,9 +322,10 @@ public sealed class PostgresCheckpointStore : ICheckpointStore, IAtomicProjectio
                   SET last_position = -1, total_events = 0, last_updated = now(), leader_epoch = leader_epoch + 1
                   WHERE projection_type = @type
                   """;
-            await using var command = transaction is null
+            var command = transaction is null
                 ? new NpgsqlCommand(sql, connection)
                 : new NpgsqlCommand(sql, connection, transaction);
+            await using var commandDisposal = command.ConfigureAwait(false);
             command.Parameters.AddWithValue("type", projectionType);
             if (nodeId.HasValue)
                 command.Parameters.AddWithValue("node", nodeId.Value);
@@ -323,7 +341,8 @@ public sealed class PostgresCheckpointStore : ICheckpointStore, IAtomicProjectio
     private static async Task<List<ProjectionCheckpoint>> ReadAllAsync(NpgsqlCommand command, CancellationToken cancellationToken)
     {
         var list = new List<ProjectionCheckpoint>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var readerDisposal = reader.ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             var row = ReadCheckpoint(reader);
