@@ -225,7 +225,21 @@ public sealed class ReactorHostedService<TReactor, TEvent> : BackgroundService
                 }
                 catch (Exception disposeEx)
                 {
-                    _logger.LogDebug(disposeEx, "Reactor {Reactor} failed to dispose the message scope", ReactorTypeName);
+                    if (failure is null)
+                    {
+                        _logger.LogWarning(
+                            disposeEx,
+                            "Reactor {Reactor} failed to dispose the message scope",
+                            ReactorTypeName);
+                    }
+                    else
+                    {
+                        _logger.LogDebug(
+                            disposeEx,
+                            "Reactor {Reactor} failed to dispose the message scope",
+                            ReactorTypeName);
+                    }
+
                     failure ??= System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(disposeEx);
                 }
             }

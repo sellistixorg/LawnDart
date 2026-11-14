@@ -99,23 +99,25 @@ public class OutboxShutdownTests
     [Fact]
     public async Task Unexpected_cancellation_during_a_batch_does_not_stop_the_loop()
     {
-        var writer = new InMemoryOutboxWriter();
-        var publisher = new CancelOncePublisher();
+        var inner = new InMemoryOutboxWriter();
+        var writer = new CancelOnceOnReadWriter(inner);
+        var publisher = new RecordingPublisher();
         var processor = new OutboxProcessor(
             writer,
             publisher,
             NullLogger<OutboxProcessor>.Instance,
             TimeSpan.FromMilliseconds(20));
         var id = Guid.NewGuid();
-        await writer.WriteAsync(Row(id, 1));
+        await inner.WriteAsync(Row(id, 1));
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await processor.StartAsync(CancellationToken.None);
 
-        while (publisher.Successes == 0)
+        while (publisher.Ids.Count == 0)
             await Task.Delay(10, cts.Token);
 
         Assert.False(processor.ExecuteTask!.IsFaulted);
-        Assert.NotNull(writer.Snapshot().Single(row => row.Id == id).ProcessedAt);
+        Assert.Equal(id, Assert.Single(publisher.Ids));
+        Assert.NotNull(inner.Snapshot().Single(row => row.Id == id).ProcessedAt);
         await processor.StopAsync(CancellationToken.None);
     }
 
@@ -187,20 +189,47 @@ public class OutboxShutdownTests
         }
     }
 
-    private sealed class CancelOncePublisher : IOutboxPublisher
+    private sealed class CancelOnceOnReadWriter : IOutboxWriter
     {
-        private int _calls;
+        private readonly InMemoryOutboxWriter _inner;
+        private int _reads;
 
-        public int Successes { get; private set; }
+        public CancelOnceOnReadWriter(InMemoryOutboxWriter inner) => _inner = inner;
 
-        public Task PublishAsync(OutboxMessage message, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<OutboxMessage>> GetUnprocessedAsync(int batchSize, CancellationToken cancellationToken = default)
         {
-            if (Interlocked.Increment(ref _calls) == 1)
+            if (Interlocked.Increment(ref _reads) == 1)
                 throw new OperationCanceledException();
 
-            Successes++;
-            return Task.CompletedTask;
+            return _inner.GetUnprocessedAsync(batchSize, cancellationToken);
         }
+
+        public Task WriteAsync(OutboxMessage message, CancellationToken cancellationToken = default)
+            => _inner.WriteAsync(message, cancellationToken);
+
+        public Task WriteBatchAsync(IEnumerable<OutboxMessage> messages, CancellationToken cancellationToken = default)
+            => _inner.WriteBatchAsync(messages, cancellationToken);
+
+        public Task MarkAsProcessedAsync(Guid messageId, CancellationToken cancellationToken = default)
+            => _inner.MarkAsProcessedAsync(messageId, cancellationToken);
+
+        public Task RecordFailureAsync(Guid messageId, string error, CancellationToken cancellationToken = default)
+            => _inner.RecordFailureAsync(messageId, error, cancellationToken);
+
+        public Task MarkAsDeadLetteredAsync(Guid messageId, CancellationToken cancellationToken = default)
+            => _inner.MarkAsDeadLetteredAsync(messageId, cancellationToken);
+
+        public Task<IReadOnlyList<OutboxMessage>> GetDeadLetteredAsync(int batchSize, CancellationToken cancellationToken = default)
+            => _inner.GetDeadLetteredAsync(batchSize, cancellationToken);
+
+        public Task<bool> ResetDeadLetteredAsync(Guid messageId, CancellationToken cancellationToken = default)
+            => _inner.ResetDeadLetteredAsync(messageId, cancellationToken);
+
+        public Task<int> ResetAllDeadLetteredAsync(CancellationToken cancellationToken = default)
+            => _inner.ResetAllDeadLetteredAsync(cancellationToken);
+
+        public Task InitializeSchemaAsync(CancellationToken cancellationToken = default)
+            => _inner.InitializeSchemaAsync(cancellationToken);
     }
 
     private sealed class ListLogger : ILogger<OutboxProcessor>

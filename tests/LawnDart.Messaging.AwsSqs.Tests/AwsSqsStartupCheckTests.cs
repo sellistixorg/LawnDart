@@ -83,6 +83,22 @@ public class AwsSqsStartupCheckTests
     }
 
     [Fact]
+    public async Task A_pending_local_subscription_counts_as_listened()
+    {
+        var transport = Transport(topics: [], subscriptions: []);
+        Assert.False(await HasListener(transport));
+
+        foreach (var behavior in new[] { MissingListenerBehavior.Warn, MissingListenerBehavior.Throw })
+        {
+            var logs = new ListLogger();
+            var check = Check(transport, logs, behavior, subscribeLocally: true);
+            await check.StartedAsync(CancellationToken.None);
+            Assert.DoesNotContain(logs.Lines, line => line.Contains("no listener", StringComparison.Ordinal));
+            Assert.DoesNotContain(logs.Lines, line => line.Contains("Startup continues", StringComparison.Ordinal));
+        }
+    }
+
+    [Fact]
     public async Task Throw_continues_when_the_list_fails()
     {
         var sns = Proxy();
@@ -92,9 +108,10 @@ public class AwsSqsStartupCheckTests
 
         await check.StartedAsync(CancellationToken.None);
         Assert.Contains(
-            logs.Lines,
-            line => line.Contains("sqs-startup-ping", StringComparison.Ordinal) &&
-                    line.Contains("Startup continues", StringComparison.Ordinal));
+            logs.Entries,
+            entry => entry.Level == LogLevel.Warning &&
+                     entry.Line.Contains("sqs-startup-ping", StringComparison.Ordinal) &&
+                     entry.Line.Contains("Startup continues", StringComparison.Ordinal));
     }
 
     private static Task<bool> HasListener(AwsSqsMessageTransport transport)
@@ -103,15 +120,19 @@ public class AwsSqsStartupCheckTests
     private static OutboundListenerCheck Check(
         AwsSqsMessageTransport transport,
         ListLogger logs,
-        MissingListenerBehavior behavior)
+        MissingListenerBehavior behavior,
+        bool subscribeLocally = false)
     {
         var plan = new OutboundListenerPlan();
         plan.Add([typeof(SqsPing)]);
+        var services = new ServiceCollection();
+        if (subscribeLocally)
+            services.AddSingleton(new MessageSubscription(typeof(SqsPing)));
         return new OutboundListenerCheck(
             plan,
             transport,
             Options.Create(new MessageTransportOptions { OnMissingListenerAtStartup = behavior }),
-            new ServiceCollection().BuildServiceProvider(),
+            services.BuildServiceProvider(),
             logs);
     }
 
@@ -192,14 +213,23 @@ public class AwsSqsStartupCheckTests
 
     private sealed class ListLogger : ILogger<OutboundListenerCheck>
     {
-        private readonly List<string> _lines = [];
+        private readonly List<(LogLevel Level, string Line)> _entries = [];
 
         public IReadOnlyList<string> Lines
         {
             get
             {
-                lock (_lines)
-                    return _lines.ToArray();
+                lock (_entries)
+                    return _entries.Select(entry => entry.Line).ToArray();
+            }
+        }
+
+        public IReadOnlyList<(LogLevel Level, string Line)> Entries
+        {
+            get
+            {
+                lock (_entries)
+                    return _entries.ToArray();
             }
         }
 
@@ -214,8 +244,8 @@ public class AwsSqsStartupCheckTests
             Exception? exception,
             Func<TState, Exception?, string> formatter)
         {
-            lock (_lines)
-                _lines.Add(formatter(state, exception));
+            lock (_entries)
+                _entries.Add((logLevel, formatter(state, exception)));
         }
 
         private sealed class Empty : IDisposable

@@ -508,11 +508,14 @@ that has no subscriber and then drop it. The check avoids counting that as
 success.
 
 Startup checks each published event type for a listener before the outbox
-polls. The check runs for the in-process transport and for Amazon SQS.
-RabbitMQ and Azure Service Bus do not report listeners at startup. The host
-logs that and continues. Amazon SQS lists topics and subscriptions. That
-list needs permission to list them. When the list fails, the host logs that
-and continues. `OnMissingListenerAtStartup` defaults to `Warn`. `Warn` logs
+polls. A type registered with `AddReactor` or `AddEventProcessor` counts as
+a listener. The check does not ask the transport about that type. The check
+runs for the in-process transport and for Amazon SQS. RabbitMQ and Azure
+Service Bus do not report listeners at startup. The host logs that and
+continues. When startup is set to stop on a missing listener, that log is
+a warning. Amazon SQS lists topics and subscriptions for a published type
+this process does not subscribe to. That list needs permission to list
+them. When the list fails, the host logs that and continues. `OnMissingListenerAtStartup` defaults to `Warn`. `Warn` logs
 one warning for each type the check finds with no listener, and the host
 still starts. `Throw` stops host startup when the check finds a type with
 no listener. `Throw` does not stop startup when the check cannot tell.

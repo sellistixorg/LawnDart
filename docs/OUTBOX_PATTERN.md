@@ -208,6 +208,8 @@ is subscribed by then. On shutdown the processor stops taking new rows
 before listeners unsubscribe. It finishes the row already in flight and
 leaves later rows unprocessed. That wait uses the host shutdown timeout.
 When the timeout fires, the processor logs a warning and shutdown continues.
+If the processor never started, shutdown does not wait and does not log
+that warning.
 
 On the in-process transport, the handler runs inside the publish call.
 A publish with no in-process subscriber throws. The outbox keeps the row
@@ -245,11 +247,15 @@ about 10 polls, roughly 50 seconds with those defaults. Reset one row with
 poll. See [Dead letters](#dead-letters).
 
 Startup checks each published event type for a listener before that first
-poll. The check runs for the in-process transport and for Amazon SQS.
-RabbitMQ and Azure Service Bus do not report listeners at startup. The host
-logs that and continues. The publish-time check is the safety net there.
-Amazon SQS lists topics and subscriptions. That list needs permission to
-list them. When the list fails, the host logs that and continues.
+poll. A type registered with `AddReactor` or `AddEventProcessor` counts as
+a listener. The check does not ask the transport about that type. The check
+runs for the in-process transport and for Amazon SQS. RabbitMQ and Azure
+Service Bus do not report listeners at startup. The host logs that and
+continues. When startup is set to stop on a missing listener, that log is
+a warning. The publish-time check is the safety net there. Amazon SQS lists
+topics and subscriptions for a published type this process does not
+subscribe to. That list needs permission to list them. When the list fails,
+the host logs that and continues.
 `MessageTransportOptions.OnMissingListenerAtStartup` defaults to `Warn`.
 `Warn` logs one warning for each type the check finds with no listener, and
 the host still starts. `Throw` stops host startup when the check finds a

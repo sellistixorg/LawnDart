@@ -37,14 +37,18 @@ fails when the attribute is missing. The message type is that token.
 The outbox processor waits until the host has started every hosted service
 before it publishes. On shutdown it stops taking new rows before listeners
 unsubscribe, finishes the row already in flight, and leaves later rows
-unprocessed. That wait uses the host shutdown timeout. Startup checks
-published types for a listener on the in-process transport and on Amazon
-SQS. RabbitMQ and Azure Service Bus do not report listeners at startup.
-The host logs that and continues. Amazon SQS lists topics and subscriptions.
-That list needs permission to list them. When the list fails, the host logs
-that and continues. `OnMissingListenerAtStartup` defaults to `Warn`. `Warn`
-logs one warning per type the check finds with no listener, and the host
-still starts. `Throw` stops host startup only when the check finds a type
+unprocessed. That wait uses the host shutdown timeout. If the processor
+never started, shutdown does not wait. Startup checks published types for
+a listener on the in-process transport and on Amazon SQS. A type registered
+with `AddReactor` or `AddEventProcessor` counts as a listener, and the
+check does not ask the transport about that type. RabbitMQ and Azure
+Service Bus do not report listeners at startup. The host logs that and
+continues. When startup is set to stop on a missing listener, that log is
+a warning. Amazon SQS lists topics and subscriptions for a published type
+this process does not subscribe to. That list needs permission to list
+them. When the list fails, the host logs that and continues.
+`OnMissingListenerAtStartup` defaults to `Warn`. `Warn` logs one warning
+per type the check finds with no listener, and the host still starts. `Throw` stops host startup only when the check finds a type
 with no listener. The outbox polls every 5 seconds by default, allows 10
 attempts, and has no extra delay between attempts. A row with no listener
 is marked `DeadLetteredAt` after about 10 polls. `ResetDeadLetteredAsync`

@@ -170,12 +170,15 @@ accepts it. A `Warn` publish is not recorded on
 `messaging.publish.duration`. It increments `messaging.publish.errors` with
 `messaging.publish.outcome` set to `unroutable`.
 
-Startup lists topics and subscriptions for each published type. It does not
-create a topic. The list needs permission to list topics and subscriptions.
-When the list fails, the host logs that and continues. `Warn` logs a type
-with no queue and the host still starts. `Throw` stops host startup only
-when the list shows that no queue is subscribed. `Throw` does not stop
-startup when the list fails.
+Startup lists topics and subscriptions for a published type this process
+does not subscribe to. A type registered with `AddReactor` or
+`AddEventProcessor` counts as a listener, and the check does not ask the
+broker about that type. The list does not create a topic. It needs
+permission to list topics and subscriptions. When the list fails, the host
+logs that and continues. When startup is set to stop on a missing listener,
+that log is a warning. `Warn` logs a type with no queue and the host still
+starts. `Throw` stops host startup only when the list shows that no queue
+is subscribed. `Throw` does not stop startup when the list fails.
 
 Publish and consume durations are recorded on the `LawnDart.Messaging` meter.
 Consume spans carry `messaging.sns.topic`, `messaging.sqs.queue`,

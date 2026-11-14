@@ -10,7 +10,6 @@
   <ItemGroup>
     <InternalsVisibleTo Include="LawnDart.Messaging.Tests" />
     <InternalsVisibleTo Include="LawnDart.Messaging.InMemory" />
-    <InternalsVisibleTo Include="LawnDart.Messaging.RabbitMQ" />
     <InternalsVisibleTo Include="LawnDart.Messaging.AwsSqs" />
     <InternalsVisibleTo Include="LawnDart.Messaging.SqlServer.Tests" />
     <InternalsVisibleTo Include="LawnDart.Testing" />

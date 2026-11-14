@@ -83,6 +83,30 @@ public class OutboxHostOrderTests
     }
 
     [Fact]
+    public async Task Stop_after_a_failed_start_returns_without_a_timeout_warning()
+    {
+        var logs = new WarningLog();
+        var builder = Host.CreateApplicationBuilder();
+        builder.Logging.ClearProviders();
+        builder.Logging.SetMinimumLevel(LogLevel.Warning);
+        builder.Logging.AddProvider(logs);
+        builder.Services.Configure<HostOptions>(options => options.ShutdownTimeout = TimeSpan.FromSeconds(5));
+        builder.Services.AddHostedService<FailingStartup>();
+        builder.Services.Configure<LawnDart.LawnDartOptions>(options => options.RequireTenantId = false);
+        builder.Services.AddInMemoryMessaging();
+        builder.Services.AddMessageTransportOutboxPublisher(typeof(PingEvent));
+        builder.Services.AddBoundedContext("default")
+            .WithEventTypes(typeof(PingEvent))
+            .PublishEvents(events => events.Publish<PingEvent>())
+            .UseInMemory(options => options.EnableOutbox = true);
+        using var host = builder.Build();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => host.StartAsync());
+        await host.StopAsync().WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.DoesNotContain(logs.Lines, line => line.Contains("still publishing", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Throw_on_a_missing_listener_stops_host_startup()
     {
         using var host = BuildHost(
@@ -193,6 +217,14 @@ public class OutboxHostOrderTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         while (!condition())
             await Task.Delay(20, cts.Token);
+    }
+
+    private sealed class FailingStartup : IHostedService
+    {
+        public Task StartAsync(CancellationToken cancellationToken)
+            => throw new InvalidOperationException("startup failed");
+
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     [EventTypeName("outbox-host.ping")]

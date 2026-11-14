@@ -54,16 +54,22 @@ internal sealed class OutboundListenerCheck : IHostedService, IHostedLifecycleSe
     {
         if (_transport is not IOutboundListenerProbe probe)
         {
-            _logger.LogInformation(
+            LogUnavailable(
                 "Startup listener check is not available for transport {Transport}. The publish-time check still applies.",
                 _transport.GetType().Name);
             return;
         }
 
+        var subscribed = _services.GetServices<MessageSubscription>()
+            .Select(subscription => subscription.MessageType)
+            .ToHashSet();
         var missing = new List<string>();
         foreach (var messageType in _plan.Resolve(_services))
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (subscribed.Contains(messageType))
+                continue;
+
             string declaredName;
             try
             {
@@ -71,7 +77,7 @@ internal sealed class OutboundListenerCheck : IHostedService, IHostedLifecycleSe
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                _logger.LogInformation(
+                LogUnavailable(
                     ex,
                     "Could not check listeners for {MessageType}. Startup continues.",
                     messageType.FullName);
@@ -89,7 +95,7 @@ internal sealed class OutboundListenerCheck : IHostedService, IHostedLifecycleSe
             }
             catch (Exception ex)
             {
-                _logger.LogInformation(
+                LogUnavailable(
                     ex,
                     "Could not check listeners for {MessageType}. Startup continues.",
                     declaredName);
@@ -115,6 +121,17 @@ internal sealed class OutboundListenerCheck : IHostedService, IHostedLifecycleSe
                 "Published message {MessageType} has no listener. The outbox keeps the row and tries it again until the attempt limit.",
                 declaredName);
         }
+    }
+
+    private void LogUnavailable(string message, params object?[] args)
+        => LogUnavailable(exception: null, message, args);
+
+    private void LogUnavailable(Exception? exception, string message, params object?[] args)
+    {
+        var level = _options.OnMissingListenerAtStartup == MissingListenerBehavior.Throw
+            ? LogLevel.Warning
+            : LogLevel.Information;
+        _logger.Log(level, exception, message, args);
     }
 }
 

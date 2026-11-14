@@ -48,9 +48,10 @@ public class OutboundListenerCheckTests
         await check.StartedAsync(CancellationToken.None);
 
         Assert.Contains(
-            logs.Lines,
-            line => line.Contains("first.event", StringComparison.Ordinal) &&
-                    line.Contains("Startup continues", StringComparison.Ordinal));
+            logs.Entries,
+            entry => entry.Level == LogLevel.Warning &&
+                     entry.Line.Contains("first.event", StringComparison.Ordinal) &&
+                     entry.Line.Contains("Startup continues", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -79,7 +80,10 @@ public class OutboundListenerCheckTests
 
         await check.StartedAsync(CancellationToken.None);
 
-        Assert.Contains(logs.Lines, line => line.Contains("not available", StringComparison.Ordinal));
+        Assert.Contains(
+            logs.Entries,
+            entry => entry.Level == LogLevel.Warning &&
+                     entry.Line.Contains("not available", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -159,14 +163,23 @@ public class OutboundListenerCheckTests
 
     private sealed class ListLogger : ILogger<OutboundListenerCheck>
     {
-        private readonly List<string> _lines = [];
+        private readonly List<(LogLevel Level, string Line)> _entries = [];
 
         public IReadOnlyList<string> Lines
         {
             get
             {
-                lock (_lines)
-                    return _lines.ToArray();
+                lock (_entries)
+                    return _entries.Select(entry => entry.Line).ToArray();
+            }
+        }
+
+        public IReadOnlyList<(LogLevel Level, string Line)> Entries
+        {
+            get
+            {
+                lock (_entries)
+                    return _entries.ToArray();
             }
         }
 
@@ -181,8 +194,8 @@ public class OutboundListenerCheckTests
             Exception? exception,
             Func<TState, Exception?, string> formatter)
         {
-            lock (_lines)
-                _lines.Add(formatter(state, exception));
+            lock (_entries)
+                _entries.Add((logLevel, formatter(state, exception)));
         }
 
         private sealed class Empty : IDisposable
