@@ -10,9 +10,11 @@ changes to the public API.
 
 ## [Unreleased]
 
-## [0.7.0-alpha.6] - 2026-11-13
+## [0.7.0-alpha.7] - 2026-11-13
 
 This release publishes an outbox row only for an event the context declares. That is a breaking change. [Moving to declared events](docs/OUTBOX_PATTERN.md#moving-to-declared-events) shows how to move.
+
+0.7.0-alpha.6 has the same code and was tagged before these notes were added.
 
 ### Breaking
 
