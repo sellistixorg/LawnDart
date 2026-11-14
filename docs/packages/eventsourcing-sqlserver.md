@@ -63,12 +63,13 @@ delivered. The position does not move past them to the current end until
 every requested name is stored. A projection reads the range again on the
 next poll.
 
-Each appended record has an `EventId` (`UNIQUEIDENTIFIER`, unique). A typed
-append stores `IEvent.Id`, including when several appends share one
+Each appended record has an `EventId` (`UNIQUEIDENTIFIER`). The pair
+(`TenantId`, `EventId`) is unique. The same id on another tenant is a
+different row. A typed append stores `IEvent.Id`, including when several appends share one
 `EventMetadata` object. A raw append uses metadata `EventId` when that
 value is a GUID. Otherwise the store mints one before the commit and
 reuses it if the commit is retried inside the same call. A second append
-of the same id throws `EventAlreadyAppendedException`. The outbox row
+of the same id in that tenant throws `EventAlreadyAppendedException`. The outbox row
 uses that same id.
 
 The store does not retry an append after `Commit` has been attempted. When
@@ -100,16 +101,34 @@ committed before the locks were granted, or its append is still waiting for
 them. After the locks, the check also looks up its event type names again,
 so an event whose type was stored for the first time just before is seen.
 
+## Events table
+
+`Events` is clustered on `SequencePosition`, the global position. A catch-up
+read walks that order.
+
+Each row stores `StreamKey` (`BIGINT`) instead of the stream id text. The
+stream registry is required. `Streams` maps `StreamId` to `StreamKey`. A
+stream load reads the index `IX_Events_StreamKey_Version` on
+(`StreamKey`, `Version`).
+
+`TenantId` is stored on the event. `UX_TenantId_EventId` keeps one `EventId`
+per tenant. `EnableStreamRegistry` and `AutoMaintainRegistry` are still
+accepted. The registry is maintained either way. An append locks that
+stream's registry row until it commits, so a second append of the same
+stream waits. An append of a different stream does not wait on that row.
+
+`EventSnapshots` uses that same `StreamKey`. One row per stream.
+
+`Events_Readable` still shows the stream id text. It joins `Streams` for
+the id and `EventTypes` for the event name.
+
 Init writes an extended property `LawnDart_SchemaFormat` on the events
-table (current format `4`). Formats `2` and `3` are upgraded in place.
-Format `4` adds a unique `Events.EventId`. Format `2` also gains the
-format 3 objects below.
-`InitializeSchemaAsync` adds `Events.RowVersion` (`rowversion`), creates
-`AppendFence`, and alters `EventTags.Tag` to `Latin1_General_100_BIN2`.
-Existing rows stay. Call it once on each database before the new process
-reads. A table with no stamp, or with any stamp other than `2`, `3`, or `4`,
-throws and names drop-and-recreate. Back up first. See
-[Upgrading from 0.6.0-alpha.2](#upgrading-from-060-alpha2).
+table (current format `5`). A table with no stamp, or with any other stamp,
+is not changed. The call throws and names drop and recreate. Back up first.
+See [Upgrading from 0.6.0-alpha.2](#upgrading-from-060-alpha2).
+
+`RowVersion`, `AppendFence`, and `EventTags.Tag` at `Latin1_General_100_BIN2`
+are part of a new format 5 table.
 
 `RowVersion` is the commit horizon. An append inserts an `AppendFence` row
 before it reserves a sequence, so the transaction owns a rowversion first.
@@ -208,7 +227,7 @@ InMemory remains the documented default for local work and Academy.
 
 Tags for that list live in `StreamTags` (`Tag`, `StreamId`), with `Latin1_General_100_BIN2` on both columns. The primary key is (`Tag`, `StreamId`). A tag page reads that key from the last stream id. A trigger on `Streams` updates `StreamTags` when a row is inserted, when its tags or stream id change, and when the row is deleted. The trigger matches the stored stream id exactly, using `Latin1_General_100_BIN2`, against the old row and the new row. A change of spelling removes the tag rows for the old spelling and writes them for the new one. The trigger runs in the save's transaction, including a save from an older build. The aggregate type index is (`AggregateType`, `StreamIdBin`).
 
-`InitializeSchemaAsync` adds the column, the indexes, `StreamTags`, and the trigger when they are missing. It then copies tags from the JSON in `Streams.Tags`, in batches, after the schema lock is released. That copy is recorded on `StreamTags` and does not run again. Existing rows stay. The events stamp stays at format 4. Call it before listing on a database created by an earlier build. Adding `StreamIdBin` rewrites the stream table, so run that call when other writers can wait. A second call leaves the objects in place.
+`InitializeSchemaAsync` adds the column, the indexes, `StreamTags`, and the trigger when they are missing. It then copies tags from the JSON in `Streams.Tags`, in batches, after the schema lock is released. That copy is recorded on `StreamTags` and does not run again. Existing rows stay. The events stamp stays at format 5. Call it before listing on a database created by an earlier build of this format. Adding `StreamIdBin` rewrites the stream table, so run that call when other writers can wait. A second call leaves the objects in place.
 
 Several processes starting together take one lock for those objects and commit them together. The tag copy uses a separate lock, so a startup does not fail while another startup is still copying. The events stamp is unchanged.
 
@@ -216,7 +235,7 @@ Several processes starting together take one lock for those objects and commit t
 
 0.6.0-alpha.2 stamped the events table `LawnDart_SchemaFormat` 2, the
 outbox `LawnDart_OutboxSchemaFormat` 1, and the inbox
-`LawnDart_InboxSchemaFormat` 1. This process stamps events 4, outbox 2,
+`LawnDart_InboxSchemaFormat` 1. This process stamps events 5, outbox 2,
 and inbox 2.
 
 Call `InitializeSchemaAsync` on the SQL event store once on each database
@@ -229,51 +248,38 @@ Call `InitializeSchemaAsync` on the outbox writer when
 `EnableOutbox` is on. Call `InitializeSqlInboxStoreAsync` when the inbox
 is SQL Server. A second call on a table that is already current returns.
 
-A format 2 or 3 events table becomes 4 in that call. Format 3 is
-`Events.RowVersion`, the `AppendFence` table, and `EventTags.Tag` set to
-`Latin1_General_100_BIN2`. Format 4 adds `Events.EventId`
-(`UNIQUEIDENTIFIER NOT NULL`) and a unique index. Existing rows are filled
-with `NEWID()`. Those values are new. 0.6.0-alpha.2 did not store an event
-id, so the filled value is not an old `IEvent.Id`.
+An events table stamped 2, 3, or 4 is left as it is. Format 5 is a different
+layout: the clustered key is the global position, and the stream id text
+lives only on `Streams`. Drop the events tables and call
+`InitializeSchemaAsync` again. This process does not copy those rows.
 
-`Events.EventId` is unique on SQL Server and in the in-memory log. An append
-whose metadata `EventId` is already stored throws
-`EventAlreadyAppendedException`. The stored row stays. This applies to an
-app that writes `EventId` into metadata and reuses that value on a later
-append. Use a new id for each new event. When the call is a retry of an
-append that already landed, catch `EventAlreadyAppendedException`. One
-metadata object copied onto several events in a single append keeps the id
-for the first event. The rest of that batch get distinct ids. A later
-append of the first id still throws.
-
-A format 2 or 3 table has no `EventId` column, so that upgrade cannot
-start from duplicate ids. If the column is already present and two rows
-share a value, `CREATE UNIQUE INDEX UX_EventId` fails.
-`InitializeSchemaAsync` throws that error and leaves the old stamp. Assign
-distinct ids to the duplicates, then call it again.
+`Events.EventId` is unique per tenant on SQL Server. The in-memory log still
+rejects the same id on a second tenant. An append whose metadata `EventId`
+is already stored for that tenant throws `EventAlreadyAppendedException`.
+The stored row stays. This applies to an app that writes `EventId` into
+metadata and reuses that value on a later append in the same tenant. Use a
+new id for each new event. When the call is a retry of an append that
+already landed, catch `EventAlreadyAppendedException`. One metadata object
+copied onto several events in a single append keeps the id for the first
+event. The rest of that batch get distinct ids. A later append of the first
+id in that tenant still throws.
 
 Outbox format 1 becomes 2 by adding nullable `ClaimedUntil`. Inbox format
 1 becomes 2 by making `ProcessedAt` nullable and adding nullable
 `ClaimedAt`.
 
-The stamp moves forward only. There is no downgrade. An older process that
+The outbox and inbox stamps move forward only. There is no downgrade. An older process that
 does not accept the new stamp throws and names drop and recreate.
 
-A missing stamp, or any stamp other than 2, 3, or 4 on events, 1 or 2 on
-the outbox, and 1 or 2 on the inbox, throws the same way. Back up the
-database before you drop the table. This process does not copy the rows.
+A missing events stamp, or any events stamp other than 5, throws the same
+way. A missing stamp, or any stamp other than 1 or 2, throws on the outbox
+and on the inbox. Back up the database before you drop a table. This process
+does not copy the rows.
 
 The steps run as separate batches. Run the call again after a failure.
 Work that is already in place is skipped.
 
-On a large `Events` table, `UPDATE ... SET EventId = NEWID()` rewrites
-every row that has no id. That holds locks and writes the log until it
-finishes. Run it when other writers can wait. `ALTER TABLE` for
-`RowVersion`, for `EventId` `NOT NULL`, and for the tag collation takes a
-schema modification lock for that statement. The tag change drops and
-rebuilds the `EventTags` primary key, so its duration follows the number
-of tag rows. Adding `AppendFence`, `ClaimedUntil`, and `ClaimedAt` is a
-short schema change.
+Adding `ClaimedUntil` and `ClaimedAt` is a short schema change.
 
 ## Related
 

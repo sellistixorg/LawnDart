@@ -141,12 +141,11 @@ public partial class SqlServerEventStore
 
                 DELETE t
                 FROM {_qStreamTags} AS t
-                WHERE EXISTS (
-                        SELECT 1 FROM deleted AS d
-                        WHERE t.[StreamId] = CONVERT(NVARCHAR(255), d.[StreamId]) COLLATE {TagCollation})
-                   OR EXISTS (
-                        SELECT 1 FROM inserted AS i
-                        WHERE t.[StreamId] = CONVERT(NVARCHAR(255), i.[StreamId]) COLLATE {TagCollation});
+                INNER JOIN (
+                    SELECT CONVERT(NVARCHAR(255), [StreamId]) COLLATE {TagCollation} AS [StreamId] FROM deleted
+                    UNION
+                    SELECT CONVERT(NVARCHAR(255), [StreamId]) COLLATE {TagCollation} AS [StreamId] FROM inserted
+                ) AS ids ON t.[StreamId] = ids.[StreamId];
 
                 INSERT INTO {_qStreamTags} ([Tag], [StreamId])
                 SELECT DISTINCT

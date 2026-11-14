@@ -59,6 +59,6 @@ public class SqlServerStreamIdLengthTests
             store.SaveSnapshotAsync(streamId, version: 1, globalSequence: 1, state: 1));
 
         Assert.Contains("255", ex.Message);
-        Assert.Contains("EventSnapshots", ex.Message);
+        Assert.Contains("Streams", ex.Message);
     }
 }

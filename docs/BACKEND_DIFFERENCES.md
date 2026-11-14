@@ -9,12 +9,13 @@ Two flags change what an append means.
 | Store | `EnforcesEventIdAcrossTenants` | `StreamIdsCaseInsensitive` |
 |---|---|---|
 | In-memory | Yes. The same event id on a second tenant throws `EventAlreadyAppendedException`. | No. `acme:Order:1` and `acme:order:1` are different streams. |
-| SQL Server | Yes. The same event id on a second tenant throws `EventAlreadyAppendedException`. | Yes, on the databases the contract tests use. A default database matches without regard to case. The match follows the database collation. |
+| SQL Server | No, while the outbox is off. The same event id on two tenants is two rows. A repeated id in one tenant throws `EventAlreadyAppendedException`. | Yes, on the databases the contract tests use. A default database matches without regard to case. The match follows the database collation. |
 | Postgres | No, while the outbox is off. The same event id on two tenants is two rows. A repeated id in one tenant throws `EventAlreadyAppendedException`. | No. Stream ids use the `C` collation. `acme:Order:1` and `acme:order:1` are different streams. |
 
 With the Postgres outbox on, the outbox row id is the source event id, so
 that id is unique in the schema. The same event id on two tenants then throws
-`EventAlreadyAppendedException`.
+`EventAlreadyAppendedException`. The SQL Server outbox uses that same row id,
+so the same event id on two tenants throws there too when the outbox is on.
 
 Tags match exactly, including case, on every store.
 

@@ -8,7 +8,8 @@ of truth. A missing, dropped, or corrupt snapshot costs replay time.
 Snapshots are **replace-in-place**. One row per stream (`StreamId`) or DCB
 identity (`DcbId`). A write upserts that row. Newest wins.
 
-SQL Server: `EventSnapshots` is keyed on `StreamId`; `DcbSnapshots` is keyed
+SQL Server: `EventSnapshots` is keyed on `StreamKey`, the number the stream
+registry assigns to a stream id. `DcbSnapshots` is keyed
 on `DcbId`. Save is `UPDATE` then `INSERT` if no row. In-memory:
 `InMemorySnapshotStore` replaces the dictionary entry for that key.
 

@@ -104,11 +104,17 @@ internal static class Loader
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         var types = await InsertSqlTypesAsync(connection, cancellationToken).ConfigureAwait(false);
         var generator = new EventGenerator(plan);
+        var streamKeys = new Dictionary<string, long>(StringComparer.Ordinal);
+        long nextStreamKey = 1;
         foreach (var batch in generator.Batches(4000))
-            await CopySqlAsync(connection, batch, types, cancellationToken).ConfigureAwait(false);
+            nextStreamKey = await CopySqlAsync(connection, batch, types, streamKeys, nextStreamKey, cancellationToken).ConfigureAwait(false);
 
         var next = (plan.Size + 1).ToString(CultureInfo.InvariantCulture);
         await ExecSqlAsync(connection, "ALTER SEQUENCE dbo.EventSequencePosition RESTART WITH " + next, cancellationToken).ConfigureAwait(false);
+        await ExecSqlAsync(
+            connection,
+            "ALTER SEQUENCE dbo.StreamKeySequence RESTART WITH " + nextStreamKey.ToString(CultureInfo.InvariantCulture),
+            cancellationToken).ConfigureAwait(false);
         await ExecSqlAsync(connection, """
             UPDATE STATISTICS dbo.Events;
             UPDATE STATISTICS dbo.EventTags;
@@ -247,10 +253,12 @@ internal static class Loader
         }
     }
 
-    private static async Task CopySqlAsync(
+    private static async Task<long> CopySqlAsync(
         SqlConnection connection,
         LoadBatch batch,
         Dictionary<string, int> types,
+        Dictionary<string, long> streamKeys,
+        long nextStreamKey,
         CancellationToken cancellationToken)
     {
         var events = new List<object?[]>(batch.Events.Count);
@@ -260,9 +268,16 @@ internal static class Loader
         var snaps = new List<object?[]>();
         foreach (var row in batch.Events)
         {
+            if (!streamKeys.TryGetValue(row.StreamId, out var streamKey))
+            {
+                streamKey = nextStreamKey++;
+                streamKeys[row.StreamId] = streamKey;
+            }
+
             events.Add(
             [
-                row.StreamId,
+                streamKey,
+                row.Tenant,
                 row.Version,
                 row.Position,
                 types[row.EventType],
@@ -282,7 +297,7 @@ internal static class Loader
                 var state = SnapshotText.For(row.SnapshotVersion);
                 snaps.Add(
                 [
-                    row.StreamId,
+                    streamKey,
                     row.SnapshotVersion,
                     row.Position,
                     row.Timestamp,
@@ -296,6 +311,7 @@ internal static class Loader
                 continue;
             streams.Add(
             [
+                streamKey,
                 row.StreamId,
                 row.Tenant,
                 row.AggregateType,
@@ -313,25 +329,26 @@ internal static class Loader
         }
 
         await BulkAsync(connection, "dbo.Events",
-            ["StreamId", "Version", "SequencePosition", "EventTypeId", "EventData", "SchemaVersion", "CodecId", "Tags", "Metadata", "Timestamp", "PartitionHash", "EventId"],
-            [typeof(string), typeof(long), typeof(long), typeof(int), typeof(byte[]), typeof(int), typeof(byte), typeof(string), typeof(string), typeof(DateTime), typeof(int), typeof(Guid)],
+            ["StreamKey", "TenantId", "Version", "SequencePosition", "EventTypeId", "EventData", "SchemaVersion", "CodecId", "Tags", "Metadata", "Timestamp", "PartitionHash", "EventId"],
+            [typeof(long), typeof(string), typeof(long), typeof(long), typeof(int), typeof(byte[]), typeof(int), typeof(byte), typeof(string), typeof(string), typeof(DateTime), typeof(int), typeof(Guid)],
             events, cancellationToken).ConfigureAwait(false);
         await BulkAsync(connection, "dbo.EventTags",
             ["GlobalSequencePosition", "Tag"],
             [typeof(long), typeof(string)],
             tags, cancellationToken).ConfigureAwait(false);
         await BulkAsync(connection, "dbo.Streams",
-            ["StreamId", "TenantId", "AggregateType", "AggregateId", "CurrentVersion", "LastSequencePosition", "CreatedAt", "LastEventAt", "EventCount", "Tags", "Status"],
-            [typeof(string), typeof(string), typeof(string), typeof(Guid), typeof(long), typeof(long), typeof(DateTime), typeof(DateTime), typeof(long), typeof(string), typeof(string)],
+            ["StreamKey", "StreamId", "TenantId", "AggregateType", "AggregateId", "CurrentVersion", "LastSequencePosition", "CreatedAt", "LastEventAt", "EventCount", "Tags", "Status"],
+            [typeof(long), typeof(string), typeof(string), typeof(string), typeof(Guid), typeof(long), typeof(long), typeof(DateTime), typeof(DateTime), typeof(long), typeof(string), typeof(string)],
             streams, cancellationToken).ConfigureAwait(false);
         await BulkAsync(connection, "dbo.StreamTags",
             ["Tag", "StreamId"],
             [typeof(string), typeof(string)],
             streamTags, cancellationToken).ConfigureAwait(false);
         await BulkAsync(connection, "dbo.EventSnapshots",
-            ["StreamId", "Version", "GlobalSequence", "TakenAtUtc", "StateType", "StateData", "Checksum"],
-            [typeof(string), typeof(long), typeof(long), typeof(DateTime), typeof(string), typeof(string), typeof(string)],
+            ["StreamKey", "Version", "GlobalSequence", "TakenAtUtc", "StateType", "StateData", "Checksum"],
+            [typeof(long), typeof(long), typeof(long), typeof(DateTime), typeof(string), typeof(string), typeof(string)],
             snaps, cancellationToken).ConfigureAwait(false);
+        return nextStreamKey;
     }
 
     private static void AppendPgArray(StringBuilder line, string[] values)

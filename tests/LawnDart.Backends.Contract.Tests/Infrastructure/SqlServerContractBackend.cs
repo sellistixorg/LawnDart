@@ -25,7 +25,7 @@ public sealed class SqlServerContractBackend : IFullContractBackend
     public ContractCapabilities Capabilities { get; } = new()
     {
         CanTurnOffNewEventsSignal = true,
-        EnforcesEventIdAcrossTenants = true,
+        EnforcesEventIdAcrossTenants = false,
         StreamIdsCaseInsensitive = true,
         AppendWritesOutboxRows = true,
         SecondInstanceSeesCommittedEvents = true,
@@ -33,7 +33,7 @@ public sealed class SqlServerContractBackend : IFullContractBackend
         ExposesStoredInboxKey = true,
         CanPurgeExpiredInboxRows = true,
         StoresDcbSnapshotLoadTags = true,
-        ParallelAppendCanConflict = true,
+        ParallelAppendCanConflict = false,
         DuplicateStreamVersionIncludesDatabaseError = true,
         IsDatabaseDuplicateKeyError = static ex => ex is SqlException { Number: 2627 or 2601 },
         CanPauseBeforeCommit = true,

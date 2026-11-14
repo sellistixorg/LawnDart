@@ -123,7 +123,7 @@ public static class LawnDartSqlServerExtensions
                 serializer,
                 options.EventStoreTableName,
                 options.StreamRegistryTableName,
-                options.EnableStreamRegistry && options.AutoMaintainRegistry,
+                true,
                 options,
                 outbox,
                 logger,

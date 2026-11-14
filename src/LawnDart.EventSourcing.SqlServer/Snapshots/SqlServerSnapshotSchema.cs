@@ -65,14 +65,14 @@ internal static class SqlServerSnapshotSchema
             IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'{SqlIdentifier.Literal(qEvent)}') AND type in (N'U'))
             BEGIN
                 CREATE TABLE {qEvent} (
-                    [StreamId] NVARCHAR(255) NOT NULL,
+                    [StreamKey] BIGINT NOT NULL,
                     [Version] BIGINT NOT NULL,
                     [GlobalSequence] BIGINT NOT NULL,
                     [TakenAtUtc] DATETIME2 NOT NULL,
                     [StateType] NVARCHAR(512) NOT NULL,
                     [StateData] NVARCHAR(MAX) NOT NULL,
                     [Checksum] CHAR(64) COLLATE Latin1_General_BIN NOT NULL,
-                    CONSTRAINT [{pkEvent}] PRIMARY KEY CLUSTERED ([StreamId])
+                    CONSTRAINT [{pkEvent}] PRIMARY KEY CLUSTERED ([StreamKey])
                 );
             END";
 

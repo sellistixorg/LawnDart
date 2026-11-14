@@ -1,6 +1,7 @@
 using System.Data;
 using System.Runtime.CompilerServices;
 using LawnDart;
+using LawnDart.EventStore;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -17,7 +18,7 @@ namespace LawnDart.EventSourcing.SqlServer.Snapshots;
 /// SQL Server implementation of <see cref="ISnapshotStore"/>, <see cref="IDcbSnapshotStore"/>,
 /// and <see cref="ISnapshotAdmin"/>. DCB rows are keyed by the 64-character SHA-256 hex from
 /// <see cref="DcbSnapshotId.FromQuery"/>; a plaintext description of the query is stored beside the hash
-/// for operations.
+/// for operations. Stream rows are keyed by <c>Streams.StreamKey</c>.
 /// </summary>
 /// <remarks>
 /// Latest snapshot per key is upserted (one row). A missing, corrupt, or bad-checksum
@@ -39,6 +40,8 @@ public sealed class SqlServerSnapshotStore : ISnapshotStore, IDcbSnapshotStore, 
     private readonly string _eventTableName;
     private readonly string _qDcb;
     private readonly string _qEvent;
+    private readonly string _qRegistry;
+    private readonly string _qStreamKeySequence;
     private readonly ILogger<SqlServerSnapshotStore>? _logger;
 
     /// <summary>
@@ -64,6 +67,11 @@ public sealed class SqlServerSnapshotStore : ISnapshotStore, IDcbSnapshotStore, 
             options.EventSnapshotsTableName, SqlServerSnapshotSchema.DefaultEventTable, eventsTable);
         _qDcb = SqlServerSnapshotSchema.Qualify(_schemaName, _dcbTableName);
         _qEvent = SqlServerSnapshotSchema.Qualify(_schemaName, _eventTableName);
+        var registry = string.IsNullOrWhiteSpace(options.StreamRegistryTableName)
+            ? "Streams"
+            : options.StreamRegistryTableName;
+        _qRegistry = SqlServerSnapshotSchema.Qualify(_schemaName, registry);
+        _qStreamKeySequence = SqlIdentifier.Qualify(_schemaName, "StreamKeySequence");
         _logger = logger;
     }
 
@@ -265,8 +273,10 @@ public sealed class SqlServerSnapshotStore : ISnapshotStore, IDcbSnapshotStore, 
             await using var connectionDisposal = connection.ConfigureAwait(false);
             await connection.OpenAsync(ct).ConfigureAwait(false);
             var command = new SqlCommand(
-                $@"SELECT [Version], [GlobalSequence], [TakenAtUtc], [StateData], [Checksum]
-                   FROM {_qEvent} WHERE [StreamId] = @StreamId",
+                $@"SELECT e.[Version], e.[GlobalSequence], e.[TakenAtUtc], e.[StateData], e.[Checksum]
+                   FROM {_qEvent} e
+                   INNER JOIN {_qRegistry} s ON s.[StreamKey] = e.[StreamKey]
+                   WHERE s.[StreamId] = @StreamId",
                 connection);
             await using var commandDisposal = command.ConfigureAwait(false);
             command.Parameters.AddWithValue("@StreamId", streamId);
@@ -327,6 +337,7 @@ public sealed class SqlServerSnapshotStore : ISnapshotStore, IDcbSnapshotStore, 
         var connection = new SqlConnection(_connectionString);
         await using var connectionDisposal = connection.ConfigureAwait(false);
         await connection.OpenAsync(ct).ConfigureAwait(false);
+        var streamKey = await EnsureStreamKeyAsync(connection, streamId, ct).ConfigureAwait(false);
         var command = new SqlCommand(
             $@"
             UPDATE {_qEvent}
@@ -336,17 +347,17 @@ public sealed class SqlServerSnapshotStore : ISnapshotStore, IDcbSnapshotStore, 
                 [StateType] = @StateType,
                 [StateData] = @StateData,
                 [Checksum] = @Checksum
-            WHERE [StreamId] = @StreamId;
+            WHERE [StreamKey] = @StreamKey;
             IF @@ROWCOUNT = 0
             BEGIN
                 INSERT INTO {_qEvent}
-                    ([StreamId], [Version], [GlobalSequence], [TakenAtUtc], [StateType], [StateData], [Checksum])
+                    ([StreamKey], [Version], [GlobalSequence], [TakenAtUtc], [StateType], [StateData], [Checksum])
                 VALUES
-                    (@StreamId, @Version, @Seq, @Taken, @StateType, @StateData, @Checksum);
+                    (@StreamKey, @Version, @Seq, @Taken, @StateType, @StateData, @Checksum);
             END",
             connection);
         await using var commandDisposal = command.ConfigureAwait(false);
-        command.Parameters.AddWithValue("@StreamId", streamId);
+        command.Parameters.Add(new SqlParameter("@StreamKey", streamKey));
         command.Parameters.AddWithValue("@Version", version);
         command.Parameters.AddWithValue("@Seq", globalSequence);
         command.Parameters.AddWithValue("@Taken", taken);
@@ -369,7 +380,10 @@ public sealed class SqlServerSnapshotStore : ISnapshotStore, IDcbSnapshotStore, 
         await connection.OpenAsync(ct).ConfigureAwait(false);
         var command = new SqlCommand(
             $@"
-            DELETE FROM {_qEvent} WHERE [StreamId] = @Id;
+            DELETE e
+            FROM {_qEvent} e
+            INNER JOIN {_qRegistry} s ON s.[StreamKey] = e.[StreamKey]
+            WHERE s.[StreamId] = @Id;
             DELETE FROM {_qDcb} WHERE [DcbId] = @Id;",
             connection);
         await using var commandDisposal = command.ConfigureAwait(false);
@@ -399,7 +413,10 @@ public sealed class SqlServerSnapshotStore : ISnapshotStore, IDcbSnapshotStore, 
         await connection.OpenAsync(ct).ConfigureAwait(false);
         var command = new SqlCommand(
             $@"
-            SELECT [Version], [GlobalSequence], [TakenAtUtc] FROM {_qEvent} WHERE [StreamId] = @Id
+            SELECT e.[Version], e.[GlobalSequence], e.[TakenAtUtc]
+            FROM {_qEvent} e
+            INNER JOIN {_qRegistry} s ON s.[StreamKey] = e.[StreamKey]
+            WHERE s.[StreamId] = @Id
             UNION ALL
             SELECT CAST(0 AS BIGINT), [GlobalSequence], [TakenAtUtc] FROM {_qDcb} WHERE [DcbId] = @Id",
             connection);
@@ -424,7 +441,9 @@ public sealed class SqlServerSnapshotStore : ISnapshotStore, IDcbSnapshotStore, 
         await connection.OpenAsync(ct).ConfigureAwait(false);
         var command = new SqlCommand(
             $@"
-            SELECT [StreamId] FROM {_qEvent}
+            SELECT s.[StreamId]
+            FROM {_qEvent} e
+            INNER JOIN {_qRegistry} s ON s.[StreamKey] = e.[StreamKey]
             UNION ALL
             SELECT [DcbId] FROM {_qDcb}",
             connection);
@@ -433,6 +452,76 @@ public sealed class SqlServerSnapshotStore : ISnapshotStore, IDcbSnapshotStore, 
         await using var readerDisposal = reader.ConfigureAwait(false);
         while (await reader.ReadAsync(ct).ConfigureAwait(false))
             yield return reader.GetString(0);
+    }
+
+    private async Task<long> EnsureStreamKeyAsync(
+        SqlConnection connection,
+        string streamId,
+        CancellationToken cancellationToken)
+    {
+        var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transactionDisposal = transaction.ConfigureAwait(false);
+        var key = await ReadStreamKeyAsync(connection, transaction, streamId, lockRow: true, cancellationToken).ConfigureAwait(false);
+        if (key is null)
+        {
+            var tenantId = StreamIdParser.ExtractTenantId(streamId);
+            var aggregateType = StreamIdParser.ExtractAggregateType(streamId);
+            var aggregateId = StreamIdParser.ExtractAggregateId(streamId);
+            var now = DateTime.UtcNow;
+            var insert = new SqlCommand(
+                $"""
+                DECLARE @keys TABLE (StreamKey BIGINT NOT NULL);
+                INSERT INTO {_qRegistry}
+                (StreamKey, StreamId, TenantId, AggregateType, AggregateId, CurrentVersion, LastSequencePosition,
+                 CreatedAt, LastEventAt, EventCount, Tags, Status)
+                OUTPUT INSERTED.StreamKey INTO @keys
+                VALUES
+                (NEXT VALUE FOR {_qStreamKeySequence}, @StreamId, @TenantId, @AggregateType, @AggregateId, -1, 0,
+                 @CreatedAt, @LastEventAt, 0, N'[]', N'Active');
+                SELECT StreamKey FROM @keys;
+                """,
+                connection,
+                transaction);
+            await using var insertDisposal = insert.ConfigureAwait(false);
+            insert.Parameters.Add(new SqlParameter("@StreamId", streamId));
+            insert.Parameters.Add(new SqlParameter("@TenantId", SqlDbType.NVarChar, 100) { Value = (object?)tenantId ?? DBNull.Value });
+            insert.Parameters.Add(new SqlParameter("@AggregateType", aggregateType));
+            insert.Parameters.Add(new SqlParameter("@AggregateId", SqlDbType.UniqueIdentifier) { Value = aggregateId.HasValue ? aggregateId.Value : DBNull.Value });
+            insert.Parameters.Add(new SqlParameter("@CreatedAt", now));
+            insert.Parameters.Add(new SqlParameter("@LastEventAt", now));
+            try
+            {
+                key = Convert.ToInt64(await insert.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false));
+            }
+            catch (SqlException ex) when (ex.Number is 2627 or 2601)
+            {
+                key = await ReadStreamKeyAsync(connection, transaction, streamId, lockRow: false, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        if (key is null)
+            throw new InvalidOperationException($"Stream '{streamId}' is not in {_qRegistry}.");
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return key.Value;
+    }
+
+    private async Task<long?> ReadStreamKeyAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string streamId,
+        bool lockRow,
+        CancellationToken cancellationToken)
+    {
+        var hint = lockRow ? " WITH (UPDLOCK, ROWLOCK)" : "";
+        var command = new SqlCommand(
+            $"SELECT StreamKey FROM {_qRegistry}{hint} WHERE StreamId = @StreamId",
+            connection,
+            transaction);
+        await using var commandDisposal = command.ConfigureAwait(false);
+        command.Parameters.Add(new SqlParameter("@StreamId", streamId));
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return result is null or DBNull ? null : Convert.ToInt64(result);
     }
 
     private static void AddChar64(SqlCommand command, string name, string value)

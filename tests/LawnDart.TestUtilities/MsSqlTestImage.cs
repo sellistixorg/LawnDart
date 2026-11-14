@@ -11,8 +11,12 @@ public static class MsSqlTestImage
 {
     /// <summary>
     /// SQL Server 2025 CU9 GDR1 on Ubuntu 22.04. Used by every Testcontainers fixture.
+    /// <c>LAWNDART_MSSQL_IMAGE</c> overrides it for a local run on another supported release.
     /// </summary>
-    public const string Server2025 = "mcr.microsoft.com/mssql/server:2025-CU9-GDR1-ubuntu-22.04";
+    public static string Server2025 =>
+        Environment.GetEnvironmentVariable("LAWNDART_MSSQL_IMAGE") is { Length: > 0 } image
+            ? image
+            : "mcr.microsoft.com/mssql/server:2025-CU9-GDR1-ubuntu-22.04";
 }
 
 /// <summary>

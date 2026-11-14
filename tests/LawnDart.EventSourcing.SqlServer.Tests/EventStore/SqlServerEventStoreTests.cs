@@ -136,9 +136,10 @@ public class SqlServerEventStoreTests : IAsyncLifetime
         await connection.OpenAsync();
         await using var command = new SqlCommand(
             $"""
-            SELECT EventData, SchemaVersion, CodecId
-            FROM [dbo].[{_tableName}]
-            WHERE StreamId = @StreamId
+            SELECT e.EventData, e.SchemaVersion, e.CodecId
+            FROM [dbo].[{_tableName}] e
+            INNER JOIN [dbo].[Streams] s ON s.StreamKey = e.StreamKey
+            WHERE s.StreamId = @StreamId
             """,
             connection);
         command.Parameters.AddWithValue("@StreamId", streamId);
@@ -181,6 +182,9 @@ public class SqlServerEventStoreTests : IAsyncLifetime
         Assert.False(columns.ContainsKey("EventPayload"));
         Assert.False(columns.ContainsKey("ContentType"));
         Assert.False(columns.ContainsKey("EventType"));
+        Assert.False(columns.ContainsKey("StreamId"));
+        Assert.Equal("bigint", columns["StreamKey"].Type);
+        Assert.Equal("nvarchar", columns["TenantId"].Type);
         Assert.Equal("varbinary", columns["EventData"].Type);
         Assert.Equal("tinyint", columns["CodecId"].Type);
         Assert.Equal("int", columns["SchemaVersion"].Type);
@@ -270,9 +274,10 @@ public class SqlServerEventStoreTests : IAsyncLifetime
 
         await using (var cmd = new SqlCommand(
             $"""
-            SELECT EventTypeId, Tags, Metadata, CodecId
-            FROM [dbo].[{_tableName}]
-            WHERE StreamId = @StreamId
+            SELECT e.EventTypeId, e.Tags, e.Metadata, e.CodecId
+            FROM [dbo].[{_tableName}] e
+            INNER JOIN [dbo].[Streams] s ON s.StreamKey = e.StreamKey
+            WHERE s.StreamId = @StreamId
             """,
             connection))
         {
@@ -452,6 +457,7 @@ public class SqlServerEventStoreTests : IAsyncLifetime
         var built = DcbQuerySql.Build(
             "[dbo].[Events]",
             "[dbo].[EventTags]",
+            "[dbo].[Streams]",
             Query.FromItems(QueryItem.ByType("no-such-family")),
             _ => null,
             fromSequencePosition: null,
@@ -499,7 +505,10 @@ public class SqlServerEventStoreTests : IAsyncLifetime
         await connection.OpenAsync();
         await using var command = new SqlCommand(
             $"""
-            SELECT SchemaVersion FROM [dbo].[{_tableName}] WHERE StreamId = @StreamId
+            SELECT e.SchemaVersion
+            FROM [dbo].[{_tableName}] e
+            INNER JOIN [dbo].[Streams] s ON s.StreamKey = e.StreamKey
+            WHERE s.StreamId = @StreamId
             """,
             connection);
         command.Parameters.AddWithValue("@StreamId", streamV2);

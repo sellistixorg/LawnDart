@@ -60,13 +60,13 @@ public class SqlServerEventStoreOptions : EventSourcingOptions
     public string StreamRegistryTableName { get; set; } = "Streams";
 
     /// <summary>
-    /// Enable automatic stream registry maintenance.
+    /// Accepted for existing callers. The stream registry is always maintained.
     /// Default: true
     /// </summary>
     public bool EnableStreamRegistry { get; set; } = true;
 
     /// <summary>
-    /// Automatically update registry during event appends.
+    /// Accepted for existing callers. The stream registry is always maintained.
     /// Default: true
     /// </summary>
     public bool AutoMaintainRegistry { get; set; } = true;
