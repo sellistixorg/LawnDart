@@ -8,13 +8,14 @@ namespace LawnDart.Messaging.InMemory;
 
 /// <summary>
 /// In-process message transport. It delivers each publish to the subscribers registered for that CLR type.
+/// Every publish with no subscriber throws, so the caller still has the message.
 /// Suitable for unit tests and local development. No broker.
 /// Thread-safe. Subscribers for one message type run in registration order.
 /// A failed handler is retried up to <see cref="MessageTransportOptions.MaxDeliveryAttempts"/>.
 /// The last failure is thrown unless <see cref="MessageTransportOptions.DeadLetterFailedMessages"/> is true.
 /// Concurrency and prefetch are validated at startup and do not parallelize this transport.
 /// </summary>
-public sealed class InMemoryMessageTransport : IMessageTransport
+public sealed class InMemoryMessageTransport : IMessageTransport, IOutboundListenerProbe
 {
     private readonly ConcurrentDictionary<Type, List<Delegate>> _handlers = new();
     private readonly ILogger<InMemoryMessageTransport> _logger;
@@ -60,17 +61,16 @@ public sealed class InMemoryMessageTransport : IMessageTransport
         try
         {
             var messageType = typeof(TMessage);
-            if (!_handlers.TryGetValue(messageType, out var handlers) || handlers.Count == 0)
-            {
-                _logger.LogDebug(
-                    "InMemoryTransport: No subscribers for {MessageType} (MessageId={MessageId})",
-                    declaredName, context.MessageId);
-                MessagingTelemetry.RecordPublish(declaredName, TimeProvider.System.GetElapsedTime(publishStart));
-                return;
-            }
+            if (!_handlers.TryGetValue(messageType, out var handlers))
+                throw NoSubscriber(declaredName, context.MessageId);
 
             List<Delegate> snapshot;
-            lock (handlers) { snapshot = [.. handlers]; }
+            lock (handlers)
+            {
+                if (handlers.Count == 0)
+                    throw NoSubscriber(declaredName, context.MessageId);
+                snapshot = [.. handlers];
+            }
 
             _logger.LogDebug(
                 "InMemoryTransport: Delivering {MessageType} to {HandlerCount} subscriber(s) (MessageId={MessageId})",
@@ -109,6 +109,25 @@ public sealed class InMemoryMessageTransport : IMessageTransport
             publish?.SetStatus(ActivityStatusCode.Error, ex.Message);
             throw;
         }
+    }
+
+    private InvalidOperationException NoSubscriber(string declaredName, string? messageId)
+    {
+        _logger.LogDebug(
+            "InMemoryTransport: No subscribers for {MessageType} (MessageId={MessageId})",
+            declaredName, messageId);
+        return new InvalidOperationException(
+            $"No subscriber is registered for '{declaredName}'. The message was not published.");
+    }
+
+    Task<bool> IOutboundListenerProbe.HasListenerAsync(Type messageType, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(messageType);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!_handlers.TryGetValue(messageType, out var handlers))
+            return Task.FromResult(false);
+        lock (handlers)
+            return Task.FromResult(handlers.Count > 0);
     }
 
     /// <summary>

@@ -52,9 +52,11 @@ public sealed class RabbitMqTransportOptions : MessageTransportOptions
 
     /// <summary>
     /// What to do when a publish is mandatory and no queue is bound.
-    /// Defaults to <see cref="RabbitMqUnroutablePublish.Warn"/>.
+    /// Defaults to <see cref="RabbitMqUnroutablePublish.Throw"/>.
+    /// Set <see cref="RabbitMqUnroutablePublish.Warn"/> to log and return.
+    /// <see cref="RabbitMqUnroutablePublish.Warn"/> marks an outbox row processed.
     /// </summary>
-    public RabbitMqUnroutablePublish UnroutablePublish { get; set; } = RabbitMqUnroutablePublish.Warn;
+    public RabbitMqUnroutablePublish UnroutablePublish { get; set; } = RabbitMqUnroutablePublish.Throw;
 
     /// <summary>
     /// Checks the shared settings and the RabbitMQ connection settings.
@@ -134,9 +136,9 @@ public sealed class RabbitMqTransportOptions : MessageTransportOptions
 /// <summary>What a mandatory publish does when the broker cannot route the message.</summary>
 public enum RabbitMqUnroutablePublish
 {
-    /// <summary>Log a warning and return. The broker did not queue the message.</summary>
+    /// <summary>Log a warning and return. The broker did not queue the message. An outbox row is marked processed.</summary>
     Warn = 0,
 
-    /// <summary>Throw when the broker returns the message.</summary>
+    /// <summary>Throw when the broker returns the message. An outbox row stays unprocessed. This is the default.</summary>
     Throw = 1,
 }

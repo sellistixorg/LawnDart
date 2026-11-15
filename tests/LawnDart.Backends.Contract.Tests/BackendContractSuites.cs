@@ -355,6 +355,29 @@ public sealed class PostgresInboxContractTests : InboxContractTests
 
 [Collection(InMemoryContractCollection.Name)]
 [Trait("Category", "Contract")]
+public sealed class InMemoryReactorOutboxDeliveryContractTests : ReactorOutboxDeliveryContractTests
+{
+    public InMemoryReactorOutboxDeliveryContractTests(InMemoryContractFixture fixture) : base(fixture.Backend) { }
+}
+
+[Collection("SqlServerContract")]
+[Trait("Category", "Integration")]
+[Trait("Category", "Contract")]
+public sealed class SqlServerReactorOutboxDeliveryContractTests : ReactorOutboxDeliveryContractTests
+{
+    public SqlServerReactorOutboxDeliveryContractTests(SqlServerContractFixture fixture) : base(fixture.Backend) { }
+}
+
+[Collection("PostgresContract")]
+[Trait("Category", "Integration")]
+[Trait("Category", "Contract")]
+public sealed class PostgresReactorOutboxDeliveryContractTests : ReactorOutboxDeliveryContractTests
+{
+    public PostgresReactorOutboxDeliveryContractTests(PostgresContractFixture fixture) : base(fixture.Backend) { }
+}
+
+[Collection(InMemoryContractCollection.Name)]
+[Trait("Category", "Contract")]
 public sealed class InMemoryViewStoreContractTests : ViewStoreContractTests
 {
     public InMemoryViewStoreContractTests(InMemoryContractFixture fixture) : base(fixture.Backend) { }

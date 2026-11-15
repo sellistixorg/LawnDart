@@ -78,7 +78,11 @@ public sealed class RabbitMqPublishAndRetryTests
         var logger = new WarningLogger();
         await using var fixture = RabbitMqTransportFixture.Create(
             _container.AmqpUri,
-            configure: null,
+            options =>
+            {
+                var rabbit = Assert.IsType<RabbitMqTransportOptions>(options);
+                rabbit.UnroutablePublish = RabbitMqUnroutablePublish.Warn;
+            },
             preHandler: null,
             logger);
 

@@ -258,10 +258,7 @@ public class UseInMemoryBuilderTests
             Microsoft.Extensions.Logging.Abstractions.NullLogger<OutboxProcessor>.Instance,
             pollingInterval: TimeSpan.FromSeconds(5),
             maxAttempts: 3);
-        var batch = typeof(OutboxProcessor).GetMethod(
-            "ProcessBatchAsync",
-            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-        await (Task)batch!.Invoke(processor, [CancellationToken.None])!;
+        await processor.ProcessBatchAsync(CancellationToken.None);
 
         Assert.Equal(declared.Id, Assert.Single(publisher.Published).Id);
         Assert.Empty(await writer.GetUnprocessedAsync(10));

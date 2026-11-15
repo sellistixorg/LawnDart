@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="LawnDart.EventSourcing" />
+    <InternalsVisibleTo Include="LawnDart.Messaging" />
     <InternalsVisibleTo Include="LawnDart.Projections.Lightweight" />
     <InternalsVisibleTo Include="LawnDart.Projections.Lightweight.SqlServer" />
     <InternalsVisibleTo Include="LawnDart.Projections.Lightweight.Postgres" />

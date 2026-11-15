@@ -255,9 +255,18 @@ public abstract class MessageTransportConformanceTests
         await cts.CancelAsync();
         await subscription.WaitAsync(Timeout);
 
-        await fixture.Transport.PublishAsync(
-            new ConformancePing(Guid.NewGuid(), DateTime.UtcNow, "second"),
-            MessageContext.New());
+        try
+        {
+            await fixture.Transport.PublishAsync(
+                new ConformancePing(Guid.NewGuid(), DateTime.UtcNow, "second"),
+                MessageContext.New());
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("subscriber", StringComparison.OrdinalIgnoreCase))
+        {
+            // Only the in-process transport fails a publish that has no subscriber.
+            // A broker transport keeps the publish and delivers it to a queue that still exists.
+        }
+
         await Task.Delay(50);
 
         Assert.Equal(1, Volatile.Read(ref calls));

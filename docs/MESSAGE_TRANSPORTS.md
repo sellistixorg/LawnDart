@@ -150,7 +150,8 @@ failed attempt that will run again. The current span gets a
 `DeadLetterFailedMessages` defaults to false.
 
 On the in-process transport, the last failure is thrown and the message is
-not parked. Set the flag true to park the message on `IDeadLetterQueue` and
+not parked. Every publish with no subscriber throws. The caller still has
+the message. Set the flag true to park the message on `IDeadLetterQueue` and
 return. A caller such as the outbox still sees the failure when the flag is
 false, so the outbox keeps the row. See [Outbox](OUTBOX_PATTERN.md).
 
@@ -469,22 +470,56 @@ current delivery, so this cap is separate from `MaxDeliveryAttempts`.
 
 ## Unroutable publish
 
-RabbitMQ publishes as mandatory. `UnroutablePublish` defaults to `Warn`.
-When no queue is bound, the call logs a warning and returns. The broker did
-not queue the message. That publish is not recorded on
-`messaging.publish.duration`. It increments `messaging.publish.errors` with
-`messaging.publish.outcome` set to `unroutable`. The publish span gets that
-tag and status Error. Set `UnroutablePublish` to `Throw` when the caller
-should see that failure. The outbox keeps the row when publish throws. A
+A publish has no listener in these cases:
+
+- In-process: no subscriber is registered for that message type in this process.
+  When the subscriber stops, the next publish has no listener and throws.
+- RabbitMQ: no queue is bound for that event type. The publish is mandatory,
+  and the broker returns it. A queue another service owns counts. A stopped
+  consumer whose queue still exists still receives.
+- Amazon SQS: no live queue is subscribed to the topic. The transport remembers
+  a topic after it has seen a queue there, for the life of the process, and
+  it does not ask again for that topic. Removing the last queue later is not
+  detected until the process starts again. A publish after that removal is
+  accepted, and the outbox marks the row processed. A queue another service
+  owns counts. A stopped consumer whose queue subscription still exists still
+  receives.
+
+RabbitMQ publishes as mandatory. `UnroutablePublish` defaults to `Throw`.
+When no queue is bound, the call throws. The outbox keeps the row and tries
+it again until the attempt limit. Set `UnroutablePublish` to `Warn` to log
+and return. `Warn` does not queue the message, and the outbox marks the row
+processed. A `Warn` publish is not recorded on `messaging.publish.duration`.
+It increments `messaging.publish.errors` with `messaging.publish.outcome`
+set to `unroutable`. The publish span gets that tag and status Error. A
 thrown publish is a `messaging.publish.errors` count without the unroutable
 outcome tag.
 
-Amazon SQS checks for an SQS subscription before it publishes. When none is
-subscribed, `UnroutablePublish` defaults to `Warn`. The call logs a warning
-and returns. The message was not sent. That publish is not recorded on
-`messaging.publish.duration`. It increments `messaging.publish.errors` with
-`messaging.publish.outcome` set to `unroutable`. Set `UnroutablePublish` to
-`Throw` when the caller should see that failure. The outbox keeps the row
-when publish throws. A thrown publish is a `messaging.publish.errors` count
-without the unroutable outcome tag. SNS would accept a publish that has no
-subscriber and then drop it. The check avoids counting that as success.
+Amazon SQS checks for a queue subscription before it publishes.
+`UnroutablePublish` defaults to `Throw`. When none is subscribed, the call
+throws and the message is not sent. The outbox keeps the row and tries it
+again until the attempt limit. Set `UnroutablePublish` to `Warn` to log and
+return. `Warn` does not send the message, and the outbox marks the row
+processed. A `Warn` publish is not recorded on `messaging.publish.duration`.
+It increments `messaging.publish.errors` with `messaging.publish.outcome`
+set to `unroutable`. A thrown publish is a `messaging.publish.errors` count
+without the unroutable outcome tag. The topic service would accept a publish
+that has no subscriber and then drop it. The check avoids counting that as
+success.
+
+Startup checks each published event type for a listener before the outbox
+polls. A type registered with `AddReactor` or `AddEventProcessor` counts as
+a listener. The check does not ask the transport about that type. The check
+runs for the in-process transport and for Amazon SQS. RabbitMQ and Azure
+Service Bus do not report listeners at startup. The host logs that and
+continues. When startup is set to stop on a missing listener, that log is
+a warning. Amazon SQS lists topics and subscriptions for a published type
+this process does not subscribe to. That list needs permission to list
+them. When the list fails, the host logs that and continues. `OnMissingListenerAtStartup` defaults to `Warn`. `Warn` logs
+one warning for each type the check finds with no listener, and the host
+still starts. `Throw` stops host startup when the check finds a type with
+no listener. `Throw` does not stop startup when the check cannot tell.
+The outbox polls every 5 seconds by default, allows 10 attempts, and has no
+extra delay between attempts. A row with no listener is marked
+`DeadLetteredAt` after about 10 polls. `ResetDeadLetteredAsync` puts that
+row back. See [Outbox](OUTBOX_PATTERN.md).

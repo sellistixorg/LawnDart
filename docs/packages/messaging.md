@@ -34,6 +34,31 @@ services.AddTaskProcessor<OverdueRegistrationProcessor>();
 Reactors and processors require `[EventTypeName]` on the event. Host startup
 fails when the attribute is missing. The message type is that token.
 
+The outbox processor waits until the host has started every hosted service
+before it publishes. On shutdown it stops taking new rows before listeners
+unsubscribe, finishes the row already in flight, and leaves later rows
+unprocessed. That wait uses the host shutdown timeout. If the processor
+never started, shutdown does not wait. Startup checks published types for
+a listener on the in-process transport and on Amazon SQS. A type registered
+with `AddReactor` or `AddEventProcessor` counts as a listener, and the
+check does not ask the transport about that type. RabbitMQ and Azure
+Service Bus do not report listeners at startup. The host logs that and
+continues. When startup is set to stop on a missing listener, that log is
+a warning. Amazon SQS lists topics and subscriptions for a published type
+this process does not subscribe to. That list needs permission to list
+them. When the list fails, the host logs that and continues.
+`OnMissingListenerAtStartup` defaults to `Warn`. `Warn` logs one warning
+per type the check finds with no listener, and the host still starts. `Throw` stops host startup only when the check finds a type
+with no listener. The outbox polls every 5 seconds by default, allows 10
+attempts, and has no extra delay between attempts. A row with no listener
+is marked `DeadLetteredAt` after about 10 polls. `ResetDeadLetteredAsync`
+puts that row back. An in-process listener is a subscriber in this process.
+A broker listener is a queue that can receive the message, including a queue
+another service owns and a queue whose consumer is stopped. Amazon SQS
+remembers a topic has a listener for the life of the process. Removing the
+last queue later is not detected until the process starts again. A publish
+after that removal is accepted, and the outbox marks the row processed.
+
 `MessagingJson.Options` is the JSON setting for message bodies and the outbox
 publisher. Property names are PascalCase. Reads ignore case. Null values are
 omitted.
@@ -65,7 +90,18 @@ Return false when the key was processed inside
 inside `InboxClaimLease` (default 30 seconds). `ReleaseClaimAsync` deletes
 a claim that has not been marked processed. Leave a processed key in
 place. Hosted reactors and processors claim before the handler and
-release when the handler throws.
+release when the handler throws. A hosted reactor skips a message only
+when that message was already processed. When another attempt still holds
+the claim, handling throws. On the in-process transport that throw fails
+the publish, so the outbox keeps the row. The next poll tries again and
+counts an attempt while the claim is still held. The outbox attempt limit
+can be reached before the 30 second lease ends. On a broker the publish
+has already completed, so the outbox row is marked processed. The broker
+tries that delivery again. With `DeadLetterFailedMessages` left false, the
+last failure is thrown and the message is not parked. With the flag true,
+the transport retry budget can park the message. That budget defaults to
+5 attempts and a 5 second delay, which can finish before the claim lease
+ends.
 
 `IEventStore` and `IEventLog` have the same members as 0.6.0-alpha.2.
 `QueryResult.TypesResolved` and `EventLogQueryResult.TypesResolved`

@@ -192,11 +192,14 @@ public static class LawnDartSqlServerExtensions
                     ? publishers[0]
                     : new CompositeOutboxPublisher(publishers);
 
-                return new OutboxProcessor(
-                    outboxWriter,
-                    publisher,
-                    sp.GetService<ILogger<OutboxProcessor>>() ?? NullLogger<OutboxProcessor>.Instance,
-                    newEvents: (store as ISignalsNewEvents)?.NewEvents);
+                return new OutboxHost(
+                    new OutboxProcessor(
+                        outboxWriter,
+                        publisher,
+                        sp.GetService<ILogger<OutboxProcessor>>() ?? NullLogger<OutboxProcessor>.Instance,
+                        sp.GetService<IHostApplicationLifetime>(),
+                        newEvents: (store as ISignalsNewEvents)?.NewEvents),
+                    sp.GetService<ILogger<OutboxHost>>() ?? NullLogger<OutboxHost>.Instance);
             });
         }
 

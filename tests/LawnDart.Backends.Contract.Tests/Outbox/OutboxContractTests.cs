@@ -550,11 +550,6 @@ public abstract class OutboxContractTests : BackendContractSuite
         }
 
         public Task ProcessBatchAsync()
-        {
-            var method = typeof(OutboxProcessor).GetMethod(
-                "ProcessBatchAsync",
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            return (Task)method!.Invoke(this, [CancellationToken.None])!;
-        }
+            => base.ProcessBatchAsync(CancellationToken.None);
     }
 }

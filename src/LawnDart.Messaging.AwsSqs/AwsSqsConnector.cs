@@ -82,9 +82,56 @@ internal sealed class AwsSqsConnector : IDisposable, IAsyncDisposable
             ?? throw new InvalidOperationException($"SNS did not return an ARN for topic '{topic}'.");
     }
 
+    /// <summary>
+    /// True when a live queue is already subscribed. Does not create the topic.
+    /// A topic that does not exist has no queue. A list failure is thrown so the caller can tell
+    /// a missing queue from a check that could not run.
+    /// </summary>
+    public async Task<bool> HasExistingQueueSubscriptionAsync(string topic, CancellationToken cancellationToken)
+    {
+        var topicArn = TopicArn(topic) ?? await FindTopicArnAsync(topic, cancellationToken).ConfigureAwait(false);
+        if (topicArn is null)
+            return false;
+
+        return await TopicHasLiveQueueAsync(topicArn, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<bool> HasQueueSubscriptionAsync(string topic, CancellationToken cancellationToken)
     {
         var topicArn = await EnsureTopicAsync(topic, cancellationToken).ConfigureAwait(false);
+        return await TopicHasLiveQueueAsync(topicArn, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<string?> FindTopicArnAsync(string topic, CancellationToken cancellationToken)
+    {
+        string? token = null;
+        do
+        {
+            var page = await CallAsync(
+                ct => Sns.ListTopicsAsync(new ListTopicsRequest { NextToken = token }, ct),
+                cancellationToken).ConfigureAwait(false);
+            foreach (var item in page.Topics ?? [])
+            {
+                var arn = item.TopicArn;
+                if (string.IsNullOrWhiteSpace(arn))
+                    continue;
+                var colon = arn.LastIndexOf(':');
+                var name = colon < 0 ? arn : arn[(colon + 1)..];
+                if (!string.Equals(name, topic, StringComparison.Ordinal))
+                    continue;
+                RememberTopic(topic, arn);
+                return arn;
+            }
+
+            token = page.NextToken;
+        }
+        while (!string.IsNullOrEmpty(token));
+
+        return null;
+    }
+
+    private async Task<bool> TopicHasLiveQueueAsync(string topicArn, CancellationToken cancellationToken)
+    {
         string? token = null;
         do
         {

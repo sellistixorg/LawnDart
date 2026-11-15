@@ -24,6 +24,8 @@ public sealed class EventProcessorHostedService<TProcessor, TEvent> : Background
 
     private static readonly string ProcessorTypeName = typeof(TProcessor).Name;
     private string _eventTypeName = "";
+    private CancellationTokenSource? _subscriptionStop;
+    private Task? _subscription;
 
     public EventProcessorHostedService(
         TProcessor processor,
@@ -57,11 +59,39 @@ public sealed class EventProcessorHostedService<TProcessor, TEvent> : Background
             throw;
         }
 
+        // Subscribe before StartAsync returns. BackgroundService runs ExecuteAsync
+        // on another thread, after the host may already have started.
+        _subscriptionStop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _subscription = _transport.SubscribeAsync<TEvent>(HandleAsync, _subscriptionStop.Token);
         return base.StartAsync(cancellationToken);
     }
 
-    protected override Task ExecuteAsync(CancellationToken stoppingToken)
-        => _transport.SubscribeAsync<TEvent>(HandleAsync, stoppingToken);
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        if (_subscription is null || _subscriptionStop is null)
+            return;
+
+        using var stop = stoppingToken.Register(static state =>
+        {
+            var source = (CancellationTokenSource)state!;
+            try
+            {
+                source.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+        }, _subscriptionStop);
+        try
+        {
+            await _subscription.ConfigureAwait(false);
+        }
+        finally
+        {
+            _subscriptionStop.Dispose();
+            _subscriptionStop = null;
+        }
+    }
 
     private async Task HandleAsync(TEvent @event, MessageContext context, CancellationToken ct)
     {

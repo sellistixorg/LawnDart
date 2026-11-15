@@ -65,7 +65,7 @@ public class AwsSqsNameAndOptionsTests
         Assert.Equal(12, options.MaxHandlerDeferrals);
         Assert.False(options.ReplaceRouteRule);
         Assert.False(options.DeadLetterFailedMessages);
-        Assert.Equal(AwsSqsUnroutablePublish.Warn, options.UnroutablePublish);
+        Assert.Equal(AwsSqsUnroutablePublish.Throw, options.UnroutablePublish);
 
         options.EnsureValid();
 

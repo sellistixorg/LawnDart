@@ -23,7 +23,7 @@ namespace LawnDart.Messaging.AwsSqs;
 /// Prefer <see cref="DisposeAsync"/>.
 /// User and tenant values are envelope headers. They are not an authorization context.
 /// </summary>
-public sealed class AwsSqsMessageTransport : IMessageTransport, IDisposable, IAsyncDisposable
+public sealed class AwsSqsMessageTransport : IMessageTransport, IOutboundListenerProbe, IDisposable, IAsyncDisposable
 {
     /// <summary>Value stored on <see cref="MessageContext.TransportType"/>. The value is <c>AwsSqs</c>.</summary>
     public const string TransportTypeName = "AwsSqs";
@@ -158,6 +158,21 @@ public sealed class AwsSqsMessageTransport : IMessageTransport, IDisposable, IAs
             publish?.SetStatus(ActivityStatusCode.Error, ex.Message);
             throw;
         }
+    }
+
+    async Task<bool> IOutboundListenerProbe.HasListenerAsync(Type messageType, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(messageType);
+        var declaredName = MessageTypeNames.Require(messageType);
+        var topic = _topicMapper.TopicFor(declaredName);
+        AwsSqsNames.RequireTopic(topic);
+        if (_connector.IsRoutable(topic))
+            return true;
+
+        var found = await _connector.HasExistingQueueSubscriptionAsync(topic, cancellationToken).ConfigureAwait(false);
+        if (found)
+            _connector.MarkRoutable(topic);
+        return found;
     }
 
     /// <inheritdoc />

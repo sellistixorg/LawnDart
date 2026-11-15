@@ -96,7 +96,7 @@ public class RabbitMqTransportOptionsTests
     {
         Assert.Equal(TimeSpan.FromSeconds(5), new RabbitMqTransportOptions().RetryDelay);
         Assert.Equal(TimeSpan.FromSeconds(30), new RabbitMqTransportOptions().OperationTimeout);
-        Assert.Equal(RabbitMqUnroutablePublish.Warn, new RabbitMqTransportOptions().UnroutablePublish);
+        Assert.Equal(RabbitMqUnroutablePublish.Throw, new RabbitMqTransportOptions().UnroutablePublish);
 
         var options = new RabbitMqTransportOptions { RetryDelay = TimeSpan.Zero };
         var ex = Assert.Throws<InvalidOperationException>(options.EnsureValid);
@@ -131,4 +131,5 @@ public class RabbitMqTransportOptionsTests
         var ex = Assert.Throws<InvalidOperationException>(options.EnsureValid);
         Assert.Contains("HostName", ex.Message, StringComparison.Ordinal);
     }
+
 }
