@@ -33,6 +33,7 @@ changes to the public API.
 - The reactor host handles each message in a new dependency injection scope and disposes that scope when handling finishes.
 - A SQL Server append writes each new stream tag from the id it already holds. A condition tag that is not registered matches no event.
 - A subscription reads again when a wake-up names a position that an open transaction still hides. The wake-up is consumed by the read that misses the row, and the transaction that clears the head does not signal. Postgres and SQL Server both retry that read. The idle poll is unchanged.
+- Library awaits, including the Postgres event store and the command endpoint registrar, no longer capture the caller's synchronization context.
 
 ## [0.7.0-alpha.7] - 2026-11-13
 
