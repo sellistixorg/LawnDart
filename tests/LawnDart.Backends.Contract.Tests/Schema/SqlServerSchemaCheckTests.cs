@@ -25,7 +25,7 @@ public sealed class SqlServerSchemaCheckTests(SqlServerSchemaCheckFixture fixtur
         var bundle = await fixture.CreateAsync("chk_match");
 
         AssertMatch(await bundle.Store.VerifySchemaAsync(), SqlServerEventStore.CurrentSchemaFormat);
-        AssertMatch(await bundle.Outbox.VerifySchemaAsync(), "2");
+        AssertMatch(await bundle.Outbox.VerifySchemaAsync(), "3");
         AssertMatch(await bundle.Snapshots.VerifySchemaAsync(), null);
         AssertMatch(await bundle.Views.VerifySchemaAsync(), null);
         AssertMatch(await bundle.Checkpoints.VerifySchemaAsync(), null);
@@ -153,7 +153,7 @@ public sealed class SqlServerSchemaCheckTests(SqlServerSchemaCheckFixture fixtur
         Assert.Equal(SqlServerEventStore.CurrentSchemaFormat, events.ExpectedFormat);
         Assert.Equal("2", events.FoundFormat);
         Assert.False(outbox.Matches);
-        Assert.Equal("2", outbox.ExpectedFormat);
+        Assert.Equal("3", outbox.ExpectedFormat);
         Assert.Equal("1", outbox.FoundFormat);
         Assert.False(inbox.Matches);
         Assert.Equal("2", inbox.ExpectedFormat);
@@ -186,7 +186,7 @@ public sealed class SqlServerSchemaCheckTests(SqlServerSchemaCheckFixture fixtur
         var before = await fixture.CatalogAsync(bundle.Schema);
 
         AssertMatch(await read.Store.VerifySchemaAsync(), SqlServerEventStore.CurrentSchemaFormat);
-        AssertMatch(await read.Outbox.VerifySchemaAsync(), "2");
+        AssertMatch(await read.Outbox.VerifySchemaAsync(), "3");
         AssertMatch(await read.Snapshots.VerifySchemaAsync(), null);
         AssertMatch(await read.Views.VerifySchemaAsync(), null);
         AssertMatch(await read.Checkpoints.VerifySchemaAsync(), null);

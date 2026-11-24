@@ -47,9 +47,14 @@ public interface IOutboxWriter
     /// </summary>
     /// <param name="messageId">ID of the message.</param>
     /// <param name="error">Error message.</param>
+    /// <param name="publishedTo">
+    /// Publishers that published the message during this attempt, one bit per publisher.
+    /// The writer adds these bits to <see cref="OutboxMessage.PublishedTo"/> and keeps the bits already set.
+    /// 0 adds none.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Task representing the async operation.</returns>
-    Task RecordFailureAsync(Guid messageId, string error, CancellationToken cancellationToken = default);
+    Task RecordFailureAsync(Guid messageId, string error, long publishedTo = 0, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Marks a message as dead-lettered. The processor will not retry it.

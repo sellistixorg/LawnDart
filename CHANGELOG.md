@@ -10,6 +10,20 @@ changes to the public API.
 
 ## [Unreleased]
 
+### Changed
+
+- Breaking: `IOutboxWriter.RecordFailureAsync` takes `long publishedTo` before the cancellation token. It defaults to 0. The writer adds those bits to the row and keeps the bits already set. A custom `IOutboxWriter` must add the parameter and store the value.
+- Breaking: SQL Server outbox tables are schema format 3 and Postgres outbox tables are format 2. Each adds a `PublishedTo` (`published_to` on Postgres) column, a 64-bit number with default 0. `InitializeSchemaAsync` adds the column to an existing table and moves the stamp forward. SQL Server formats 1 and 2 and Postgres format 1 move in place. Rows are kept.
+
+### Added
+
+- `OutboxMessage.PublishedTo` records which publishers already published a row, one bit per publisher in registration order.
+
+### Fixed
+
+- With more than one `IOutboxPublisher`, a failed publisher no longer sends the row again through the publishers that already published it. The processor calls each registered publisher in order and records the ones that succeeded on the row when another one fails. The next attempt calls only the rest. Attempt counting and the attempt limit are unchanged. A context supports up to 64 publishers. Startup throws when more are registered. Keep the registered publishers, and their order, the same while rows wait to be published.
+- A failed outbox processor loop now follows `HostOptions.BackgroundServiceExceptionBehavior`, the same as any other background service. The default, `StopHost`, stops the host. Before, the failure was logged and the host kept running without publishing. Shutdown is not treated as a failure.
+
 ## [0.7.0-alpha.8] - 2026-11-15
 
 ### Changed

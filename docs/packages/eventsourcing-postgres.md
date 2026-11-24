@@ -270,7 +270,9 @@ When the table is created, autovacuum uses a vacuum scale factor of 0.01, a
 vacuum threshold of 1000, an analyze scale factor of 0.02, and an analyze
 threshold of 1000.
 
-`InitializeSchemaAsync` adds the table when it is missing. The events format
+`InitializeSchemaAsync` adds the table when it is missing. The outbox format
+stamp is 2. A format 1 outbox table gains `published_to` (default 0), which
+records which outbox publishers already published a row. The events format
 stamp stays at 1. A process still running 0.7.0-alpha.1 calls the original
 append function and can keep appending. That process does not write outbox
 rows, and the store does not report that.

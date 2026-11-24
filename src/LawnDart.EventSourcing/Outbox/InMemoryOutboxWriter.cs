@@ -178,7 +178,8 @@ public sealed class InMemoryOutboxWriter : IOutboxWriter
         => message is not null && message.DeadLetteredAt is not null && message.ProcessedAt is null;
 
     /// <inheritdoc/>
-    public Task RecordFailureAsync(Guid messageId, string error, CancellationToken cancellationToken = default)
+    public Task RecordFailureAsync(
+        Guid messageId, string error, long publishedTo = 0, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         lock (_lock)
@@ -186,6 +187,7 @@ public sealed class InMemoryOutboxWriter : IOutboxWriter
             var message = _messages.FirstOrDefault(m => m.Id == messageId);
             if (message is not null)
             {
+                message.PublishedTo |= publishedTo;
                 message.Attempts++;
                 message.LastError = error;
                 message.LastAttemptAt = DateTime.UtcNow;

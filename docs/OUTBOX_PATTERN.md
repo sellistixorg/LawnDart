@@ -114,15 +114,30 @@ The outbox processor counts `outbox.publish.failures` on the `LawnDart.Outbox`
 meter when a publish throws, and `outbox.deadlettered` when it parks a row
 that used its attempts. Both are tagged with `outbox.event_type`.
 
+The processor runs as a background service. When its loop fails, the host
+applies `HostOptions.BackgroundServiceExceptionBehavior`. The default,
+`StopHost`, logs the failure and stops the host. `Ignore` logs the failure,
+and the host keeps running without publishing outbox rows.
+
+With more than one `IOutboxPublisher` registered, the processor calls them in
+registration order, and each row goes to each publisher once. When a publisher
+throws, the row records the publishers that already published it in
+`PublishedTo`, one bit per publisher, and counts one attempt. The next attempt
+calls only the publishers that have not published the row. A dead-lettered row
+keeps `PublishedTo`, and so does a reset. A context supports up to 64
+publishers. Keep the registered publishers, and their order, the same while
+rows wait to be published.
+
 The outbox row id is the source event id. `GetUnprocessedAsync` claims each row
 for `OutboxClaimLease` (default 30 seconds). On SQL Server the deadline is
 `ClaimedUntil`, taken with `UPDLOCK, READPAST`. On Postgres the deadline is
 `claimed_until`, taken with `FOR UPDATE SKIP LOCKED`, and the claimed rows
 come back in position order. A second processor does not publish that row.
 Set the lease to `TimeSpan.Zero` when the next poll should claim the row again.
-A failed publish clears the claim. On SQL Server, format `1` outbox tables gain
-`ClaimedUntil` when `InitializeSchemaAsync` runs. On Postgres,
-`InitializeSchemaAsync` adds the `outbox` table when it is missing. The events
+A failed publish clears the claim. On SQL Server, format `1` and `2` outbox
+tables gain `ClaimedUntil` and `PublishedTo` when `InitializeSchemaAsync` runs.
+On Postgres, `InitializeSchemaAsync` adds the `outbox` table when it is missing,
+and adds `published_to` to a format 1 outbox table. The events
 format stamp stays at 1. A process still running 0.7.0-alpha.1 can keep
 appending. It does not write outbox rows, and the store does not report that.
 Deploy the new version with `EnableOutbox` false until no 0.7.0-alpha.1 copy

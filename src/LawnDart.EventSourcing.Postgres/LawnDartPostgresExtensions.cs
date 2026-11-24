@@ -16,7 +16,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace LawnDart.EventSourcing.Postgres;
 
@@ -130,24 +129,7 @@ public static class LawnDartPostgresExtensions
                 // with the context's event types, before any publisher error.
                 var store = sp.GetRequiredKeyedService<IEventStore>(contextName);
                 var outboxWriter = sp.GetRequiredKeyedService<IOutboxWriter>(contextName);
-                var publishers = sp.GetServices<IOutboxPublisher>().ToArray();
-                if (publishers.Length == 0)
-                {
-                    throw new InvalidOperationException(
-                        $"EnableOutbox is true for context '{contextName}' but no IOutboxPublisher is registered.");
-                }
-
-                IOutboxPublisher publisher = publishers.Length == 1
-                    ? publishers[0]
-                    : new CompositeOutboxPublisher(publishers);
-                return new OutboxHost(
-                    new OutboxProcessor(
-                        outboxWriter,
-                        publisher,
-                        sp.GetService<ILogger<OutboxProcessor>>() ?? NullLogger<OutboxProcessor>.Instance,
-                        sp.GetService<IHostApplicationLifetime>(),
-                        newEvents: (store as ISignalsNewEvents)?.NewEvents),
-                    sp.GetService<ILogger<OutboxHost>>() ?? NullLogger<OutboxHost>.Instance);
+                return OutboxHost.Create(sp, contextName, outboxWriter, (store as ISignalsNewEvents)?.NewEvents);
             });
         }
 
@@ -217,20 +199,6 @@ public static class LawnDartPostgresExtensions
         }
 
         return builder;
-    }
-}
-
-file sealed class CompositeOutboxPublisher : IOutboxPublisher
-{
-    private readonly IOutboxPublisher[] _publishers;
-
-    public CompositeOutboxPublisher(IOutboxPublisher[] publishers) => _publishers = publishers;
-
-    /// <summary>Publishes one outbox row through each registered publisher.</summary>
-    public async Task PublishAsync(OutboxMessage message, CancellationToken cancellationToken = default)
-    {
-        foreach (var publisher in _publishers)
-            await publisher.PublishAsync(message, cancellationToken).ConfigureAwait(false);
     }
 }
 

@@ -142,7 +142,8 @@ public sealed class PostgresOutboxWriter : IOutboxWriter
                 RETURNING
                     o.id, o.event_type, o.schema_version, o.codec_id, o.payload,
                     o.metadata::text AS metadata, o.created_at, o.processed_at, o.attempts,
-                    o.last_error, o.last_attempt_at, o.stream_id, o.sequence_position, o.dead_lettered_at
+                    o.last_error, o.last_attempt_at, o.stream_id, o.sequence_position, o.dead_lettered_at,
+                    o.published_to
             )
             SELECT * FROM updated ORDER BY sequence_position
             """;
@@ -161,7 +162,8 @@ public sealed class PostgresOutboxWriter : IOutboxWriter
             SELECT
                 id, event_type, schema_version, codec_id, payload,
                 metadata::text AS metadata, created_at, processed_at, attempts,
-                last_error, last_attempt_at, stream_id, sequence_position, dead_lettered_at
+                last_error, last_attempt_at, stream_id, sequence_position, dead_lettered_at,
+                published_to
             FROM {_qualifiedTableName}
             WHERE dead_lettered_at IS NOT NULL
             ORDER BY sequence_position
@@ -187,11 +189,13 @@ public sealed class PostgresOutboxWriter : IOutboxWriter
     }
 
     /// <inheritdoc/>
-    public async Task RecordFailureAsync(Guid messageId, string error, CancellationToken cancellationToken = default)
+    public async Task RecordFailureAsync(
+        Guid messageId, string error, long publishedTo = 0, CancellationToken cancellationToken = default)
     {
         var sql = $"""
             UPDATE {_qualifiedTableName}
             SET attempts = attempts + 1,
+                published_to = published_to | @published_to,
                 last_error = @last_error,
                 last_attempt_at = clock_timestamp(),
                 claimed_until = NULL
@@ -201,6 +205,7 @@ public sealed class PostgresOutboxWriter : IOutboxWriter
         using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.Add(new NpgsqlParameter("id", NpgsqlDbType.Uuid) { Value = messageId });
         command.Parameters.Add(new NpgsqlParameter("last_error", NpgsqlDbType.Text) { Value = error });
+        command.Parameters.Add(new NpgsqlParameter("published_to", NpgsqlDbType.Bigint) { Value = publishedTo });
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         _logger?.LogWarning("Recorded failure for outbox message {MessageId}: {Error}", messageId, error);
     }
@@ -249,7 +254,8 @@ public sealed class PostgresOutboxWriter : IOutboxWriter
     }
 
     /// <summary>
-    /// Creates the outbox table when it is missing. A second call keeps format 1.
+    /// Creates the outbox table when it is missing. A format 1 table is upgraded to format 2 in place.
+    /// A second call keeps format 2.
     /// </summary>
     /// <remarks>
     /// Run this from a deploy step. Normal app startup should not call it.
@@ -395,7 +401,8 @@ public sealed class PostgresOutboxWriter : IOutboxWriter
             LastAttemptAt = ReadTime(reader, "last_attempt_at"),
             StreamId = reader.GetString(reader.GetOrdinal("stream_id")),
             SequencePosition = reader.GetInt64(reader.GetOrdinal("sequence_position")),
-            DeadLetteredAt = ReadTime(reader, "dead_lettered_at")
+            DeadLetteredAt = ReadTime(reader, "dead_lettered_at"),
+            PublishedTo = reader.GetInt64(reader.GetOrdinal("published_to"))
         };
 
     private static DateTime? ReadTime(NpgsqlDataReader reader, string name)

@@ -201,3 +201,7 @@ static LawnDart.Publishing.PublishedEventMap.Create(string! contextName, LawnDar
 static LawnDart.Publishing.PublishedEventMap.NothingDeclaredMessage(string! contextName, LawnDart.EventStore.EventTypeCatalog? catalog) -> string!
 ~override LawnDart.Publishing.PublishContext.Equals(object obj) -> bool
 ~override LawnDart.Publishing.PublishContext.ToString() -> string
+*REMOVED*LawnDart.Outbox.IOutboxWriter.RecordFailureAsync(System.Guid messageId, string! error, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+LawnDart.Outbox.IOutboxWriter.RecordFailureAsync(System.Guid messageId, string! error, long publishedTo = 0, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+LawnDart.Outbox.OutboxMessage.PublishedTo.get -> long
+LawnDart.Outbox.OutboxMessage.PublishedTo.set -> void

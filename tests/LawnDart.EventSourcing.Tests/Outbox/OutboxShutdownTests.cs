@@ -213,8 +213,9 @@ public class OutboxShutdownTests
         public Task MarkAsProcessedAsync(Guid messageId, CancellationToken cancellationToken = default)
             => _inner.MarkAsProcessedAsync(messageId, cancellationToken);
 
-        public Task RecordFailureAsync(Guid messageId, string error, CancellationToken cancellationToken = default)
-            => _inner.RecordFailureAsync(messageId, error, cancellationToken);
+        public Task RecordFailureAsync(
+            Guid messageId, string error, long publishedTo = 0, CancellationToken cancellationToken = default)
+            => _inner.RecordFailureAsync(messageId, error, publishedTo, cancellationToken);
 
         public Task MarkAsDeadLetteredAsync(Guid messageId, CancellationToken cancellationToken = default)
             => _inner.MarkAsDeadLetteredAsync(messageId, cancellationToken);

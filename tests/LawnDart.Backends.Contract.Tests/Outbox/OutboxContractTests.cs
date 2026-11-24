@@ -278,6 +278,107 @@ public abstract class OutboxContractTests : BackendContractSuite
     }
 
     [ContractFact]
+    public async Task RecordFailureAsync_AddsPublishedToBits_AndKeepsEarlierBits()
+    {
+        SkipUnless(Cap.HasOutboxStore, "This backend does not have an outbox yet.");
+        var writer = await Backend.OpenOutboxAsync(ContractStores.Isolated(outboxClaimLease: TimeSpan.Zero));
+        var message = NewMessage("s", 1);
+        await writer.WriteAsync(message);
+        Assert.Equal(0, Assert.Single(await writer.GetUnprocessedAsync(10)).PublishedTo);
+
+        await writer.RecordFailureAsync(message.Id, "second publisher down", publishedTo: 0b01);
+        Assert.Equal(0b01, Assert.Single(await writer.GetUnprocessedAsync(10)).PublishedTo);
+
+        await writer.RecordFailureAsync(message.Id, "third publisher down", publishedTo: 0b10);
+        Assert.Equal(0b11, Assert.Single(await writer.GetUnprocessedAsync(10)).PublishedTo);
+
+        await writer.RecordFailureAsync(message.Id, "no progress");
+        var row = Assert.Single(await writer.GetUnprocessedAsync(10));
+        Assert.Equal(0b11, row.PublishedTo);
+        Assert.Equal(3, row.Attempts);
+    }
+
+    [ContractFact]
+    public async Task RecordFailureAsync_KeepsTheHighestPublisherBit()
+    {
+        SkipUnless(Cap.HasOutboxStore, "This backend does not have an outbox yet.");
+        var writer = await Backend.OpenOutboxAsync(ContractStores.Isolated(outboxClaimLease: TimeSpan.Zero));
+        var message = NewMessage("s", 1);
+        await writer.WriteAsync(message);
+        await writer.RecordFailureAsync(message.Id, "last publisher down", publishedTo: long.MaxValue);
+        await writer.RecordFailureAsync(message.Id, "again", publishedTo: long.MinValue);
+        Assert.Equal(-1L, Assert.Single(await writer.GetUnprocessedAsync(10)).PublishedTo);
+    }
+
+    [ContractFact]
+    public async Task ResetDeadLettered_KeepsPublishedTo()
+    {
+        SkipUnless(Cap.HasOutboxStore, "This backend does not have an outbox yet.");
+        var writer = await Backend.OpenOutboxAsync(ContractStores.Isolated(outboxClaimLease: TimeSpan.Zero));
+        var message = NewMessage("s", 1);
+        await writer.WriteAsync(message);
+        await writer.RecordFailureAsync(message.Id, "second publisher down", publishedTo: 0b01);
+        await writer.MarkAsDeadLetteredAsync(message.Id);
+        Assert.Equal(0b01, Assert.Single(await writer.GetDeadLetteredAsync(10)).PublishedTo);
+        Assert.True(await writer.ResetDeadLetteredAsync(message.Id));
+        Assert.Equal(0b01, Assert.Single(await writer.GetUnprocessedAsync(10)).PublishedTo);
+    }
+
+    [ContractFact]
+    public async Task OutboxProcessor_TwoPublishers_RetryCallsOnlyThePublisherThatFailed()
+    {
+        SkipUnless(Cap.HasOutboxStore, "This backend does not have an outbox yet.");
+        var writer = await Backend.OpenOutboxAsync(ContractStores.Isolated(outboxClaimLease: TimeSpan.Zero));
+        var first = new RecordingPublisher();
+        var second = new RecordingPublisher { FailuresLeft = 2 };
+        var message = NewMessage("s", 1);
+        await writer.WriteAsync(message);
+        var processor = new BatchProcessor(writer, [first, second], maxAttempts: 10);
+
+        for (var i = 0; i < 3; i++)
+            await processor.ProcessBatchAsync();
+
+        Assert.Equal(message.Id, Assert.Single(first.Published).Id);
+        Assert.Equal(message.Id, Assert.Single(second.Published).Id);
+        Assert.Equal(3, second.Calls);
+        Assert.Empty(await writer.GetUnprocessedAsync(10));
+        Assert.Empty(await writer.GetDeadLetteredAsync(10));
+    }
+
+    [ContractFact]
+    public async Task OutboxProcessor_TwoPublishers_DeadLetteredRowWasPublishedOnceToTheOther()
+    {
+        SkipUnless(Cap.HasOutboxStore, "This backend does not have an outbox yet.");
+        var writer = await Backend.OpenOutboxAsync(ContractStores.Isolated(outboxClaimLease: TimeSpan.Zero));
+        var first = new RecordingPublisher();
+        var second = new RecordingPublisher { ShouldFail = true };
+        var message = NewMessage("s", 1);
+        await writer.WriteAsync(message);
+        var processor = new BatchProcessor(writer, [first, second], maxAttempts: 3);
+
+        for (var i = 0; i < 5; i++)
+        {
+            await processor.ProcessBatchAsync();
+            if ((await writer.GetDeadLetteredAsync(10)).Any(m => m.Id == message.Id))
+                break;
+        }
+
+        var dead = Assert.Single(await writer.GetDeadLetteredAsync(10));
+        Assert.Equal(message.Id, dead.Id);
+        Assert.Equal(0b01, dead.PublishedTo);
+        Assert.True(dead.Attempts >= 2);
+        Assert.Single(first.Published);
+        Assert.Equal(dead.Attempts, second.Calls);
+
+        Assert.True(await writer.ResetDeadLetteredAsync(message.Id));
+        second.ShouldFail = false;
+        await processor.ProcessBatchAsync();
+        Assert.Single(first.Published);
+        Assert.Single(second.Published);
+        Assert.Empty(await writer.GetUnprocessedAsync(10));
+    }
+
+    [ContractFact]
     public async Task Write_ToOneContext_NotVisibleFromAnother()
     {
         SkipUnless(Cap.HasOutboxStore, "This backend does not have an outbox yet.");
@@ -433,6 +534,19 @@ public abstract class OutboxContractTests : BackendContractSuite
     }
 
     [ContractFact]
+    public async Task OutboxWriter_AppendedRow_StartsWithNoPublishers()
+    {
+        SkipUnless(Cap.HasOutboxStore, "This backend does not have an outbox yet.");
+        SkipUnless(Cap.AppendWritesOutboxRows, "This backend does not write outbox rows when an event is appended.");
+        var opened = await OpenPublishingAsync(lease: TimeSpan.Zero);
+        await opened.Store.AppendAsync(Stream(), [new ContractOutboxEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow, Value = "n" }]);
+        var message = Assert.Single(await opened.RequireOutbox().GetUnprocessedAsync(10));
+        Assert.Equal(0, message.PublishedTo);
+        await opened.RequireOutbox().RecordFailureAsync(message.Id, "partial", publishedTo: 0b01);
+        Assert.Equal(0b01, Assert.Single(await opened.RequireOutbox().GetUnprocessedAsync(10)).PublishedTo);
+    }
+
+    [ContractFact]
     public async Task OutboxWriter_FailureRecording_TracksFailedAttempts()
     {
         SkipUnless(Cap.HasOutboxStore, "This backend does not have an outbox yet.");
@@ -531,12 +645,21 @@ public abstract class OutboxContractTests : BackendContractSuite
     private sealed class RecordingPublisher : IOutboxPublisher
     {
         public bool ShouldFail { get; set; }
+        public int FailuresLeft { get; set; }
+        public int Calls { get; private set; }
         public List<OutboxMessage> Published { get; } = [];
 
         public Task PublishAsync(OutboxMessage message, CancellationToken cancellationToken = default)
         {
+            Calls++;
             if (ShouldFail)
                 throw new InvalidOperationException("Simulated publish failure");
+            if (FailuresLeft > 0)
+            {
+                FailuresLeft--;
+                throw new InvalidOperationException("Simulated publish failure");
+            }
+
             Published.Add(message);
             return Task.CompletedTask;
         }
@@ -546,6 +669,11 @@ public abstract class OutboxContractTests : BackendContractSuite
     {
         public BatchProcessor(IOutboxWriter writer, IOutboxPublisher publisher, int maxAttempts)
             : base(writer, publisher, NullLogger<OutboxProcessor>.Instance, TimeSpan.FromSeconds(5), batchSize: 100, maxAttempts)
+        {
+        }
+
+        public BatchProcessor(IOutboxWriter writer, IReadOnlyList<IOutboxPublisher> publishers, int maxAttempts)
+            : base(writer, publishers, NullLogger<OutboxProcessor>.Instance, lifetime: null, TimeSpan.FromSeconds(5), batchSize: 100, maxAttempts)
         {
         }
 
