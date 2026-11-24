@@ -3,8 +3,6 @@ using System.Runtime.CompilerServices;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using LawnDart.EventSourcing.Aggregates;
 using LawnDart.EventSourcing.Context;
 using LawnDart.EventSourcing.Dcb;
@@ -153,24 +151,7 @@ public static class BoundedContextBuilderExtensions
                 // with the context's event types, before any publisher error.
                 var store = sp.GetRequiredKeyedService<IEventStore>(contextName);
                 var writer = sp.GetRequiredKeyedService<IOutboxWriter>(contextName);
-                var publishers = sp.GetServices<IOutboxPublisher>().ToArray();
-                if (publishers.Length == 0)
-                {
-                    throw new InvalidOperationException(
-                        $"EnableOutbox is true for context '{contextName}' but no IOutboxPublisher is registered.");
-                }
-
-                IOutboxPublisher publisher = publishers.Length == 1
-                    ? publishers[0]
-                    : new CompositeOutboxPublisher(publishers);
-                return new OutboxHost(
-                    new OutboxProcessor(
-                        writer,
-                        publisher,
-                        sp.GetService<ILogger<OutboxProcessor>>() ?? NullLogger<OutboxProcessor>.Instance,
-                        sp.GetService<IHostApplicationLifetime>(),
-                        newEvents: (store as ISignalsNewEvents)?.NewEvents),
-                    sp.GetService<ILogger<OutboxHost>>() ?? NullLogger<OutboxHost>.Instance);
+                return OutboxHost.Create(sp, contextName, writer, (store as ISignalsNewEvents)?.NewEvents);
             });
         }
 
@@ -627,20 +608,6 @@ public static class BoundedContextBuilderExtensions
 /// Simple record-style implementation of <see cref="IBoundedContextEventStore"/> used when
 /// the in-memory backend is configured via <c>UseInMemory()</c>.
 /// </summary>
-file sealed class CompositeOutboxPublisher : IOutboxPublisher
-{
-    private readonly IOutboxPublisher[] _publishers;
-
-    public CompositeOutboxPublisher(IOutboxPublisher[] publishers) => _publishers = publishers;
-
-    /// <summary>Publishes one outbox message through each registered publisher.</summary>
-    public async Task PublishAsync(OutboxMessage message, CancellationToken cancellationToken = default)
-    {
-        foreach (var publisher in _publishers)
-            await publisher.PublishAsync(message, cancellationToken).ConfigureAwait(false);
-    }
-}
-
 file sealed class DefaultBoundedContextEventStore : IBoundedContextEventStore
 {
     public string ContextName { get; }

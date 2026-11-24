@@ -253,7 +253,7 @@ Several processes starting together take one lock for those objects and commit t
 
 0.6.0-alpha.2 stamped the events table `LawnDart_SchemaFormat` 2, the
 outbox `LawnDart_OutboxSchemaFormat` 1, and the inbox
-`LawnDart_InboxSchemaFormat` 1. This process stamps events 6, outbox 2,
+`LawnDart_InboxSchemaFormat` 1. This process stamps events 6, outbox 3,
 and inbox 2.
 
 Call `InitializeSchemaAsync` on the SQL event store once on each database
@@ -282,7 +282,9 @@ copied onto several events in a single append keeps the id for the first
 event. The rest of that batch get distinct ids. A later append of the first
 id in that tenant still throws.
 
-Outbox format 1 becomes 2 by adding nullable `ClaimedUntil`. Inbox format
+Outbox format 1 becomes 3 by adding nullable `ClaimedUntil` and
+`PublishedTo` (default 0). Outbox format 2 becomes 3 by adding `PublishedTo`.
+`PublishedTo` records which outbox publishers already published a row. Inbox format
 1 becomes 2 by making `ProcessedAt` nullable and adding nullable
 `ClaimedAt`.
 
@@ -290,8 +292,8 @@ The outbox and inbox stamps move forward only. There is no downgrade. An older p
 does not accept the new stamp throws and names drop and recreate.
 
 A missing events stamp, or any events stamp other than 6, throws the same
-way. A missing stamp, or any stamp other than 1 or 2, throws on the outbox
-and on the inbox. Back up the database before you drop a table. This process
+way. A missing outbox stamp, or any outbox stamp other than 1, 2, or 3,
+throws. A missing inbox stamp, or any inbox stamp other than 1 or 2, throws. Back up the database before you drop a table. This process
 does not copy the rows.
 
 The steps run as separate batches. Run the call again after a failure.

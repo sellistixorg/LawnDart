@@ -71,6 +71,18 @@ public class OutboxMessage
     /// (successful publish).
     /// </summary>
     public DateTime? DeadLetteredAt { get; set; }
+
+    /// <summary>
+    /// Publishers that already published this message, one bit per publisher.
+    /// Bit <c>n</c> is the publisher at position <c>n</c> in registration order.
+    /// 0 means no publisher has published it yet.
+    /// </summary>
+    /// <remarks>
+    /// The outbox processor skips a publisher whose bit is set, so a retry after one
+    /// publisher fails does not publish again through the publishers that succeeded.
+    /// Keep the set of registered publishers, and their order, the same while rows are pending.
+    /// </remarks>
+    public long PublishedTo { get; set; }
     
     /// <summary>
     /// Stream ID the event belongs to (for correlation).

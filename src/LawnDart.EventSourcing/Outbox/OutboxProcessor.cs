@@ -10,10 +10,15 @@ namespace LawnDart.EventSourcing.Outbox;
 /// Background service that processes outbox messages.
 /// Polls for unprocessed messages and publishes them to external systems.
 /// </summary>
+/// <remarks>
+/// With more than one publisher, each row goes to each publisher once.
+/// When a publisher fails, the row records which publishers already published it,
+/// and the retry calls only the publishers that have not.
+/// </remarks>
 public class OutboxProcessor : BackgroundService
 {
     private readonly IOutboxWriter _outboxWriter;
-    private readonly IOutboxPublisher _outboxPublisher;
+    private readonly IOutboxPublisher[] _publishers;
     private readonly ILogger<OutboxProcessor> _logger;
     private readonly TimeSpan _pollingInterval;
     private readonly int _batchSize;
@@ -61,9 +66,43 @@ public class OutboxProcessor : BackgroundService
         int batchSize = 100,
         int maxAttempts = 10,
         NewEventsSignal? newEvents = null)
+        : this(
+            outboxWriter,
+            [outboxPublisher ?? throw new ArgumentNullException(nameof(outboxPublisher))],
+            logger,
+            lifetime,
+            pollingInterval,
+            batchSize,
+            maxAttempts,
+            newEvents)
+    {
+    }
+
+    /// <summary>
+    /// Host registration with every registered publisher, in registration order.
+    /// A publisher's position is its bit in <see cref="OutboxMessage.PublishedTo"/>.
+    /// </summary>
+    internal OutboxProcessor(
+        IOutboxWriter outboxWriter,
+        IReadOnlyList<IOutboxPublisher> publishers,
+        ILogger<OutboxProcessor> logger,
+        IHostApplicationLifetime? lifetime,
+        TimeSpan? pollingInterval = null,
+        int batchSize = 100,
+        int maxAttempts = 10,
+        NewEventsSignal? newEvents = null)
     {
         _outboxWriter = outboxWriter ?? throw new ArgumentNullException(nameof(outboxWriter));
-        _outboxPublisher = outboxPublisher ?? throw new ArgumentNullException(nameof(outboxPublisher));
+        ArgumentNullException.ThrowIfNull(publishers);
+        if (publishers.Count == 0)
+            throw new ArgumentException("At least one outbox publisher is required.", nameof(publishers));
+        if (publishers.Count > MaxPublishers)
+            throw new ArgumentException(
+                $"The outbox supports at most {MaxPublishers} publishers. {publishers.Count} are registered.",
+                nameof(publishers));
+        _publishers = new IOutboxPublisher[publishers.Count];
+        for (var i = 0; i < publishers.Count; i++)
+            _publishers[i] = publishers[i] ?? throw new ArgumentException("Outbox publishers must not be null.", nameof(publishers));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _lifetime = lifetime;
         _pollingInterval = pollingInterval ?? TimeSpan.FromSeconds(5);
@@ -71,6 +110,9 @@ public class OutboxProcessor : BackgroundService
         _maxAttempts = maxAttempts;
         _newEvents = newEvents;
     }
+
+    /// <summary>Most publishers one processor can track. <see cref="OutboxMessage.PublishedTo"/> has one bit per publisher.</summary>
+    internal const int MaxPublishers = 64;
 
     /// <summary>Stops the loop from starting another row. The current row finishes.</summary>
     internal void RequestStop()
@@ -200,19 +242,44 @@ public class OutboxProcessor : BackgroundService
                 continue;
             }
 
+            // Publishers that published this row during this attempt.
+            var publishedNow = 0L;
+            var current = -1;
             try
             {
                 // The current row runs to completion. Shutdown cancels the next row, not this one.
-                await _outboxPublisher.PublishAsync(message, CancellationToken.None).ConfigureAwait(false);
+                for (var i = 0; i < _publishers.Length; i++)
+                {
+                    var bit = 1L << i;
+                    if ((message.PublishedTo & bit) != 0)
+                        continue;
+
+                    current = i;
+                    await _publishers[i].PublishAsync(message, CancellationToken.None).ConfigureAwait(false);
+                    publishedNow |= bit;
+                }
+
+                current = -1;
                 await _outboxWriter.MarkAsProcessedAsync(message.Id, CancellationToken.None).ConfigureAwait(false);
 
                 _logger.LogDebug("Successfully published outbox message {MessageId}", message.Id);
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to publish outbox message {MessageId}", message.Id);
+                if (current >= 0 && _publishers.Length > 1)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "Failed to publish outbox message {MessageId} through publisher {PublisherIndex} ({PublisherType}). Publishers that already published it are skipped on retry",
+                        message.Id, current, _publishers[current].GetType().Name);
+                }
+                else
+                {
+                    _logger.LogWarning(ex, "Failed to publish outbox message {MessageId}", message.Id);
+                }
+
                 OutboxTelemetry.RecordPublishFailure(message.EventType);
-                await _outboxWriter.RecordFailureAsync(message.Id, ex.Message, CancellationToken.None).ConfigureAwait(false);
+                await _outboxWriter.RecordFailureAsync(message.Id, ex.Message, publishedNow, CancellationToken.None).ConfigureAwait(false);
                 if (message.Attempts + 1 >= _maxAttempts)
                 {
                     _logger.LogWarning(

@@ -318,6 +318,70 @@ public sealed class PostgresOutboxInboxTests
     }
 
     [Fact]
+    public async Task OutboxWriter_Format1Table_IsUpgradedInPlace_AndKeepsRows()
+    {
+        var schema = "c" + Guid.NewGuid().ToString("N");
+        var writer = (PostgresOutboxWriter)await _fixture.Backend.OpenOutboxAsync(new ContractStoreOptions
+        {
+            SchemaName = schema,
+            RequireTenantId = false,
+            OutboxClaimLease = TimeSpan.Zero
+        });
+        var message = Message(1);
+        await writer.WriteAsync(message);
+
+        await using (var admin = new NpgsqlConnection(_fixture.AdminConnectionString))
+        {
+            await admin.OpenAsync();
+            await using var downgrade = new NpgsqlCommand($"""
+                ALTER TABLE {writer.QualifiedTableName} DROP COLUMN published_to;
+                UPDATE "{schema}".schema_info SET format = 1 WHERE component = 'outbox';
+                """, admin);
+            await downgrade.ExecuteNonQueryAsync();
+        }
+
+        await writer.InitializeSchemaAsync();
+
+        await using (var admin = new NpgsqlConnection(_fixture.AdminConnectionString))
+        {
+            await admin.OpenAsync();
+            await using var format = new NpgsqlCommand(
+                $"""SELECT format FROM "{schema}".schema_info WHERE component = 'outbox'""", admin);
+            Assert.Equal(PostgresOutboxSchema.CurrentFormat, Convert.ToInt32(await format.ExecuteScalarAsync()));
+        }
+
+        var row = Assert.Single(await writer.GetUnprocessedAsync(10));
+        Assert.Equal(message.Id, row.Id);
+        Assert.Equal(0, row.PublishedTo);
+        await writer.RecordFailureAsync(message.Id, "second publisher down", publishedTo: 0b01);
+        Assert.Equal(0b01, Assert.Single(await writer.GetUnprocessedAsync(10)).PublishedTo);
+
+        await writer.InitializeSchemaAsync();
+        Assert.Equal(0b01, Assert.Single(await writer.GetUnprocessedAsync(10)).PublishedTo);
+    }
+
+    [Fact]
+    public async Task OutboxWriter_UnknownFormat_Throws()
+    {
+        var schema = "c" + Guid.NewGuid().ToString("N");
+        var writer = (PostgresOutboxWriter)await _fixture.Backend.OpenOutboxAsync(new ContractStoreOptions
+        {
+            SchemaName = schema,
+            RequireTenantId = false
+        });
+
+        await using (var admin = new NpgsqlConnection(_fixture.AdminConnectionString))
+        {
+            await admin.OpenAsync();
+            await using var stamp = new NpgsqlCommand(
+                $"""UPDATE "{schema}".schema_info SET format = 99 WHERE component = 'outbox'""", admin);
+            await stamp.ExecuteNonQueryAsync();
+        }
+
+        await Assert.ThrowsAsync<IncompatibleOutboxSchemaException>(() => writer.InitializeSchemaAsync());
+    }
+
+    [Fact]
     public async Task SameEventId_OnTwoTenants_WithOutbox_ThrowsEventAlreadyAppended()
     {
         var opened = await _fixture.Backend.OpenEventStoreAsync(Publishing());

@@ -18,11 +18,14 @@ public class SqlServerOutboxWriter : IOutboxWriter
 
     /// <summary>
     /// Format 2 adds <c>ClaimedUntil</c> so a processor can claim a row.
-    /// Format 1 is upgraded in place.
+    /// Format 3 adds <c>PublishedTo</c>, the publishers that already published a row.
+    /// Formats 1 and 2 are upgraded in place.
     /// </summary>
-    internal const string CurrentSchemaFormat = "2";
+    internal const string CurrentSchemaFormat = "3";
 
     internal const string UpgradableSchemaFormat = "1";
+
+    internal const string UpgradableSchemaFormat2 = "2";
 
     private readonly TimeSpan _claimLease;
     private readonly string _connectionString;
@@ -148,7 +151,7 @@ public class SqlServerOutboxWriter : IOutboxWriter
                 inserted.Id, inserted.EventType, inserted.Payload, inserted.Metadata, inserted.CreatedAt,
                 inserted.ProcessedAt, inserted.Attempts, inserted.LastError, inserted.LastAttemptAt,
                 inserted.StreamId, inserted.SequencePosition, inserted.DeadLetteredAt,
-                inserted.SchemaVersion, inserted.CodecId;";
+                inserted.SchemaVersion, inserted.CodecId, inserted.PublishedTo;";
 
         using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -182,7 +185,7 @@ public class SqlServerOutboxWriter : IOutboxWriter
             SELECT TOP (@BatchSize)
                 Id, EventType, Payload, Metadata, CreatedAt, ProcessedAt,
                 Attempts, LastError, LastAttemptAt, StreamId, SequencePosition, DeadLetteredAt,
-                SchemaVersion, CodecId
+                SchemaVersion, CodecId, PublishedTo
             FROM {_qualifiedTableName}
             WHERE DeadLetteredAt IS NOT NULL
             ORDER BY SequencePosition ASC";
@@ -234,7 +237,8 @@ public class SqlServerOutboxWriter : IOutboxWriter
             SequencePosition = reader.GetInt64(reader.GetOrdinal("SequencePosition")),
             DeadLetteredAt = reader.IsDBNull(reader.GetOrdinal("DeadLetteredAt"))
                 ? null
-                : reader.GetDateTime(reader.GetOrdinal("DeadLetteredAt"))
+                : reader.GetDateTime(reader.GetOrdinal("DeadLetteredAt")),
+            PublishedTo = reader.GetInt64(reader.GetOrdinal("PublishedTo"))
         };
 
     /// <inheritdoc/>
@@ -259,11 +263,13 @@ public class SqlServerOutboxWriter : IOutboxWriter
     }
 
     /// <inheritdoc/>
-    public async Task RecordFailureAsync(Guid messageId, string error, CancellationToken cancellationToken = default)
+    public async Task RecordFailureAsync(
+        Guid messageId, string error, long publishedTo = 0, CancellationToken cancellationToken = default)
     {
         var sql = $@"
             UPDATE {_qualifiedTableName}
             SET Attempts = Attempts + 1,
+                PublishedTo = PublishedTo | @PublishedTo,
                 LastError = @LastError,
                 LastAttemptAt = @LastAttemptAt,
                 ClaimedUntil = NULL
@@ -274,6 +280,7 @@ public class SqlServerOutboxWriter : IOutboxWriter
 
         using var command = new SqlCommand(sql, connection);
         command.Parameters.Add("@LastError", SqlDbType.NVarChar, -1).Value = error;
+        command.Parameters.Add("@PublishedTo", SqlDbType.BigInt).Value = publishedTo;
         command.Parameters.Add("@LastAttemptAt", SqlDbType.DateTime2).Value = DateTime.UtcNow;
         command.Parameters.Add("@Id", SqlDbType.UniqueIdentifier).Value = messageId;
 
@@ -397,9 +404,10 @@ public class SqlServerOutboxWriter : IOutboxWriter
             if (exists)
             {
                 var found = await ReadSchemaFormatAsync(connection, cancellationToken).ConfigureAwait(false);
-                if (string.Equals(found, UpgradableSchemaFormat, StringComparison.Ordinal))
+                if (string.Equals(found, UpgradableSchemaFormat, StringComparison.Ordinal)
+                    || string.Equals(found, UpgradableSchemaFormat2, StringComparison.Ordinal))
                 {
-                    await UpgradeFromFormat1Async(connection, cancellationToken).ConfigureAwait(false);
+                    await UpgradeInPlaceAsync(connection, cancellationToken).ConfigureAwait(false);
                     return;
                 }
 
@@ -425,7 +433,8 @@ public class SqlServerOutboxWriter : IOutboxWriter
                 StreamId NVARCHAR(500) NOT NULL,
                 SequencePosition BIGINT NOT NULL,
                 DeadLetteredAt DATETIME2 NULL,
-                ClaimedUntil DATETIME2 NULL
+                ClaimedUntil DATETIME2 NULL,
+                PublishedTo BIGINT NOT NULL CONSTRAINT {SqlIdentifier.Quote("DF_" + _tableName + "_PublishedTo")} DEFAULT 0
             );
 
             CREATE INDEX {SqlIdentifier.Quote("IX_" + _tableName + "_ProcessedAt_SequencePosition")}
@@ -447,13 +456,19 @@ public class SqlServerOutboxWriter : IOutboxWriter
         _logger?.LogInformation("Outbox schema initialized");
     }
 
-    private async Task UpgradeFromFormat1Async(SqlConnection connection, CancellationToken cancellationToken)
+    /// <summary>Adds the columns a format 1 or 2 table is missing and stamps format 3.</summary>
+    private async Task UpgradeInPlaceAsync(SqlConnection connection, CancellationToken cancellationToken)
     {
         var sql = $@"
             IF NOT EXISTS (
                 SELECT 1 FROM sys.columns
                 WHERE object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qualifiedTableName)}') AND name = N'ClaimedUntil')
                 ALTER TABLE {_qualifiedTableName} ADD ClaimedUntil DATETIME2 NULL;
+            IF NOT EXISTS (
+                SELECT 1 FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qualifiedTableName)}') AND name = N'PublishedTo')
+                ALTER TABLE {_qualifiedTableName} ADD PublishedTo BIGINT NOT NULL
+                    CONSTRAINT {SqlIdentifier.Quote("DF_" + _tableName + "_PublishedTo")} DEFAULT 0;
             IF EXISTS (
                 SELECT 1 FROM sys.extended_properties
                 WHERE major_id = OBJECT_ID(N'{SqlIdentifier.Literal(_qualifiedTableName)}')

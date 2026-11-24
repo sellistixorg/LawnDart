@@ -1,7 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using LawnDart.Aggregates;
 using LawnDart.Authorization;
@@ -182,24 +181,7 @@ public static class LawnDartSqlServerExtensions
                 // with the context's event types, before any publisher error.
                 var store = sp.GetRequiredKeyedService<IEventStore>(contextName);
                 var outboxWriter = sp.GetRequiredKeyedService<IOutboxWriter>(contextName);
-                var publishers   = sp.GetServices<IOutboxPublisher>().ToArray();
-
-                if (publishers.Length == 0)
-                    throw new InvalidOperationException(
-                        $"EnableOutbox is true for context '{contextName}' but no IOutboxPublisher is registered.");
-
-                IOutboxPublisher publisher = publishers.Length == 1
-                    ? publishers[0]
-                    : new CompositeOutboxPublisher(publishers);
-
-                return new OutboxHost(
-                    new OutboxProcessor(
-                        outboxWriter,
-                        publisher,
-                        sp.GetService<ILogger<OutboxProcessor>>() ?? NullLogger<OutboxProcessor>.Instance,
-                        sp.GetService<IHostApplicationLifetime>(),
-                        newEvents: (store as ISignalsNewEvents)?.NewEvents),
-                    sp.GetService<ILogger<OutboxHost>>() ?? NullLogger<OutboxHost>.Instance);
+                return OutboxHost.Create(sp, contextName, outboxWriter, (store as ISignalsNewEvents)?.NewEvents);
             });
         }
 
@@ -277,24 +259,6 @@ public static class LawnDartSqlServerExtensions
         }
 
         return builder;
-    }
-
-    // -------------------------------------------------------------------------
-    // Private helpers
-    // -------------------------------------------------------------------------
-
-    private class CompositeOutboxPublisher : IOutboxPublisher
-    {
-        private readonly IOutboxPublisher[] _publishers;
-
-        public CompositeOutboxPublisher(IOutboxPublisher[] publishers) =>
-            _publishers = publishers;
-
-        public async Task PublishAsync(OutboxMessage message, CancellationToken cancellationToken = default)
-        {
-            foreach (var p in _publishers)
-                await p.PublishAsync(message, cancellationToken).ConfigureAwait(false);
-        }
     }
 }
 

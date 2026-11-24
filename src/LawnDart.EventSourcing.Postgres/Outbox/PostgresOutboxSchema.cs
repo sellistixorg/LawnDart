@@ -4,17 +4,24 @@ using Npgsql;
 namespace LawnDart.EventSourcing.Postgres.Outbox;
 
 /// <summary>
-/// Outbox table for one context schema. Format 1. The events stamp is a different row.
+/// Outbox table for one context schema. Format 2. The events stamp is a different row.
 /// </summary>
+/// <remarks>
+/// Format 2 adds <c>published_to</c>, the publishers that already published a row.
+/// Format 1 is upgraded in place.
+/// </remarks>
 internal static class PostgresOutboxSchema
 {
-    internal const int CurrentFormat = 1;
+    internal const int CurrentFormat = 2;
+
+    internal const int UpgradableFormat = 1;
 
     internal const string Component = "outbox";
 
     /// <summary>
     /// Creates the outbox table when it is missing, then sets autovacuum and the pending index.
-    /// A second call with format 1 applies those settings again.
+    /// A format 1 table gets the <c>published_to</c> column and a format 2 stamp.
+    /// A second call with format 2 applies those settings again.
     /// </summary>
     internal static async Task EnsureAsync(
         NpgsqlConnection connection,
@@ -50,8 +57,21 @@ internal static class PostgresOutboxSchema
         if (exists)
         {
             var found = await ReadFormatAsync(connection, transaction, schemaInfo, cancellationToken).ConfigureAwait(false);
-            if (found != CurrentFormat)
+            if (found == UpgradableFormat)
+            {
+                await ExecuteAsync(connection, transaction, $"""
+                    ALTER TABLE {qualified} ADD COLUMN IF NOT EXISTS published_to bigint NOT NULL DEFAULT 0
+                    """, cancellationToken).ConfigureAwait(false);
+                await ExecuteAsync(connection, transaction, $"""
+                    UPDATE {schemaInfo}
+                    SET format = {CurrentFormat}, updated_at = clock_timestamp()
+                    WHERE component = '{Component}' AND format = {UpgradableFormat}
+                    """, cancellationToken).ConfigureAwait(false);
+            }
+            else if (found != CurrentFormat)
+            {
                 throw new IncompatibleOutboxSchemaException(qualified, found, CurrentFormat);
+            }
         }
         else
         {
@@ -71,7 +91,8 @@ internal static class PostgresOutboxSchema
                     stream_id text NOT NULL,
                     sequence_position bigint NOT NULL,
                     dead_lettered_at timestamptz NULL,
-                    claimed_until timestamptz NULL
+                    claimed_until timestamptz NULL,
+                    published_to bigint NOT NULL DEFAULT 0
                 )
                 """, cancellationToken).ConfigureAwait(false);
             await ExecuteAsync(connection, transaction, $"""

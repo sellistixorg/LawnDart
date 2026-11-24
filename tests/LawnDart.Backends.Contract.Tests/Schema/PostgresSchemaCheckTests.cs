@@ -25,7 +25,7 @@ public sealed class PostgresSchemaCheckTests(PostgresSchemaCheckFixture fixture)
         var bundle = await fixture.CreateAsync("chk_match");
 
         AssertMatch(await bundle.Store.VerifySchemaAsync(), "1");
-        AssertMatch(await bundle.Outbox.VerifySchemaAsync(), "1");
+        AssertMatch(await bundle.Outbox.VerifySchemaAsync(), "2");
         AssertMatch(await bundle.Snapshots.VerifySchemaAsync(), null);
         AssertMatch(await bundle.Views.VerifySchemaAsync(), null);
         AssertMatch(await bundle.Checkpoints.VerifySchemaAsync(), null);
@@ -231,7 +231,7 @@ public sealed class PostgresSchemaCheckTests(PostgresSchemaCheckFixture fixture)
         var before = await fixture.CatalogAsync(bundle.Schema);
 
         AssertMatch(await read.Store.VerifySchemaAsync(), "1");
-        AssertMatch(await read.Outbox.VerifySchemaAsync(), "1");
+        AssertMatch(await read.Outbox.VerifySchemaAsync(), "2");
         AssertMatch(await read.Snapshots.VerifySchemaAsync(), null);
         AssertMatch(await read.Views.VerifySchemaAsync(), null);
         AssertMatch(await read.Checkpoints.VerifySchemaAsync(), null);
