@@ -119,6 +119,20 @@ applies `HostOptions.BackgroundServiceExceptionBehavior`. The default,
 `StopHost`, logs the failure and stops the host. `Ignore` logs the failure,
 and the host keeps running without publishing outbox rows.
 
+Keep `StopHost`. A stopped host shows that outbox rows stopped going out. To
+keep the host running instead, set `Ignore`:
+
+```csharp
+using Microsoft.Extensions.Hosting;
+
+builder.Services.Configure<HostOptions>(options =>
+    options.BackgroundServiceExceptionBehavior = BackgroundServiceExceptionBehavior.Ignore);
+```
+
+With `Ignore`, the failure is logged and the host keeps serving requests. No
+outbox row is published until the process starts again. Rows wait in the
+outbox table.
+
 With more than one `IOutboxPublisher` registered, the processor calls them in
 registration order, and each row goes to each publisher once. When a publisher
 throws, the row records the publishers that already published it in
@@ -127,6 +141,30 @@ calls only the publishers that have not published the row. A dead-lettered row
 keeps `PublishedTo`, and so does a reset. A context supports up to 64
 publishers. Keep the registered publishers, and their order, the same while
 rows wait to be published.
+
+Register each publisher as an `IOutboxPublisher`. The processor uses every
+registration, in the order the calls run:
+
+```csharp
+services.AddInMemoryMessaging();
+services.AddMessageTransportOutboxPublisher();                   // position 0
+services.AddSingleton<IOutboxPublisher, AuditOutboxPublisher>();  // position 1
+
+public sealed class AuditOutboxPublisher : IOutboxPublisher
+{
+    public Task PublishAsync(OutboxMessage message, CancellationToken cancellationToken = default)
+    {
+        // Write the row to an audit store here.
+        return Task.CompletedTask;
+    }
+}
+```
+
+Call `AddMessageTransportOutboxPublisher` first. It adds its publisher only
+when no `IOutboxPublisher` is registered yet. A position is a bit in
+`PublishedTo`, so a changed order can skip or repeat a publisher for rows that
+are still waiting. Let the outbox empty before you add, remove, or reorder
+publishers. With more than 64 publishers, host startup throws.
 
 The outbox row id is the source event id. `GetUnprocessedAsync` claims each row
 for `OutboxClaimLease` (default 30 seconds). On SQL Server the deadline is
@@ -296,6 +334,45 @@ in-memory inbox is per process. Each reactor or processor deduplicates on
 its own key (`reactor:{hash}:{message id}` or `processor:{hash}:{message id}`).
 That hash is taken from the consumer type's full name, so two consumers of
 one message both run once.
+
+## Custom outbox writers
+
+A custom `IOutboxWriter` stores which publishers already published each row.
+`RecordFailureAsync` takes `long publishedTo` before the cancellation token:
+
+```csharp
+Task RecordFailureAsync(
+    Guid messageId,
+    string error,
+    long publishedTo = 0,
+    CancellationToken cancellationToken = default);
+```
+
+The writer must:
+
+- Keep a 64-bit value on each row. A new row starts at 0.
+- On `RecordFailureAsync`, OR `publishedTo` into the stored value and keep
+  the bits already set. 0 adds none. The attempt count, error, and claim
+  change as before.
+- Return the stored value as `OutboxMessage.PublishedTo` from
+  `GetUnprocessedAsync` and `GetDeadLetteredAsync`.
+- Leave the value alone on `ResetDeadLetteredAsync` and
+  `ResetAllDeadLetteredAsync`.
+
+On SQL the update is one statement:
+
+```sql
+UPDATE Outbox
+SET Attempts = Attempts + 1,
+    PublishedTo = PublishedTo | @PublishedTo,
+    LastError = @LastError
+WHERE Id = @Id;
+```
+
+A caller that passed the cancellation token as the third argument now names
+it: `RecordFailureAsync(id, error, cancellationToken: token)`. A writer that
+drops `PublishedTo` still works, but each retry publishes again through every
+publisher.
 
 ## Dead letters
 
