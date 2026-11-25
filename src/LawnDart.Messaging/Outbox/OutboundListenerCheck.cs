@@ -60,7 +60,7 @@ internal sealed class OutboundListenerCheck : IHostedService, IHostedLifecycleSe
             return;
         }
 
-        var subscribed = _services.GetServices<MessageSubscription>()
+        var subscribed = _services.GetServices<InProcessSubscription>()
             .Select(subscription => subscription.MessageType)
             .ToHashSet();
         var missing = new List<string>();

@@ -7,6 +7,8 @@ using Amazon.SimpleNotificationService.Model;
 using Amazon.SQS;
 using LawnDart.Messaging.AwsSqs;
 using LawnDart.Messaging.Outbox;
+using LawnDart.Patterns.EventProcessing;
+using LawnDart.Patterns.Reaction;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -86,12 +88,23 @@ public class AwsSqsStartupCheckTests
     public async Task A_pending_local_subscription_counts_as_listened()
     {
         var transport = Transport(topics: [], subscriptions: []);
-        Assert.False(await HasListener(transport));
+        Assert.False(await HasListener(transport, typeof(SqsPing)));
+        Assert.False(await HasListener(transport, typeof(SqsPong)));
 
         foreach (var behavior in new[] { MissingListenerBehavior.Warn, MissingListenerBehavior.Throw })
         {
             var logs = new ListLogger();
-            var check = Check(transport, logs, behavior, subscribeLocally: true);
+            var check = Check(
+                transport,
+                logs,
+                behavior,
+                configure: services =>
+                {
+                    services.AddReactor<PingReactor, SqsPing>();
+                    services.AddEventProcessor<PongProcessor, SqsPong>();
+                },
+                typeof(SqsPing),
+                typeof(SqsPong));
             await check.StartedAsync(CancellationToken.None);
             Assert.DoesNotContain(logs.Lines, line => line.Contains("no listener", StringComparison.Ordinal));
             Assert.DoesNotContain(logs.Lines, line => line.Contains("Startup continues", StringComparison.Ordinal));
@@ -115,19 +128,22 @@ public class AwsSqsStartupCheckTests
     }
 
     private static Task<bool> HasListener(AwsSqsMessageTransport transport)
-        => ((IOutboundListenerProbe)transport).HasListenerAsync(typeof(SqsPing), CancellationToken.None);
+        => HasListener(transport, typeof(SqsPing));
+
+    private static Task<bool> HasListener(AwsSqsMessageTransport transport, Type messageType)
+        => ((IOutboundListenerProbe)transport).HasListenerAsync(messageType, CancellationToken.None);
 
     private static OutboundListenerCheck Check(
         AwsSqsMessageTransport transport,
         ListLogger logs,
         MissingListenerBehavior behavior,
-        bool subscribeLocally = false)
+        Action<IServiceCollection>? configure = null,
+        params Type[] types)
     {
         var plan = new OutboundListenerPlan();
-        plan.Add([typeof(SqsPing)]);
+        plan.Add(types.Length > 0 ? types : [typeof(SqsPing)]);
         var services = new ServiceCollection();
-        if (subscribeLocally)
-            services.AddSingleton(new MessageSubscription(typeof(SqsPing)));
+        configure?.Invoke(services);
         return new OutboundListenerCheck(
             plan,
             transport,
@@ -172,6 +188,27 @@ public class AwsSqsStartupCheckTests
 
     [EventTypeName("sqs-startup-ping")]
     private sealed record SqsPing(Guid Id, DateTime Timestamp) : IEvent;
+
+    [EventTypeName("sqs-startup-pong")]
+    private sealed record SqsPong(Guid Id, DateTime Timestamp) : IEvent;
+
+    private sealed class PingReactor : IReactor<SqsPing>
+    {
+        public Task<IEnumerable<ICommand>> ReactAsync(
+            SqsPing @event,
+            MessageContext context,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IEnumerable<ICommand>>([]);
+    }
+
+    private sealed class PongProcessor : IEventProcessor<SqsPong>
+    {
+        public Task<IEnumerable<IEvent>> ProcessAsync(
+            SqsPong @event,
+            MessageContext context,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IEnumerable<IEvent>>([]);
+    }
 
     public class SnsProxy : DispatchProxy
     {

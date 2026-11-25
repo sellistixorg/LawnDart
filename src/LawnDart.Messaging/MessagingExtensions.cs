@@ -65,6 +65,7 @@ public static class MessagingExtensions
     {
         services.TryAddTransient<TReactor>();
         services.AddSingleton(new MessageSubscription(typeof(TEvent)));
+        services.AddSingleton(new InProcessSubscription(typeof(TEvent)));
         services.AddHostedService(sp => new ReactorHostedService<TReactor, TEvent>(
             sp.GetRequiredService<IServiceScopeFactory>(),
             sp.GetRequiredService<IMessageTransport>(),
@@ -86,6 +87,7 @@ public static class MessagingExtensions
     {
         services.TryAddTransient<TProcessor>();
         services.AddSingleton(new MessageSubscription(typeof(TEvent)));
+        services.AddSingleton(new InProcessSubscription(typeof(TEvent)));
         services.AddHostedService<EventProcessorHostedService<TProcessor, TEvent>>();
         return services;
     }
