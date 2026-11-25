@@ -366,9 +366,9 @@ public abstract class OutboxContractTests : BackendContractSuite
         var dead = Assert.Single(await writer.GetDeadLetteredAsync(10));
         Assert.Equal(message.Id, dead.Id);
         Assert.Equal(0b01, dead.PublishedTo);
-        Assert.True(dead.Attempts >= 2);
+        Assert.Equal(3, dead.Attempts);
         Assert.Single(first.Published);
-        Assert.Equal(dead.Attempts, second.Calls);
+        Assert.Equal(3, second.Calls);
 
         Assert.True(await writer.ResetDeadLetteredAsync(message.Id));
         second.ShouldFail = false;
@@ -376,6 +376,36 @@ public abstract class OutboxContractTests : BackendContractSuite
         Assert.Single(first.Published);
         Assert.Single(second.Published);
         Assert.Empty(await writer.GetUnprocessedAsync(10));
+    }
+
+    [ContractFact]
+    public async Task OutboxProcessor_ParksAfterExactMaxAttempts()
+    {
+        SkipUnless(Cap.HasOutboxStore, "This backend does not have an outbox yet.");
+        const int maxAttempts = 3;
+        var writer = await Backend.OpenOutboxAsync(ContractStores.Isolated(outboxClaimLease: TimeSpan.Zero));
+        var publisher = new RecordingPublisher { ShouldFail = true };
+        var message = NewMessage("s", 1);
+        await writer.WriteAsync(message);
+        var processor = new BatchProcessor(writer, publisher, maxAttempts: maxAttempts);
+
+        for (var attempt = 1; attempt < maxAttempts; attempt++)
+        {
+            await processor.ProcessBatchAsync();
+            Assert.Equal(attempt, publisher.Calls);
+            Assert.Empty(await writer.GetDeadLetteredAsync(10));
+            var pending = Assert.Single(await writer.GetUnprocessedAsync(10));
+            Assert.Equal(attempt, pending.Attempts);
+            Assert.Null(pending.DeadLetteredAt);
+        }
+
+        await processor.ProcessBatchAsync();
+        Assert.Equal(maxAttempts, publisher.Calls);
+        Assert.Empty(await writer.GetUnprocessedAsync(10));
+        var dead = Assert.Single(await writer.GetDeadLetteredAsync(10));
+        Assert.Equal(message.Id, dead.Id);
+        Assert.Equal(maxAttempts, dead.Attempts);
+        Assert.NotNull(dead.DeadLetteredAt);
     }
 
     [ContractFact]

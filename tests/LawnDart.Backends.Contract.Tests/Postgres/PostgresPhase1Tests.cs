@@ -658,6 +658,306 @@ public sealed class PostgresPhase1Tests
     [EventTypeName("postgres-registration.broken-notice")]
     private sealed record BrokenPostgresNotice(Guid Id, DateTime Timestamp) : IEvent;
 
+    [Fact]
+    public async Task FirstRead_StartsFromCommittedHead_WithoutScanningFromZero()
+    {
+        var opened = await OpenAsync(requireTenantId: false);
+        var stream = Stream("acme");
+        var batch = Enumerable.Range(0, 200).Select(_ => ContractEvent.Tick()).ToArray();
+        await opened.Store.AppendAsync(stream, batch);
+
+        // Create more than 16 historical sequence jumps so a scan from 0 could not reach the tail in one resolve.
+        await using (var connection = await ConnectAsync())
+        {
+            long pos = 200;
+            for (var i = 0; i < 20; i++)
+            {
+                pos += 10;
+                await using var setval = new NpgsqlCommand(
+                    "SELECT setval(format('%I.event_position', @schema), @val)",
+                    connection);
+                setval.Parameters.AddWithValue("schema", opened.SchemaName);
+                setval.Parameters.AddWithValue("val", pos);
+                await setval.ExecuteScalarAsync();
+                await opened.Store.AppendAsync(stream, [ContractEvent.Tick()]);
+                pos++;
+            }
+        }
+
+        var expectedHead = await SequenceValueAsync(opened.SchemaName);
+        var fresh = new PostgresEventStore(
+            _fixture.ConnectionString,
+            options: new PostgresEventStoreOptions
+            {
+                ConnectionString = _fixture.ConnectionString,
+                SchemaName = opened.SchemaName,
+                RequireTenantId = false
+            });
+        var sampledMarks = new List<long>();
+        fresh.Horizon.OnSampleRead = sampledMarks.Add;
+
+        var head = await fresh.GetCurrentSequenceAsync();
+        Assert.Equal(expectedHead, head);
+        Assert.Equal(expectedHead, fresh.Horizon.Mark);
+        Assert.DoesNotContain(0L, sampledMarks);
+
+        var read = await ((IEventLog)fresh).ReadByQueryAsync(Query.All());
+        Assert.Equal(220, read.Events.Count);
+        Assert.Equal(expectedHead, read.Events[^1].SequencePosition);
+    }
+
+    [Fact]
+    public async Task FirstRead_DoesNotSkipPausedConcurrentAppend_AndResumesInOrder()
+    {
+        var opened = await OpenAsync(requireTenantId: false, grace: TimeSpan.FromSeconds(10));
+        await opened.Store.AppendAsync("seed", [ContractEvent.Tick(), ContractEvent.Tick(), ContractEvent.Tick()]);
+        await using (var connection = await ConnectAsync())
+        await using (var setval = new NpgsqlCommand(
+            "SELECT setval(format('%I.event_position', @schema), 1050)",
+            connection))
+        {
+            setval.Parameters.AddWithValue("schema", opened.SchemaName);
+            await setval.ExecuteScalarAsync();
+        }
+
+        var tailSeed = await opened.Store.AppendAsync("seed-tail", [ContractEvent.Tick()]);
+
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        opened.Hooks.PauseNextAppendBeforeCommit(entered, release);
+        var slow = opened.Store.AppendAsync("slow", [ContractEvent.Tick()]);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
+        var fast = await opened.Store.AppendAsync("fast", [ContractEvent.Tick()]);
+
+        var fresh = new PostgresEventStore(
+            _fixture.ConnectionString,
+            options: new PostgresEventStoreOptions
+            {
+                ConnectionString = _fixture.ConnectionString,
+                SchemaName = opened.SchemaName,
+                RequireTenantId = false,
+                ReadHorizonGracePeriod = TimeSpan.FromSeconds(10)
+            });
+        var sampledMarks = new List<long>();
+        fresh.Horizon.OnSampleRead = sampledMarks.Add;
+
+        var heldHead = await fresh.GetCurrentSequenceAsync();
+        Assert.True(heldHead < fast.SequencePositions[0], $"Expected head below {fast.SequencePositions[0]}, got {heldHead}");
+        var during = await ((IEventLog)fresh).ReadByQueryAsync(Query.All());
+        Assert.DoesNotContain(during.Events, e => e.SequencePosition == fast.SequencePositions[0]);
+
+        release.TrySetResult();
+        var slowResult = await slow.WaitAsync(TimeSpan.FromSeconds(15));
+
+        var resolvedHead = await WaitForHeadAsync(fresh, fast.SequencePositions[0], TimeSpan.FromSeconds(10));
+        Assert.Equal(fast.SequencePositions[0], resolvedHead);
+        Assert.DoesNotContain(0L, sampledMarks);
+
+        var after = await ((IEventLog)fresh).ReadByQueryAsync(Query.All());
+        Assert.Equal(
+            new long[] { 1, 2, 3, tailSeed.SequencePositions[0], slowResult.SequencePositions[0], fast.SequencePositions[0] },
+            after.Events.Select(e => e.SequencePosition));
+    }
+
+    [Fact]
+    public async Task FirstRead_WithActiveConcurrentWriters_NeverSkipsCommittedEvents()
+    {
+        var opened = await OpenAsync(requireTenantId: false, grace: TimeSpan.FromSeconds(10));
+        for (var i = 0; i < 50; i++)
+            await opened.Store.AppendAsync("seed-" + i, [ContractEvent.Tick()]);
+
+        var committed = new System.Collections.Concurrent.ConcurrentDictionary<long, byte>();
+        for (long pos = 1; pos <= 50; pos++)
+            committed[pos] = 0;
+
+        using var stop = new CancellationTokenSource();
+        var writerTasks = Enumerable.Range(0, 8).Select(worker => Task.Run(async () =>
+        {
+            var stream = $"w-{worker}-{Guid.NewGuid():N}";
+            while (!stop.IsCancellationRequested)
+            {
+                var result = await opened.Store.AppendAsync(stream, [ContractEvent.Tick()], cancellationToken: CancellationToken.None);
+                committed[result.SequencePositions[0]] = 0;
+            }
+        })).ToArray();
+
+        for (var round = 0; round < 6; round++)
+        {
+            await Task.Delay(30);
+            var fresh = new PostgresEventStore(
+                _fixture.ConnectionString,
+                options: new PostgresEventStoreOptions
+                {
+                    ConnectionString = _fixture.ConnectionString,
+                    SchemaName = opened.SchemaName,
+                    RequireTenantId = false,
+                    ReadHorizonGracePeriod = TimeSpan.FromSeconds(10)
+                });
+            var head = await fresh.GetCurrentSequenceAsync();
+            var expected = committed.Keys.Where(p => p <= head).Order().ToArray();
+            var read = await ((IEventLog)fresh).ReadByQueryAsync(Query.All(), toSequencePosition: head);
+            var positions = read.Events.Select(e => e.SequencePosition).ToArray();
+            Assert.Equal(positions.Order(), positions);
+            Assert.Equal(positions.Length, positions.Distinct().Count());
+            foreach (var position in expected)
+                Assert.Contains(position, positions);
+        }
+
+        stop.Cancel();
+        await Task.WhenAll(writerTasks);
+
+        var finalReader = new PostgresEventStore(
+            _fixture.ConnectionString,
+            options: new PostgresEventStoreOptions
+            {
+                ConnectionString = _fixture.ConnectionString,
+                SchemaName = opened.SchemaName,
+                RequireTenantId = false
+            });
+        var finalHead = await finalReader.GetCurrentSequenceAsync();
+        var maxCommitted = committed.Keys.Max();
+        Assert.Equal(maxCommitted, finalHead);
+        var finalRead = await ((IEventLog)finalReader).ReadByQueryAsync(Query.All());
+        Assert.Equal(committed.Keys.Order(), finalRead.Events.Select(e => e.SequencePosition));
+    }
+
+    [Fact]
+    public async Task FirstRead_HeldPastGrace_AdvancesWithWarning_AndLogsLateRow()
+    {
+        var opened = await OpenAsync(requireTenantId: false, grace: TimeSpan.FromMilliseconds(250));
+        await opened.Store.AppendAsync("seed", [ContractEvent.Tick(), ContractEvent.Tick()]);
+
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        opened.Hooks.PauseNextAppendBeforeCommit(entered, release);
+        var slow = opened.Store.AppendAsync("slow", [ContractEvent.Tick()]);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
+        var fast = await opened.Store.AppendAsync("fast", [ContractEvent.Tick()]);
+
+        var logger = new ListLogger<PostgresEventStore>();
+        var fresh = new PostgresEventStore(
+            _fixture.ConnectionString,
+            options: new PostgresEventStoreOptions
+            {
+                ConnectionString = _fixture.ConnectionString,
+                SchemaName = opened.SchemaName,
+                RequireTenantId = false,
+                ReadHorizonGracePeriod = TimeSpan.FromMilliseconds(250)
+            },
+            logger: logger);
+
+        var head = await WaitForHeadAsync(fresh, fast.SequencePositions[0], TimeSpan.FromSeconds(5));
+        Assert.Equal(fast.SequencePositions[0], head);
+        Assert.Contains(logger.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains("Read horizon advanced", StringComparison.Ordinal));
+
+        release.TrySetResult();
+        var slowResult = await slow.WaitAsync(TimeSpan.FromSeconds(15));
+        await fresh.GetCurrentSequenceAsync();
+        var late = logger.Entries.FirstOrDefault(e => e.Level == LogLevel.Error && e.Message.Contains("landed below a read horizon", StringComparison.Ordinal));
+        Assert.Contains(slowResult.SequencePositions[0].ToString(System.Globalization.CultureInfo.InvariantCulture), late.Message, StringComparison.Ordinal);
+        Assert.Contains("slow", late.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task FirstRead_Subscription_DeliversHiddenCommitWithoutBackupPoll()
+    {
+        var opened = await OpenAsync(requireTenantId: false);
+        await opened.Store.AppendAsync("seed", [ContractEvent.Tick()]);
+        await using (var connection = await ConnectAsync())
+        await using (var setval = new NpgsqlCommand(
+            "SELECT setval(format('%I.event_position', @schema), 1050)",
+            connection))
+        {
+            setval.Parameters.AddWithValue("schema", opened.SchemaName);
+            await setval.ExecuteScalarAsync();
+        }
+
+        var tailSeed = await opened.Store.AppendAsync("seed-tail", [ContractEvent.Tick()]);
+
+        await using var holder = await ConnectAsync();
+        await using var transaction = await holder.BeginTransactionAsync();
+        await using (var current = new NpgsqlCommand("SELECT pg_current_xact_id()", holder, transaction))
+            await current.ExecuteScalarAsync();
+        await using (var next = new NpgsqlCommand(
+            $"SELECT nextval('{Quote(opened.SchemaName)}.event_position')", holder, transaction))
+            await next.ExecuteScalarAsync();
+
+        var appended = await opened.Store.AppendAsync("fast", [ContractEvent.Tick()]);
+        var fresh = new PostgresEventStore(
+            _fixture.ConnectionString,
+            options: new PostgresEventStoreOptions
+            {
+                ConnectionString = _fixture.ConnectionString,
+                SchemaName = opened.SchemaName,
+                RequireTenantId = false,
+                BackupPollInterval = TimeSpan.FromSeconds(30),
+                PollOnlyInterval = TimeSpan.FromSeconds(30),
+                ReadHorizonGracePeriod = TimeSpan.FromMinutes(5)
+            });
+
+        await using var handle = ((IEventLogSubscriptions)fresh).Subscribe("fresh-hidden", fromSequence: 1);
+        using (var duringHold = new CancellationTokenSource(TimeSpan.FromMilliseconds(350)))
+        {
+            var sawEarly = false;
+            try
+            {
+                sawEarly = await handle.Events.WaitToReadAsync(duringHold.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                sawEarly = false;
+            }
+
+            Assert.False(sawEarly);
+        }
+
+        await transaction.RollbackAsync();
+        var received = new List<RecordedEvent>();
+        using var readTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        while (received.Count < 3)
+        {
+            Assert.True(await handle.Events.WaitToReadAsync(readTimeout.Token));
+            while (handle.Events.TryRead(out var item))
+                received.Add(item);
+        }
+
+        Assert.Equal(
+            new long[] { 1, tailSeed.SequencePositions[0], appended.SequencePositions[0] },
+            received.Select(e => e.SequencePosition));
+    }
+
+    private sealed class ListLogger<T> : ILogger<T>
+    {
+        private readonly object _sync = new();
+        private readonly List<(LogLevel Level, string Message)> _entries = [];
+
+        public IReadOnlyList<(LogLevel Level, string Message)> Entries
+        {
+            get { lock (_sync) return _entries.ToArray(); }
+        }
+
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            lock (_sync)
+                _entries.Add((logLevel, formatter(state, exception)));
+        }
+
+        private sealed class NullScope : IDisposable
+        {
+            public static readonly NullScope Instance = new();
+            public void Dispose() { }
+        }
+    }
+
     private static async Task AssertNoSkippedCommittedAsync(
         ContractEventStore opened,
         System.Collections.Concurrent.ConcurrentDictionary<long, byte> committed)
