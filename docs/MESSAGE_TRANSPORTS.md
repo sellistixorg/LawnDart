@@ -515,10 +515,11 @@ Service Bus do not report listeners at startup. The host logs that and
 continues. When startup is set to stop on a missing listener, that log is
 a warning. Amazon SQS lists topics and subscriptions for a published type
 this process does not subscribe to. That list needs permission to list
-them. When the list fails, the host logs that and continues. `OnMissingListenerAtStartup` defaults to `Warn`. `Warn` logs
-one warning for each type the check finds with no listener, and the host
-still starts. `Throw` stops host startup when the check finds a type with
-no listener. `Throw` does not stop startup when the check cannot tell.
+them. When the list fails, the host logs that and continues.
+`OnMissingListenerAtStartup` defaults to `Warn`. `Warn` logs one warning
+for each type the check finds with no listener, and the host still starts.
+`Throw` stops host startup when the check finds a type with no listener.
+`Throw` does not stop startup when the check cannot tell.
 The outbox polls every 5 seconds by default, allows 10 attempts, and has no
 extra delay between attempts. A row with no listener is marked
 `DeadLetteredAt` after about 10 polls. `ResetDeadLetteredAsync` puts that

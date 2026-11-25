@@ -21,6 +21,7 @@ changes to the public API.
 
 ### Fixed
 
+- A hand-registered `MessageSubscription` without an `AddReactor` or `AddEventProcessor` subscriber no longer skips the startup listener check. The check probes the transport and warns or throws as configured.
 - With more than one `IOutboxPublisher`, a failed publisher no longer sends the row again through the publishers that already published it. The processor calls each registered publisher in order and records the ones that succeeded on the row when another one fails. The next attempt calls only the rest. Attempt counting and the attempt limit are unchanged. A context supports up to 64 publishers. Startup throws when more are registered. Keep the registered publishers, and their order, the same while rows wait to be published.
 - A failed outbox processor loop now follows `HostOptions.BackgroundServiceExceptionBehavior`, the same as any other background service. The default, `StopHost`, stops the host. Before, the failure was logged and the host kept running without publishing. Shutdown is not treated as a failure.
 
