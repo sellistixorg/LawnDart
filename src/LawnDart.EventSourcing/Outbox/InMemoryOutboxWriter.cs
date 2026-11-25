@@ -21,7 +21,7 @@ public sealed class InMemoryOutboxWriter : IOutboxWriter
     internal OutboxMessage[] Snapshot()
     {
         lock (_lock)
-            return _messages.ToArray();
+            return _messages.Select(Clone).ToArray();
     }
 
     /// <summary>Creates a writer. <paramref name="claimLease"/> defaults to 30 seconds.</summary>
@@ -58,7 +58,7 @@ public sealed class InMemoryOutboxWriter : IOutboxWriter
         ArgumentNullException.ThrowIfNull(message);
         cancellationToken.ThrowIfCancellationRequested();
         lock (_lock)
-            _messages.Add(message);
+            _messages.Add(Clone(message));
         return Task.CompletedTask;
     }
 
@@ -67,8 +67,14 @@ public sealed class InMemoryOutboxWriter : IOutboxWriter
     {
         ArgumentNullException.ThrowIfNull(messages);
         cancellationToken.ThrowIfCancellationRequested();
+        var copies = new List<OutboxMessage>();
+        foreach (var message in messages)
+        {
+            ArgumentNullException.ThrowIfNull(message);
+            copies.Add(Clone(message));
+        }
         lock (_lock)
-            _messages.AddRange(messages);
+            _messages.AddRange(copies);
         return Task.CompletedTask;
     }
 
@@ -89,7 +95,7 @@ public sealed class InMemoryOutboxWriter : IOutboxWriter
             var lease = now + _claimLease;
             foreach (var message in unprocessed)
                 _claims[message.Id] = lease;
-            return Task.FromResult<IReadOnlyList<OutboxMessage>>(unprocessed);
+            return Task.FromResult<IReadOnlyList<OutboxMessage>>(unprocessed.Select(Clone).ToList());
         }
     }
 
@@ -105,7 +111,7 @@ public sealed class InMemoryOutboxWriter : IOutboxWriter
                 .OrderBy(m => m.SequencePosition)
                 .Take(batchSize)
                 .ToList();
-            return Task.FromResult<IReadOnlyList<OutboxMessage>>(dead);
+            return Task.FromResult<IReadOnlyList<OutboxMessage>>(dead.Select(Clone).ToList());
         }
     }
 
@@ -197,4 +203,24 @@ public sealed class InMemoryOutboxWriter : IOutboxWriter
         }
         return Task.CompletedTask;
     }
+
+    private static OutboxMessage Clone(OutboxMessage message)
+        => new()
+        {
+            Id = message.Id,
+            EventType = message.EventType,
+            SchemaVersion = message.SchemaVersion,
+            CodecId = message.CodecId,
+            Payload = message.Payload.IsEmpty ? ReadOnlyMemory<byte>.Empty : message.Payload.ToArray(),
+            Metadata = message.Metadata,
+            CreatedAt = message.CreatedAt,
+            ProcessedAt = message.ProcessedAt,
+            Attempts = message.Attempts,
+            LastError = message.LastError,
+            LastAttemptAt = message.LastAttemptAt,
+            DeadLetteredAt = message.DeadLetteredAt,
+            PublishedTo = message.PublishedTo,
+            StreamId = message.StreamId,
+            SequencePosition = message.SequencePosition
+        };
 }

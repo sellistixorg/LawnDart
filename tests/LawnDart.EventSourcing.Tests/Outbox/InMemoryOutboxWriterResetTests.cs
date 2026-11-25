@@ -146,6 +146,29 @@ public class InMemoryOutboxWriterResetTests
         Assert.Equal(openMessage.Id, Assert.Single(await open.GetUnprocessedAsync(10)).Id);
     }
 
+    [Fact]
+    public async Task GetUnprocessed_And_GetDeadLettered_ReturnCopies()
+    {
+        var writer = new InMemoryOutboxWriter(TimeSpan.Zero);
+        var message = NewMessage();
+        await writer.WriteAsync(message);
+        message.Attempts = 99;
+
+        var firstRead = Assert.Single(await writer.GetUnprocessedAsync(10));
+        Assert.Equal(0, firstRead.Attempts);
+        await writer.RecordFailureAsync(message.Id, "boom");
+        Assert.Equal(0, firstRead.Attempts);
+
+        var secondRead = Assert.Single(await writer.GetUnprocessedAsync(10));
+        Assert.Equal(1, secondRead.Attempts);
+
+        await writer.MarkAsDeadLetteredAsync(message.Id);
+        var deadRead = Assert.Single(await writer.GetDeadLetteredAsync(10));
+        deadRead.Attempts = 50;
+        var deadAgain = Assert.Single(await writer.GetDeadLetteredAsync(10));
+        Assert.Equal(1, deadAgain.Attempts);
+    }
+
     private static OutboxMessage NewMessage(long sequence = 1, int attempts = 0)
         => new()
         {
