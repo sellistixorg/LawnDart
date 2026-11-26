@@ -98,7 +98,7 @@ public class OutboxHostOrderTests
         builder.Logging.AddProvider(logs);
         builder.Services.Configure<HostOptions>(options => options.ShutdownTimeout = TimeSpan.FromSeconds(5));
         builder.Services.AddHostedService<FailingStartup>();
-        builder.Services.Configure<LawnDart.LawnDartOptions>(options => options.RequireTenantId = false);
+        builder.Services.Configure<LawnDart.LawnDartOptions>(options => options.Tenancy = Tenancy.Single);
         builder.Services.AddInMemoryMessaging();
         builder.Services.AddMessageTransportOutboxPublisher(typeof(PingEvent));
         builder.Services.AddBoundedContext("default")
@@ -184,7 +184,7 @@ public class OutboxHostOrderTests
         if (warnings is not null)
             builder.Logging.AddProvider(warnings);
 
-        builder.Services.Configure<LawnDart.LawnDartOptions>(options => options.RequireTenantId = false);
+        builder.Services.Configure<LawnDart.LawnDartOptions>(options => options.Tenancy = Tenancy.Single);
         builder.Services.AddInMemoryMessaging();
         builder.Services.AddMessageTransportOutboxPublisher(typeof(PingEvent));
         builder.Services.AddSingleton(reactor);

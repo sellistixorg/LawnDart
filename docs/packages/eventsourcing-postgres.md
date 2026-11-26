@@ -10,17 +10,17 @@ Postgres 15 or newer. Npgsql 10.
 ## Registration
 
 ```csharp
-services.AddLawnDart(o => o.RequireTenantId = false);
+services.AddLawnDart(o => o.Tenancy = Tenancy.Single);
 services.AddBoundedContext("default")
     .UsePostgres(o =>
     {
         o.ConnectionString = connectionString;
-        o.RequireTenantId = false;
+        o.Tenancy = Tenancy.Single;
     });
 ```
 
-`UsePostgres` copies `LawnDartOptions.ValidateNames` onto
-`PostgresEventStoreOptions.ValidateNames` before your callback runs. The
+`UsePostgres` copies `Tenancy`, `SingleTenantId`, and `ValidateNames` from `LawnDartOptions` onto
+`PostgresEventStoreOptions` before your callback runs. The
 callback can change it.
 
 Keyed `IEventStore`, `IEventLog`, `IStreamRegistry`,
@@ -75,11 +75,14 @@ as the tenant key. Any other stream id stores the tenant key `default`.
 The public stream metadata still reads the tenant from the stream id, so a
 stream without a tenant prefix does not report `default`.
 
-`RequireTenantId` true (the default) rejects a missing tenant before that
-key is chosen. An empty tenant id is rejected. The table also rejects an
+`Tenancy.Shared` (the default) rejects a missing tenant before that
+key is chosen, and requires `Query.ForTenant(...)` or `Query.ForAllTenants(...)`
+on queries. `Tenancy.Single` accepts `{type}:{id}` streams when `SingleTenantId` is null,
+or `{tenant}:{type}:{id}` streams matching `SingleTenantId` when it is set.
+`Tenancy.Isolated` is refused at startup. An empty tenant id is rejected. The table also rejects an
 empty tenant id. `default` in any casing is reserved unless `ValidateNames`
-is false. The in-memory store uses this same check. A new in-memory store
-requires a tenant id unless `RequireTenantId` is false.
+is false. The in-memory and SQL Server stores use this same rule. The obsolete
+`RequireTenantId` property remains as an alias (`true` maps to `Shared`, `false` to `Single`).
 
 Stream ids and tags use the `C` collation. `acme:Order:1` and `acme:order:1`
 are different streams. Tags compare the same way.

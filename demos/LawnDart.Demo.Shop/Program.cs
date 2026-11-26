@@ -48,7 +48,7 @@ var useSql = args.Contains("--sql")
 
 builder.Services.AddLawnDart(opts =>
 {
-    opts.RequireTenantId = false;
+    opts.Tenancy = Tenancy.Single;
     opts.EnableAuthorization = true;
 });
 
@@ -81,7 +81,7 @@ if (useSql)
     shop.UseSqlServer(opts =>
         {
             opts.ConnectionString = connectionString;
-            opts.RequireTenantId = false;
+            opts.Tenancy = Tenancy.Single;
             opts.EnableOutbox = true;
         })
         .WithSnapshots(cfg =>

@@ -24,7 +24,7 @@ public abstract class StreamTagTableContractTests : BackendContractSuite
     public async Task StreamTagTable_StaysCorrectWhenTagsChange()
     {
         SkipUnless(Cap.HasStreamTagTable, "This store has no stream tag table.");
-        var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
+        var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared));
         var streamId = "acme:Order:" + Guid.NewGuid().ToString("N");
         await AppendAsync(opened.Store, streamId, "tag:alpha");
         Assert.Equal(["tag:alpha"], TagsFor(await ReadStreamTagsAsync(opened), streamId));
@@ -37,7 +37,7 @@ public abstract class StreamTagTableContractTests : BackendContractSuite
     public async Task StreamTagTable_DirectWrite_UpdatesTags()
     {
         SkipUnless(Cap.HasStreamTagTable, "This store has no stream tag table.");
-        var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
+        var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared));
         var streamId = "acme:Order:Ab" + Guid.NewGuid().ToString("N");
         await AppendAsync(opened.Store, streamId, "tag:alpha");
 
@@ -60,7 +60,7 @@ public abstract class StreamTagTableContractTests : BackendContractSuite
     public async Task StreamTagTable_Backfill_RunsOnlyWhenTheTableIsCreated()
     {
         SkipUnless(Cap.HasStreamTagTable, "This store has no stream tag table.");
-        var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
+        var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared));
         var first = "acme:Order:" + Guid.NewGuid().ToString("N");
         var second = "acme:Order:" + Guid.NewGuid().ToString("N");
         await AppendAsync(opened.Store, first, "tag:red", "tag:blue");

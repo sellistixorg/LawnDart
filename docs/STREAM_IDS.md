@@ -13,8 +13,7 @@ Examples:
 - `academy-tenant:Student:13bee0e1-9b78-4494-8570-0ad8608437d3`
 - `west:CourseSection:{sectionId}`
 
-When `RequireTenantId` is false (Academy), still keep a stable prefix so IDs
-stay unique across demos.
+When `Tenancy` is `Tenancy.Single` with a `SingleTenantId` (or `Tenancy.Shared`), keep a stable tenant prefix.
 
 ## The StreamId type
 
@@ -68,7 +67,7 @@ var tenantId = _tenant.GetTenantId() ?? "default";
 var streamId = StreamId.For(tenantId, "Student", command.StudentId.ToString());
 ```
 
-Tenant prefix comes from `ITenantContextProvider`. That host sets `RequireTenantId` to false, so the append does not run the tenant id check. With `RequireTenantId` on, `default` in any casing is rejected. See [Metadata](METADATA.md).
+Tenant prefix comes from `ITenantContextProvider`. That host sets `Tenancy` to `Tenancy.Single` without `SingleTenantId`, so the append does not require a tenant prefix. With `Tenancy.Shared`, `default` in any casing is rejected. See [Metadata](METADATA.md).
 
 ## Context names and tenant ids
 
@@ -82,7 +81,7 @@ A tenant id uses the same character rule. `default` in any casing is reserved fo
 
 `FixedTenantContextProvider` takes `validateNames` for the same flag. `AmbientTenantContextProvider` reads `LawnDartOptions` when dependency injection constructs it. `SetTenant` checks the id. An invalid `X-Tenant-Id` header returns 400. See [HTTP commands](HTTP_COMMANDS.md).
 
-`HandleCommandAsync`, a SQL Server append, and an in-memory append check the tenant id when `RequireTenantId` is true. That option defaults to true on `LawnDartOptions`, `SqlServerEventStoreOptions`, and `InMemoryEventStoreOptions`, including a store constructed with `new InMemoryEventStore()`. A missing tenant id throws. `UseSqlServer` copies `ValidateNames` onto `SqlServerEventStoreOptions.ValidateNames` before the SQL callback runs. `UseInMemory` copies `RequireTenantId` and `ValidateNames` onto the in-memory store when it creates the store. Set `RequireTenantId` to false to append without a tenant id. An append whose stream id and event metadata name two different tenant ids throws. That check also runs when `RequireTenantId` is false.
+`HandleCommandAsync` and every store (`InMemoryEventStore`, `SqlServerEventStore`, `PostgresEventStore`) enforce `Tenancy`, which defaults to `Tenancy.Shared` on `LawnDartOptions` and all three store options. In `Shared` mode, a missing tenant id throws, and queries require `Query.ForTenant(...)` or `Query.ForAllTenants(...)`. Set `Tenancy = Tenancy.Single` (with optional `SingleTenantId`) to run a single-tenant store. `Tenancy.Isolated` is refused at startup. `UseInMemory`, `UsePostgres`, and `UseSqlServer` copy `Tenancy`, `SingleTenantId`, and `ValidateNames` onto the store options before the store callback runs. An append whose stream id and event metadata name two different tenant ids throws in every mode. The obsolete `RequireTenantId` property remains as an alias (`true` maps to `Shared`, `false` to `Single`).
 
 ## Stream pages
 

@@ -373,7 +373,7 @@ public sealed class PostgresSubscriptionTests
             {
                 ConnectionString = connectionString,
                 SchemaName = "restarted",
-                RequireTenantId = false,
+                Tenancy = Tenancy.Single,
                 BackupPollInterval = TimeSpan.FromSeconds(30),
                 PollOnlyInterval = TimeSpan.FromSeconds(30)
             },
@@ -507,7 +507,7 @@ public sealed class PostgresSubscriptionTests
         {
             ConnectionString = builder.ConnectionString,
             SchemaName = "badpassword",
-            RequireTenantId = false,
+            Tenancy = Tenancy.Single,
             BackupPollInterval = TimeSpan.FromSeconds(30),
             PollOnlyInterval = TimeSpan.FromMilliseconds(50),
             NotifyOnAppend = false
@@ -550,7 +550,7 @@ public sealed class PostgresSubscriptionTests
             {
                 ConnectionString = connectionString,
                 SchemaName = "returns",
-                RequireTenantId = false,
+                Tenancy = Tenancy.Single,
                 BackupPollInterval = TimeSpan.FromSeconds(30),
                 PollOnlyInterval = TimeSpan.FromMilliseconds(50)
             },
@@ -584,7 +584,7 @@ public sealed class PostgresSubscriptionTests
         {
             ConnectionString = "Host=127.0.0.1;Port=1;Username=u;Password=p;Database=lawndart;Timeout=1",
             SchemaName = "staysdown",
-            RequireTenantId = false,
+            Tenancy = Tenancy.Single,
             BackupPollInterval = TimeSpan.FromSeconds(30),
             PollOnlyInterval = TimeSpan.FromMilliseconds(50)
         };
@@ -625,7 +625,7 @@ public sealed class PostgresSubscriptionTests
             MigrationConnectionString = _fixture.AdminConnectionString,
             SchemaName = schema,
             ContextName = schema,
-            RequireTenantId = false,
+            Tenancy = Tenancy.Single,
             BackupPollInterval = TimeSpan.FromSeconds(30),
             PollOnlyInterval = TimeSpan.FromMilliseconds(50)
         };

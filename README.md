@@ -101,7 +101,7 @@ public sealed class Counter : AggregateRoot<CounterState>
 
 ```csharp
 var services = new ServiceCollection();
-services.AddLawnDart(o => o.RequireTenantId = false);
+services.AddLawnDart(o => o.Tenancy = Tenancy.Single);
 services.AddBoundedContext("default")
     .UseInMemory()
     .WithEventTypes(typeof(CounterCreated), typeof(CounterIncremented));

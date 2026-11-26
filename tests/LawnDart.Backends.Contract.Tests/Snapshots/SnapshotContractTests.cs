@@ -141,7 +141,7 @@ public abstract class SnapshotContractTests : BackendContractSuite
             opened.Store,
             new TestMetadataProvider(),
             new TestTenantContextProvider(null),
-            Options.Create(new LawnDartOptions { RequireTenantId = false }),
+            Options.Create(new LawnDartOptions { Tenancy = Tenancy.Single }),
             null,
             null,
             null,

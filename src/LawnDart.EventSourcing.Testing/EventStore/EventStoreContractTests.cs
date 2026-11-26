@@ -17,14 +17,14 @@ public abstract class EventStoreContractTests : ContractSuite
     [Fact]
     public async Task ReadStreamAsync_EmptyStream_ReturnsEmpty()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         Assert.Empty(await store.ReadStreamAsync(Stream()));
     }
 
     [Fact]
     public async Task AppendAsync_ThenReadStream_ReturnsEvents()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var streamId = Stream();
         await store.AppendAsync(streamId, [ContractEvent.Tick(), ContractEvent.Tick()]);
         var result = await store.ReadStreamAsync(streamId);
@@ -36,7 +36,7 @@ public abstract class EventStoreContractTests : ContractSuite
     [Fact]
     public async Task AppendAsync_WithExpectedVersion_ValidatesConcurrency()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var streamId = Stream();
         await store.AppendAsync(streamId, [ContractEvent.Tick()]);
         await store.AppendAsync(streamId, [ContractEvent.Tick()], expectedVersion: 1);
@@ -46,7 +46,7 @@ public abstract class EventStoreContractTests : ContractSuite
     [Fact]
     public async Task AppendAsync_WithWrongExpectedVersion_ThrowsConcurrencyException()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var streamId = Stream();
         await store.AppendAsync(streamId, [ContractEvent.Tick()]);
         await Assert.ThrowsAsync<ConcurrencyException>(() =>
@@ -61,7 +61,7 @@ public abstract class EventStoreContractTests : ContractSuite
             "This backend runs one append to a stream at a time, so a parallel append does not hit a duplicate version. "
             + "Same expected version is covered by AppendAsync_SameExpectedVersion_WaiterConflicts.");
 
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var streamId = Stream();
         ConcurrencyException? duplicateKey = null;
 
@@ -118,7 +118,7 @@ public abstract class EventStoreContractTests : ContractSuite
     [ContractFact(Timeout = 20_000)]
     public async Task AppendAsync_SameExpectedVersion_WaiterConflicts()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var streamId = Stream();
         await store.AppendAsync(streamId, [ContractEvent.Tick()]);
 
@@ -154,7 +154,7 @@ public abstract class EventStoreContractTests : ContractSuite
     [Fact]
     public async Task AppendAsync_PropagatesMetadata()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var streamId = "tenant456:TestAggregate:" + Guid.NewGuid().ToString("N");
         var metadata = new EventMetadata
         {
@@ -172,7 +172,7 @@ public abstract class EventStoreContractTests : ContractSuite
     [Fact]
     public async Task AppendAsync_WithTags_StoresTags()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var streamId = Stream();
         await store.AppendAsync(streamId, [new TaggedEvent(ContractEvent.Tick(), [Tag.Parse("tag:alpha"), Tag.Parse("tag:beta")])]);
         var result = Assert.Single(await store.ReadStreamAsync(streamId));
@@ -183,7 +183,7 @@ public abstract class EventStoreContractTests : ContractSuite
     [Fact]
     public async Task ReadStreamAsync_WithToVersion_LimitsResults()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var streamId = Stream();
         await store.AppendAsync(streamId, [ContractEvent.Tick(), ContractEvent.Tick(), ContractEvent.Tick(), ContractEvent.Tick()]);
         var result = await store.ReadStreamAsync(streamId, toVersion: 2);
@@ -195,7 +195,7 @@ public abstract class EventStoreContractTests : ContractSuite
     [Fact]
     public async Task ReadStreamEnumerableAsync_YieldsEventsInOrder()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var streamId = Stream();
         await store.AppendAsync(streamId, [ContractEvent.Tick(), ContractEvent.Tick(), ContractEvent.Tick()]);
         var versions = new List<long>();
@@ -210,7 +210,7 @@ public abstract class EventStoreContractTests : ContractSuite
     [Fact]
     public async Task ReadStreamEnumerableAsync_WithToVersion_RespectsLimit()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var streamId = Stream();
         await store.AppendAsync(streamId, [ContractEvent.Tick(), ContractEvent.Tick(), ContractEvent.Tick()]);
         var count = 0;
@@ -222,7 +222,7 @@ public abstract class EventStoreContractTests : ContractSuite
     [Fact]
     public async Task ReadStreamAsync_WithToTimestamp_LimitsResults()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var streamId = Stream();
         var early = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         var late = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc);
@@ -236,11 +236,11 @@ public abstract class EventStoreContractTests : ContractSuite
     [Fact]
     public async Task ReadByQueryAsync_WithTagFilter_ReturnsMatchingEvents()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var tag = LawnDart.EventStore.Tag.Parse("order:" + Guid.NewGuid().ToString("N"));
         await store.AppendAsync(Stream(), [new TaggedEvent(ContractEvent.Tick(), [tag])]);
         await store.AppendAsync(Stream(), [new TaggedEvent(ContractEvent.Tick(), [LawnDart.EventStore.Tag.Parse("other:" + Guid.NewGuid().ToString("N"))])]);
-        var result = await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(tag)));
+        var result = await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(tag)).ForTenant("test-tenant"));
         Assert.Single(result.Events);
         Assert.Contains(tag, result.Events[0].Tags);
     }
@@ -248,11 +248,11 @@ public abstract class EventStoreContractTests : ContractSuite
     [Fact]
     public async Task ReadByQueryAsync_WithTypeFilter_ReturnsMatchingEvents()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var streamId = Stream();
         await store.AppendAsync(streamId, [ContractEvent.Tick(), new ContractAnotherEvent(Guid.NewGuid(), DateTime.UtcNow)]);
         var name = EventTypeCatalog.TryGetDeclaredName(typeof(ContractTestEvent))!;
-        var result = await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByType(name)));
+        var result = await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByType(name)).ForTenant("test-tenant"));
         var matched = Assert.Single(result.Events);
         Assert.IsType<ContractTestEvent>(matched.Event);
     }
@@ -260,7 +260,7 @@ public abstract class EventStoreContractTests : ContractSuite
     [Fact]
     public async Task AppendAsync_ThenReadStream_PreservesEventProperties()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var streamId = Stream();
         var original = new ContractEventWithProperties(Guid.NewGuid(), DateTime.UtcNow, "product-123", 5);
         await store.AppendAsync(streamId, [original]);
@@ -274,25 +274,25 @@ public abstract class EventStoreContractTests : ContractSuite
     [Fact]
     public async Task ReadByQueryAsync_WithAliasedTypeFilter_UsesEventTypeAlias()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var streamId = Stream();
         await store.AppendAsync(streamId, [new ContractAliasedEvent(Guid.NewGuid(), DateTime.UtcNow), ContractEvent.Tick()]);
         var name = EventTypeCatalog.TryGetDeclaredName(typeof(ContractAliasedEvent))!;
-        var result = await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByType(name)));
+        var result = await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByType(name)).ForTenant("test-tenant"));
         Assert.IsType<ContractAliasedEvent>(Assert.Single(result.Events).Event);
     }
 
     [Fact]
     public async Task ReadByQueryAsync_WithAndTags_ReturnsIntersection()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var order = LawnDart.EventStore.Tag.Parse("order:" + Guid.NewGuid().ToString("N"));
         var extra = LawnDart.EventStore.Tag.Parse("extra:" + Guid.NewGuid().ToString("N"));
         var only = LawnDart.EventStore.Tag.Parse("only:" + Guid.NewGuid().ToString("N"));
         await store.AppendAsync(Stream(), [new TaggedEvent(ContractEvent.Tick(), [order, only])]);
         var match = await store.AppendAsync(Stream(), [new TaggedEvent(ContractEvent.Tick(), [order, extra])]);
         await store.AppendAsync(Stream(), [new TaggedEvent(ContractEvent.Tick(), [extra])]);
-        var result = await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(order, extra)));
+        var result = await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(order, extra)).ForTenant("test-tenant"));
         var evt = Assert.Single(result.Events);
         Assert.Equal(match.SequencePositions[0], evt.SequencePosition);
         Assert.Contains(order, evt.Tags);
@@ -302,14 +302,14 @@ public abstract class EventStoreContractTests : ContractSuite
     [Fact]
     public async Task ReadByQueryAsync_WithOrTagItems_ReturnsUnion()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var left = LawnDart.EventStore.Tag.Parse("left:" + Guid.NewGuid().ToString("N"));
         var right = LawnDart.EventStore.Tag.Parse("right:" + Guid.NewGuid().ToString("N"));
         var decoy = LawnDart.EventStore.Tag.Parse("decoy:" + Guid.NewGuid().ToString("N"));
         var a = await store.AppendAsync(Stream(), [new TaggedEvent(ContractEvent.Tick(), [left])]);
         var b = await store.AppendAsync(Stream(), [new TaggedEvent(ContractEvent.Tick(), [right])]);
         await store.AppendAsync(Stream(), [new TaggedEvent(ContractEvent.Tick(), [decoy])]);
-        var result = await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(left), QueryItem.ByTags(right)));
+        var result = await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(left), QueryItem.ByTags(right)).ForTenant("test-tenant"));
         Assert.Equal(2, result.Events.Count);
         Assert.Equal(
             new[] { a.SequencePositions[0], b.SequencePositions[0] },
@@ -319,21 +319,21 @@ public abstract class EventStoreContractTests : ContractSuite
     [Fact]
     public async Task GetMaxSequencePositionAsync_NoMatches_ReturnsZero()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         await store.AppendAsync(Stream(), [new TaggedEvent(ContractEvent.Tick(), [Tag.Parse("tag:present")])]);
-        Assert.Equal(0, await store.GetMaxSequencePositionAsync(Query.FromItems(QueryItem.ByTags(Tag.Create("missing", Guid.NewGuid().ToString("N"))))));
+        Assert.Equal(0, await store.GetMaxSequencePositionAsync(Query.FromItems(QueryItem.ByTags(Tag.Create("missing", Guid.NewGuid().ToString("N")))).ForTenant("test-tenant")));
     }
 
     [Fact]
     public async Task GetMaxSequencePositionAsync_WithTag_ReturnsMaxWithoutFullReplay()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var tag = LawnDart.EventStore.Tag.Parse("max:" + Guid.NewGuid().ToString("N"));
         var other = LawnDart.EventStore.Tag.Parse("max-other:" + Guid.NewGuid().ToString("N"));
         await store.AppendAsync(Stream(), [new TaggedEvent(ContractEvent.Tick(), [other])]);
         var first = await store.AppendAsync(Stream(), [new TaggedEvent(ContractEvent.Tick(), [tag])]);
         var last = await store.AppendAsync(Stream(), [new TaggedEvent(ContractEvent.Tick(), [tag])]);
-        var query = Query.FromItems(QueryItem.ByTags(tag));
+        var query = Query.FromItems(QueryItem.ByTags(tag)).ForTenant("test-tenant");
         var max = await store.GetMaxSequencePositionAsync(query);
         Assert.Equal(last.SequencePositions[0], max);
         Assert.NotEqual(first.SequencePositions[0], max);
@@ -344,15 +344,15 @@ public abstract class EventStoreContractTests : ContractSuite
     [Fact]
     public async Task GetMaxSequencePositionAsync_QueryAll_MatchesStoreHead()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         await store.AppendAsync(Stream(), [ContractEvent.Tick(), ContractEvent.Tick()]);
-        Assert.Equal(await store.GetCurrentSequenceAsync(), await store.GetMaxSequencePositionAsync(Query.All()));
+        Assert.Equal(await store.GetCurrentSequenceAsync(), await store.GetMaxSequencePositionAsync(Query.All().ForTenant("test-tenant")));
     }
 
     [Fact]
     public async Task Log_can_materialize_recorded_event_without_registered_clr_type()
     {
-        var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
+        var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared));
         var streamId = Stream();
         const string token = "audit-probe.outside-event";
         var payload = Encoding.UTF8.GetBytes("""{"kind":"opaque"}""");
@@ -371,11 +371,11 @@ public abstract class EventStoreContractTests : ContractSuite
     [Fact]
     public async Task ReadByQuery_KnownTypeBesideAnUnknownName_ReturnsTheKnownEvents()
     {
-        var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
+        var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared));
         var streamId = Stream();
         await opened.Store.AppendAsync(streamId, [ContractEvent.Tick()]);
         var known = EventTypeCatalog.TryGetDeclaredName(typeof(ContractTestEvent))!;
-        var query = Query.FromItems(QueryItem.ByType(known, "no.such.event." + Guid.NewGuid().ToString("N")));
+        var query = Query.FromItems(QueryItem.ByType(known, "no.such.event." + Guid.NewGuid().ToString("N"))).ForTenant("test-tenant");
         var read = await opened.Store.ReadByQueryAsync(query);
         var sequenced = Assert.Single(read.Events);
         Assert.IsType<ContractTestEvent>(sequenced.Event);
@@ -388,9 +388,9 @@ public abstract class EventStoreContractTests : ContractSuite
     [ContractFact]
     public async Task UnknownType_ReturnsNoRows_AndDoesNotClaimTheRangeWasScanned()
     {
-        var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
+        var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared));
         await opened.Store.AppendAsync(Stream(), [ContractEvent.Tick()]);
-        var read = await opened.Log.ReadByQueryAsync(Query.FromItems(QueryItem.ByType("no.such.event.name")));
+        var read = await opened.Log.ReadByQueryAsync(Query.FromItems(QueryItem.ByType("no.such.event.name")).ForTenant("test-tenant"));
         Assert.Empty(read.Events);
         if (Cap.UnknownEventNameMarksQueryUnresolved)
             Assert.False(read.TypesResolved);
@@ -406,7 +406,7 @@ public abstract class EventStoreContractTests : ContractSuite
             "In-memory keeps events in the store instance. A second instance does not see them, and there is no event-name cache to refresh.");
 
         var schema = "c" + Guid.NewGuid().ToString("N");
-        var options = new ContractStoreOptions { SchemaName = schema, RequireTenantId = false };
+        var options = new ContractStoreOptions { SchemaName = schema, Tenancy = Tenancy.Single };
         var writer = await Backend.OpenEventStoreAsync(options);
         var reader = await Backend.OpenEventStoreAsync(options);
         const string token = "audit-probe.other-event";
@@ -429,7 +429,7 @@ public abstract class EventStoreContractTests : ContractSuite
     [ContractFact]
     public async Task StreamId_Case_FollowsTheBackend()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var id = Guid.NewGuid().ToString("N");
         var written = $"acme:Order:{id}";
         var otherCase = $"acme:order:{id}";
@@ -444,7 +444,7 @@ public abstract class EventStoreContractTests : ContractSuite
     [Fact]
     public async Task AppendAsync_ReservedTenantDefault_Throws()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(requireTenantId: true))).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var streamId = $"default:Order:{Guid.NewGuid()}";
         var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
             store.AppendAsync(StreamId.Parse(streamId), [ContractEvent.Tick()], metadata: new EventMetadata { TenantId = "default" }));
@@ -454,7 +454,7 @@ public abstract class EventStoreContractTests : ContractSuite
     [Fact]
     public async Task AppendAsync_ValidateNamesFalse_AllowsReservedTenantDefault()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(requireTenantId: true, validateNames: false))).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared, validateNames: false))).Store;
         var streamId = $"default:Order:{Guid.NewGuid()}";
         await store.AppendAsync(StreamId.Parse(streamId), [ContractEvent.Tick()], metadata: new EventMetadata { TenantId = "default" });
         Assert.Single(await store.ReadStreamAsync(StreamId.Parse(streamId)));
@@ -466,7 +466,7 @@ public abstract class EventStoreContractTests : ContractSuite
     [Fact]
     public async Task LongestStreamIdAndTag_RoundTrip()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         const string prefix = "test-tenant:TestAggregate:";
         var streamId = StreamId.Parse(prefix + Guid.NewGuid().ToString("N").PadRight(StreamId.MaxLength - prefix.Length, 'x'));
         var tag = Tag.Create("long", Guid.NewGuid().ToString("N").PadRight(Tag.MaxLength - "long:".Length, 'y'));
@@ -478,7 +478,7 @@ public abstract class EventStoreContractTests : ContractSuite
         var read = Assert.Single(await store.ReadStreamAsync(streamId));
         Assert.Equal(streamId, read.StreamId);
         Assert.Equal([tag], read.Tags);
-        var byTag = Assert.Single((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(tag)))).Events);
+        var byTag = Assert.Single((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(tag)).ForTenant("test-tenant"))).Events);
         Assert.Equal(streamId, byTag.StreamId);
         Assert.Equal(streamId, (await store.GetStreamAsync(streamId))!.StreamId);
         Assert.Equal([streamId], (await store.GetStreamsByTagAsync(tag)).Select(static s => s.StreamId));
@@ -487,7 +487,7 @@ public abstract class EventStoreContractTests : ContractSuite
     [Fact]
     public async Task DefaultStreamIdOrTag_IsRejected()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
 
         await Assert.ThrowsAsync<ArgumentException>(() => store.AppendAsync(default, [ContractEvent.Tick()]));
         await Assert.ThrowsAsync<ArgumentException>(() => store.ReadStreamAsync(default));
@@ -500,7 +500,7 @@ public abstract class EventStoreContractTests : ContractSuite
     [Fact]
     public async Task AppendAsync_EmptyTenantId_Throws()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(requireTenantId: true, validateNames: false))).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared, validateNames: false))).Store;
         var streamId = $":Order:{Guid.NewGuid()}";
         Assert.False(StreamId.TryParse(streamId, out _));
         await Assert.ThrowsAsync<ArgumentException>(() => store.AppendAsync(default, [ContractEvent.Tick()]));
@@ -509,7 +509,7 @@ public abstract class EventStoreContractTests : ContractSuite
     [Fact]
     public async Task AppendAsync_MissingTenant_WhenRequired_Throws()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(requireTenantId: true))).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var streamId = $"Order:{Guid.NewGuid()}";
         var ex = await Assert.ThrowsAsync<ArgumentException>(() => store.AppendAsync(StreamId.Parse(streamId), [ContractEvent.Tick()]));
         Assert.Contains("must include tenant ID", ex.Message);
@@ -518,8 +518,8 @@ public abstract class EventStoreContractTests : ContractSuite
     [Fact]
     public async Task Events_AppendedToOneContext_AreNotVisibleFromAnother()
     {
-        var ordering = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
-        var catalog = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var ordering = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
+        var catalog = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var streamId = "no-tenant:Order:order-1";
         await ordering.AppendAsync(StreamId.Parse(streamId), [ContractEvent.Tick()]);
         Assert.Empty(await catalog.ReadStreamAsync(StreamId.Parse(streamId)));
@@ -529,8 +529,8 @@ public abstract class EventStoreContractTests : ContractSuite
     [Fact]
     public async Task SequenceCounters_AreIndependentPerContext()
     {
-        var ordering = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
-        var catalog = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var ordering = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
+        var catalog = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var left = await ordering.AppendAsync(Stream(), [ContractEvent.Tick()]);
         var right = await catalog.AppendAsync(Stream(), [ContractEvent.Tick()]);
         Assert.True(left.SequencePositions[0] >= 1);
@@ -542,14 +542,14 @@ public abstract class EventStoreContractTests : ContractSuite
     [Fact]
     public async Task ReadByQueryAll_OnlyReturnsEventsFromOwnContext()
     {
-        var ordering = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
-        var catalog = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var ordering = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
+        var catalog = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var orderStream = Stream();
         var productStream = Stream();
         await ordering.AppendAsync(orderStream, [ContractEvent.Tick()]);
         await catalog.AppendAsync(productStream, [ContractEvent.Tick()]);
-        var orders = await ordering.ReadByQueryAsync(Query.All());
-        var products = await catalog.ReadByQueryAsync(Query.All());
+        var orders = await ordering.ReadByQueryAsync(Query.All().ForTenant("test-tenant"));
+        var products = await catalog.ReadByQueryAsync(Query.All().ForTenant("test-tenant"));
         Assert.Contains(orders.Events, e => e.StreamId == orderStream);
         Assert.DoesNotContain(orders.Events, e => e.StreamId == productStream);
         Assert.Contains(products.Events, e => e.StreamId == productStream);
@@ -559,8 +559,8 @@ public abstract class EventStoreContractTests : ContractSuite
     [Fact]
     public async Task MultipleEvents_SequencePositionsArePerSchema()
     {
-        var ordering = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
-        var catalog = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var ordering = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
+        var catalog = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var streamA = "no-tenant:Order:" + Guid.NewGuid().ToString("N");
         var streamB = "no-tenant:Product:" + Guid.NewGuid().ToString("N");
         await ordering.AppendAsync(StreamId.Parse(streamA), [ContractEvent.Tick(), ContractEvent.Tick(), ContractEvent.Tick()]);
@@ -577,7 +577,7 @@ public abstract class EventStoreContractTests : ContractSuite
     [Fact]
     public async Task ExpectedVersion_NegativeOne_CreatesAStream()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var streamId = "acme:Order:" + Guid.NewGuid().ToString("N");
         var result = await store.AppendAsync(
             StreamId.Parse(streamId),
@@ -593,7 +593,7 @@ public abstract class EventStoreContractTests : ContractSuite
     [Fact]
     public async Task ExpectedVersion_NegativeOne_OnExistingStream_Throws()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var streamId = "acme:Order:" + Guid.NewGuid().ToString("N");
         var metadata = new EventMetadata { TenantId = "acme" };
         await store.AppendAsync(StreamId.Parse(streamId), [ContractEvent.Tick()], expectedVersion: -1, metadata: metadata);
@@ -606,7 +606,7 @@ public abstract class EventStoreContractTests : ContractSuite
     [Fact]
     public async Task ExpectedVersion_Zero_OnNewStream_Throws()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var streamId = "acme:Order:" + Guid.NewGuid().ToString("N");
         var ex = await Assert.ThrowsAsync<ConcurrencyException>(() =>
             store.AppendAsync(

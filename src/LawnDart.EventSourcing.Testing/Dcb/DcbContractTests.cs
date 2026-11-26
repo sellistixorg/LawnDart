@@ -21,7 +21,7 @@ public abstract class DcbContractTests : ContractSuite
     public async Task AppendAsync_WithDCBCondition_BadMetadataTenantWhenValidationOff_ThrowsArgumentException()
     {
         var store = (await Backend.OpenEventStoreAsync(
-            ContractStores.Isolated(requireTenantId: false, validateNames: false))).Store;
+            ContractStores.Isolated(tenancy: Tenancy.Shared, validateNames: false))).Store;
         var condition = AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByType("SomeOtherEvent")));
 
         await Assert.ThrowsAsync<ArgumentException>(() => store.AppendAsync(
@@ -40,109 +40,115 @@ public abstract class DcbContractTests : ContractSuite
     [Fact]
     public async Task AppendAsync_WithDCBCondition_ValidatesCondition()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var result = await store.AppendAsync(
             [ContractEvent.Tick()],
-            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByType("SomeOtherEvent"))));
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByType("SomeOtherEvent"))),
+            metadata: new EventMetadata { TenantId = "test-tenant" });
         Assert.Single(result.SequencePositions);
     }
 
     [Fact]
     public async Task AppendAsync_WithDCBCondition_WithAfterSequencePosition_IgnoresEarlierEvents()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var first = await store.AppendAsync(Stream(), [ContractEvent.Tick()]);
         var name = EventTypeCatalog.TryGetDeclaredName(typeof(ContractTestEvent))!;
         var condition = AppendCondition.FailIfMatches(
             Query.FromItems(QueryItem.ByType(name)),
             after: first.SequencePositions[0]);
-        var result = await store.AppendAsync([ContractEvent.Tick()], condition);
+        var result = await store.AppendAsync([ContractEvent.Tick()], condition, metadata: new EventMetadata { TenantId = "test-tenant" });
         Assert.Single(result.SequencePositions);
     }
 
     [Fact]
     public async Task AppendAsync_WithDCBCondition_WithAfterSequencePosition_FailsWhenMatchAfterPosition()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var first = await store.AppendAsync(Stream(), [ContractEvent.Tick()]);
         var name = EventTypeCatalog.TryGetDeclaredName(typeof(ContractTestEvent))!;
         var condition = AppendCondition.FailIfMatches(
             Query.FromItems(QueryItem.ByType(name)),
             after: first.SequencePositions[0]);
         await store.AppendAsync(Stream(), [ContractEvent.Tick()]);
-        await Assert.ThrowsAsync<ConcurrencyException>(() => store.AppendAsync([ContractEvent.Tick()], condition));
+        await Assert.ThrowsAsync<ConcurrencyException>(() => store.AppendAsync([ContractEvent.Tick()], condition, metadata: new EventMetadata { TenantId = "test-tenant" }));
     }
 
     [Fact]
     public async Task AppendAsync_WithDCBCondition_WithTagQuery_ValidatesTagBasedCondition()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var present = Tag("order");
         var absent = Tag("order");
         await store.AppendAsync(Stream(), [new TaggedEvent(ContractEvent.Tick(), [present])]);
         var result = await store.AppendAsync(
             [new TaggedEvent(new ContractAnotherEvent(Guid.NewGuid(), DateTime.UtcNow), [absent])],
-            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(absent))));
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(absent))),
+            metadata: new EventMetadata { TenantId = "test-tenant" });
         Assert.Single(result.SequencePositions);
     }
 
     [Fact]
     public async Task AppendAsync_WithDCBCondition_WithTagQuery_FailsWhenTagMatches()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var tag = Tag("order");
         await store.AppendAsync(Stream(), [new TaggedEvent(ContractEvent.Tick(), [tag])]);
         await Assert.ThrowsAsync<ConcurrencyException>(() => store.AppendAsync(
             [new TaggedEvent(new ContractAnotherEvent(Guid.NewGuid(), DateTime.UtcNow), [tag])],
-            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(tag)))));
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(tag))),
+            metadata: new EventMetadata { TenantId = "test-tenant" }));
     }
 
     [Fact]
     public async Task AppendAsync_WithDCBCondition_WithMultiTagQuery_RequiresAllTags()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var order = Tag("order");
         var payment = Tag("payment");
         await store.AppendAsync(Stream(), [new TaggedEvent(ContractEvent.Tick(), [order])]);
         var result = await store.AppendAsync(
             [new TaggedEvent(new ContractAnotherEvent(Guid.NewGuid(), DateTime.UtcNow), [order, payment])],
-            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(order, payment))));
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(order, payment))),
+            metadata: new EventMetadata { TenantId = "test-tenant" });
         Assert.Single(result.SequencePositions);
     }
 
     [Fact]
     public async Task AppendAsync_WithDCBCondition_WithMultiTagQuery_FailsWhenAllTagsMatch()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var order = Tag("order");
         var payment = Tag("payment");
         await store.AppendAsync(Stream(), [new TaggedEvent(ContractEvent.Tick(), [order, payment])]);
         await Assert.ThrowsAsync<ConcurrencyException>(() => store.AppendAsync(
             [new TaggedEvent(new ContractAnotherEvent(Guid.NewGuid(), DateTime.UtcNow), [order, payment])],
-            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(order, payment)))));
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(order, payment))),
+            metadata: new EventMetadata { TenantId = "test-tenant" }));
     }
 
     [Fact]
     public async Task AppendAsync_WithDCBCondition_WithMultiQueryItem_UsesOrLogic()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var left = Tag("order");
         var right = Tag("order");
         await store.AppendAsync(Stream(), [new TaggedEvent(ContractEvent.Tick(), [left])]);
         await Assert.ThrowsAsync<ConcurrencyException>(() => store.AppendAsync(
             [new TaggedEvent(new ContractAnotherEvent(Guid.NewGuid(), DateTime.UtcNow), [Tag("order")])],
-            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(left), QueryItem.ByTags(right)))));
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(left), QueryItem.ByTags(right))),
+            metadata: new EventMetadata { TenantId = "test-tenant" }));
     }
 
     [Fact]
     public async Task ReadByQueryAsync_WithDCBTags_ReturnsCrossEntityEvents()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var tag = Tag("order");
         await store.AppendAsync(Stream(), [new TaggedEvent(ContractEvent.Tick(), [tag])]);
         await store.AppendAsync(Stream(), [new TaggedEvent(new ContractAnotherEvent(Guid.NewGuid(), DateTime.UtcNow), [tag, Tag("payment")])]);
         await store.AppendAsync(Stream(), [new TaggedEvent(ContractEvent.Tick(), [tag, Tag("product")])]);
-        var result = await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(tag)));
+        var result = await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(tag)).ForTenant("test-tenant"));
         Assert.Equal(3, result.Events.Count);
         Assert.All(result.Events, e => Assert.Contains(tag, e.Tags));
     }
@@ -150,12 +156,13 @@ public abstract class DcbContractTests : ContractSuite
     [Fact]
     public async Task AppendAsync_WithDCBCondition_MultiEntityConsistency_EnforcesAtomicity()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var tags = new[] { Tag("order"), Tag("payment"), Tag("product") };
-        var query = Query.FromItems(tags.Select(tag => QueryItem.ByTags(tag)).ToArray());
+        var query = Query.FromItems(tags.Select(tag => QueryItem.ByTags(tag)).ToArray()).ForTenant("test-tenant");
         var result = await store.AppendAsync(
             [new TaggedEvent(ContractEvent.Tick(), tags), new TaggedEvent(new ContractAnotherEvent(Guid.NewGuid(), DateTime.UtcNow), tags)],
-            AppendCondition.FailIfMatches(query, after: 0));
+            AppendCondition.FailIfMatches(query, after: 0),
+            metadata: new EventMetadata { TenantId = "test-tenant" });
         Assert.Equal(2, result.SequencePositions.Count);
         Assert.Equal(2, (await store.ReadByQueryAsync(query)).Events.Count);
     }
@@ -163,12 +170,12 @@ public abstract class DcbContractTests : ContractSuite
     [Fact]
     public async Task AppendAsync_WithDcbCondition_UsesOpaqueDcbStreamId()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var append = await store.AppendAsync(
             [new TaggedEvent(ContractEvent.Tick(), [LawnDart.EventStore.Tag.Parse("order:opaque")])],
             AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(LawnDart.EventStore.Tag.Parse("order:opaque")))),
             metadata: new EventMetadata { TenantId = "tenant-opaque" });
-        var read = await store.ReadByQueryAsync(Query.All(), fromSequencePosition: append.SequencePositions[0], limit: 1);
+        var read = await store.ReadByQueryAsync(Query.All().ForTenant("tenant-opaque"), fromSequencePosition: append.SequencePositions[0], limit: 1);
         var evt = Assert.Single(read.Events);
         Assert.StartsWith("tenant-opaque:dcb:", evt.StreamId.ToString());
     }
@@ -176,7 +183,7 @@ public abstract class DcbContractTests : ContractSuite
     [Fact]
     public async Task AppendAsync_Dcb_ReservedTenantDefault_Throws()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(requireTenantId: true))).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var ex = await Assert.ThrowsAsync<ArgumentException>(() => store.AppendAsync(
             [ContractEvent.Tick()],
             AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(LawnDart.EventStore.Tag.Parse("order:absent")))),
@@ -187,12 +194,12 @@ public abstract class DcbContractTests : ContractSuite
     [Fact]
     public async Task AppendAsync_Dcb_ValidateNamesFalse_AllowsReservedTenantDefault()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(requireTenantId: true, validateNames: false))).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared, validateNames: false))).Store;
         var append = await store.AppendAsync(
             [ContractEvent.Tick()],
             AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(LawnDart.EventStore.Tag.Parse("order:absent")))),
             metadata: new EventMetadata { TenantId = "default" });
-        var read = await store.ReadByQueryAsync(Query.All(), fromSequencePosition: append.SequencePositions[0], limit: 1);
+        var read = await store.ReadByQueryAsync(Query.All().ForTenant("default"), fromSequencePosition: append.SequencePositions[0], limit: 1);
         var evt = Assert.Single(read.Events);
         Assert.StartsWith("default:dcb:", evt.StreamId.ToString());
     }
@@ -200,7 +207,7 @@ public abstract class DcbContractTests : ContractSuite
     [Fact]
     public async Task AppendAsync_Dcb_MissingTenant_WhenRequired_Throws()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(requireTenantId: true))).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var ex = await Assert.ThrowsAsync<ArgumentException>(() => store.AppendAsync(
             [ContractEvent.Tick()],
             AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(LawnDart.EventStore.Tag.Parse("order:absent"))))));
@@ -210,20 +217,21 @@ public abstract class DcbContractTests : ContractSuite
     [Fact]
     public async Task DcbAppends_ConcurrentSameTag_ExactlyOneWins()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var tag = Tag("race");
         var exceptions = await RunBarrierAsync(10, _ => store.AppendAsync(
             [new TaggedEvent(new ContractDcbEvent(Guid.NewGuid(), DateTime.UtcNow, 1), [tag])],
-            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(tag)))));
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(tag))),
+            metadata: new EventMetadata { TenantId = "test-tenant" }));
         Assert.Equal(1, exceptions.Count(e => e is null));
         Assert.Equal(9, exceptions.Count(e => e is ConcurrencyException));
-        Assert.Single((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(tag)))).Events);
+        Assert.Single((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(tag)).ForTenant("test-tenant"))).Events);
     }
 
     [Fact]
     public async Task DcbAppends_IndependentDomains_NoContamination()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var tagX = Tag("x");
         var tagY = Tag("y");
         var uniqueness = await RunBarrierAsync(2, i =>
@@ -232,14 +240,14 @@ public abstract class DcbContractTests : ContractSuite
             return store.AppendAsync(
                 [new TaggedEvent(new ContractDcbEvent(Guid.NewGuid(), DateTime.UtcNow, i), [tag])],
                 AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(tag))),
-                new EventMetadata { Timestamp = DateTime.UtcNow });
+                new EventMetadata { Timestamp = DateTime.UtcNow, TenantId = "test-tenant" });
         });
         Assert.All(uniqueness, e => Assert.Null(e));
 
         const int writesPerDomain = 5;
         var domainX = Enumerable.Range(0, writesPerDomain).Select(i => Task.Run(async () =>
         {
-            var current = await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(tagX)));
+            var current = await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(tagX)).ForTenant("test-tenant"));
             var condition = AppendCondition.FailIfMatches(
                 Query.FromItems(QueryItem.ByTags(tagX)),
                 after: current.Events.Count == 0 ? null : current.Events[^1].SequencePosition);
@@ -248,7 +256,7 @@ public abstract class DcbContractTests : ContractSuite
                 await store.AppendAsync(
                     [new TaggedEvent(new ContractDcbEvent(Guid.NewGuid(), DateTime.UtcNow, i), [tagX])],
                     condition,
-                    new EventMetadata { Timestamp = DateTime.UtcNow });
+                    new EventMetadata { Timestamp = DateTime.UtcNow, TenantId = "test-tenant" });
             }
             catch (ConcurrencyException)
             {
@@ -257,7 +265,7 @@ public abstract class DcbContractTests : ContractSuite
         }));
         var domainY = Enumerable.Range(0, writesPerDomain).Select(i => Task.Run(async () =>
         {
-            var current = await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(tagY)));
+            var current = await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(tagY)).ForTenant("test-tenant"));
             var condition = AppendCondition.FailIfMatches(
                 Query.FromItems(QueryItem.ByTags(tagY)),
                 after: current.Events.Count == 0 ? null : current.Events[^1].SequencePosition);
@@ -266,7 +274,7 @@ public abstract class DcbContractTests : ContractSuite
                 await store.AppendAsync(
                     [new TaggedEvent(new ContractDcbEvent(Guid.NewGuid(), DateTime.UtcNow, i + 100), [tagY])],
                     condition,
-                    new EventMetadata { Timestamp = DateTime.UtcNow });
+                    new EventMetadata { Timestamp = DateTime.UtcNow, TenantId = "test-tenant" });
             }
             catch (ConcurrencyException)
             {
@@ -275,8 +283,8 @@ public abstract class DcbContractTests : ContractSuite
         }));
         await Task.WhenAll(domainX.Concat(domainY));
 
-        var xEvents = await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(tagX)));
-        var yEvents = await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(tagY)));
+        var xEvents = await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(tagX)).ForTenant("test-tenant"));
+        var yEvents = await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(tagY)).ForTenant("test-tenant"));
         Assert.NotEmpty(xEvents.Events);
         Assert.NotEmpty(yEvents.Events);
         Assert.All(xEvents.Events, e => Assert.DoesNotContain(tagY, e.Tags));
@@ -286,7 +294,7 @@ public abstract class DcbContractTests : ContractSuite
     [Fact(Timeout = 60_000)]
     public async Task DcbAppends_AndTagsOppositeOrder_DoesNotDeadlock()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var tagA = Tag("zeta");
         var tagB = Tag("alpha");
         var exceptions = await RunBarrierAsync(2, i =>
@@ -295,7 +303,7 @@ public abstract class DcbContractTests : ContractSuite
             return store.AppendAsync(
                 [new TaggedEvent(new ContractDcbEvent(Guid.NewGuid(), DateTime.UtcNow, i), tags)],
                 AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(tags))),
-                new EventMetadata { Timestamp = DateTime.UtcNow });
+                new EventMetadata { Timestamp = DateTime.UtcNow, TenantId = "test-tenant" });
         });
         Assert.Equal(1, exceptions.Count(e => e is null));
         Assert.Equal(1, exceptions.Count(e => e is ConcurrencyException));
@@ -305,7 +313,7 @@ public abstract class DcbContractTests : ContractSuite
     [Fact]
     public async Task DcbAppend_FailIfMatches_HotTag_ThrowsConcurrencyException()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var tag = Tag("hot");
         var seed = Enumerable.Range(0, 50)
             .Select(i => (IEvent)new ContractDcbEvent(Guid.NewGuid(), DateTime.UtcNow, i))
@@ -314,14 +322,14 @@ public abstract class DcbContractTests : ContractSuite
         var ex = await Assert.ThrowsAsync<ConcurrencyException>(() => store.AppendAsync(
             [new TaggedEvent(new ContractDcbEvent(Guid.NewGuid(), DateTime.UtcNow, 99), [tag])],
             AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(tag))),
-            new EventMetadata { Timestamp = DateTime.UtcNow }));
+            new EventMetadata { Timestamp = DateTime.UtcNow, TenantId = "test-tenant" }));
         Assert.NotNull(ex);
     }
 
     [Fact]
     public async Task GetStateAsync_RebuildsStateFromEvents()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var repository = Repo(store, "test-tenant");
         var tags = new[] { Tag("order"), Tag("customer") };
         await repository.AppendWithContextAsync(
@@ -334,7 +342,7 @@ public abstract class DcbContractTests : ContractSuite
     [Fact]
     public async Task AppendWithContextAsync_WithAppendCondition_EnforcesConcurrency()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var repository = Repo(store, "test-tenant");
         var tags = new[] { Tag("order"), Tag("customer") };
         var positions = await repository.AppendWithContextAsync(
@@ -349,7 +357,7 @@ public abstract class DcbContractTests : ContractSuite
     [Fact]
     public async Task DcbOperations_WithMultipleTags_QueriesCorrectly()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var repository = Repo(store, "test-tenant");
         var entityA = Tag("entity");
         var entityB = Tag("entity");
@@ -365,7 +373,7 @@ public abstract class DcbContractTests : ContractSuite
     [Fact]
     public async Task DcbOperations_WithTenantTags_IsolatesData()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var repository = Repo(store, "tenant-1");
         var order = Tag("order");
         var tenant1 = LawnDart.EventStore.Tag.Parse("tenant:tenant-1-" + Guid.NewGuid().ToString("N"));
@@ -379,13 +387,13 @@ public abstract class DcbContractTests : ContractSuite
     [Fact]
     public async Task GetLastSequencePositionAsync_UsesStoreMax()
     {
-        var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
+        var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared));
         var repository = Repo(opened.Store, "test-tenant");
         var tags = new[] { Tag("order") };
         await repository.AppendWithContextAsync([new TaggedEvent(new ContractDcbEvent(Guid.NewGuid(), DateTime.UtcNow, 1), tags)]);
         await repository.AppendWithContextAsync([new TaggedEvent(new ContractDcbEvent(Guid.NewGuid(), DateTime.UtcNow, 2), tags)]);
         var fromRepo = await repository.GetLastSequencePositionAsync(Query.FromItems(QueryItem.ByTags(tags)));
-        var fromStore = await opened.Store.GetMaxSequencePositionAsync(Query.FromItems(QueryItem.ByTags(tags)));
+        var fromStore = await opened.Store.GetMaxSequencePositionAsync(Query.FromItems(QueryItem.ByTags(tags)).ForTenant("test-tenant"));
         Assert.Equal(fromStore, fromRepo);
         Assert.True(fromRepo > 0);
     }

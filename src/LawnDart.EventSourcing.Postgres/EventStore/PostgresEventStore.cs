@@ -326,11 +326,11 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
             throw new ArgumentException("At least one event is required", nameof(events));
 
         AppendTenantRules.ValidateStreamAppend(
-            streamId, envelopes, _options.RequireTenantId, _options.ValidateNames);
+            streamId, envelopes, _options.Tenancy, _options.SingleTenantId, _options.ValidateNames);
         var eventIds = EventIdResolver.ResolveBatch(envelopes.Select(e => e.Metadata).ToList());
         var eventTypes = envelopes.Select(static envelope => envelope.EventType).ToArray();
         return await AppendWithRetry(
-            ct => AppendCoreAsync(streamId.ToString(), envelopes, eventIds, expectedVersion, condition: null, isDcb: false, ct),
+            ct => AppendCoreAsync(streamId.ToString(), envelopes, eventIds, expectedVersion, condition: null, conditionTenant: null, isDcb: false, ct),
             streamId.ToString(),
             eventIds,
             eventTypes,
@@ -349,17 +349,18 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
             throw new ArgumentException("At least one event is required", nameof(events));
         ArgumentNullException.ThrowIfNull(condition);
 
-        var tenantId = AppendTenantRules.TryReadTenantId(envelopes);
-        AppendTenantRules.ValidateDcbAppend(tenantId, _options.RequireTenantId, _options.ValidateNames);
+        var metadataTenantId = AppendTenantRules.TryReadTenantId(envelopes);
+        var (storageTenant, conditionTenant) = AppendTenantRules.ValidateDcbAppend(
+            metadataTenantId, condition, _options.Tenancy, _options.SingleTenantId, _options.ValidateNames);
 
-        var streamId = (!string.IsNullOrWhiteSpace(tenantId)
-            ? StreamId.For(tenantId, StreamId.DcbType, Guid.NewGuid().ToString())
+        var streamId = (!string.IsNullOrWhiteSpace(storageTenant)
+            ? StreamId.For(storageTenant, StreamId.DcbType, Guid.NewGuid().ToString())
             : StreamId.For(StreamId.DcbType, Guid.NewGuid().ToString())).ToString();
         EnsureStreamLength(streamId, "streamId");
         var eventIds = EventIdResolver.ResolveBatch(envelopes.Select(e => e.Metadata).ToList());
         var eventTypes = envelopes.Select(static envelope => envelope.EventType).ToArray();
         return await AppendWithRetry(
-            ct => AppendCoreAsync(streamId, envelopes, eventIds, expectedVersion: null, condition, isDcb: true, ct),
+            ct => AppendCoreAsync(streamId, envelopes, eventIds, expectedVersion: null, condition, conditionTenant, isDcb: true, ct),
             streamId,
             eventIds,
             eventTypes,
@@ -382,7 +383,7 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
         await using var connectionDisposal = connection.ConfigureAwait(false);
         var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         await using var transactionDisposal = transaction.ConfigureAwait(false);
-        await ExecuteAppendAsync(connection, transaction, streamId, events, ids, null, null, false, cancellationToken).ConfigureAwait(false);
+        await ExecuteAppendAsync(connection, transaction, streamId, events, ids, null, null, null, false, cancellationToken).ConfigureAwait(false);
         await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -392,6 +393,7 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
         IReadOnlyList<Guid> eventIds,
         long? expectedVersion,
         AppendCondition? condition,
+        string? conditionTenant,
         bool isDcb,
         CancellationToken cancellationToken)
     {
@@ -409,7 +411,7 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
             try
             {
                 written = await ExecuteAppendAsync(
-                    connection, transaction: null, streamId, envelopes, eventIds, expectedVersion, condition, isDcb, cancellationToken)
+                    connection, transaction: null, streamId, envelopes, eventIds, expectedVersion, condition, conditionTenant, isDcb, cancellationToken)
                     .ConfigureAwait(false);
             }
             catch (AppendStatementSentException ex)
@@ -442,7 +444,7 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
             try
             {
                 writtenRows = await ExecuteAppendAsync(
-                    connection, transaction, streamId, envelopes, eventIds, expectedVersion, condition, isDcb, cancellationToken)
+                    connection, transaction, streamId, envelopes, eventIds, expectedVersion, condition, conditionTenant, isDcb, cancellationToken)
                     .ConfigureAwait(false);
             }
             catch (AppendStatementSentException ex)

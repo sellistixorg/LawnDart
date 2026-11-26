@@ -15,7 +15,7 @@ public class CachedStreamRegistryTests
 
     public CachedStreamRegistryTests()
     {
-        _innerRegistry = new InMemoryEventStore(enableRegistry: true, logger: NullLogger<InMemoryEventStore>.Instance, options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        _innerRegistry = new InMemoryEventStore(enableRegistry: true, logger: NullLogger<InMemoryEventStore>.Instance, options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         _cache = new MemoryCache(new MemoryCacheOptions());
         _cachedRegistry = new CachedStreamRegistry(
             _innerRegistry,

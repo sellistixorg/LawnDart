@@ -168,7 +168,7 @@ internal static class Program
         services.AddLogging(b => b.AddConsole().SetMinimumLevel(LogLevel.Warning));
         services.AddLawnDart(options =>
         {
-            options.RequireTenantId = false;
+            options.Tenancy = Tenancy.Single;
             options.EnableAuthorization = false;
         });
         services.AddSingleton<ITenantContextProvider>(new DemoTenantContextProvider("demo-tenant"));
@@ -185,7 +185,7 @@ internal static class Program
             context.UseSqlServer(o =>
             {
                 o.ConnectionString = connectionString!;
-                o.RequireTenantId = false;
+                o.Tenancy = Tenancy.Single;
                 o.EnableOutbox = true;
                 o.OutboxClaimLease = TimeSpan.Zero;
             });

@@ -68,11 +68,31 @@ public class PostgresEventStoreOptions : EventSourcingOptions
     public bool EnableStreamRegistry { get; set; } = true;
 
     /// <summary>
-    /// When true, a missing tenant id is an error.
-    /// When false, a stream with no tenant prefix is stored under <c>default</c>.
-    /// Default true.
+    /// Controls how tenants share the store. Defaults to <see cref="LawnDart.Tenancy.Shared"/>.
     /// </summary>
-    public bool RequireTenantId { get; set; } = true;
+    /// <remarks>
+    /// <c>UsePostgres</c> copies <see cref="LawnDart.LawnDartOptions.Tenancy"/> onto this property
+    /// before the configure callback runs. The callback can change it.
+    /// <see cref="LawnDart.Tenancy.Isolated"/> is not supported in this release and is refused at startup.
+    /// </remarks>
+    public Tenancy Tenancy { get; set; } = Tenancy.Shared;
+
+    /// <summary>
+    /// Optional fixed tenant id when <see cref="Tenancy"/> is <see cref="LawnDart.Tenancy.Single"/>.
+    /// Leave null for no tenant. Must be null when <see cref="Tenancy"/> is <see cref="LawnDart.Tenancy.Shared"/>.
+    /// </summary>
+    public string? SingleTenantId { get; set; }
+
+    /// <summary>
+    /// Obsolete alias for <see cref="Tenancy"/>.
+    /// <c>true</c> maps to <see cref="LawnDart.Tenancy.Shared"/>; <c>false</c> maps to <see cref="LawnDart.Tenancy.Single"/>.
+    /// </summary>
+    [Obsolete("Use Tenancy instead. RequireTenantId = true maps to Tenancy.Shared; false maps to Tenancy.Single.")]
+    public bool RequireTenantId
+    {
+        get => Tenancy != Tenancy.Single;
+        set => Tenancy = value ? Tenancy.Shared : Tenancy.Single;
+    }
 
     /// <summary>
     /// When true, a tenant id of <c>default</c> in any casing is rejected, and the id
@@ -150,6 +170,8 @@ public class PostgresEventStoreOptions : EventSourcingOptions
     /// <summary>Checks counts and names before the store is used.</summary>
     public void EnsureValid()
     {
+        TenancyValidation.EnsureValid(Tenancy, SingleTenantId, ValidateNames);
+
         if (string.IsNullOrWhiteSpace(ConnectionString))
             throw new ArgumentException("ConnectionString is required.", nameof(ConnectionString));
 

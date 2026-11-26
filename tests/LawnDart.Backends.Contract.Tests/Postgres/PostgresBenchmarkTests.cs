@@ -46,7 +46,7 @@ public sealed class PostgresBenchmarkTests
             {
                 ConnectionString = postgres.GetConnectionString(),
                 SchemaName = "bench",
-                RequireTenantId = false
+                Tenancy = Tenancy.Shared
             });
             await pgStore.InitializeSchemaAsync();
             await AssertPostgresDurabilityOnAsync(postgres.GetConnectionString());
@@ -55,7 +55,7 @@ public sealed class PostgresBenchmarkTests
             {
                 ConnectionString = sql.GetConnectionString(),
                 SchemaName = "bench",
-                RequireTenantId = false,
+                Tenancy = Tenancy.Shared,
                 ContextName = "bench"
             };
             var sqlStore = new SqlServerEventStore(sql.GetConnectionString(), options: sqlOptions);

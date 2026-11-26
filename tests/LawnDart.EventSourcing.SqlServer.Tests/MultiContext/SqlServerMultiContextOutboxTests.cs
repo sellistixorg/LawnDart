@@ -108,7 +108,7 @@ public class SqlServerMultiContextOutboxTests : IAsyncLifetime
             {
                 opt.ConnectionString = _connectionString;
                 opt.SchemaName = schema;
-                opt.RequireTenantId = false;
+                opt.Tenancy = Tenancy.Shared;
             });
         await using var provider = services.BuildServiceProvider();
         var store = (SqlServerEventStore)provider.GetRequiredKeyedService<IEventStore>("ordering");
@@ -133,7 +133,7 @@ public class SqlServerMultiContextOutboxTests : IAsyncLifetime
             ConnectionString = _connectionString,
             SchemaName = schema,
             ContextName = schema,
-            RequireTenantId = false,
+            Tenancy = Tenancy.Shared,
             EnableOutbox = true,
             OutboxTableName = "Outbox"
         };

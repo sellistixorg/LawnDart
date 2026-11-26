@@ -19,7 +19,7 @@ To work from this repository instead, clone it and add project references
 ## 2. Register the host
 
 ```csharp
-services.AddLawnDart(o => o.RequireTenantId = false);
+services.AddLawnDart(o => o.Tenancy = Tenancy.Single);
 var ctx = services.AddBoundedContext("default");
 ctx.UseInMemory();
 ctx.WithEventTypes<CounterCreated>();
@@ -42,12 +42,12 @@ A durable store keeps the same context name and swaps the registration.
 Postgres 15 or newer:
 
 ```csharp
-services.AddLawnDart(o => o.RequireTenantId = false);
+services.AddLawnDart(o => o.Tenancy = Tenancy.Single);
 var ctx = services.AddBoundedContext("default");
 ctx.UsePostgres(o =>
 {
     o.ConnectionString = connectionString;
-    o.RequireTenantId = false;
+    o.Tenancy = Tenancy.Single;
 });
 ctx.WithEventTypes<CounterCreated>();
 ```
@@ -105,7 +105,7 @@ Build the host, run the commands, and read the state back:
 
 ```csharp
 var services = new ServiceCollection();
-services.AddLawnDart(o => o.RequireTenantId = false);
+services.AddLawnDart(o => o.Tenancy = Tenancy.Single);
 services.AddBoundedContext("default")
     .UseInMemory()
     .WithEventTypes(typeof(CounterCreated), typeof(CounterIncremented));

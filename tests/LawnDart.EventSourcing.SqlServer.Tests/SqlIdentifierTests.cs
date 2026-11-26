@@ -78,7 +78,7 @@ public class OddSchemaNameTests : IAsyncLifetime
         var options = new SqlServerEventStoreOptions
         {
             SchemaName = "odd]schema",
-            RequireTenantId = false
+            Tenancy = Tenancy.Single
         };
         var store = new SqlServerEventStore(_connectionString!, options: options);
         await store.InitializeSchemaAsync();

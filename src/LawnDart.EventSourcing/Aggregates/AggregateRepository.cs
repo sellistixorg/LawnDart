@@ -74,6 +74,7 @@ public class AggregateRepository : IAggregateRepository
         _metadataProvider = metadataProvider ?? throw new ArgumentNullException(nameof(metadataProvider));
         _tenantContextProvider = tenantContextProvider ?? throw new ArgumentNullException(nameof(tenantContextProvider));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _options.EnsureValid();
         _tagProvider = tagProvider;
         _authorizationService = authorizationService;
         _logger = logger;
@@ -246,13 +247,12 @@ public class AggregateRepository : IAggregateRepository
             return;
         }
 
-        // Validate tenant ID - conditional based on RequireTenantId option
+        // Validate tenant ID based on Tenancy option
         string? tenantId = null;
-        if (_options.RequireTenantId)
+        if (_options.Tenancy == Tenancy.Shared)
         {
-            // Tenant is required
-            var tenantIdFromMetadata = commandMetadata.TenantId 
-                ?? throw new ArgumentException("TenantId is required in command metadata when RequireTenantId is true", nameof(commandMetadata));
+            var tenantIdFromMetadata = commandMetadata.TenantId
+                ?? throw new ArgumentException("TenantId is required in command metadata when Tenancy is Shared", nameof(commandMetadata));
 
             LawnDartNames.ValidateTenantId(tenantIdFromMetadata, nameof(commandMetadata), _options.ValidateNames);
 
@@ -267,8 +267,7 @@ public class AggregateRepository : IAggregateRepository
         }
         else
         {
-            // Tenant is optional
-            tenantId = commandMetadata.TenantId ?? _tenantContextProvider.GetTenantId();
+            tenantId = _options.SingleTenantId;
         }
 
         // Auto-set StreamId if not already set (safety net)
@@ -297,8 +296,8 @@ public class AggregateRepository : IAggregateRepository
             }
         }
         
-        // Validate stream ID includes tenant prefix (only if tenant is required)
-        if (_options.RequireTenantId && tenantId != null)
+        // Validate stream ID includes tenant prefix in Shared mode
+        if (_options.Tenancy == Tenancy.Shared && tenantId != null)
         {
             if (!aggregate.StreamId.StartsWith($"{tenantId}:", StringComparison.Ordinal))
             {
@@ -468,16 +467,15 @@ public class AggregateRepository : IAggregateRepository
 
     private StreamId ResolveStreamId<T>(Guid id) where T : AggregateRoot
     {
-        if (_options.RequireTenantId)
+        if (_options.Tenancy == Tenancy.Shared)
         {
             var tenantId = _tenantContextProvider.GetTenantIdRequired();
             LawnDartNames.ValidateTenantId(tenantId, "tenantId", _options.ValidateNames);
             return StreamId.For(tenantId, typeof(T).Name, id.ToString());
         }
 
-        var optionalTenant = _tenantContextProvider.GetTenantId();
-        return optionalTenant != null
-            ? StreamId.For(optionalTenant, typeof(T).Name, id.ToString())
+        return _options.SingleTenantId is not null
+            ? StreamId.For(_options.SingleTenantId, typeof(T).Name, id.ToString())
             : StreamId.For(typeof(T).Name, id.ToString());
     }
 

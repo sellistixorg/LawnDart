@@ -1,3 +1,4 @@
+using LawnDart.EventSourcing.EventStore;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using System.Security.Authentication;
@@ -53,10 +54,16 @@ public sealed partial class PostgresEventStore
         return new EventLogQueryResult(read.Events) { TypesResolved = read.TypesResolved };
     }
 
-    async IAsyncEnumerable<RecordedEvent> IEventLog.ReadByQueryStreamAsync(
+    IAsyncEnumerable<RecordedEvent> IEventLog.ReadByQueryStreamAsync(
+        Query query, long? fromSequencePosition, long? toSequencePosition, DateTime? toCommitTimestamp, CancellationToken cancellationToken)
+    {
+        AppendTenantRules.ValidateQuery(query, _options.Tenancy, _options.SingleTenantId, _options.ValidateNames);
+        return ReadByQueryStreamCoreAsync(query, fromSequencePosition, toSequencePosition, toCommitTimestamp, cancellationToken);
+    }
+
+    private async IAsyncEnumerable<RecordedEvent> ReadByQueryStreamCoreAsync(
         Query query, long? fromSequencePosition, long? toSequencePosition, DateTime? toCommitTimestamp, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(query);
         var read = await ReadQueryCoreAsync(query, fromSequencePosition, limit: null, toSequencePosition, toCommitTimestamp, cancellationToken).ConfigureAwait(false);
         foreach (var row in read.Events)
         {
@@ -68,7 +75,7 @@ public sealed partial class PostgresEventStore
     async Task<long> IEventLog.GetMaxSequencePositionAsync(
         Query query, long? fromSequencePosition, long? toSequencePosition, DateTime? toCommitTimestamp, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(query);
+        var tenantId = AppendTenantRules.ValidateQuery(query, _options.Tenancy, _options.SingleTenantId, _options.ValidateNames);
         var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var connectionDisposal = connection.ConfigureAwait(false);
         // The limit comes first. A name stored after it is not part of this read,
@@ -77,7 +84,7 @@ public sealed partial class PostgresEventStore
         var to = Cap(toSequencePosition, head);
         await EnsureQueryTypesResolvedAsync(query, cancellationToken).ConfigureAwait(false);
         var built = PostgresQuerySql.Build(
-            _names, query, _eventTypes.FindId, fromSequencePosition, to, toCommitTimestamp, limit: null, PostgresQuerySql.Mode.MaxSequence);
+            _names, query, _eventTypes.FindId, tenantId, fromSequencePosition, to, toCommitTimestamp, limit: null, PostgresQuerySql.Mode.MaxSequence);
         if (built.ShortCircuited)
             return 0L;
 
@@ -176,6 +183,8 @@ public sealed partial class PostgresEventStore
             throw new InvalidOperationException("PollOnlyInterval cannot be negative.");
 
         filter ??= EventSubscriptionFilter.All();
+        if (filter.Kind == EventSubscriptionScope.Query)
+            AppendTenantRules.ValidateQuery(filter.Query!, _options.Tenancy, _options.SingleTenantId, _options.ValidateNames);
         _listener.AddUser();
         var handle = new PostgresSubscriptionHandle(
             subscriberId,
@@ -204,8 +213,13 @@ public sealed partial class PostgresEventStore
         long lastDelivered = handle.FromSequence - 1;
         var batch = _options.SubscriptionBatchSize;
         var query = handle.Filter.Kind == EventSubscriptionScope.Query
-            ? handle.Filter.Query ?? Query.All()
-            : Query.All();
+            ? handle.Filter.Query ?? Query.ForAllTenants()
+            : Query.ForAllTenants();
+        var matchFilter = _options.Tenancy == Tenancy.Single
+            && handle.Filter.Kind == EventSubscriptionScope.Query
+            && handle.Filter.Query?.TenantId is not null
+            ? EventSubscriptionFilter.ForQuery(StripTenantForSingle(handle.Filter.Query))
+            : handle.Filter;
 
         try
         {
@@ -236,7 +250,7 @@ public sealed partial class PostgresEventStore
                             break;
                         if (frame.SequencePosition <= lastDelivered)
                             continue;
-                        if (handle.Filter.Matches(frame))
+                        if (matchFilter.Matches(frame))
                         {
                             await handle.WriteAsync(frame, cancellation).ConfigureAwait(false);
                             delivered++;
@@ -299,6 +313,9 @@ public sealed partial class PostgresEventStore
             await handle.DisposeAsync().ConfigureAwait(false);
         }
     }
+
+    private static Query StripTenantForSingle(Query query)
+        => query.Items.Count == 0 ? Query.All() : Query.FromItems(query.Items);
 
     private const int MaxConnectionLossAttempts = 8;
 
@@ -425,7 +442,7 @@ public sealed partial class PostgresEventStore
         DateTime? toCommitTimestamp,
         CancellationToken cancellationToken)
     {
-        var tenant = TenantKey.ForStream(streamId);
+        var tenant = TenantKey.ForStream(streamId, _options.Tenancy, _options.SingleTenantId);
         var sql = $"""
             SELECT {PostgresQuerySql.EventColumns}
             FROM {_names.Events} e
@@ -460,6 +477,7 @@ public sealed partial class PostgresEventStore
         DateTime? toCommitTimestamp,
         CancellationToken cancellationToken)
     {
+        var tenantId = AppendTenantRules.ValidateQuery(query, _options.Tenancy, _options.SingleTenantId, _options.ValidateNames);
         var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var connectionDisposal = connection.ConfigureAwait(false);
         // The limit comes first. A name stored after it is not part of this read,
@@ -468,7 +486,7 @@ public sealed partial class PostgresEventStore
         var to = Cap(toSequencePosition, head);
         var typesResolved = await EnsureQueryTypesResolvedAsync(query, cancellationToken).ConfigureAwait(false);
         var built = PostgresQuerySql.Build(
-            _names, query, _eventTypes.FindId, fromSequencePosition, to, toCommitTimestamp, limit, PostgresQuerySql.Mode.Events);
+            _names, query, _eventTypes.FindId, tenantId, fromSequencePosition, to, toCommitTimestamp, limit, PostgresQuerySql.Mode.Events);
         if (built.ShortCircuited)
             return new QueryRead([], typesResolved);
 
@@ -610,7 +628,7 @@ public sealed partial class PostgresEventStore
         var prefix = StreamPageToken.Normalize(filter?.Prefix);
         var tag = StreamPageToken.Normalize(filter?.Tag?.ToString());
         var aggregateType = StreamPageToken.Normalize(filter?.AggregateType);
-        var tenant = prefix is null ? null : TenantKey.ForPrefix(prefix);
+        var tenant = prefix is null ? null : TenantKey.ForPrefix(prefix, _options.Tenancy, _options.SingleTenantId);
 
         var sql = new StringBuilder();
         var parameters = new List<NpgsqlParameter>
@@ -717,7 +735,7 @@ public sealed partial class PostgresEventStore
             new("prefix", LikePrefix(prefix))
         };
         var where = "WHERE stream_id LIKE @prefix ESCAPE '\\'";
-        var tenant = TenantKey.ForPrefix(prefix);
+        var tenant = TenantKey.ForPrefix(prefix, _options.Tenancy, _options.SingleTenantId);
         if (tenant is not null)
         {
             where += " AND tenant_id = @tenant";

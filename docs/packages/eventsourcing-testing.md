@@ -20,6 +20,7 @@ LawnDart API, so a store outside this repository runs it the same way.
 | `DcbAppendRaceContractTests` | Conditional appends that start at the same moment: exactly one may win |
 | `AggregateEventTagContractTests` | Aggregate saves write each event with its own tags |
 | `RepositoryTenantContractTests` | Tenant tags and tenant checks through the repositories |
+| `TenancyContractTests` | Tenancy modes (`Single`, `Shared`, `Isolated`), `SingleTenantId`, `Query.ForTenant`, and `Query.ForAllTenants` |
 | `StreamRegistryContractTests` | The stream registry: stream metadata, aggregate types, tags, prefixes |
 | `StreamListContractTests` | Stream listing: order, filters, page tokens |
 | `SubscriptionContractTests` | Live subscriptions, when the store has them |
@@ -52,7 +53,8 @@ public sealed class MyStoreBackend : IContractBackend
     {
         var store = new MyEventStore(
             database: options.SchemaName,
-            requireTenantId: options.RequireTenantId,
+            tenancy: options.Tenancy,
+            singleTenantId: options.SingleTenantId,
             session: options.CreateSession());
 
         return Task.FromResult(new ContractEventStore
@@ -92,7 +94,7 @@ Add one class like the last two for each suite in the table. Run them with
   `ContractStoreOptions.SchemaName`. Use it as a schema, a database, a key
   prefix, or anything else that separates the data. Two opens with the same
   name should reach the same data when your store can do that.
-- **Honor the options that apply.** `RequireTenantId`, `ValidateNames` and
+- **Honor the options that apply.** `Tenancy`, `SingleTenantId`, `ValidateNames` and
   `EnableRegistry` change what the store accepts. If the store has live
   subscriptions, also honor `SubscriptionPollInterval`,
   `SubscriptionBatchSize` and `SubscriptionChannelCapacity`. If it can turn

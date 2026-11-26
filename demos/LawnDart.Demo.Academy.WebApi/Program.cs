@@ -36,7 +36,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddLawnDart(opts =>
 {
-    opts.RequireTenantId = false;
+    opts.Tenancy = Tenancy.Single;
     opts.EnableAuthorization = false;
 });
 
@@ -69,7 +69,7 @@ if (useSql)
     ctx.UseSqlServer(opts =>
         {
             opts.ConnectionString = connectionString;
-            opts.RequireTenantId = false;
+            opts.Tenancy = Tenancy.Single;
             opts.EnableOutbox = true;
         })
         .WithProjections(

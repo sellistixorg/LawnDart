@@ -88,36 +88,38 @@ public sealed class PostgresPhase1Tests
     [Fact]
     public async Task MissingTenant_StoresDefault_AndPrefixStoresThePrefix()
     {
-        var opened = await OpenAsync(requireTenantId: false);
+        var single = await OpenAsync(Tenancy.Single);
+        var shared = await OpenAsync(Tenancy.Shared);
         var bare = "Order:" + Guid.NewGuid().ToString("N");
         var prefixed = "acme:Order:" + Guid.NewGuid().ToString("N");
         var emptyPrefix = ":order:" + Guid.NewGuid().ToString("N");
-        await opened.Store.AppendAsync(StreamId.Parse(bare), [ContractEvent.Tick()]);
-        await opened.Store.AppendAsync(StreamId.Parse(prefixed), [ContractEvent.Tick()]);
+        await single.Store.AppendAsync(StreamId.Parse(bare), [ContractEvent.Tick()]);
+        await shared.Store.AppendAsync(StreamId.Parse(prefixed), [ContractEvent.Tick()]);
 
-        Assert.Equal("default", await TenantOfAsync(opened.SchemaName, bare));
-        Assert.Equal("acme", await TenantOfAsync(opened.SchemaName, prefixed));
+        Assert.Equal("default", await TenantOfAsync(single.SchemaName, bare));
+        Assert.Equal("acme", await TenantOfAsync(shared.SchemaName, prefixed));
         Assert.False(StreamId.TryParse(emptyPrefix, out _));
 
-        var bareMeta = await opened.Store.GetStreamAsync(StreamId.Parse(bare));
+        var bareMeta = await single.Store.GetStreamAsync(StreamId.Parse(bare));
         Assert.Null(bareMeta!.TenantId);
     }
 
     [Fact]
     public async Task DcbReservedStreamId_StoresTenantInTenantColumn()
     {
-        var opened = await OpenAsync(requireTenantId: false);
+        var shared = await OpenAsync(Tenancy.Shared);
+        var single = await OpenAsync(Tenancy.Single);
         var withTenant = StreamId.Dcb("acme");
         var withoutTenant = StreamId.Dcb();
 
-        await opened.Store.AppendAsync(withTenant, [ContractEvent.Tick()]);
-        await opened.Store.AppendAsync(withoutTenant, [ContractEvent.Tick()]);
+        await shared.Store.AppendAsync(withTenant, [ContractEvent.Tick()]);
+        await single.Store.AppendAsync(withoutTenant, [ContractEvent.Tick()]);
 
-        Assert.Equal("acme", await TenantOfAsync(opened.SchemaName, withTenant.ToString()));
-        Assert.Equal("default", await TenantOfAsync(opened.SchemaName, withoutTenant.ToString()));
+        Assert.Equal("acme", await TenantOfAsync(shared.SchemaName, withTenant.ToString()));
+        Assert.Equal("default", await TenantOfAsync(single.SchemaName, withoutTenant.ToString()));
 
-        var withTenantMeta = await opened.Store.GetStreamAsync(withTenant);
-        var withoutTenantMeta = await opened.Store.GetStreamAsync(withoutTenant);
+        var withTenantMeta = await shared.Store.GetStreamAsync(withTenant);
+        var withoutTenantMeta = await single.Store.GetStreamAsync(withoutTenant);
         Assert.Equal("acme", withTenantMeta!.TenantId);
         Assert.Null(withoutTenantMeta!.TenantId);
     }
@@ -146,7 +148,7 @@ public sealed class PostgresPhase1Tests
     [Fact]
     public async Task StreamRead_PlanTouchesOneHashBucket_AndGlobalReadIsOrdered()
     {
-        var opened = await OpenAsync(requireTenantId: false);
+        var opened = await OpenAsync(Tenancy.Shared);
         var streams = new[]
         {
             "aa:Order:" + Guid.NewGuid().ToString("N"),
@@ -180,7 +182,7 @@ public sealed class PostgresPhase1Tests
 
         Assert.Equal(1, hits);
 
-        var read = await opened.Log.ReadByQueryAsync(Query.All());
+        var read = await opened.Log.ReadByQueryAsync(Query.ForAllTenants());
         var positions = read.Events.Select(e => e.SequencePosition).ToList();
         Assert.Equal(positions.Order(), positions);
     }
@@ -188,7 +190,7 @@ public sealed class PostgresPhase1Tests
     [Fact]
     public async Task LosingAppend_DoesNotTakeASequenceNumber()
     {
-        var opened = await OpenAsync(requireTenantId: false);
+        var opened = await OpenAsync(Tenancy.Single);
         var stream = "Order:" + Guid.NewGuid().ToString("N");
         await opened.Store.AppendAsync(StreamId.Parse(stream), [ContractEvent.Tick()]);
         var before = await SequenceValueAsync(opened.SchemaName);
@@ -200,7 +202,7 @@ public sealed class PostgresPhase1Tests
     [Fact]
     public async Task KilledWriter_ReleasesTheReadHorizon()
     {
-        var opened = await OpenAsync(requireTenantId: false);
+        var opened = await OpenAsync(Tenancy.Single);
         await opened.Store.AppendAsync(StreamId.Parse("test:s1"), [ContractEvent.Tick()]);
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -219,7 +221,7 @@ public sealed class PostgresPhase1Tests
     [Fact]
     public async Task SequenceJump_IsPassedWhenNoWriterIsOpen()
     {
-        var opened = await OpenAsync(requireTenantId: false);
+        var opened = await OpenAsync(Tenancy.Single);
         var stream = "Order:" + Guid.NewGuid().ToString("N");
         await opened.Store.AppendAsync(StreamId.Parse(stream), [ContractEvent.Tick()]);
         await using var connection = await ConnectAsync();
@@ -242,7 +244,7 @@ public sealed class PostgresPhase1Tests
     [Fact]
     public async Task UnrelatedOpenWrite_HoldsTheHorizonUntilGrace_ThenALateRowIsLogged()
     {
-        var opened = await OpenAsync(requireTenantId: false, grace: TimeSpan.FromMilliseconds(300));
+        var opened = await OpenAsync(Tenancy.Single, grace: TimeSpan.FromMilliseconds(300));
         await using var holder = await ConnectAsync();
         await using var hold = await holder.BeginTransactionAsync();
         await using (var xid = new NpgsqlCommand("SELECT pg_current_xact_id()", holder, hold))
@@ -288,7 +290,7 @@ public sealed class PostgresPhase1Tests
     [Fact]
     public async Task DcbCheck_SeesTheAppendThatHeldTheTagLock()
     {
-        var opened = await OpenAsync(requireTenantId: false);
+        var opened = await OpenAsync(Tenancy.Single);
         var tag = LawnDart.EventStore.Tag.Parse("tag:" + Guid.NewGuid().ToString("N"));
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -308,7 +310,7 @@ public sealed class PostgresPhase1Tests
     [Fact]
     public async Task TypesOnlyCondition_BlocksOtherAppends()
     {
-        var opened = await OpenAsync(requireTenantId: false);
+        var opened = await OpenAsync(Tenancy.Single);
         await opened.Store.AppendAsync(StreamId.Parse("test:seed"), [new ContractAnotherEvent(Guid.NewGuid(), DateTime.UtcNow)]);
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -328,7 +330,7 @@ public sealed class PostgresPhase1Tests
     [Fact]
     public async Task Payloads_RoundTripBinaryJsonAndReorderedKeys()
     {
-        var opened = await OpenAsync(requireTenantId: false);
+        var opened = await OpenAsync(Tenancy.Single);
         var nul = Encoding.UTF8.GetBytes("{\"note\":\"a\\u0000b\"}");
         var binary = new byte[] { 1, 2, 0, 3 };
         var stream = "Order:" + Guid.NewGuid().ToString("N");
@@ -372,7 +374,7 @@ public sealed class PostgresPhase1Tests
     [Fact]
     public async Task CaseSensitiveStreamIds_StaySeparate()
     {
-        var opened = await OpenAsync(requireTenantId: false);
+        var opened = await OpenAsync(Tenancy.Shared);
         var id = Guid.NewGuid().ToString("N");
         await opened.Store.AppendAsync(StreamId.Parse($"acme:Order:{id}"), [ContractEvent.Tick()]);
         await opened.Store.AppendAsync(StreamId.Parse($"acme:order:{id}"), [ContractEvent.Tick()]);
@@ -383,7 +385,7 @@ public sealed class PostgresPhase1Tests
     [Fact]
     public async Task Stress_CommittedEventsAreSeenOnceInOrder()
     {
-        var opened = await OpenAsync(requireTenantId: false);
+        var opened = await OpenAsync(Tenancy.Shared);
         var duration = string.Equals(Environment.GetEnvironmentVariable("LAWNDART_PG_STRESS"), "long", StringComparison.OrdinalIgnoreCase)
             ? TimeSpan.FromSeconds(15)
             : TimeSpan.FromSeconds(2);
@@ -426,7 +428,7 @@ public sealed class PostgresPhase1Tests
     [Fact]
     public async Task LostReply_AfterTheStatementIsSent_ReturnsTheLandedAppend()
     {
-        var opened = await OpenAsync(requireTenantId: false);
+        var opened = await OpenAsync(Tenancy.Single);
         var store = (PostgresEventStore)opened.Store;
         var attempts = 0;
         store.AfterAppendStatement = _ =>
@@ -445,7 +447,7 @@ public sealed class PostgresPhase1Tests
     [Fact]
     public async Task DcbAppends_CrossMatchingTags_OneWins()
     {
-        var opened = await OpenAsync(requireTenantId: false);
+        var opened = await OpenAsync(Tenancy.Single);
         await HoldCrossTagsAsync(
             opened,
             writeTag: "left:" + Guid.NewGuid().ToString("N"),
@@ -459,7 +461,7 @@ public sealed class PostgresPhase1Tests
     [Fact]
     public async Task TagConditionDcb_AndTypesOnlyDcb_OneWins()
     {
-        var opened = await OpenAsync(requireTenantId: false);
+        var opened = await OpenAsync(Tenancy.Single);
         var typeName = "backend-contract.test-event";
         var writtenByTypesOnly = LawnDart.EventStore.Tag.Parse("types:" + Guid.NewGuid().ToString("N"));
         var checkedByTagCondition = "tag:" + Guid.NewGuid().ToString("N");
@@ -500,7 +502,7 @@ public sealed class PostgresPhase1Tests
     [Fact]
     public async Task MixedCondition_TypeItemPlusTag_WaitsForAnOpenAppend()
     {
-        var opened = await OpenAsync(requireTenantId: false);
+        var opened = await OpenAsync(Tenancy.Single);
         var tag = LawnDart.EventStore.Tag.Parse("mix:" + Guid.NewGuid().ToString("N"));
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -522,7 +524,7 @@ public sealed class PostgresPhase1Tests
     [Fact]
     public async Task LostReply_WhenCancelledAfterSend_DoesNotSurfaceCancellation()
     {
-        var opened = await OpenAsync(requireTenantId: false);
+        var opened = await OpenAsync(Tenancy.Single);
         var store = (PostgresEventStore)opened.Store;
         store.AfterAppendStatement = _ =>
             throw new OperationCanceledException("cancelled after the statement was sent");
@@ -540,7 +542,7 @@ public sealed class PostgresPhase1Tests
     [Fact]
     public async Task LostReply_WhenReadBackFails_ThrowsUnknown_AndDoesNotRetry()
     {
-        var opened = await OpenAsync(requireTenantId: false);
+        var opened = await OpenAsync(Tenancy.Single);
         var store = (PostgresEventStore)opened.Store;
         var attempts = 0;
         store.FailAppendReadBack = true;
@@ -571,7 +573,7 @@ public sealed class PostgresPhase1Tests
     [Fact]
     public async Task AppRole_CannotCreateTables_AndCanReadTheGapFunctions()
     {
-        var opened = await OpenAsync(requireTenantId: false);
+        var opened = await OpenAsync(Tenancy.Single);
         await using var app = await ConnectAsync();
         var ex = await Assert.ThrowsAsync<PostgresException>(async () =>
         {
@@ -598,7 +600,7 @@ public sealed class PostgresPhase1Tests
     [Fact]
     public async Task StreamId_LongerThan255_Throws()
     {
-        var opened = await OpenAsync(requireTenantId: false);
+        var opened = await OpenAsync(Tenancy.Single);
         var ok = StreamId.Parse("a:" + new string('a', 253));
         Assert.Equal(255, ok.ToString().Length);
         await opened.Store.AppendAsync(ok, [ContractEvent.Tick()]);
@@ -612,7 +614,7 @@ public sealed class PostgresPhase1Tests
     public async Task TwoContexts_GetSeparateSchemas()
     {
         var services = new ServiceCollection();
-        services.AddLawnDart(o => o.RequireTenantId = false);
+        services.AddLawnDart(o => o.Tenancy = Tenancy.Shared);
         services.AddBoundedContext("ordering")
             .UsePostgres(o => o.ConnectionString = _fixture.AdminConnectionString)
             .WithEventTypes<ContractTick>();
@@ -653,7 +655,7 @@ public sealed class PostgresPhase1Tests
     {
         var context = "p" + Guid.NewGuid().ToString("N");
         var services = new ServiceCollection();
-        services.AddLawnDart(o => o.RequireTenantId = false);
+        services.AddLawnDart(o => o.Tenancy = Tenancy.Shared);
         services.AddBoundedContext(context)
             .WithEventTypes(typeof(CounterCreated))
             .PublishEvents(events => events.Translate<CounterCreated, BrokenPostgresNotice>(_ =>
@@ -661,7 +663,7 @@ public sealed class PostgresPhase1Tests
             .UsePostgres(o =>
             {
                 o.ConnectionString = _fixture.AdminConnectionString;
-                o.RequireTenantId = false;
+                o.Tenancy = Tenancy.Shared;
             });
         await using var provider = services.BuildServiceProvider();
         var store = (PostgresEventStore)provider.GetRequiredKeyedService<IEventStore>(context);
@@ -680,7 +682,7 @@ public sealed class PostgresPhase1Tests
     [Fact]
     public async Task FirstRead_StartsFromCommittedHead_WithoutScanningFromZero()
     {
-        var opened = await OpenAsync(requireTenantId: false);
+        var opened = await OpenAsync(Tenancy.Shared);
         var stream = Stream("acme");
         var batch = Enumerable.Range(0, 200).Select(_ => ContractEvent.Tick()).ToArray();
         await opened.Store.AppendAsync(stream, batch);
@@ -710,7 +712,7 @@ public sealed class PostgresPhase1Tests
             {
                 ConnectionString = _fixture.ConnectionString,
                 SchemaName = opened.SchemaName,
-                RequireTenantId = false
+                Tenancy = Tenancy.Shared
             });
         var sampledMarks = new List<long>();
         fresh.Horizon.OnSampleRead = sampledMarks.Add;
@@ -720,7 +722,7 @@ public sealed class PostgresPhase1Tests
         Assert.Equal(expectedHead, fresh.Horizon.Mark);
         Assert.DoesNotContain(0L, sampledMarks);
 
-        var read = await ((IEventLog)fresh).ReadByQueryAsync(Query.All());
+        var read = await ((IEventLog)fresh).ReadByQueryAsync(Query.ForAllTenants());
         Assert.Equal(220, read.Events.Count);
         Assert.Equal(expectedHead, read.Events[^1].SequencePosition);
     }
@@ -728,7 +730,7 @@ public sealed class PostgresPhase1Tests
     [Fact]
     public async Task FirstRead_DoesNotSkipPausedConcurrentAppend_AndResumesInOrder()
     {
-        var opened = await OpenAsync(requireTenantId: false, grace: TimeSpan.FromSeconds(10));
+        var opened = await OpenAsync(Tenancy.Single, grace: TimeSpan.FromSeconds(10));
         await opened.Store.AppendAsync(StreamId.Parse("test:seed"), [ContractEvent.Tick(), ContractEvent.Tick(), ContractEvent.Tick()]);
         await using (var connection = await ConnectAsync())
         await using (var setval = new NpgsqlCommand(
@@ -754,7 +756,7 @@ public sealed class PostgresPhase1Tests
             {
                 ConnectionString = _fixture.ConnectionString,
                 SchemaName = opened.SchemaName,
-                RequireTenantId = false,
+                Tenancy = Tenancy.Single,
                 ReadHorizonGracePeriod = TimeSpan.FromSeconds(10)
             });
         var sampledMarks = new List<long>();
@@ -781,7 +783,7 @@ public sealed class PostgresPhase1Tests
     [Fact]
     public async Task FirstRead_WithActiveConcurrentWriters_NeverSkipsCommittedEvents()
     {
-        var opened = await OpenAsync(requireTenantId: false, grace: TimeSpan.FromSeconds(10));
+        var opened = await OpenAsync(Tenancy.Single, grace: TimeSpan.FromSeconds(10));
         for (var i = 0; i < 50; i++)
             await opened.Store.AppendAsync(StreamId.Parse("seed:" + i), [ContractEvent.Tick()]);
 
@@ -809,7 +811,7 @@ public sealed class PostgresPhase1Tests
                 {
                     ConnectionString = _fixture.ConnectionString,
                     SchemaName = opened.SchemaName,
-                    RequireTenantId = false,
+                    Tenancy = Tenancy.Single,
                     ReadHorizonGracePeriod = TimeSpan.FromSeconds(10)
                 });
             var head = await fresh.GetCurrentSequenceAsync();
@@ -831,7 +833,7 @@ public sealed class PostgresPhase1Tests
             {
                 ConnectionString = _fixture.ConnectionString,
                 SchemaName = opened.SchemaName,
-                RequireTenantId = false
+                Tenancy = Tenancy.Single
             });
         var finalHead = await finalReader.GetCurrentSequenceAsync();
         var maxCommitted = committed.Keys.Max();
@@ -843,7 +845,7 @@ public sealed class PostgresPhase1Tests
     [Fact]
     public async Task FirstRead_HeldPastGrace_AdvancesWithWarning_AndLogsLateRow()
     {
-        var opened = await OpenAsync(requireTenantId: false, grace: TimeSpan.FromMilliseconds(250));
+        var opened = await OpenAsync(Tenancy.Single, grace: TimeSpan.FromMilliseconds(250));
         await opened.Store.AppendAsync(StreamId.Parse("test:seed"), [ContractEvent.Tick(), ContractEvent.Tick()]);
 
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -860,7 +862,7 @@ public sealed class PostgresPhase1Tests
             {
                 ConnectionString = _fixture.ConnectionString,
                 SchemaName = opened.SchemaName,
-                RequireTenantId = false,
+                Tenancy = Tenancy.Single,
                 ReadHorizonGracePeriod = TimeSpan.FromMilliseconds(250)
             },
             logger: logger);
@@ -880,7 +882,7 @@ public sealed class PostgresPhase1Tests
     [Fact]
     public async Task FirstRead_Subscription_DeliversHiddenCommitWithoutBackupPoll()
     {
-        var opened = await OpenAsync(requireTenantId: false);
+        var opened = await OpenAsync(Tenancy.Single);
         await opened.Store.AppendAsync(StreamId.Parse("test:seed"), [ContractEvent.Tick()]);
         await using (var connection = await ConnectAsync())
         await using (var setval = new NpgsqlCommand(
@@ -908,7 +910,7 @@ public sealed class PostgresPhase1Tests
             {
                 ConnectionString = _fixture.ConnectionString,
                 SchemaName = opened.SchemaName,
-                RequireTenantId = false,
+                Tenancy = Tenancy.Single,
                 BackupPollInterval = TimeSpan.FromSeconds(30),
                 PollOnlyInterval = TimeSpan.FromSeconds(30),
                 ReadHorizonGracePeriod = TimeSpan.FromMinutes(5)
@@ -983,7 +985,7 @@ public sealed class PostgresPhase1Tests
     {
         var head = await opened.Store.GetCurrentSequenceAsync();
         var expected = committed.Keys.Where(position => position <= head).Order().ToArray();
-        var read = await opened.Log.ReadByQueryAsync(Query.All(), toSequencePosition: head);
+        var read = await opened.Log.ReadByQueryAsync(Query.ForAllTenants(), toSequencePosition: head);
         var positions = read.Events.Select(e => e.SequencePosition).ToArray();
         Assert.Equal(positions.Order(), positions);
         Assert.Equal(positions.Length, positions.Distinct().Count());
@@ -1010,9 +1012,9 @@ public sealed class PostgresPhase1Tests
         await Assert.ThrowsAsync<ConcurrencyException>(() => waiter.WaitAsync(TimeSpan.FromSeconds(15)));
     }
 
-    private async Task<ContractEventStore> OpenAsync(bool requireTenantId = false, TimeSpan? grace = null)
+    private async Task<ContractEventStore> OpenAsync(Tenancy tenancy = Tenancy.Shared, TimeSpan? grace = null)
         => await _fixture.Backend.OpenEventStoreAsync(ContractStores.Isolated(
-            requireTenantId: requireTenantId,
+            tenancy: tenancy,
             readHorizonGracePeriod: grace));
 
     private async Task<NpgsqlConnection> ConnectAsync()
@@ -1098,7 +1100,7 @@ public sealed class PostgresRegistrationTests
     public void UsePostgres_NamedContext_UsesThatNameAsTheSchema()
     {
         var services = new ServiceCollection();
-        services.AddLawnDart(o => o.RequireTenantId = false);
+        services.AddLawnDart(o => o.Tenancy = Tenancy.Shared);
         services.AddBoundedContext("ordering").UsePostgres(o =>
             o.ConnectionString = "Host=localhost;Username=u;Password=p;Database=lawndart");
         services.AddBoundedContext("default").UsePostgres(o =>

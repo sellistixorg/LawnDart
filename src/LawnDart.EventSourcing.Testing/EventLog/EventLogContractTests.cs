@@ -22,7 +22,7 @@ public abstract class EventLogContractTests : ContractSuite
     [Fact]
     public async Task HostWithoutEventClasses_CanReadFilterAndCopy()
     {
-        var log = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Log;
+        var log = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Log;
         var payload = Encoding.UTF8.GetBytes("""{"kind":"foreign","n":1}""");
         var metadata = Encoding.UTF8.GetBytes("""{"UserId":"log-only"}""");
         var streamId = Unique("no-clr");
@@ -39,10 +39,10 @@ public abstract class EventLogContractTests : ContractSuite
         Assert.Equal(1, recorded.SchemaVersion);
         Assert.Contains("order:outside", recorded.Tags.Select(static t => t.ToString()).ToArray());
 
-        var byToken = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByType(OutsideEventName)));
+        var byToken = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByType(OutsideEventName)).ForTenant("log-contract"));
         Assert.Contains(byToken.Events, e => e.SequencePosition == recorded.SequencePosition);
 
-        var byTag = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse("order:outside"))));
+        var byTag = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse("order:outside"))).ForTenant("log-contract"));
         Assert.Contains(byTag.Events, e => e.SequencePosition == recorded.SequencePosition);
 
         await log.AppendAsync(
@@ -65,7 +65,7 @@ public abstract class EventLogContractTests : ContractSuite
     [Fact]
     public async Task AppendRead_SamePayloadWithoutHydrate()
     {
-        var log = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Log;
+        var log = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Log;
         var payload = Encoding.UTF8.GetBytes("""{"value":"round-trip"}""");
         var streamId = Unique("payload");
 
@@ -79,7 +79,7 @@ public abstract class EventLogContractTests : ContractSuite
     [Fact]
     public async Task Query_TokenAndTags_WithoutHydrate()
     {
-        var log = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Log;
+        var log = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Log;
         var streamId = Unique("query");
         await log.AppendAsync(
             StreamId.Parse(streamId),
@@ -89,22 +89,22 @@ public abstract class EventLogContractTests : ContractSuite
                 new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("3"), tags: [Tag.Parse("tag:keep")])
             ]);
 
-        var byToken = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByType(OutsideEventName)));
+        var byToken = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByType(OutsideEventName)).ForTenant("log-contract"));
         Assert.Equal(2, byToken.Events.Count(e => e.StreamId.ToString() == streamId));
         Assert.All(byToken.Events.Where(e => e.StreamId.ToString() == streamId), e => Assert.Equal(OutsideEventName, e.EventType));
 
-        var byTag = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse("tag:keep"))));
+        var byTag = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse("tag:keep"))).ForTenant("log-contract"));
         Assert.Equal(2, byTag.Events.Count(e => e.StreamId.ToString() == streamId));
         Assert.All(byTag.Events.Where(e => e.StreamId.ToString() == streamId), e => Assert.Contains(Tag.Parse("tag:keep"), e.Tags));
 
-        var max = await log.GetMaxSequencePositionAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse("tag:keep"))));
+        var max = await log.GetMaxSequencePositionAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse("tag:keep"))).ForTenant("log-contract"));
         Assert.Equal(byTag.Events.Max(e => e.SequencePosition), max);
     }
 
     [Fact]
     public async Task TypedAdapter_RegisteredType_StillRoundTrips()
     {
-        var log = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Log;
+        var log = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Log;
         var catalog = MapCatalog.For<ContractTick>("log-contract.tick");
         var adapter = new EventStoreAdapter(log, new EventSession(new JsonEventSerializer(), catalog));
         var streamId = Unique("typed");
@@ -121,7 +121,7 @@ public abstract class EventLogContractTests : ContractSuite
     [Fact]
     public async Task TypedAdapter_UnregisteredEventName_Throws()
     {
-        var log = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Log;
+        var log = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Log;
         var streamId = Unique("unknown");
         await log.AppendAsync(StreamId.Parse(streamId), [new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("{}"))]);
 
@@ -138,7 +138,7 @@ public abstract class EventLogContractTests : ContractSuite
     [Fact]
     public async Task TypedAdapter_StoredPayloadFormatDiffers_Throws()
     {
-        var log = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Log;
+        var log = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Log;
         var streamId = Unique("ctype");
         await log.AppendAsync(
             StreamId.Parse(streamId),
@@ -160,7 +160,7 @@ public abstract class EventLogContractTests : ContractSuite
     [Fact]
     public async Task Append_CodecId2_ReadsCodecId2()
     {
-        var log = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Log;
+        var log = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Log;
         var streamId = Unique("codec2");
         await log.AppendAsync(
             StreamId.Parse(streamId),
@@ -173,7 +173,7 @@ public abstract class EventLogContractTests : ContractSuite
     [Fact]
     public async Task TagQuery_IsOrdinalCaseSensitive()
     {
-        var log = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Log;
+        var log = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Log;
         var streamId = Unique("tag-case");
         var upper = "Customer:ABC:" + Guid.NewGuid().ToString("N");
         var lower = upper.ToLowerInvariant();
@@ -181,19 +181,19 @@ public abstract class EventLogContractTests : ContractSuite
             StreamId.Parse(streamId),
             [new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("{}"), tags: [Tag.Parse(upper)])]);
 
-        var exact = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(upper))));
+        var exact = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(upper))).ForTenant("log-contract"));
         Assert.Contains(exact.Events, e => e.StreamId.ToString() == streamId);
         Assert.True(exact.TypesResolved);
 
-        var otherCase = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(lower))));
+        var otherCase = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(lower))).ForTenant("log-contract"));
         Assert.DoesNotContain(otherCase.Events, e => e.StreamId.ToString() == streamId);
 
         var bothId = Unique("tag-both");
         await log.AppendAsync(
             StreamId.Parse(bothId),
             [new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("{}"), tags: [Tag.Parse(upper), Tag.Parse(lower)])]);
-        var byUpper = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(upper))));
-        var byLower = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(lower))));
+        var byUpper = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(upper))).ForTenant("log-contract"));
+        var byLower = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(lower))).ForTenant("log-contract"));
         Assert.Contains(byUpper.Events, e => e.StreamId.ToString() == bothId);
         Assert.Contains(byLower.Events, e => e.StreamId.ToString() == bothId);
     }
@@ -201,7 +201,7 @@ public abstract class EventLogContractTests : ContractSuite
     [Fact]
     public async Task Subscription_TagQuery_IsOrdinalCaseSensitive()
     {
-        var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
+        var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared));
         var streamId = Unique("tag-sub");
         var upper = "Customer:ABC:" + Guid.NewGuid().ToString("N");
         var lower = upper.ToLowerInvariant();
@@ -213,7 +213,7 @@ public abstract class EventLogContractTests : ContractSuite
         if (opened.Store is not IEventLogSubscriptions subscriptions)
             throw new InvalidOperationException("Store does not subscribe.");
 
-        var exact = Query.FromItems(QueryItem.ByTags(Tag.Parse(upper)));
+        var exact = Query.FromItems(QueryItem.ByTags(Tag.Parse(upper))).ForTenant("log-contract");
         await using (var handle = subscriptions.Subscribe(
             "tag-case-exact-" + Guid.NewGuid().ToString("N"),
             sequence,
@@ -223,7 +223,7 @@ public abstract class EventLogContractTests : ContractSuite
             Assert.Equal(sequence, Assert.Single(received).SequencePosition);
         }
 
-        var other = Query.FromItems(QueryItem.ByTags(Tag.Parse(lower)));
+        var other = Query.FromItems(QueryItem.ByTags(Tag.Parse(lower))).ForTenant("log-contract");
         await using (var handle = subscriptions.Subscribe(
             "tag-case-other-" + Guid.NewGuid().ToString("N"),
             sequence,
@@ -237,7 +237,7 @@ public abstract class EventLogContractTests : ContractSuite
     [Fact]
     public async Task Append_SameEventId_FailsAsAlreadyWritten()
     {
-        var log = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Log;
+        var log = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Log;
         var eventId = Guid.NewGuid();
         var metadata = Encoding.UTF8.GetBytes($$"""{"EventId":"{{eventId}}"}""");
         var first = Unique("event-id");
@@ -254,7 +254,7 @@ public abstract class EventLogContractTests : ContractSuite
     [ContractFact]
     public async Task Append_SameEventId_OnAnotherTenant_FollowsTheBackend()
     {
-        var log = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Log;
+        var log = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Log;
         var eventId = Guid.NewGuid();
         var metadata = Encoding.UTF8.GetBytes($$"""{"EventId":"{{eventId}}"}""");
         var first = "alpha:Order:" + Guid.NewGuid().ToString("N");

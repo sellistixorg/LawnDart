@@ -10,10 +10,10 @@ internal static class PostgresAppendSql
     internal const string BodyMarkerPrefix = "LawnDart:append_to_stream:";
 
     /// <summary>Marker version written into <c>append_to_stream</c>. A later number is a different body.</summary>
-    internal const int BodyMarkerVersion = 1;
+    internal const int BodyMarkerVersion = 2;
 
     /// <summary>Text written into <c>append_to_stream</c> so a later read can tell this body from an older one.</summary>
-    internal const string BodyMarker = BodyMarkerPrefix + "1";
+    internal const string BodyMarker = BodyMarkerPrefix + "2";
 
     internal static string ExpectedProsrc(PostgresNames names, PostgresEventStoreOptions options)
         => PostgresSchemaProbe.DollarBody(CreateFunction(names, options), "$fn$");
@@ -49,6 +49,7 @@ internal static class PostgresAppendSql
                 p_store_lock_key text,
                 p_check_condition boolean,
                 p_condition_all boolean,
+                p_condition_tenant text,
                 p_condition_after bigint,
                 p_item_count int,
                 p_type_items int[],
@@ -103,41 +104,83 @@ internal static class PostgresAppendSql
                 -- writer that committed before these locks were acquired.
                 IF p_check_condition THEN
                     IF p_condition_all THEN
-                        IF EXISTS (
-                            SELECT 1 FROM {names.Events} e
-                            WHERE p_condition_after IS NULL OR e.global_position > p_condition_after
-                        ) THEN
-                            RAISE EXCEPTION 'condition' USING ERRCODE = 'P0001', HINT = 'concurrency', DETAIL = coalesce(p_condition_after::text, '');
-                        END IF;
-                    ELSIF coalesce(p_item_count, 0) > 0 THEN
-                        FOR v_i IN 1 .. p_item_count LOOP
+                        IF p_condition_tenant IS NOT NULL THEN
                             IF EXISTS (
                                 SELECT 1 FROM {names.Events} e
-                                WHERE (p_condition_after IS NULL OR e.global_position > p_condition_after)
-                                  AND (
-                                      NOT (v_i = ANY(coalesce(p_items_with_types, ARRAY[]::int[])))
-                                      OR e.event_type_id IN (
-                                          SELECT t.id FROM unnest(p_type_items, p_type_ids_cond) AS t(item, id) WHERE t.item = v_i
-                                      )
-                                  )
-                                  AND (
-                                      NOT (v_i = ANY(coalesce(p_items_with_tags, ARRAY[]::int[])))
-                                      OR NOT EXISTS (
-                                          SELECT 1
-                                          FROM unnest(p_tag_items, p_tag_values_cond) AS tg(item, tag)
-                                          WHERE tg.item = v_i
-                                            AND NOT EXISTS (
-                                                SELECT 1 FROM {names.Tags} et
-                                                WHERE et.global_position = e.global_position
-                                                  AND et.tenant_id = e.tenant_id
-                                                  AND et.tag = tg.tag
-                                            )
-                                      )
-                                  )
+                                WHERE e.tenant_id = p_condition_tenant
+                                  AND (p_condition_after IS NULL OR e.global_position > p_condition_after)
                             ) THEN
                                 RAISE EXCEPTION 'condition' USING ERRCODE = 'P0001', HINT = 'concurrency', DETAIL = coalesce(p_condition_after::text, '');
                             END IF;
-                        END LOOP;
+                        ELSE
+                            IF EXISTS (
+                                SELECT 1 FROM {names.Events} e
+                                WHERE p_condition_after IS NULL OR e.global_position > p_condition_after
+                            ) THEN
+                                RAISE EXCEPTION 'condition' USING ERRCODE = 'P0001', HINT = 'concurrency', DETAIL = coalesce(p_condition_after::text, '');
+                            END IF;
+                        END IF;
+                    ELSIF coalesce(p_item_count, 0) > 0 THEN
+                        IF p_condition_tenant IS NOT NULL THEN
+                            FOR v_i IN 1 .. p_item_count LOOP
+                                IF EXISTS (
+                                    SELECT 1 FROM {names.Events} e
+                                    WHERE e.tenant_id = p_condition_tenant
+                                      AND (p_condition_after IS NULL OR e.global_position > p_condition_after)
+                                      AND (
+                                          NOT (v_i = ANY(coalesce(p_items_with_types, ARRAY[]::int[])))
+                                          OR e.event_type_id IN (
+                                              SELECT t.id FROM unnest(p_type_items, p_type_ids_cond) AS t(item, id) WHERE t.item = v_i
+                                          )
+                                      )
+                                      AND (
+                                          NOT (v_i = ANY(coalesce(p_items_with_tags, ARRAY[]::int[])))
+                                          OR NOT EXISTS (
+                                              SELECT 1
+                                              FROM unnest(p_tag_items, p_tag_values_cond) AS tg(item, tag)
+                                              WHERE tg.item = v_i
+                                                AND NOT EXISTS (
+                                                    SELECT 1 FROM {names.Tags} et
+                                                    WHERE et.global_position = e.global_position
+                                                      AND et.tenant_id = p_condition_tenant
+                                                      AND et.tag = tg.tag
+                                                )
+                                          )
+                                      )
+                                ) THEN
+                                    RAISE EXCEPTION 'condition' USING ERRCODE = 'P0001', HINT = 'concurrency', DETAIL = coalesce(p_condition_after::text, '');
+                                END IF;
+                            END LOOP;
+                        ELSE
+                            FOR v_i IN 1 .. p_item_count LOOP
+                                IF EXISTS (
+                                    SELECT 1 FROM {names.Events} e
+                                    WHERE (p_condition_after IS NULL OR e.global_position > p_condition_after)
+                                      AND (
+                                          NOT (v_i = ANY(coalesce(p_items_with_types, ARRAY[]::int[])))
+                                          OR e.event_type_id IN (
+                                              SELECT t.id FROM unnest(p_type_items, p_type_ids_cond) AS t(item, id) WHERE t.item = v_i
+                                          )
+                                      )
+                                      AND (
+                                          NOT (v_i = ANY(coalesce(p_items_with_tags, ARRAY[]::int[])))
+                                          OR NOT EXISTS (
+                                              SELECT 1
+                                              FROM unnest(p_tag_items, p_tag_values_cond) AS tg(item, tag)
+                                              WHERE tg.item = v_i
+                                                AND NOT EXISTS (
+                                                    SELECT 1 FROM {names.Tags} et
+                                                    WHERE et.global_position = e.global_position
+                                                      AND et.tenant_id = e.tenant_id
+                                                      AND et.tag = tg.tag
+                                                )
+                                          )
+                                      )
+                                ) THEN
+                                    RAISE EXCEPTION 'condition' USING ERRCODE = 'P0001', HINT = 'concurrency', DETAIL = coalesce(p_condition_after::text, '');
+                                END IF;
+                            END LOOP;
+                        END IF;
                     END IF;
                 END IF;
 

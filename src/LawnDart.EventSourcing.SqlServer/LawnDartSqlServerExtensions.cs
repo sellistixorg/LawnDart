@@ -69,13 +69,17 @@ public static class LawnDartSqlServerExtensions
         var contextName = builder.ContextName;
 
         // Build options eagerly so we can read SchemaName / ConnectionString at registration time.
-        // Copy the name check first so the callback can still override it.
+        // Copy tenancy and name check first so the callback can still override them.
+        var hostOptions = LawnDartNames.ReadOptions(services);
         var options = new SqlServerEventStoreOptions
         {
             ContextName = contextName,
-            ValidateNames = LawnDartNames.IsFormatCheckEnabled(services),
+            Tenancy = hostOptions.Tenancy,
+            SingleTenantId = hostOptions.SingleTenantId,
+            ValidateNames = hostOptions.ValidateNames,
         };
         configure(options);
+        options.EnsureValid();
 
         if (string.IsNullOrWhiteSpace(options.ConnectionString))
             throw new ArgumentException(

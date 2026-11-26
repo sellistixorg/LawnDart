@@ -14,7 +14,7 @@ public class TagQueryWarningTests
     [Fact]
     public async Task Warning_FiresOnce_AndDoesNotChangeResults()
     {
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var logger = new ListLogger();
         var repo = Repository(store, logger, warn: true);
         var id = Guid.NewGuid();
@@ -37,7 +37,7 @@ public class TagQueryWarningTests
     [Fact]
     public async Task Warning_SameBadType_LogsOnceAcrossIds()
     {
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var logger = new ListLogger();
         var repo = Repository(store, logger, warn: true);
         var first = LawnDart.EventStore.Tag.Parse($"Student:{Guid.NewGuid():D}");
@@ -46,7 +46,7 @@ public class TagQueryWarningTests
         await repo.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags([first])));
         await repo.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags([second])));
 
-        var other = Repository(new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false }), logger, warn: true);
+        var other = Repository(new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single }), logger, warn: true);
         await other.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags(Tag.Parse($"Student:{Guid.NewGuid():D}"))));
 
         Assert.Equal(1, logger.WarningsFor(first.ToString()));
@@ -57,7 +57,7 @@ public class TagQueryWarningTests
     [Fact]
     public async Task Warning_Cap_SuppressesFurtherTypes()
     {
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var logger = new ListLogger();
         var repo = Repository(store, logger, warn: true, warnings: new UnknownTagWarningLog(maxTypes: 2));
 
@@ -77,7 +77,7 @@ public class TagQueryWarningTests
     [Fact]
     public async Task Warning_DoesNotFireWhenDisabled()
     {
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var logger = new ListLogger();
         var bad = LawnDart.EventStore.Tag.Parse($"Student:{Guid.NewGuid():D}");
         var quiet = Repository(store, logger, warn: false);
@@ -97,7 +97,7 @@ public class TagQueryWarningTests
     [Fact]
     public async Task Warning_SkipsTagsTheFormatWouldProduce()
     {
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var logger = new ListLogger();
         var repo = Repository(store, logger, warn: true);
         var format = LowercaseTagFormat.Instance;
@@ -114,7 +114,7 @@ public class TagQueryWarningTests
     [Fact]
     public async Task Warning_FiresForGuidFormatN_AndForFailIfMatches()
     {
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var logger = new ListLogger();
         var repo = Repository(store, logger, warn: true);
         var compact = LawnDart.EventStore.Tag.Parse($"student:{Guid.NewGuid():N}");
@@ -136,7 +136,7 @@ public class TagQueryWarningTests
     [Fact]
     public async Task Warning_WhenFormatThrows_DoesNotChangeTheQuery()
     {
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var logger = new ListLogger();
         var repo = Repository(store, logger, warn: true, format: new ThrowingFormat());
         var tag = LawnDart.EventStore.Tag.Parse($"student:{Guid.NewGuid():D}");
@@ -151,7 +151,7 @@ public class TagQueryWarningTests
     [Fact]
     public async Task ProjectorAndReactor_WarnOnce_AndKeepTheirResults()
     {
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var logger = new ListLogger();
         var projectionTag = LawnDart.EventStore.Tag.Parse($"Order:{Guid.NewGuid():D}");
         var reactionTag = $"Payment:{Guid.NewGuid():D}";
@@ -184,7 +184,7 @@ public class TagQueryWarningTests
         var projector = new NotedProjector(bad);
         projector.UseTagFormat(LowercaseTagFormat.Instance, logger, warnOnUnknownTag: false);
 
-        await projector.InitializeFromHistoryAsync(new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false }));
+        await projector.InitializeFromHistoryAsync(new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single }));
 
         Assert.Empty(logger.Warnings);
     }
@@ -199,7 +199,7 @@ public class TagQueryWarningTests
             store,
             new DefaultMetadataProvider(),
             new NullTenant(),
-            Options.Create(new LawnDartOptions { RequireTenantId = false }),
+            Options.Create(new LawnDartOptions { Tenancy = Tenancy.Single }),
             tagProvider: null,
             authorizationService: null,
             logger,

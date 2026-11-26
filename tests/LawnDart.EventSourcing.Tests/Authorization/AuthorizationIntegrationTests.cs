@@ -26,7 +26,7 @@ public class AuthorizationIntegrationTests
         var options = Options.Create(new LawnDartOptions
         {
             EnableAuthorization = true,
-            RequireTenantId = false
+            Tenancy = Tenancy.Single
         });
 
         var authContext = new AuthorizationContext
@@ -70,7 +70,7 @@ public class AuthorizationIntegrationTests
         var options = Options.Create(new LawnDartOptions
         {
             EnableAuthorization = true,
-            RequireTenantId = false
+            Tenancy = Tenancy.Single
         });
 
         var authContext = new AuthorizationContext
@@ -110,7 +110,7 @@ public class AuthorizationIntegrationTests
         var options = Options.Create(new LawnDartOptions
         {
             EnableAuthorization = false, // Disabled
-            RequireTenantId = false
+            Tenancy = Tenancy.Single
         });
 
         // Auth service registered but disabled via options
@@ -155,7 +155,7 @@ public class AuthorizationIntegrationTests
         var options = Options.Create(new LawnDartOptions
         {
             EnableAuthorization = true,
-            RequireTenantId = false
+            Tenancy = Tenancy.Single
         });
 
         var authContext = new AuthorizationContext
@@ -199,7 +199,7 @@ public class AuthorizationIntegrationTests
         var options = Options.Create(new LawnDartOptions
         {
             EnableAuthorization = true,
-            RequireTenantId = false
+            Tenancy = Tenancy.Single
         });
 
         var authContext = new AuthorizationContext
@@ -239,7 +239,7 @@ public class AuthorizationIntegrationTests
         var options = Options.Create(new LawnDartOptions
         {
             EnableAuthorization = true,
-            RequireTenantId = false
+            Tenancy = Tenancy.Single
         });
 
         var authContext = new AuthorizationContext

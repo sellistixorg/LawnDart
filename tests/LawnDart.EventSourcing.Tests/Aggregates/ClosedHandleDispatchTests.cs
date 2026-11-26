@@ -14,11 +14,11 @@ namespace LawnDart.EventSourcing.Tests.Aggregates;
 public class ClosedHandleDispatchTests
 {
     private static IOptions<LawnDartOptions> CreateOptions() =>
-        Options.Create(new LawnDartOptions { RequireTenantId = false });
+        Options.Create(new LawnDartOptions { Tenancy = Tenancy.Single });
 
     private static AggregateRepository CreateRepository() =>
         new(
-            new InMemoryEventStore(),
+            new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single }),
             new DefaultMetadataProvider(),
             new TestTenantContextProvider(),
             CreateOptions());

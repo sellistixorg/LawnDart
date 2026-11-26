@@ -38,10 +38,10 @@ public class InMemoryEventStoreContextNameTests
     {
         var storeA = new InMemoryEventStore(
             contextName: "ordering",
-            options: new InMemoryEventStoreOptions { RequireTenantId = false });
+            options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var storeB = new InMemoryEventStore(
             contextName: "catalog",
-            options: new InMemoryEventStoreOptions { RequireTenantId = false });
+            options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
 
         await storeA.AppendAsync(StreamId.Parse("Order:1"), [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);
         await storeA.AppendAsync(StreamId.Parse("Order:2"), [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);

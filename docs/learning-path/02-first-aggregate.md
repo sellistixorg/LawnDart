@@ -116,7 +116,7 @@ Excerpted from `samples/Library.Host/LibraryHost.cs` and
 `samples/Library.Domain/Handlers.cs`.
 
 ```csharp
-services.AddLawnDart(o => o.RequireTenantId = false);
+services.AddLawnDart(o => o.Tenancy = Tenancy.Single);
 services.AddSingleton<ITenantContextProvider, AmbientTenantContextProvider>();
 var ctx = services.AddBoundedContext("default");
 ctx.UseInMemory();

@@ -83,6 +83,7 @@ public class DcbRepository : IDcbRepository
         _metadataProvider = metadataProvider ?? throw new ArgumentNullException(nameof(metadataProvider));
         _tenantContextProvider = tenantContextProvider ?? throw new ArgumentNullException(nameof(tenantContextProvider));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _options.EnsureValid();
         _eventSourcingOptions = eventSourcingOptions?.Value ?? new EventSourcingOptions();
         _tagProvider = tagProvider;
         _tagFormat = tagFormat;
@@ -305,11 +306,21 @@ public class DcbRepository : IDcbRepository
                 metadata,
                 tagged[0].Event);
 
-            if (_options.RequireTenantId)
+            if (_options.Tenancy == Tenancy.Shared)
             {
-                var tenantId = metadata.TenantId ?? _tenantContextProvider.GetTenantId();
+                var tenantId = eventMetadata.TenantId
+                    ?? metadata.TenantId
+                    ?? _tenantContextProvider.GetTenantId()
+                    ?? condition?.FailIfEventsMatch?.TenantId;
                 if (!string.IsNullOrWhiteSpace(tenantId))
+                {
                     LawnDartNames.ValidateTenantId(tenantId, nameof(commandMetadata), _options.ValidateNames);
+                    eventMetadata.TenantId ??= tenantId;
+                }
+            }
+            else if (_options.SingleTenantId is not null)
+            {
+                eventMetadata.TenantId ??= _options.SingleTenantId;
             }
 
             StreamId? streamId = null;
@@ -317,7 +328,9 @@ public class DcbRepository : IDcbRepository
             {
                 // Use tenant-aware stream ID for DCB. Each append still gets its own stream
                 // until the fixed dcb / {tenant}:dcb stream lands.
-                var tenantId = metadata.TenantId ?? _tenantContextProvider.GetTenantId();
+                var tenantId = _options.Tenancy == Tenancy.Shared
+                    ? metadata.TenantId ?? _tenantContextProvider.GetTenantId()
+                    : _options.SingleTenantId;
                 streamId = tenantId != null
                     ? StreamId.For(tenantId, StreamId.DcbType, Guid.NewGuid().ToString())
                     : StreamId.For(StreamId.DcbType, Guid.NewGuid().ToString());
@@ -637,40 +650,51 @@ public class DcbRepository : IDcbRepository
                 throw new ArgumentException("A decision query tag cannot be empty. Build tags with Tag.Create or Tag.Parse.", nameof(query));
         }
 
-        if (!_eventSourcingOptions.EnforceDcbTenantIsolation)
-            return query;
-
-        if (query.Items.Any(item =>
-                item.Tags?.Any(IsTenantTag) == true))
-            return query;
-
-        var tenantId = _tenantContextProvider.GetTenantId();
-        if (tenantId is null)
+        var result = query;
+        if (_eventSourcingOptions.EnforceDcbTenantIsolation
+            && !query.Items.Any(item => item.Tags?.Any(IsTenantTag) == true))
         {
-            throw new InvalidOperationException(
-                "DCB tenant isolation is enforced, but no tenant tag was provided and ITenantContextProvider did not return a tenant ID. " +
-                "Either provide a tenant tag in the format 'tenant:{id}' or ensure ITenantContextProvider is properly configured.");
-        }
-
-        var tenantTag = Tag.Create("tenant", tenantId);
-        var cloned = new QueryItem[query.Items.Count];
-        for (var i = 0; i < query.Items.Count; i++)
-        {
-            var item = query.Items[i];
-            var tags = item.Tags is { Count: > 0 }
-                ? item.Tags.Append(tenantTag).ToArray()
-                : new[] { tenantTag };
-            cloned[i] = new QueryItem
+            var tenantId = _tenantContextProvider.GetTenantId();
+            if (tenantId is null)
             {
-                Types = item.Types is { Count: > 0 } ? item.Types.ToArray() : item.Types,
-                Tags = tags
-            };
+                throw new InvalidOperationException(
+                    "DCB tenant isolation is enforced, but no tenant tag was provided and ITenantContextProvider did not return a tenant ID. " +
+                    "Either provide a tenant tag in the format 'tenant:{id}' or ensure ITenantContextProvider is properly configured.");
+            }
+
+            var tenantTag = Tag.Create("tenant", tenantId);
+            var cloned = new QueryItem[query.Items.Count];
+            for (var i = 0; i < query.Items.Count; i++)
+            {
+                var item = query.Items[i];
+                var tags = item.Tags is { Count: > 0 }
+                    ? item.Tags.Append(tenantTag).ToArray()
+                    : new[] { tenantTag };
+                cloned[i] = new QueryItem
+                {
+                    Types = item.Types is { Count: > 0 } ? item.Types.ToArray() : item.Types,
+                    Tags = tags
+                };
+            }
+
+            if (_logger is not null)
+                DcbRepositoryLog.TenantTagInjected(_logger, tenantId);
+
+            result = query.AllTenants
+                ? Query.ForAllTenants(cloned)
+                : query.TenantId is not null
+                    ? Query.FromItems(cloned).ForTenant(query.TenantId)
+                    : Query.FromItems(cloned);
         }
 
-        if (_logger is not null)
-            DcbRepositoryLog.TenantTagInjected(_logger, tenantId);
+        if (_options.Tenancy == Tenancy.Shared && result.TenantId is null && !result.AllTenants)
+        {
+            var tenantId = _tenantContextProvider.GetTenantId();
+            if (!string.IsNullOrWhiteSpace(tenantId))
+                result = result.ForTenant(tenantId);
+        }
 
-        return Query.FromItems(cloned);
+        return result;
     }
 
     /// <summary>

@@ -74,7 +74,7 @@ internal sealed class SwapHost : IAsyncDisposable
             ctx.UseSqlServer(o =>
             {
                 o.ConnectionString = connectionString;
-                o.RequireTenantId = false;
+                o.Tenancy = Tenancy.Single;
                 o.SchemaName = "contract";
             }),
             r => r.RegisterForAggregate<Student>(new EventCountSnapshotStrategy(1)))
@@ -113,7 +113,7 @@ internal sealed class SwapHost : IAsyncDisposable
             ctx.UsePostgres(o =>
             {
                 o.ConnectionString = connectionString;
-                o.RequireTenantId = false;
+                o.Tenancy = Tenancy.Single;
                 o.SchemaName = schemaName;
             }),
             r => r.RegisterForAggregate<Student>(new EventCountSnapshotStrategy(1)))
@@ -157,7 +157,7 @@ internal sealed class SwapHost : IAsyncDisposable
         services.AddLogging(b => b.SetMinimumLevel(LogLevel.Warning));
         services.AddLawnDart(o =>
         {
-            o.RequireTenantId = false;
+            o.Tenancy = Tenancy.Single;
             o.EnableAuthorization = false;
         });
         services.AddSingleton<ITenantContextProvider>(new TestTenantContextProvider(null));

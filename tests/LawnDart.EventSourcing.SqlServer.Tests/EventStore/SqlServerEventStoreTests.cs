@@ -31,7 +31,7 @@ public class SqlServerEventStoreTests : IAsyncLifetime
         var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Warning));
         var logger = loggerFactory.CreateLogger<SqlServerEventStore>();
         
-        _eventStore = new SqlServerEventStore(_connectionString, null, _tableName, "Streams", true, new SqlServerEventStoreOptions { RequireTenantId = false }, null, logger);
+        _eventStore = new SqlServerEventStore(_connectionString, null, _tableName, "Streams", true, new SqlServerEventStoreOptions { Tenancy = Tenancy.Shared }, null, logger);
         await _eventStore.InitializeSchemaAsync();
     }
 
@@ -102,7 +102,7 @@ public class SqlServerEventStoreTests : IAsyncLifetime
         var lastCommitted = append.SequencePositions[^1];
         Assert.True(lastCommitted > 100, "Expected CACHE jump to produce a sequence gap before the final append");
 
-        var head = await _eventStore.GetCurrentSequenceAsync();
+        var head = await _eventStore!.GetCurrentSequenceAsync();
         Assert.Equal(lastCommitted, head);
 
         await using (var connection = new SqlConnection(_connectionString))
@@ -151,7 +151,7 @@ public class SqlServerEventStoreTests : IAsyncLifetime
         Assert.Equal(1, reader.GetInt32("SchemaVersion"));
         Assert.Equal(EventCodec.Json, reader.GetByte("CodecId"));
 
-        var stored = Assert.Single(await _eventStore.ReadStreamAsync(StreamId.Parse(streamId)));
+        var stored = Assert.Single(await _eventStore!.ReadStreamAsync(StreamId.Parse(streamId)));
         Assert.NotNull(stored.Metadata.CommitTimestamp);
         Assert.Equal(1, stored.Metadata.SchemaVersion);
     }
@@ -328,7 +328,7 @@ public class SqlServerEventStoreTests : IAsyncLifetime
             _connectionString!,
             tableName: tableName,
             registryTableName: $"Streams_{tableName}",
-            options: new SqlServerEventStoreOptions { RequireTenantId = false });
+            options: new SqlServerEventStoreOptions { Tenancy = Tenancy.Shared });
 
         var ex = await Assert.ThrowsAsync<IncompatibleEventStoreSchemaException>(
             () => store.InitializeSchemaAsync());
@@ -377,7 +377,7 @@ public class SqlServerEventStoreTests : IAsyncLifetime
             _connectionString!,
             tableName: tableName,
             registryTableName: $"Streams_{tableName}",
-            options: new SqlServerEventStoreOptions { RequireTenantId = false });
+            options: new SqlServerEventStoreOptions { Tenancy = Tenancy.Shared });
 
         var ex = await Assert.ThrowsAsync<IncompatibleEventStoreSchemaException>(
             () => store.InitializeSchemaAsync());
@@ -431,7 +431,7 @@ public class SqlServerEventStoreTests : IAsyncLifetime
             _connectionString!,
             tableName: tableName,
             registryTableName: $"Streams_{tableName}",
-            options: new SqlServerEventStoreOptions { RequireTenantId = false },
+            options: new SqlServerEventStoreOptions { Tenancy = Tenancy.Shared },
             session: new EventSession(new JsonEventSerializer(), catalog));
         await store.InitializeSchemaAsync();
 
@@ -471,7 +471,7 @@ public class SqlServerEventStoreTests : IAsyncLifetime
         Assert.Equal("", built.Sql);
 
         var result = await ((IEventLog)_eventStore!).ReadByQueryAsync(
-            Query.FromItems(QueryItem.ByType($"unknown-family.{Guid.NewGuid():N}")));
+            Query.ForAllTenants(QueryItem.ByType($"unknown-family.{Guid.NewGuid():N}")));
         Assert.Empty(result.Events);
     }
 
@@ -483,7 +483,7 @@ public class SqlServerEventStoreTests : IAsyncLifetime
         var store = new SqlServerEventStore(
             _connectionString!,
             tableName: _tableName,
-            options: new SqlServerEventStoreOptions { RequireTenantId = false },
+            options: new SqlServerEventStoreOptions { Tenancy = Tenancy.Shared },
             session: new EventSession(new JsonEventSerializer(), catalog));
         await store.InitializeSchemaAsync();
 

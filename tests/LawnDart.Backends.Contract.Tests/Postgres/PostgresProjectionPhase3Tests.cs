@@ -84,7 +84,7 @@ public sealed class PostgresProjectionPhase3Tests
         Assert.Equal("global:n0", ProjectionInstanceIds.ForUnpartitioned(0, 2));
         Assert.Equal("global:n1", ProjectionInstanceIds.ForUnpartitioned(1, 2));
 
-        var events = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var events = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Shared });
         var reg = new ProjectionRegistration(
             typeof(ContractGlobalCounterProjection),
             typeof(ContractCounterView),
@@ -143,7 +143,7 @@ public sealed class PostgresProjectionPhase3Tests
         Assert.True(owned1 > 0);
         Assert.Equal(streams.Length, owned0 + owned1);
 
-        var events = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var events = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Shared });
         foreach (var streamId in streams)
         {
             await events.AppendAsync(

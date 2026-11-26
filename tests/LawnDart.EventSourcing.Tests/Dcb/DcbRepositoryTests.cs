@@ -23,7 +23,7 @@ public class DcbRepositoryTests
 
     public DcbRepositoryTests()
     {
-        _eventStore = new InMemoryEventStore(enableRegistry: true, logger: NullLogger<InMemoryEventStore>.Instance, options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        _eventStore = new InMemoryEventStore(enableRegistry: true, logger: NullLogger<InMemoryEventStore>.Instance, options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Shared });
         _metadataProvider = new TestMetadataProvider();
         _tenantProvider = new TestTenantContextProvider("tenant1");
 
@@ -165,7 +165,8 @@ public class DcbRepositoryTests
 
         var entity = await _repository.CreateEntityAsync<TestDcbEntity>(query);
 
-        Assert.Same(query, entity.DecisionQuery);
+        Assert.Equal("tenant1", entity.DecisionQuery!.TenantId);
+        Assert.Equal(query.Items, entity.DecisionQuery.Items);
         Assert.Equal(tags, entity.Tags);
     }
 
@@ -182,7 +183,8 @@ public class DcbRepositoryTests
         var query = Query.FromItems(QueryItem.ByTags(loadTags.Select(Tag.Parse).ToArray()));
         var entity = await _repository.GetOrCreateEntityAsync<TestDcbEntity>(query);
 
-        Assert.Same(query, entity.DecisionQuery);
+        Assert.Equal("tenant1", entity.DecisionQuery!.TenantId);
+        Assert.Equal(query.Items, entity.DecisionQuery.Items);
         Assert.Contains("product:sku-1", entity.Tags);
         Assert.DoesNotContain("order:order-9", entity.Tags);
         Assert.Equal(1, entity.State.EventCount);
@@ -200,7 +202,8 @@ public class DcbRepositoryTests
 
         var query = Query.FromItems(QueryItem.ByTags(loadTags.Select(Tag.Parse).ToArray()));
         var entity = await _repository.GetOrCreateEntityAsync<TestDcbEntity>(query);
-        Assert.Same(query, entity.DecisionQuery);
+        Assert.Equal("tenant1", entity.DecisionQuery!.TenantId);
+        Assert.Equal(query.Items, entity.DecisionQuery.Items);
 
         await _repository.AppendWithContextAsync(
             [new TaggedEvent(new TestEvent { Value = "racer" }, loadTags.Select(Tag.Parse).ToArray())]);
@@ -226,7 +229,8 @@ public class DcbRepositoryTests
 
         Assert.Equal(1, result.State.EventCount);
         Assert.Empty(result.PendingEvents);
-        Assert.Same(query, result.DecisionQuery);
+        Assert.Equal("tenant1", result.DecisionQuery!.TenantId);
+        Assert.Equal(query.Items, result.DecisionQuery.Items);
     }
 
     [Fact]
@@ -380,13 +384,13 @@ public class DcbRepositoryTests
         var tags = new[] { "order:123" };
         
         await _eventStore.AppendAsync(
-            StreamId.Parse("test:stream1"),
+            StreamId.Parse("tenant1:stream:stream1"),
             [new TaggedEvent(new TestEvent { Value = "stream1-event" }, tags.Select(Tag.Parse).ToArray())],
             null,
             new EventMetadata());
 
         await _eventStore.AppendAsync(
-            StreamId.Parse("test:stream2"),
+            StreamId.Parse("tenant1:stream:stream2"),
             [new TaggedEvent(new TestEvent { Value = "stream2-event" }, tags.Select(Tag.Parse).ToArray())],
             null,
             new EventMetadata());
@@ -405,13 +409,13 @@ public class DcbRepositoryTests
     {
         // Arrange
         await _eventStore.AppendAsync(
-            StreamId.Parse("test:stream1"),
+            StreamId.Parse("tenant1:stream:stream1"),
             [new TaggedEvent(new TestEvent { Value = "both-tags" }, Tag.Parse("tag:tag1"), Tag.Parse("tag:tag2"))],
             null,
             new EventMetadata());
 
         await _eventStore.AppendAsync(
-            StreamId.Parse("test:stream2"),
+            StreamId.Parse("tenant1:stream:stream2"),
             [new TaggedEvent(new TestEvent { Value = "only-tag1" }, Tag.Parse("tag:tag1"))],
             null,
             new EventMetadata());
@@ -428,19 +432,19 @@ public class DcbRepositoryTests
     public async Task GetStateAsync_WithTwoItems_ReturnsEventMatchingEitherItem()
     {
         await _eventStore.AppendAsync(
-            StreamId.Parse("test:stream1"),
+            StreamId.Parse("tenant1:stream:stream1"),
             [new TaggedEvent(new TestEvent { Value = "only-tag1" }, Tag.Parse("tag:tag1"))],
             null,
             new EventMetadata());
 
         await _eventStore.AppendAsync(
-            StreamId.Parse("test:stream2"),
+            StreamId.Parse("tenant1:stream:stream2"),
             [new TaggedEvent(new TestEvent { Value = "only-tag2" }, Tag.Parse("tag:tag2"))],
             null,
             new EventMetadata());
 
         await _eventStore.AppendAsync(
-            StreamId.Parse("test:stream3"),
+            StreamId.Parse("tenant1:stream:stream3"),
             [new TaggedEvent(new TestEvent { Value = "neither" }, Tag.Parse("tag:tag3"))],
             null,
             new EventMetadata());
@@ -472,7 +476,7 @@ public class DcbRepositoryTests
         Assert.Equal(0, entity.EventsSinceLastSnapshot);
         Assert.NotNull(entity.LastSnapshotUtc);
         Assert.Equal(DcbSnapshotId.HexLength, snapshotStore.LastDcbId!.Length);
-        var snapQuery = Query.FromItems(QueryItem.ByTags(Tag.Parse("order:snap-1")));
+        var snapQuery = Query.FromItems(QueryItem.ByTags(Tag.Parse("order:snap-1"))).ForTenant("tenant1");
         Assert.Equal(DcbSnapshotId.FromQuery(snapQuery), snapshotStore.LastDcbId);
         Assert.Equal([DecisionQueryText.Format(snapQuery)], snapshotStore.LastLoadTags);
     }

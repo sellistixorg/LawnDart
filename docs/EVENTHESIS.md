@@ -35,7 +35,7 @@ Put correlation, causation, and trace on the envelope, not the payload.
 See [DI Grammar](DI_GRAMMAR.md) for the frozen surface. A typical host:
 
 ```csharp
-services.AddLawnDart(o => o.RequireTenantId = false);
+services.AddLawnDart(o => o.Tenancy = Tenancy.Single);
 var ctx = services.AddBoundedContext("default");
 ctx.UseInMemory(); // or UseSqlServer(...)
 ctx.WithEventTypes<SomeEvent>();

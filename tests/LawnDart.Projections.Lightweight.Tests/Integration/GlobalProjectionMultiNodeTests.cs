@@ -42,7 +42,7 @@ public class GlobalProjectionMultiNodeTests
         var views = new InMemoryViewStore();
         var checkpoints = new InMemoryCheckpointStore(views);
         var eventStore = new LawnDart.EventSourcing.EventStore.InMemoryEventStore(
-            options: new LawnDart.EventSourcing.EventStore.InMemoryEventStoreOptions { RequireTenantId = false });
+            options: new LawnDart.EventSourcing.EventStore.InMemoryEventStoreOptions { Tenancy = Tenancy.Shared });
         return (eventStore, views, checkpoints);
     }
 
@@ -233,7 +233,7 @@ public class GlobalProjectionMultiNodeTests
         Assert.NotNull(orderId);
         var entityKeyOwned = orderId!.Value.ToString();
 
-        await store.AppendAsync(StreamId.Parse($"OrderAggregate:{orderId}"), [
+        await store.AppendAsync(StreamId.Parse($"tenant1:OrderAggregate:{orderId}"), [
             new OrderCreatedLocal(Guid.NewGuid(), DateTime.UtcNow, orderId.Value, "Acme")
         ], metadata: Meta(), cancellationToken: cts.Token);
 

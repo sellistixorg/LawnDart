@@ -39,7 +39,7 @@ public sealed class BddTestContext : IAsyncDisposable
     /// </param>
     public static BddTestContext CreateInMemory(params Type[] eventTypes)
         => Create(new InMemoryEventStore(
-            options: new InMemoryEventStoreOptions { RequireTenantId = false },
+            options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single },
             session: new EventSession(
                 new LawnDart.EventSourcing.Serialization.JsonEventSerializer(),
                 EventTypeCatalog.Materialize(eventTypes))));
@@ -56,7 +56,7 @@ public sealed class BddTestContext : IAsyncDisposable
         var metadataProvider = new DefaultMetadataProvider();
         var lawnDartOptions = Options.Create(new LawnDartOptions
         {
-            RequireTenantId = false,
+            Tenancy = Tenancy.Single,
             EnableAuthorization = false
         });
 

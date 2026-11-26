@@ -47,13 +47,16 @@ public static class LawnDartPostgresExtensions
 
         var services = builder.Services;
         var contextName = builder.ContextName;
+        var hostOptions = LawnDart.LawnDartNames.ReadOptions(services);
         var options = new PostgresEventStoreOptions
         {
             ContextName = contextName,
             SchemaName = string.Equals(contextName, LawnDart.LawnDartNames.DefaultContextName, StringComparison.Ordinal)
                 ? "lawndart"
                 : contextName,
-            ValidateNames = LawnDart.LawnDartNames.IsFormatCheckEnabled(services)
+            Tenancy = hostOptions.Tenancy,
+            SingleTenantId = hostOptions.SingleTenantId,
+            ValidateNames = hostOptions.ValidateNames
         };
         configure(options);
         options.EnsureValid();

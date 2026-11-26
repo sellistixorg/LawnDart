@@ -33,7 +33,7 @@ public class EventSourcingRepositoriesTests
         services.AddSingleton<ITenantContextProvider>(new TestTenantContextProvider(null));
         services.Configure<LawnDartOptions>(o =>
         {
-            o.RequireTenantId = false;
+            o.Tenancy = Tenancy.Single;
             o.EnableAuthorization = false;
         });
         services.AddBoundedContext("default").UseInMemory().WithEventTypes(typeof(Ticked));

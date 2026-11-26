@@ -52,7 +52,7 @@ public class TagFormatRegistrationTests
     {
         var services = BaseServices();
         services.Configure<EventSourcingOptions>(o => o.FormatAggregateFallbackTag = true);
-        services.AddLawnDart(o => o.RequireTenantId = true);
+        services.AddLawnDart(o => o.Tenancy = Tenancy.Shared);
         services.AddTagFormat<GlobalFormat>();
         services.AddBoundedContext("alpha")
             .UseInMemory()
@@ -103,7 +103,7 @@ public class TagFormatRegistrationTests
         var logger = new ListLogger<DcbRepository>();
         var services = BaseServices();
         services.AddSingleton<ILogger<DcbRepository>>(logger);
-        services.AddLawnDart(o => o.RequireTenantId = false);
+        services.AddLawnDart(o => o.Tenancy = Tenancy.Single);
         services.AddBoundedContext("alpha")
             .UseInMemory()
             .WithEventTypes(typeof(CatalogPlaceholderEvent))
@@ -135,7 +135,7 @@ public class TagFormatRegistrationTests
         var services = BaseServices();
         services.AddSingleton<ILogger<DcbRepository>>(logger);
         services.Configure<EventSourcingOptions>(o => o.WarnOnUnknownTag = false);
-        services.AddLawnDart(o => o.RequireTenantId = false);
+        services.AddLawnDart(o => o.Tenancy = Tenancy.Single);
         services.AddBoundedContext("default")
             .UseInMemory()
             .WithEventTypes(typeof(CatalogPlaceholderEvent));

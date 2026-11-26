@@ -184,7 +184,7 @@ public sealed class AggregateSpecAssertionTests
     private sealed class ProbeEventStore : IEventStore
     {
         private readonly EventSourcing.EventStore.InMemoryEventStore _inner = new(
-            options: new EventSourcing.EventStore.InMemoryEventStoreOptions { RequireTenantId = false },
+            options: new EventSourcing.EventStore.InMemoryEventStoreOptions { Tenancy = Tenancy.Single },
             session: new EventSession(
                 new EventSourcing.Serialization.JsonEventSerializer(),
                 EventTypeCatalog.Materialize([typeof(BookRegistered), typeof(BookLoaned)])));

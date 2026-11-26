@@ -66,7 +66,7 @@ public abstract class RepeatedTagContractTests : ContractSuite
     [Fact]
     public async Task DcbRepository_RepeatedTags_StoredOnce()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var repository = new DcbRepository(
             store,
             new ContractMetadataProvider(),
@@ -77,7 +77,7 @@ public abstract class RepeatedTagContractTests : ContractSuite
             null);
         var (a, b) = (Tag("a"), Tag("b"));
         await repository.AppendWithContextAsync([new TaggedEvent(new ContractDcbEvent(Guid.NewGuid(), DateTime.UtcNow, 1), [a, b, a, b])]);
-        var read = await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(a)));
+        var read = await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(a)).ForTenant("test-tenant"));
         var evt = Assert.Single(read.Events);
         Assert.Equal(evt.Tags.Count, evt.Tags.Distinct().Count());
         Assert.Contains(a, evt.Tags);

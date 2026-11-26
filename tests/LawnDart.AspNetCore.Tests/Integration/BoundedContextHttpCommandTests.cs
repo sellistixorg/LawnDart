@@ -27,7 +27,7 @@ namespace LawnDart.AspNetCore.Tests.Integration
             {
                 services.AddLawnDart(o =>
                 {
-                    o.RequireTenantId = false;
+                    o.Tenancy = Tenancy.Single;
                     o.EnableAuthorization = false;
                 });
                 services.AddBoundedContext("default")
@@ -58,7 +58,7 @@ namespace LawnDart.AspNetCore.Tests.Integration
             {
                 services.AddLawnDart(o =>
                 {
-                    o.RequireTenantId = false;
+                    o.Tenancy = Tenancy.Single;
                     o.EnableAuthorization = false;
                 });
                 services.AddBoundedContext("default")
@@ -96,7 +96,7 @@ namespace LawnDart.AspNetCore.Tests.Integration
             {
                 services.AddLawnDart(o =>
                 {
-                    o.RequireTenantId = false;
+                    o.Tenancy = Tenancy.Single;
                     o.EnableAuthorization = false;
                 });
                 services.AddBoundedContext("ordering")
@@ -129,7 +129,7 @@ namespace LawnDart.AspNetCore.Tests.Integration
         {
             using var host = BuildHost(services =>
             {
-                services.AddLawnDart(o => o.RequireTenantId = false);
+                services.AddLawnDart(o => o.Tenancy = Tenancy.Single);
                 services.AddBoundedContext("default")
                     .UseInMemory()
                     .WithEventTypes(typeof(NoteAppended))
@@ -158,7 +158,7 @@ namespace LawnDart.AspNetCore.Tests.Integration
             {
                 services.AddLawnDart(o =>
                 {
-                    o.RequireTenantId = false;
+                    o.Tenancy = Tenancy.Single;
                     o.ValidateNames = false;
                 });
                 services.AddBoundedContext("default")

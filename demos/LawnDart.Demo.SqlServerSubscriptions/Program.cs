@@ -47,12 +47,12 @@ internal static class Program
         builder.Logging.SetMinimumLevel(LogLevel.Warning);
         builder.Logging.AddSimpleConsole(c => c.TimestampFormat = "[HH:mm:ss] ");
 
-        builder.Services.AddLawnDart(o => o.RequireTenantId = false);
+        builder.Services.AddLawnDart(o => o.Tenancy = Tenancy.Single);
         builder.Services.AddBoundedContext("default")
             .UseSqlServer(o =>
             {
                 o.ConnectionString = connectionString;
-                o.RequireTenantId = false;
+                o.Tenancy = Tenancy.Single;
                 o.SchemaName = "subdemo";
                 o.SqlSubscriptionPollInterval = TimeSpan.FromMilliseconds(75);
                 o.SqlSubscriptionBatchSize = 100;

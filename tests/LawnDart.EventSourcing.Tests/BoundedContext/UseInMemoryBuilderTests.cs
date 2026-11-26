@@ -182,7 +182,7 @@ public class UseInMemoryBuilderTests
         var services = new ServiceCollection();
         services.AddLawnDart(o =>
         {
-            o.RequireTenantId = true;
+            o.Tenancy = Tenancy.Shared;
             o.ValidateNames = false;
         });
         services.AddBoundedContext("default").UseInMemory().WithEventTypes(typeof(StubEvent));
@@ -199,10 +199,12 @@ public class UseInMemoryBuilderTests
     }
 
     [Fact]
+#pragma warning disable CS0618
     public async Task UseInMemory_RequireTenantIdFalse_AllowsStreamWithoutTenant()
     {
         var services = new ServiceCollection();
         services.AddLawnDart(o => o.RequireTenantId = false);
+#pragma warning restore CS0618
         services.AddBoundedContext("default").UseInMemory().WithEventTypes(typeof(StubEvent));
         await using var sp = services.BuildServiceProvider();
         var store = sp.GetRequiredService<IEventStore>();
@@ -232,7 +234,7 @@ public class UseInMemoryBuilderTests
     public async Task UseInMemory_EnableOutbox_WritesOnlyDeclaredEvents_AndTheProcessorPublishesThem()
     {
         var services = new ServiceCollection();
-        services.AddLawnDart(o => o.RequireTenantId = false);
+        services.AddLawnDart(o => o.Tenancy = Tenancy.Single);
         services.AddBoundedContext("academy")
             .WithEventTypes(typeof(StubEvent), typeof(QuietEvent))
             .PublishEvents(events => events.Publish<StubEvent>())
@@ -268,7 +270,7 @@ public class UseInMemoryBuilderTests
     public async Task UseInMemory_OutboxOff_DoesNotRunTranslations()
     {
         var services = new ServiceCollection();
-        services.AddLawnDart(o => o.RequireTenantId = false);
+        services.AddLawnDart(o => o.Tenancy = Tenancy.Single);
         services.AddBoundedContext("academy")
             .WithEventTypes(typeof(StubEvent))
             .PublishEvents(events => events.Translate<StubEvent, BrokenNotice>(_ =>

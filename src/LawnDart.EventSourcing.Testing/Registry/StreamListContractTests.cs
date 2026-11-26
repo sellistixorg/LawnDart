@@ -13,7 +13,7 @@ public abstract class StreamListContractTests : ContractSuite
     [Fact]
     public async Task ListStreams_OrdersByStreamId_CharacterByCharacter()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         // B, Z, _, a. A case-insensitive primary key would still keep these as four streams.
         // A culture sort puts "a" before "B". Character order puts "B" first and "_" before "a".
         foreach (var id in new[] { "acme:Order:a", "acme:Order:_", "acme:Order:Z", "acme:Order:B" })
@@ -27,7 +27,7 @@ public abstract class StreamListContractTests : ContractSuite
     [Fact]
     public async Task ListStreams_WhileAppendsRun_DoesNotSkipOrRepeat()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var prefix = "acme:Order:";
         var initial = new List<string>();
         for (var i = 0; i < 20; i++)
@@ -69,7 +69,7 @@ public abstract class StreamListContractTests : ContractSuite
     [Fact]
     public async Task ListStreams_FiltersCombine()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         await AppendAsync(store, "acme:Order:1", "color:red");
         await AppendAsync(store, "acme:Order:2", "color:blue");
         await AppendAsync(store, "acme:Customer:1", "color:red");
@@ -89,7 +89,7 @@ public abstract class StreamListContractTests : ContractSuite
     [Fact]
     public async Task ListStreams_Prefix_TreatsLikeMetacharactersAsLiteral()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var suffix = Guid.NewGuid().ToString("N");
         await AppendAsync(store, $"acme_west{suffix}:Order:1");
         await AppendAsync(store, $"acmeXwest{suffix}:Order:1");
@@ -101,7 +101,7 @@ public abstract class StreamListContractTests : ContractSuite
     [Fact]
     public async Task ListStreams_DigitPrefix_IsTheSameSetOnEveryPageSize()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var matching = new[]
         {
             "7:Order:2",
@@ -153,7 +153,7 @@ public abstract class StreamListContractTests : ContractSuite
     [Fact]
     public async Task ListStreams_TagFilter_PagesEveryMatch()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var expected = new List<string>();
         for (var i = 0; i < 25; i++)
         {
@@ -173,7 +173,7 @@ public abstract class StreamListContractTests : ContractSuite
     [Fact]
     public async Task ListStreams_LaterAppend_AddsTag()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var streamId = "acme:Order:" + Guid.NewGuid().ToString("N");
         await AppendAsync(store, streamId, "kind:alpha");
         await AppendAsync(store, streamId, "kind:beta");
@@ -189,7 +189,7 @@ public abstract class StreamListContractTests : ContractSuite
     [Fact]
     public async Task ListStreams_TokenRoundTrip_AndEmptyLastPage()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         await AppendAsync(store, "acme:Order:1");
         await AppendAsync(store, "acme:Order:2");
         var filter = new StreamListFilter { Prefix = "acme:Order:" };
@@ -206,7 +206,7 @@ public abstract class StreamListContractTests : ContractSuite
     [Fact]
     public async Task ListStreams_NoMatches_ReturnsEmptyPage()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         await AppendAsync(store, "acme:Order:1", "color:red");
         var page = await store.ListStreamsAsync(new StreamListFilter { Tag = Tag.Parse("tag:missing") });
         Assert.Empty(page.Streams);
@@ -216,7 +216,7 @@ public abstract class StreamListContractTests : ContractSuite
     [Fact]
     public async Task ListStreams_DefaultTag_ThrowsArgumentException()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         await Assert.ThrowsAsync<ArgumentException>(() =>
             store.ListStreamsAsync(new StreamListFilter { Tag = default(Tag) }));
     }
@@ -224,7 +224,7 @@ public abstract class StreamListContractTests : ContractSuite
     [Fact]
     public async Task ListStreams_BadToken_Throws()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         await Assert.ThrowsAsync<ArgumentException>(() => store.ListStreamsAsync(pageToken: "@@@"));
         await Assert.ThrowsAsync<ArgumentException>(() => store.ListStreamsAsync(pageToken: "YQ"));
     }
@@ -232,7 +232,7 @@ public abstract class StreamListContractTests : ContractSuite
     [Fact]
     public async Task ListStreams_TokenFromAnotherFilter_Throws()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         await AppendAsync(store, "acme:Order:1", "color:red");
         await AppendAsync(store, "acme:Order:2", "color:red");
         var issued = await store.ListStreamsAsync(new StreamListFilter { Tag = Tag.Parse("color:red") }, pageSize: 1);
@@ -244,7 +244,7 @@ public abstract class StreamListContractTests : ContractSuite
     [Fact]
     public async Task ListStreams_PageSize_IsBounded()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => store.ListStreamsAsync(pageSize: 0));
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => store.ListStreamsAsync(pageSize: -1));
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => store.ListStreamsAsync(pageSize: StreamPage.MaxPageSize + 1));
@@ -262,7 +262,7 @@ public abstract class StreamListContractTests : ContractSuite
     [ContractFact]
     public async Task ListStreams_ArchivedStream_IsOmitted()
     {
-        var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
+        var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared));
         var store = opened.Store;
         var streamId = "acme:Order:" + Guid.NewGuid().ToString("N");
         await AppendAsync(store, streamId, "color:red");

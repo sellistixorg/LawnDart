@@ -16,7 +16,7 @@ namespace LawnDart.EventSourcing.Tests.Aggregates;
 public class AggregateRepositoryTests
 {
     private static IOptions<LawnDartOptions> CreateOptions() => 
-        Options.Create(new LawnDartOptions { RequireTenantId = false });
+        Options.Create(new LawnDartOptions { Tenancy = Tenancy.Shared });
 
     [Fact]
     public async Task GetAsync_NonExistentAggregate_ReturnsNull()
@@ -95,7 +95,7 @@ public class AggregateRepositoryTests
     public async Task SaveAsync_SoftHyphenInStreamId_DoesNotMatchTenantPrefix()
     {
         var eventStore = new InMemoryEventStore();
-        var options = Options.Create(new LawnDartOptions { RequireTenantId = true });
+        var options = Options.Create(new LawnDartOptions { Tenancy = Tenancy.Shared });
         var repository = new AggregateRepository(
             eventStore,
             new DefaultMetadataProvider(),
@@ -116,7 +116,7 @@ public class AggregateRepositoryTests
     public async Task SaveAsync_InvalidTenant_WhenRequired_NamesTheRule()
     {
         var eventStore = new InMemoryEventStore();
-        var options = Options.Create(new LawnDartOptions { RequireTenantId = true });
+        var options = Options.Create(new LawnDartOptions { Tenancy = Tenancy.Shared });
         var repository = new AggregateRepository(
             eventStore,
             new DefaultMetadataProvider(),
@@ -135,7 +135,7 @@ public class AggregateRepositoryTests
     [Fact]
     public async Task SaveAsync_ReservedTenantDefault_Throws()
     {
-        var repository = CreateRepository(new LawnDartOptions { RequireTenantId = true });
+        var repository = CreateRepository(new LawnDartOptions { Tenancy = Tenancy.Shared });
         var aggregate = PendingAggregate("default");
 
         var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
@@ -148,11 +148,11 @@ public class AggregateRepositoryTests
     {
         var eventStore = new InMemoryEventStore(options: new InMemoryEventStoreOptions
         {
-            RequireTenantId = true,
+            Tenancy = Tenancy.Shared,
             ValidateNames = false
         });
         var repository = CreateRepository(
-            new LawnDartOptions { RequireTenantId = true, ValidateNames = false },
+            new LawnDartOptions { Tenancy = Tenancy.Shared, ValidateNames = false },
             eventStore,
             tenantId: "default");
         var aggregate = PendingAggregate("default");
@@ -168,7 +168,7 @@ public class AggregateRepositoryTests
     {
         var repository = CreateRepository(new LawnDartOptions
         {
-            RequireTenantId = true,
+            Tenancy = Tenancy.Shared,
             ValidateNames = false
         });
         var aggregate = PendingAggregate("acme");
@@ -180,7 +180,7 @@ public class AggregateRepositoryTests
     [Fact]
     public async Task SaveAsync_MissingTenant_WhenRequired_Throws()
     {
-        var repository = CreateRepository(new LawnDartOptions { RequireTenantId = true });
+        var repository = CreateRepository(new LawnDartOptions { Tenancy = Tenancy.Shared });
         var aggregate = PendingAggregate("acme");
 
         var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
@@ -193,10 +193,10 @@ public class AggregateRepositoryTests
     {
         var eventStore = new InMemoryEventStore(options: new InMemoryEventStoreOptions
         {
-            RequireTenantId = true,
+            Tenancy = Tenancy.Shared,
             ValidateNames = false
         });
-        var options = Options.Create(new LawnDartOptions { RequireTenantId = true, ValidateNames = false });
+        var options = Options.Create(new LawnDartOptions { Tenancy = Tenancy.Shared, ValidateNames = false });
         var repository = new AggregateRepository(
             eventStore,
             new DefaultMetadataProvider(),
@@ -220,7 +220,7 @@ public class AggregateRepositoryTests
     [Fact]
     public async Task GetOrCreateAsync_InvalidProviderTenant_WhenRequired_Throws()
     {
-        var options = Options.Create(new LawnDartOptions { RequireTenantId = true });
+        var options = Options.Create(new LawnDartOptions { Tenancy = Tenancy.Shared });
         var repository = new AggregateRepository(
             new InMemoryEventStore(),
             new DefaultMetadataProvider(),
@@ -634,7 +634,7 @@ public class AggregateRepositoryTests
     {
         var eventStore = new InMemoryEventStore();
         var repository = new AggregateRepository(
-            eventStore, new DefaultMetadataProvider(), new TestTenantContextProvider(), CreateOptions());
+            eventStore, new DefaultMetadataProvider(), new TestTenantContextProvider("42"), CreateOptions());
         const string streamId = "42:InboundShipment:abc:SHIP-1";
         var cmd = new CommandMetadata { TenantId = "42", UserId = "user1" };
 

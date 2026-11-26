@@ -218,7 +218,7 @@ the processor publishes the row again. See
 ctx.UseSqlServer(o =>
 {
     o.ConnectionString = connectionString;
-    o.RequireTenantId = false;
+    o.Tenancy = Tenancy.Single;
 });
 ```
 

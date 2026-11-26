@@ -39,6 +39,7 @@ internal static class PostgresQuerySql
         PostgresNames names,
         Query query,
         Func<string, int?> resolveTypeId,
+        string? tenantId,
         long? fromSequencePosition,
         long? toSequencePosition,
         DateTime? toTimestamp,
@@ -46,19 +47,21 @@ internal static class PostgresQuerySql
         Mode mode)
     {
         var parameters = new List<NpgsqlParameter>();
+        if (tenantId is not null)
+            parameters.Add(new NpgsqlParameter("tenant_id", NpgsqlDbType.Text) { Value = tenantId });
         AddWindow(parameters, fromSequencePosition, toSequencePosition, toTimestamp);
 
         if (query.Items.Count == 0)
         {
             return new Result(
-                Scan(names.Events, fromSequencePosition, toSequencePosition, toTimestamp, limit, mode, parameters),
+                Scan(names.Events, tenantId is not null, fromSequencePosition, toSequencePosition, toTimestamp, limit, mode, parameters),
                 parameters);
         }
 
         var parts = new List<string>();
         for (var i = 0; i < query.Items.Count; i++)
         {
-            var part = Item(names, query.Items[i], i, resolveTypeId, fromSequencePosition, toSequencePosition, toTimestamp, parameters);
+            var part = Item(names, query.Items[i], i, resolveTypeId, tenantId is not null, fromSequencePosition, toSequencePosition, toTimestamp, parameters);
             if (part is not null)
                 parts.Add(part);
         }
@@ -66,6 +69,7 @@ internal static class PostgresQuerySql
         if (parts.Count == 0)
             return Result.Empty;
 
+        var outerTenantWhere = tenantId is not null ? "\nWHERE e.tenant_id = @tenant_id" : "";
         string sql;
         if (mode == Mode.MaxSequence)
         {
@@ -74,7 +78,7 @@ internal static class PostgresQuerySql
                 FROM (
                 {string.Join("\nUNION\n", parts)}
                 ) m
-                INNER JOIN {names.Events} e ON e.global_position = m.global_position AND e.tenant_id = m.tenant_id
+                INNER JOIN {names.Events} e ON e.global_position = m.global_position AND e.tenant_id = m.tenant_id{outerTenantWhere}
                 """;
         }
         else
@@ -84,7 +88,7 @@ internal static class PostgresQuerySql
                 FROM (
                 {string.Join("\nUNION\n", parts)}
                 ) m
-                INNER JOIN {names.Events} e ON e.global_position = m.global_position AND e.tenant_id = m.tenant_id
+                INNER JOIN {names.Events} e ON e.global_position = m.global_position AND e.tenant_id = m.tenant_id{outerTenantWhere}
                 ORDER BY e.global_position
                 """;
             sql = Limit(sql, limit, parameters);
@@ -105,6 +109,7 @@ internal static class PostgresQuerySql
 
     private static string Scan(
         string events,
+        bool filterTenant,
         long? from,
         long? to,
         DateTime? timestamp,
@@ -112,7 +117,7 @@ internal static class PostgresQuerySql
         Mode mode,
         List<NpgsqlParameter> parameters)
     {
-        var where = Window("e.global_position", from, to, timestamp, "e.recorded_at");
+        var where = Window("e.global_position", filterTenant, from, to, timestamp, "e.recorded_at");
         if (mode == Mode.MaxSequence)
             return $"SELECT COALESCE(MAX(e.global_position), 0) FROM {events} e {where}";
 
@@ -124,6 +129,7 @@ internal static class PostgresQuerySql
         QueryItem item,
         int index,
         Func<string, int?> resolveTypeId,
+        bool filterTenant,
         long? from,
         long? to,
         DateTime? timestamp,
@@ -156,6 +162,8 @@ internal static class PostgresQuerySql
             var tag0 = "tag_" + index + "_0";
             parameters.Add(new NpgsqlParameter(tag0, NpgsqlDbType.Text) { Value = tags[0].ToString() });
             builder.Append(" WHERE t0.tag = @").Append(tag0);
+            if (filterTenant)
+                builder.Append(" AND t0.tenant_id = @tenant_id");
             for (var j = 1; j < tags.Count; j++)
             {
                 var alias = "t" + j;
@@ -179,6 +187,8 @@ internal static class PostgresQuerySql
         {
             builder.Clear();
             builder.Append("SELECT e.global_position, e.tenant_id FROM ").Append(names.Events).Append(" e WHERE 1=1");
+            if (filterTenant)
+                builder.Append(" AND e.tenant_id = @tenant_id");
             AppendSeq(builder, "e.global_position", from, to);
             if (timestamp.HasValue)
                 builder.Append(" AND e.recorded_at <= @to_ts");
@@ -224,9 +234,11 @@ internal static class PostgresQuerySql
             builder.Append(" AND ").Append(column).Append(" <= @to_seq");
     }
 
-    private static string Window(string column, long? from, long? to, DateTime? timestamp, string timeColumn)
+    private static string Window(string column, bool filterTenant, long? from, long? to, DateTime? timestamp, string timeColumn)
     {
         var builder = new StringBuilder("WHERE 1=1");
+        if (filterTenant)
+            builder.Append(" AND e.tenant_id = @tenant_id");
         AppendSeq(builder, column, from, to);
         if (timestamp.HasValue)
             builder.Append(" AND ").Append(timeColumn).Append(" <= @to_ts");

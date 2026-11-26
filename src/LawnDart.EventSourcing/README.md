@@ -26,8 +26,8 @@ dotnet add package LawnDart.EventSourcing --prerelease
 ## Getting started
 
 ```csharp
-services.AddLawnDart(o => o.RequireTenantId = false);
+services.AddLawnDart(o => o.Tenancy = Tenancy.Single);
 services.AddBoundedContext("default").UseInMemory();
 ```
 
-`InMemoryEventStoreOptions.RequireTenantId` defaults to true. `UseInMemory` copies `RequireTenantId` and `ValidateNames` onto the store. An append checks the tenant id when `RequireTenantId` is true. Set it to false to append without a tenant id.
+`InMemoryEventStoreOptions.Tenancy` defaults to `Tenancy.Shared`. `UseInMemory` copies `Tenancy`, `SingleTenantId`, and `ValidateNames` onto the store. `Tenancy.Shared` requires a tenant id on appends and `Query.ForTenant(...)` or `Query.ForAllTenants(...)` on queries. Set `Tenancy = Tenancy.Single` (with optional `SingleTenantId`) to run a single-tenant store. `Tenancy.Isolated` is refused at startup. The obsolete `RequireTenantId` property remains as an alias (`true` maps to `Shared`, `false` to `Single`).

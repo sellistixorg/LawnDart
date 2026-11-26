@@ -114,16 +114,24 @@ public sealed class EventStoreAdapter : IEventStore, IEventStoreSubscriptions
     }
 
     /// <inheritdoc />
-    public async IAsyncEnumerable<SequencedEvent> ReadByQueryStreamAsync(
+    public IAsyncEnumerable<SequencedEvent> ReadByQueryStreamAsync(
         Query query,
         long? fromSequencePosition = null,
         long? toSequencePosition = null,
         DateTime? toTimestamp = null,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default)
     {
-        await foreach (var frame in _log.ReadByQueryStreamAsync(
-            query, fromSequencePosition, toSequencePosition, toCommitTimestamp: null, cancellationToken)
-            .ConfigureAwait(false))
+        var frames = _log.ReadByQueryStreamAsync(
+            query, fromSequencePosition, toSequencePosition, toCommitTimestamp: null, cancellationToken);
+        return HydrateStreamAsync(frames, toTimestamp, cancellationToken);
+    }
+
+    private async IAsyncEnumerable<SequencedEvent> HydrateStreamAsync(
+        IAsyncEnumerable<RecordedEvent> frames,
+        DateTime? toTimestamp,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        await foreach (var frame in frames.ConfigureAwait(false))
         {
             var sequenced = _session.Hydrate(frame);
             if (toTimestamp.HasValue && sequenced.Metadata.Timestamp > toTimestamp.Value)

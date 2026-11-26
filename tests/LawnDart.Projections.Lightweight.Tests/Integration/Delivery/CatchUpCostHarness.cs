@@ -81,7 +81,7 @@ internal static class CatchUpCostHarness
         var head = await store.GetCurrentSequenceAsync();
 
         var filter = EventSubscriptionFilter.ForQuery(
-            Query.FromItems(QueryItem.ByType("CatchUpTick")));
+            Query.ForAllTenants(QueryItem.ByType("CatchUpTick")));
         var sw = Stopwatch.StartNew();
         await using var handle = store.Subscribe("catchup-drain", fromSequence: 0, filter);
         var read = await DrainExactAsync(handle, count, timeout);

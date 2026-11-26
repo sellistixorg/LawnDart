@@ -147,7 +147,7 @@ public sealed class PostgresStoreBenchmarks(ITestOutputHelper output)
             ConnectionString = connectionString,
             SchemaName = schema,
             ContextName = schema,
-            RequireTenantId = false,
+            Tenancy = Tenancy.Single,
             PartitionCount = partitionCount,
             NotifyOnAppend = notify,
             BackupPollInterval = TimeSpan.FromSeconds(30)

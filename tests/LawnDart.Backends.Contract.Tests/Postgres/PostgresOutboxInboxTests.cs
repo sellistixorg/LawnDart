@@ -91,7 +91,7 @@ public sealed class PostgresOutboxInboxTests
     [Fact]
     public async Task InitializeSchemaAsync_AddsOutboxOnAnAlpha1Schema_AndTheOldAppendFunctionStillWorks()
     {
-        var opened = await _fixture.Backend.OpenEventStoreAsync(ContractStores.Isolated());
+        var opened = await _fixture.Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared));
         var store = (PostgresEventStore)opened.Store;
         var schema = store.SchemaName;
         var quoted = Quote(schema);
@@ -113,7 +113,7 @@ public sealed class PostgresOutboxInboxTests
                         JOIN pg_namespace n ON n.oid = p.pronamespace
                         WHERE n.nspname = '{escaped}'
                           AND p.proname = 'append_to_stream'
-                          AND p.pronargs = 37
+                          AND p.pronargs = 38
                     LOOP
                         EXECUTE 'DROP FUNCTION ' || sig::text;
                     END LOOP;
@@ -155,7 +155,7 @@ public sealed class PostgresOutboxInboxTests
                     counts.Add(reader.GetInt32(0));
             }
 
-            Assert.Equal(new[] { 34 }, counts);
+            Assert.Equal(new[] { 35 }, counts);
 
             await using var options = new NpgsqlCommand(
                 """
@@ -197,7 +197,7 @@ public sealed class PostgresOutboxInboxTests
             SELECT pg_get_functiondef(p.oid)
             FROM pg_proc p
             JOIN pg_namespace n ON n.oid = p.pronamespace
-            WHERE n.nspname = @schema AND p.proname = 'append_to_stream' AND p.pronargs = 34
+            WHERE n.nspname = @schema AND p.proname = 'append_to_stream' AND p.pronargs = 35
             """,
             connection))
         {
@@ -238,7 +238,7 @@ public sealed class PostgresOutboxInboxTests
             await rebuild.ExecuteNonQueryAsync();
         }
 
-        Assert.Equal(new[] { 34 }, await AppendFunctionArgumentCountsAsync(connection, schema));
+        Assert.Equal(new[] { 35 }, await AppendFunctionArgumentCountsAsync(connection, schema));
 
         var streamId = "acme:Order:" + Guid.NewGuid().ToString("N");
         await store.AppendAsync(StreamId.Parse(streamId), [ContractEvent.Tick()]);
@@ -269,7 +269,7 @@ public sealed class PostgresOutboxInboxTests
 
         await using var check = new NpgsqlConnection(_fixture.AdminConnectionString);
         await check.OpenAsync();
-        Assert.Equal(new[] { 34 }, await AppendFunctionArgumentCountsAsync(check, store.SchemaName));
+        Assert.Equal(new[] { 35 }, await AppendFunctionArgumentCountsAsync(check, store.SchemaName));
 
         var streamId = "acme:Order:" + Guid.NewGuid().ToString("N");
         await store.AppendAsync(StreamId.Parse(streamId), [ContractEvent.Tick()]);
@@ -280,7 +280,7 @@ public sealed class PostgresOutboxInboxTests
     public async Task EventStore_InitializesAfterInboxInTheSameSchema()
     {
         var schema = "lawndart";
-        await _fixture.Backend.OpenInboxAsync(new ContractStoreOptions { SchemaName = schema, RequireTenantId = false });
+        await _fixture.Backend.OpenInboxAsync(new ContractStoreOptions { SchemaName = schema, Tenancy = Tenancy.Shared });
         var opened = await _fixture.Backend.OpenEventStoreAsync(Publishing(schema));
         var streamId = "acme:Order:" + Guid.NewGuid().ToString("N");
         await opened.Store.AppendAsync(StreamId.Parse(streamId), [ContractEvent.Tick()]);
@@ -292,7 +292,7 @@ public sealed class PostgresOutboxInboxTests
     public async Task EventStore_InitializesAfterOutboxWriterInTheSameSchema()
     {
         var schema = "c" + Guid.NewGuid().ToString("N");
-        await _fixture.Backend.OpenOutboxAsync(new ContractStoreOptions { SchemaName = schema, RequireTenantId = false });
+        await _fixture.Backend.OpenOutboxAsync(new ContractStoreOptions { SchemaName = schema, Tenancy = Tenancy.Shared });
         var opened = await _fixture.Backend.OpenEventStoreAsync(Publishing(schema));
         var streamId = "acme:Order:" + Guid.NewGuid().ToString("N");
         await opened.Store.AppendAsync(StreamId.Parse(streamId), [ContractEvent.Tick()]);
@@ -324,7 +324,7 @@ public sealed class PostgresOutboxInboxTests
         var writer = (PostgresOutboxWriter)await _fixture.Backend.OpenOutboxAsync(new ContractStoreOptions
         {
             SchemaName = schema,
-            RequireTenantId = false,
+            Tenancy = Tenancy.Shared,
             OutboxClaimLease = TimeSpan.Zero
         });
         var message = Message(1);
@@ -367,7 +367,7 @@ public sealed class PostgresOutboxInboxTests
         var writer = (PostgresOutboxWriter)await _fixture.Backend.OpenOutboxAsync(new ContractStoreOptions
         {
             SchemaName = schema,
-            RequireTenantId = false
+            Tenancy = Tenancy.Shared
         });
 
         await using (var admin = new NpgsqlConnection(_fixture.AdminConnectionString))
@@ -441,6 +441,7 @@ public sealed class PostgresOutboxInboxTests
         if (schema is null)
         {
             return ContractStores.Isolated(
+                tenancy: Tenancy.Shared,
                 enableOutbox: true,
                 outboxClaimLease: claimLease,
                 eventTypes: [typeof(ContractTestEvent)],
@@ -450,7 +451,7 @@ public sealed class PostgresOutboxInboxTests
         return new ContractStoreOptions
         {
             SchemaName = schema,
-            RequireTenantId = false,
+            Tenancy = Tenancy.Shared,
             EnableOutbox = true,
             OutboxClaimLease = claimLease,
             EventTypes = [typeof(ContractTestEvent)],

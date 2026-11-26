@@ -48,6 +48,12 @@ public static class EventQueryMatcher
         IReadOnlyList<Tag> tags,
         Query query)
     {
+        if (!query.AllTenants && query.TenantId is not null
+            && !string.Equals(streamId.TenantId, query.TenantId, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
         if (query.Items.Count == 0)
             return true;
 

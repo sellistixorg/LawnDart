@@ -21,7 +21,7 @@ public class HttpCommandsRegisterNoHandlersTests
     public void DefaultContext_HttpPlusWithCommandHandlers_RegistersUnkeyedAliasOnly()
     {
         var services = new ServiceCollection();
-        services.AddLawnDart(o => o.RequireTenantId = false);
+        services.AddLawnDart(o => o.Tenancy = Tenancy.Single);
         services.AddBoundedContext("default")
             .UseInMemory()
             .WithEventTypes(typeof(HttpCatalogPlaceholder))

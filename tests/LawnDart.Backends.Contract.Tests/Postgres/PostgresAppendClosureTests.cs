@@ -301,7 +301,7 @@ public sealed class PostgresAppendClosureTests
             {
                 ConnectionString = connectionString,
                 SchemaName = schema,
-                RequireTenantId = false,
+                Tenancy = Tenancy.Single,
                 EnableOutbox = enableOutbox
             },
             logger: logger,

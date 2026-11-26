@@ -16,7 +16,7 @@ public sealed class QuickstartCounterTests
     public async Task handle_command_then_read_back_is_one()
     {
         var services = new ServiceCollection();
-        services.AddLawnDart(o => o.RequireTenantId = false);
+        services.AddLawnDart(o => o.Tenancy = Tenancy.Single);
         services.AddBoundedContext("default")
             .UseInMemory()
             .WithEventTypes(typeof(CounterCreated), typeof(CounterIncremented));

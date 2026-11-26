@@ -36,7 +36,7 @@ public class SqlServerMultiContextSchemaTests : IAsyncLifetime
     {
         var options = new SqlServerEventStoreOptions
         {
-            RequireTenantId = false,
+            Tenancy = Tenancy.Single,
             SchemaName      = "dbo",
             ContextName     = "default"
         };
@@ -52,7 +52,7 @@ public class SqlServerMultiContextSchemaTests : IAsyncLifetime
         const string schema = "ordering";
         var options = new SqlServerEventStoreOptions
         {
-            RequireTenantId = false,
+            Tenancy = Tenancy.Single,
             SchemaName      = schema,
             ContextName     = schema
         };
@@ -65,8 +65,8 @@ public class SqlServerMultiContextSchemaTests : IAsyncLifetime
     [Fact]
     public async Task TwoContexts_CreateIndependentSchemas()
     {
-        var optOrdering = new SqlServerEventStoreOptions { RequireTenantId = false, SchemaName = "ordering", ContextName = "ordering" };
-        var optCatalog  = new SqlServerEventStoreOptions { RequireTenantId = false, SchemaName = "catalog",  ContextName = "catalog"  };
+        var optOrdering = new SqlServerEventStoreOptions { Tenancy = Tenancy.Single, SchemaName = "ordering", ContextName = "ordering" };
+        var optCatalog  = new SqlServerEventStoreOptions { Tenancy = Tenancy.Single, SchemaName = "catalog",  ContextName = "catalog"  };
 
         var storeOrdering = CreateStore($"Events_{Guid.NewGuid():N}", optOrdering);
         var storeCatalog  = CreateStore($"Events_{Guid.NewGuid():N}", optCatalog);
@@ -85,7 +85,7 @@ public class SqlServerMultiContextSchemaTests : IAsyncLifetime
         const string tableName = "BillingEvents";
         var options = new SqlServerEventStoreOptions
         {
-            RequireTenantId    = false,
+            Tenancy            = Tenancy.Single,
             SchemaName         = schema,
             ContextName        = "billing",
             EventStoreTableName = tableName
@@ -101,7 +101,7 @@ public class SqlServerMultiContextSchemaTests : IAsyncLifetime
     public async Task SequenceObject_IsCreatedInConfiguredSchema()
     {
         const string schema = "inventory";
-        var options = new SqlServerEventStoreOptions { RequireTenantId = false, SchemaName = schema, ContextName = "inventory" };
+        var options = new SqlServerEventStoreOptions { Tenancy = Tenancy.Single, SchemaName = schema, ContextName = "inventory" };
         var store = CreateStore($"Events_{Guid.NewGuid():N}", options);
         await store.InitializeSchemaAsync();
 
@@ -115,7 +115,7 @@ public class SqlServerMultiContextSchemaTests : IAsyncLifetime
         const string schema = "snapshots";
         var options = new SqlServerEventStoreOptions
         {
-            RequireTenantId = false,
+            Tenancy = Tenancy.Single,
             SchemaName = schema,
             ContextName = "snapshots"
         };
@@ -132,7 +132,7 @@ public class SqlServerMultiContextSchemaTests : IAsyncLifetime
     public async Task InitializeSchemaAsync_IsIdempotent_ForCustomSchema()
     {
         const string schema = "payments";
-        var options = new SqlServerEventStoreOptions { RequireTenantId = false, SchemaName = schema, ContextName = "payments" };
+        var options = new SqlServerEventStoreOptions { Tenancy = Tenancy.Single, SchemaName = schema, ContextName = "payments" };
         var tableName = $"Events_{Guid.NewGuid():N}";
         var store = CreateStore(tableName, options);
 

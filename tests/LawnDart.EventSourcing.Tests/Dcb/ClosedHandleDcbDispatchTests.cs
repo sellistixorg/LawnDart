@@ -15,7 +15,7 @@ public class ClosedHandleDcbDispatchTests
 {
     private static DcbRepository CreateRepository() =>
         new(
-            new InMemoryEventStore(enableRegistry: true, logger: NullLogger<InMemoryEventStore>.Instance, options: new InMemoryEventStoreOptions { RequireTenantId = false }),
+            new InMemoryEventStore(enableRegistry: true, logger: NullLogger<InMemoryEventStore>.Instance, options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Shared }),
             new DefaultMetadataProvider(),
             new LawnDart.TestUtilities.TestTenantContextProvider("tenant1"),
             Options.Create(new LawnDartOptions()),

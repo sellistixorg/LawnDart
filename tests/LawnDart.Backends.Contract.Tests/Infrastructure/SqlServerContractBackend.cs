@@ -60,7 +60,8 @@ public sealed class SqlServerContractBackend : IFullContractBackend
         var logger = new ListLogger<SqlServerEventStore>();
         var storeOptions = new SqlServerEventStoreOptions
         {
-            RequireTenantId = options.RequireTenantId,
+            Tenancy = options.Tenancy,
+            SingleTenantId = options.SingleTenantId,
             ValidateNames = options.ValidateNames,
             SchemaName = schema,
             ContextName = schema,
@@ -184,7 +185,9 @@ public sealed class SqlServerContractBackend : IFullContractBackend
         {
             ConnectionString = options.ReadCommittedSnapshot is null ? _connectionString : null,
             SchemaName = options.SchemaName,
-            RequireTenantId = options.RequireTenantId
+            Tenancy = options.Tenancy,
+            SingleTenantId = options.SingleTenantId,
+            ValidateNames = options.ValidateNames
         };
         // The event store already created the snapshot tables during schema init.
         // A dedicated database uses that connection string, which the event store holds.

@@ -42,7 +42,7 @@ Host grammar: [DI Grammar](../DI_GRAMMAR.md). Envelope fields:
 Happy-path host:
 
 ```csharp
-services.AddLawnDart(o => o.RequireTenantId = false);
+services.AddLawnDart(o => o.Tenancy = Tenancy.Single);
 services.AddInMemoryProjectionStores("default");
 services.AddBoundedContext("default")
     .UseInMemory()

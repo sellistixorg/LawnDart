@@ -11,8 +11,11 @@ namespace LawnDart.Dcb;
 /// All event-store snapshot implementations key these snapshots by this value.
 /// The identity is always a 64-character lowercase SHA-256 hex string.
 /// <para>
-/// Canonical bytes, version 1: a version byte <c>1</c>, then the item count as a
-/// 32-bit little-endian integer, then each item's own canonical bytes. Items are
+/// Canonical bytes, version 1 (unscoped): a version byte <c>1</c>, then the item count as a
+/// 32-bit little-endian integer, then each item's own canonical bytes. When
+/// <see cref="Query.TenantId"/> or <see cref="Query.AllTenants"/> is set, version 2 writes
+/// byte <c>2</c>, the all-tenants flag, whether a tenant id is present, and the tenant id bytes
+/// before the item count. Items are
 /// sorted by those bytes, so item order does not change the id. A repeated type
 /// or tag inside one item is kept once. Two identical items hash as one item.
 /// For each item the bytes are the type count, then each type sorted with
@@ -50,7 +53,19 @@ public static class DcbSnapshotId
         using var ms = new MemoryStream();
         using (var bw = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true))
         {
-            bw.Write((byte)1);
+            if (query.TenantId is null && !query.AllTenants)
+            {
+                bw.Write((byte)1);
+            }
+            else
+            {
+                bw.Write((byte)2);
+                bw.Write(query.AllTenants);
+                bw.Write(query.TenantId is not null);
+                if (query.TenantId is not null)
+                    WriteUtf8(bw, query.TenantId);
+            }
+
             bw.Write(itemBytes.Count);
             foreach (var item in itemBytes)
                 bw.Write(item);

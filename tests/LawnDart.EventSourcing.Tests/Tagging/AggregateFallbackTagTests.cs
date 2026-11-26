@@ -23,8 +23,8 @@ public class AggregateFallbackTagTests
         var tags = (await store.ReadStreamAsync(Stream(id)))[0].Tags;
         Assert.Contains(clr, tags.Select(static t => t.ToString()).ToArray());
         Assert.DoesNotContain(formatted, tags.Select(static t => t.ToString()).ToArray());
-        Assert.Single((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(clr))))).Events);
-        Assert.Empty((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(formatted))))).Events);
+        Assert.Single((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(clr))).ForTenant("acct"))).Events);
+        Assert.Empty((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(formatted))).ForTenant("acct"))).Events);
     }
 
     [Fact]
@@ -42,9 +42,9 @@ public class AggregateFallbackTagTests
 
         Assert.Contains(newFormatted, newTags.Select(static t => t.ToString()).ToArray());
         Assert.DoesNotContain($"ProbeAggregate:{newId:D}", newTags.Select(static t => t.ToString()).ToArray());
-        Assert.Empty((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(newFormatted.Replace(newId.ToString("D"), oldId.ToString("D"))))))).Events);
-        Assert.Single((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(oldClr))))).Events);
-        Assert.Single((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(newFormatted))))).Events);
+        Assert.Empty((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(newFormatted.Replace(newId.ToString("D"), oldId.ToString("D"))))).ForTenant("acct"))).Events);
+        Assert.Single((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(oldClr))).ForTenant("acct"))).Events);
+        Assert.Single((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(newFormatted))).ForTenant("acct"))).Events);
     }
 
     [Fact]
@@ -68,7 +68,7 @@ public class AggregateFallbackTagTests
         aggregate.SetStreamId("acct:ProbeAggregate:seat-12");
         aggregate.Raise(new ProbeEvent(Guid.NewGuid(), DateTime.UtcNow));
 
-        await repository.SaveAsync(aggregate, new CommandMetadata());
+        await repository.SaveAsync(aggregate, new CommandMetadata { TenantId = "acct" });
 
         var tags = (await store.ReadStreamAsync(StreamId.Parse("acct:ProbeAggregate:seat-12")))[0].Tags;
         Assert.Contains("probeaggregate:seat-12", tags.Select(static t => t.ToString()).ToArray());
@@ -89,7 +89,7 @@ public class AggregateFallbackTagTests
         aggregate.SetStreamId(Stream(id).ToString());
         aggregate.Raise(new ProbeEvent(Guid.NewGuid(), DateTime.UtcNow));
 
-        await repository.SaveAsync(aggregate, new CommandMetadata());
+        await repository.SaveAsync(aggregate, new CommandMetadata { TenantId = "acct" });
 
         var tags = (await store.ReadStreamAsync(Stream(id)))[0].Tags;
         Assert.Contains($"student:{id:D}", tags.Select(static t => t.ToString()).ToArray());
@@ -104,7 +104,7 @@ public class AggregateFallbackTagTests
         var aggregate = new ProbeAggregate();
         aggregate.SetStreamId(Stream(id).ToString());
         aggregate.Raise(new ProbeEvent(Guid.NewGuid(), DateTime.UtcNow));
-        return repository.SaveAsync(aggregate, new CommandMetadata());
+        return repository.SaveAsync(aggregate, new CommandMetadata { TenantId = "acct" });
     }
 
     private static AggregateRepository Repository(
@@ -116,7 +116,7 @@ public class AggregateFallbackTagTests
             store,
             new DefaultMetadataProvider(),
             new NullTenant(),
-            Options.Create(new LawnDartOptions { RequireTenantId = false }),
+            Options.Create(new LawnDartOptions { Tenancy = Tenancy.Shared }),
             tagProvider,
             authorizationService: null,
             logger: null,

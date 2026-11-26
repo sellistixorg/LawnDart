@@ -199,5 +199,5 @@ public sealed class SqlServerAppendLockTests : IAsyncLifetime
     private SqlServerEventStore Store(string schema)
         => new(
             _connectionString,
-            options: new SqlServerEventStoreOptions { SchemaName = schema, RequireTenantId = false });
+            options: new SqlServerEventStoreOptions { SchemaName = schema, Tenancy = Tenancy.Single });
 }

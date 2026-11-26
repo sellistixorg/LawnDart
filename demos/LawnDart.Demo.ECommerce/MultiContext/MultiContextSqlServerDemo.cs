@@ -268,7 +268,7 @@ public static class MultiContextDemo
             })
             .ConfigureServices(services =>
             {
-                services.AddLawnDart(o => o.RequireTenantId = false);
+                services.AddLawnDart(o => o.Tenancy = Tenancy.Single);
 
                 var ordering = services.AddBoundedContext("ordering");
                 if (useSql)
@@ -277,7 +277,7 @@ public static class MultiContextDemo
                     {
                         opt.ConnectionString = connectionString!;
                         opt.SchemaName = "ordering";
-                        opt.RequireTenantId = false;
+                        opt.Tenancy = Tenancy.Single;
                     });
                 }
                 else
@@ -296,7 +296,7 @@ public static class MultiContextDemo
                     {
                         opt.ConnectionString = connectionString!;
                         opt.SchemaName = "catalog";
-                        opt.RequireTenantId = false;
+                        opt.Tenancy = Tenancy.Single;
                     });
                 }
                 else
