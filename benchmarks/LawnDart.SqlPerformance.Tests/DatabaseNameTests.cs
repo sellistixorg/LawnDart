@@ -76,4 +76,27 @@ public sealed class DatabaseNameTests
         Assert.Contains("N'o''db'", DatabaseNames.SqlServerRecreateScript("o'db"), StringComparison.Ordinal);
         Assert.Contains("[o'db]", DatabaseNames.SqlServerRecreateScript("o'db"), StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Hundred_million_tier_configures_large_engine_settings()
+    {
+        Assert.Equal("512MB", EngineMemory.PostgresSharedBuffers(DatasetPlan.OneMillion));
+        Assert.Equal("4GB", EngineMemory.PostgresSharedBuffers(DatasetPlan.OneHundredMillion));
+        Assert.Equal("4GB", EngineMemory.PostgresMaxWalSize(DatasetPlan.OneMillion));
+        Assert.Equal("16GB", EngineMemory.PostgresMaxWalSize(DatasetPlan.OneHundredMillion));
+        Assert.Equal("1g", EngineMemory.PostgresShmSize(DatasetPlan.OneMillion));
+        Assert.Equal("5g", EngineMemory.PostgresShmSize(DatasetPlan.OneHundredMillion));
+        Assert.Equal("8GB", EngineMemory.PostgresEffectiveCacheSize(DatasetPlan.OneHundredMillion));
+        Assert.Equal("512MB", EngineMemory.PostgresMaintenanceWorkMem(DatasetPlan.OneHundredMillion));
+        Assert.Equal("32MB", EngineMemory.PostgresWorkMem(DatasetPlan.OneHundredMillion));
+        Assert.Equal("15min", EngineMemory.PostgresCheckpointTimeout(DatasetPlan.OneHundredMillion));
+
+        var smallScript = DatabaseNames.SqlServerRecreateScript("benchdb", DatasetPlan.OneMillion);
+        Assert.DoesNotContain("FILEGROWTH", smallScript, StringComparison.Ordinal);
+
+        var largeScript = DatabaseNames.SqlServerRecreateScript("benchdb", DatasetPlan.OneHundredMillion);
+        Assert.Contains("FILEGROWTH", largeScript, StringComparison.Ordinal);
+        Assert.Contains("1024MB", largeScript, StringComparison.Ordinal);
+        Assert.Contains("512MB", largeScript, StringComparison.Ordinal);
+    }
 }

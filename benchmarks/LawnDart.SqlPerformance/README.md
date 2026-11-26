@@ -46,10 +46,12 @@ Appends:
 - `stream writers 1`, `stream writers 8`, `stream writers 16`, `stream writers 32`, and `stream writers 128`. That many streams each append one event per round, at the same time. The harness writes an untimed series on the first stream before these cases, so the timed appends are not the first use of that path.
 - `hot stream`. One stream appends one event after another.
 - `dcb append recent after`. One event is appended under a condition. The condition looks for the tag `bench-absent` after the loaded head. That tag is not in the loaded data.
+- `dcb heavy write`. Sixteen concurrent writers append dynamic consistency boundary events with three tags each under an `AppendCondition`.
 
 Queries:
 
-- `tag`, `tag and type`, and `two tags`. Each read asks for up to 50 events.
+- `first read after restart`. Opens a fresh event store instance and times the first `tag` query (up to five rounds).
+- `tag`, `tag and type`, `rare type and tag`, `two tags`, and `many tags` (sixteen tags). Each read asks for up to 50 events.
 - `condition recent after`. The same `bench-absent` condition, read from the index, starting after the loaded head. This is a read. No event is written.
 - `condition empty after`. The same read with no start position. This is a read. No event is written.
 
@@ -92,4 +94,4 @@ Continuous integration runs `check --size 1M` in its own job. That job does not 
 
 Set `LAWNDART_SQLPERF_PG` or `LAWNDART_SQLPERF_SQL` to a connection string. The harness uses that database and does not start a container.
 
-Set `LAWNDART_SQLPERF_PG_IMAGE` or `LAWNDART_SQLPERF_SQL_IMAGE` to choose the image when the harness starts a container. `LAWNDART_SQLPERF_PG_MEMORY` and `LAWNDART_SQLPERF_SQL_MEMORY` set the container memory cap, for example `4g`.
+Set `LAWNDART_SQLPERF_PG_IMAGE` or `LAWNDART_SQLPERF_SQL_IMAGE` to choose the image when the harness starts a container. `LAWNDART_SQLPERF_PG_MEMORY`, `LAWNDART_SQLPERF_SQL_MEMORY`, and `LAWNDART_SQLPERF_SQL_LIMIT` set the container memory cap (for example `4g`) and SQL Server memory limit in megabytes. At `100M` and above, Postgres raises `shared_buffers`, `max_wal_size`, `effective_cache_size`, `maintenance_work_mem`, `work_mem`, and `checkpoint_timeout`, and SQL Server sets larger data and log file growth increments.

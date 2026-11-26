@@ -77,7 +77,7 @@ internal static class Program
             var endpoint = await Engines.EnsureAsync(kind, plan.Size, cancellationToken).ConfigureAwait(false);
             try
             {
-                await Engines.RecreateDatabaseAsync(endpoint, cancellationToken).ConfigureAwait(false);
+                await Engines.RecreateDatabaseAsync(endpoint, plan.Size, cancellationToken).ConfigureAwait(false);
                 await Loader.LoadAsync(endpoint, plan, cancellationToken).ConfigureAwait(false);
                 var catalog = new EventGenerator(plan).Catalog();
                 catalog.Save(Reports.CatalogPath(kind, plan));
@@ -105,7 +105,7 @@ internal static class Program
             var word = Engines.Word(kind);
             Console.WriteLine(word + " load started");
             var endpoint = await Engines.EnsureAsync(kind, plan.Size, cancellationToken).ConfigureAwait(false);
-            await Engines.RecreateDatabaseAsync(endpoint, cancellationToken).ConfigureAwait(false);
+            await Engines.RecreateDatabaseAsync(endpoint, plan.Size, cancellationToken).ConfigureAwait(false);
             await Loader.LoadAsync(endpoint, plan, cancellationToken).ConfigureAwait(false);
             new EventGenerator(plan).Catalog().Save(Reports.CatalogPath(kind, plan));
             if (save)

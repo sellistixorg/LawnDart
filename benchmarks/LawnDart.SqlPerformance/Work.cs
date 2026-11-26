@@ -133,12 +133,16 @@ internal static class Workloads
         if (loadStreams.Count < 1 || streams.Count < Writers[^1])
             throw new InvalidOperationException("Not enough loaded streams for the append and read workloads.");
         results.AddRange(await StreamLoadsAsync(log, snapshots, endpoint, loadStreams, samples, cancellationToken).ConfigureAwait(false));
+        results.Add(await FirstReadAfterRestartAsync(endpoint, catalog, samples, cancellationToken).ConfigureAwait(false));
         results.AddRange(await AppendStreamsAsync(endpoint, log, streams, samples, cancellationToken).ConfigureAwait(false));
         results.Add(await HotStreamAsync(log, catalog, samples, cancellationToken).ConfigureAwait(false));
         results.Add(await DcbAppendsAsync(log, catalog, samples, recentAfter: true, "dcb append recent after", cancellationToken).ConfigureAwait(false));
+        results.Add(await DcbHeavyAsync(log, catalog, samples, cancellationToken).ConfigureAwait(false));
         results.Add(await QueryAsync(log, Query.FromItems(QueryItem.ByTags(catalog.QueryTag)), samples, "queries", "tag", cancellationToken).ConfigureAwait(false));
         results.Add(await QueryAsync(log, Query.FromItems(QueryItem.ByTypeAndTags([catalog.QueryType], [catalog.QueryTag])), samples, "queries", "tag and type", cancellationToken).ConfigureAwait(false));
+        results.Add(await QueryAsync(log, Query.FromItems(QueryItem.ByTypeAndTags([catalog.RareType], [catalog.QueryTag])), samples, "queries", "rare type and tag", cancellationToken).ConfigureAwait(false));
         results.Add(await QueryAsync(log, Query.FromItems(QueryItem.ByTags(catalog.MultiTagA, catalog.MultiTagB)), samples, "queries", "two tags", cancellationToken).ConfigureAwait(false));
+        results.Add(await QueryAsync(log, Query.FromItems(QueryItem.ByTags(catalog.ManyTags)), samples, "queries", "many tags", cancellationToken).ConfigureAwait(false));
         results.Add(await ConditionReadAsync(log, catalog, samples, recentAfter: true, "condition recent after", cancellationToken).ConfigureAwait(false));
         results.Add(await ConditionReadAsync(log, catalog, samples, recentAfter: false, "condition empty after", cancellationToken).ConfigureAwait(false));
         results.Add(await CatchUpAsync(log, 1000, fullCatchUp ? int.MaxValue : 2, cancellationToken).ConfigureAwait(false));
@@ -297,6 +301,80 @@ internal static class Workloads
         }
 
         return operations.Freeze("appends", name);
+    }
+
+    private static async Task<CaseResult> FirstReadAfterRestartAsync(
+        EngineEndpoint endpoint,
+        DatasetCatalog catalog,
+        int samples,
+        CancellationToken cancellationToken)
+    {
+        var operations = new OperationLog();
+        operations.Start();
+        var rounds = Math.Min(Math.Max(1, samples), 5);
+        var query = Query.FromItems(QueryItem.ByTags(catalog.QueryTag));
+        for (var round = 0; round < rounds; round++)
+        {
+            IEventLog freshLog = endpoint.Kind == DatabaseKind.Postgres
+                ? await StoreFactory.OpenPgAsync(endpoint.DatabaseConnectionString, cancellationToken).ConfigureAwait(false)
+                : await StoreFactory.OpenSqlAsync(endpoint.DatabaseConnectionString, cancellationToken).ConfigureAwait(false);
+            var began = Stopwatch.GetTimestamp();
+            var page = await freshLog.ReadByQueryAsync(query, limit: 50, cancellationToken: cancellationToken).ConfigureAwait(false);
+            operations.Add(began, Stopwatch.GetTimestamp(), page.Events.Count);
+            if (!page.TypesResolved)
+                throw new InvalidOperationException("A first-read query type was not stored.");
+        }
+
+        return operations.Freeze("queries", "first read after restart", throughputFromSamples: true);
+    }
+
+    private static async Task<CaseResult> DcbHeavyAsync(
+        IEventLog log,
+        DatasetCatalog catalog,
+        int samples,
+        CancellationToken cancellationToken)
+    {
+        const int writers = 16;
+        var rounds = Math.Max(1, ((samples * 4) + writers - 1) / writers);
+        var operations = new OperationLog();
+        operations.Start();
+        var tasks = new Task[writers];
+        for (var writer = 0; writer < writers; writer++)
+        {
+            var writerIndex = writer;
+            tasks[writer] = DcbHeavyWriterAsync(log, catalog, writerIndex, rounds, operations, cancellationToken);
+        }
+
+        await Task.WhenAll(tasks).ConfigureAwait(false);
+        return operations.Freeze("appends", "dcb heavy write");
+    }
+
+    private static async Task DcbHeavyWriterAsync(
+        IEventLog log,
+        DatasetCatalog catalog,
+        int writer,
+        int rounds,
+        OperationLog operations,
+        CancellationToken cancellationToken)
+    {
+        var tenantCount = Math.Max(1, catalog.Tenants);
+        var conditionQuery = Query.FromItems(QueryItem.ByTags("dcb-absent-" + writer.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        var condition = AppendCondition.FailIfMatches(conditionQuery, catalog.MaxPosition);
+        for (var round = 0; round < rounds; round++)
+        {
+            var tenant = "t" + ((writer + round) % tenantCount).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var metadata = Encoding.UTF8.GetBytes("{\"TenantId\":\"" + tenant + "\"}");
+            var skuTag = TagPicker.Rank((writer * 7 + round) % TagPicker.Vocabulary);
+            var writerTag = "dcb-writer:" + writer.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var began = Stopwatch.GetTimestamp();
+            var result = await log.AppendAsync(
+                [new AppendEvent("note-added", Payload, metadata, tags: ["tenant:" + tenant, writerTag, skuTag])],
+                condition,
+                cancellationToken).ConfigureAwait(false);
+            operations.Add(began, Stopwatch.GetTimestamp(), 1);
+            if (result.SequencePositions.Count < 1)
+                throw new InvalidOperationException("A heavy dynamic consistency boundary append returned no position.");
+        }
     }
 
     private static async Task<CaseResult> ConditionReadAsync(

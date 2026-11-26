@@ -148,12 +148,15 @@ internal static class Engines
         }
     }
 
-    public static async Task RecreateDatabaseAsync(EngineEndpoint endpoint, CancellationToken cancellationToken)
+    public static Task RecreateDatabaseAsync(EngineEndpoint endpoint, CancellationToken cancellationToken)
+        => RecreateDatabaseAsync(endpoint, DatasetPlan.OneMillion, cancellationToken);
+
+    public static async Task RecreateDatabaseAsync(EngineEndpoint endpoint, long size, CancellationToken cancellationToken)
     {
         if (endpoint.Kind == DatabaseKind.Postgres)
             await RecreatePostgresAsync(endpoint, cancellationToken).ConfigureAwait(false);
         else
-            await RecreateSqlServerAsync(endpoint, cancellationToken).ConfigureAwait(false);
+            await RecreateSqlServerAsync(endpoint, size, cancellationToken).ConfigureAwait(false);
     }
 
     public static async Task SaveAsync(EngineEndpoint endpoint, CancellationToken cancellationToken)
@@ -281,10 +284,9 @@ internal static class Engines
     {
         if (kind == DatabaseKind.Postgres)
         {
-            var large = size >= DatasetPlan.OneHundredMillion;
-            var buffers = large ? "4GB" : "512MB";
-            var wal = large ? "16GB" : "4GB";
-            var shm = large ? "5g" : "1g";
+            var buffers = EngineMemory.PostgresSharedBuffers(size);
+            var wal = EngineMemory.PostgresMaxWalSize(size);
+            var shm = EngineMemory.PostgresShmSize(size);
             await DockerCli.RunAsync(
                 cancellationToken,
                 "run", "-d", "--name", name,
@@ -301,6 +303,11 @@ internal static class Engines
                 "-c", "full_page_writes=on",
                 "-c", "shared_buffers=" + buffers,
                 "-c", "max_wal_size=" + wal,
+                "-c", "effective_cache_size=" + EngineMemory.PostgresEffectiveCacheSize(size),
+                "-c", "maintenance_work_mem=" + EngineMemory.PostgresMaintenanceWorkMem(size),
+                "-c", "work_mem=" + EngineMemory.PostgresWorkMem(size),
+                "-c", "checkpoint_timeout=" + EngineMemory.PostgresCheckpointTimeout(size),
+                "-c", "checkpoint_completion_target=0.9",
                 "-c", "max_connections=300").ConfigureAwait(false);
             return;
         }
@@ -381,13 +388,13 @@ internal static class Engines
         await ExecuteAsync(connection, DatabaseNames.PostgresCreateSql(database), cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task RecreateSqlServerAsync(EngineEndpoint endpoint, CancellationToken cancellationToken)
+    private static async Task RecreateSqlServerAsync(EngineEndpoint endpoint, long size, CancellationToken cancellationToken)
     {
         ClearPools();
         var database = DatabaseNames.SqlServer(endpoint.DatabaseConnectionString);
         await using var connection = new SqlConnection(endpoint.MaintenanceConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await ExecuteSqlAsync(connection, DatabaseNames.SqlServerRecreateScript(database), cancellationToken).ConfigureAwait(false);
+        await ExecuteSqlAsync(connection, DatabaseNames.SqlServerRecreateScript(database, size), cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task SavePostgresAsync(EngineEndpoint endpoint, CancellationToken cancellationToken)
@@ -552,12 +559,36 @@ internal static class EngineMemory
 
     public static string SqlLimit(long size)
     {
+        var configured = Environment.GetEnvironmentVariable("LAWNDART_SQLPERF_SQL_LIMIT");
+        if (!string.IsNullOrWhiteSpace(configured))
+            return configured.Trim();
         if (size >= DatasetPlan.OneHundredMillion)
             return "12288";
         if (size >= DatasetPlan.TenMillion)
             return "6144";
         return "2048";
     }
+
+    public static string PostgresSharedBuffers(long size)
+        => size >= DatasetPlan.OneHundredMillion ? "4GB" : "512MB";
+
+    public static string PostgresMaxWalSize(long size)
+        => size >= DatasetPlan.OneHundredMillion ? "16GB" : "4GB";
+
+    public static string PostgresShmSize(long size)
+        => size >= DatasetPlan.OneHundredMillion ? "5g" : "1g";
+
+    public static string PostgresEffectiveCacheSize(long size)
+        => size >= DatasetPlan.OneHundredMillion ? "8GB" : "2GB";
+
+    public static string PostgresMaintenanceWorkMem(long size)
+        => size >= DatasetPlan.OneHundredMillion ? "512MB" : "128MB";
+
+    public static string PostgresWorkMem(long size)
+        => size >= DatasetPlan.OneHundredMillion ? "32MB" : "8MB";
+
+    public static string PostgresCheckpointTimeout(long size)
+        => size >= DatasetPlan.OneHundredMillion ? "15min" : "5min";
 }
 
 internal static class DatabaseNames
@@ -616,10 +647,26 @@ internal static class DatabaseNames
     public static string PostgresCreateFromTemplateSql(string database, string template)
         => "CREATE DATABASE " + QuotePostgres(database) + " TEMPLATE " + QuotePostgres(template);
 
-    public static string SqlServerRecreateScript(string database)
+    public static string SqlServerRecreateScript(string database, long size = DatasetPlan.OneMillion)
     {
         var quoted = QuoteSqlServer(database);
         var literal = SqlLiteral(database);
+        var growth = size >= DatasetPlan.OneHundredMillion
+            ? $"""
+
+            DECLARE @growthSql nvarchar(max) = N'';
+            SELECT @growthSql = @growthSql
+                + N'ALTER DATABASE {quoted} MODIFY FILE (NAME = N'''
+                + REPLACE(name, N'''', N'''''')
+                + N''', FILEGROWTH = '
+                + CASE WHEN type = 1 THEN N'512MB' ELSE N'1024MB' END
+                + N');'
+            FROM sys.master_files
+            WHERE database_id = DB_ID(N'{literal}');
+            IF LEN(@growthSql) > 0
+                EXEC sp_executesql @growthSql;
+            """
+            : string.Empty;
         return $"""
             IF DB_ID(N'{literal}') IS NOT NULL
             BEGIN
@@ -627,7 +674,7 @@ internal static class DatabaseNames
                 DROP DATABASE {quoted};
             END
             CREATE DATABASE {quoted};
-            ALTER DATABASE {quoted} SET RECOVERY SIMPLE;
+            ALTER DATABASE {quoted} SET RECOVERY SIMPLE;{growth}
             """;
     }
 

@@ -20,4 +20,15 @@ public sealed class GeneratorTests
         Assert.Equal(1_000_000, SizeParser.Parse("1000000"));
         Assert.Equal(1_000_000, DatasetPlan.Default.Size);
     }
+
+    [Fact]
+    public void Catalog_exposes_rare_type_and_many_tags()
+    {
+        var catalog = new EventGenerator(new DatasetPlan(20_000, seed: 7, tenants: 4)).Catalog();
+        Assert.Equal(EventGenerator.RareType, catalog.RareType);
+        Assert.Contains(EventGenerator.RareType, EventGenerator.EventTypeNames);
+        Assert.Equal(TagPicker.ManyTagCount, catalog.ManyTags.Length);
+        Assert.Equal("sku:0", catalog.ManyTags[0]);
+        Assert.Equal("sku:15", catalog.ManyTags[^1]);
+    }
 }
