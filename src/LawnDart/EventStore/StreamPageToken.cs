@@ -18,6 +18,9 @@ internal static class StreamPageToken
 
     internal static string? ReadAfter(string? pageToken, StreamListFilter? filter)
     {
+        if (filter?.Tag is { } filterTag)
+            EventLogBuffers.RequireTag(filterTag);
+
         if (string.IsNullOrEmpty(pageToken))
             return null;
 

@@ -25,13 +25,14 @@ Every store method that takes or returns a stream id uses `LawnDart.EventStore.S
 - `StreamId.Dcb(tenantId)` for the reserved dynamic consistency boundary stream, `dcb` or `{tenantId}:dcb`
 - `StreamId.Parse(text)` or `StreamId.TryParse(text, out var streamId)` for text you already have
 
-`ToString()` returns the canonical text. `TenantId`, `Type`, and `Id` return the parts. `IsDcb` is true for the reserved form. Two values are equal when their text is equal, character by character, with case. JSON writes and reads a stream id as its canonical string.
+`ToString()` returns the canonical text. `TenantId`, `Type`, and `Id` return the parts. `IsDcb` is true for the reserved form. Two values are equal when their text is equal, character by character, with case. SQL Server's `StreamId` column uses a case-insensitive collation, so lookups and prefix filters there still match regardless of case. JSON writes and reads a stream id as its canonical string.
 
 The rules are the same on every store:
 
 - Tenant, type, and id are not empty and do not start or end with whitespace.
 - Tenant and type do not contain a colon. With a tenant, the id is everything after the type, so it may contain colons.
 - Without a tenant, the id does not contain a colon, because the text would read back as `{tenantId}:{type}:{id}`. The id is not `dcb`.
+- Type `dcb` is still allowed for interim `dcb:{guid}` and `{tenant}:dcb:{guid}` streams until the fixed dynamic consistency boundary stream rules arrive in step 4.
 - The whole text is at most 255 characters (`StreamId.MaxLength`).
 
 `StreamId.Parse` throws `FormatException` when the text breaks a rule. `StreamId.For` throws `ArgumentException`. A store throws `ArgumentException` for a `default` stream id.

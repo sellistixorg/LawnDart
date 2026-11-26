@@ -104,6 +104,25 @@ public sealed class PostgresPhase1Tests
     }
 
     [Fact]
+    public async Task DcbReservedStreamId_StoresTenantInTenantColumn()
+    {
+        var opened = await OpenAsync(requireTenantId: false);
+        var withTenant = StreamId.Dcb("acme");
+        var withoutTenant = StreamId.Dcb();
+
+        await opened.Store.AppendAsync(withTenant, [ContractEvent.Tick()]);
+        await opened.Store.AppendAsync(withoutTenant, [ContractEvent.Tick()]);
+
+        Assert.Equal("acme", await TenantOfAsync(opened.SchemaName, withTenant.ToString()));
+        Assert.Equal("default", await TenantOfAsync(opened.SchemaName, withoutTenant.ToString()));
+
+        var withTenantMeta = await opened.Store.GetStreamAsync(withTenant);
+        var withoutTenantMeta = await opened.Store.GetStreamAsync(withoutTenant);
+        Assert.Equal("acme", withTenantMeta!.TenantId);
+        Assert.Null(withoutTenantMeta!.TenantId);
+    }
+
+    [Fact]
     public async Task EmptyTenant_IsRejectedByTheDatabase()
     {
         var opened = await OpenAsync();

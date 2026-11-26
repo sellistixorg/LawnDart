@@ -18,6 +18,26 @@ public abstract class DcbContractTests : ContractSuite
     }
 
     [Fact]
+    public async Task AppendAsync_WithDCBCondition_BadMetadataTenantWhenValidationOff_ThrowsArgumentException()
+    {
+        var store = (await Backend.OpenEventStoreAsync(
+            ContractStores.Isolated(requireTenantId: false, validateNames: false))).Store;
+        var condition = AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByType("SomeOtherEvent")));
+
+        await Assert.ThrowsAsync<ArgumentException>(() => store.AppendAsync(
+            [ContractEvent.Tick()],
+            condition,
+            metadata: new EventMetadata { TenantId = "a:b" }));
+
+        await Assert.ThrowsAsync<ArgumentException>(() => store.AppendAsync(
+            [ContractEvent.Tick()],
+            condition,
+            metadata: new EventMetadata { TenantId = " acme" }));
+
+        Assert.Equal(0, await store.GetCurrentSequenceAsync());
+    }
+
+    [Fact]
     public async Task AppendAsync_WithDCBCondition_ValidatesCondition()
     {
         var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;

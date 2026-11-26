@@ -1741,9 +1741,9 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
             var tenantId = AppendTenantRules.TryReadTenantId(envelopes);
             AppendTenantRules.ValidateDcbAppend(tenantId, _options.RequireTenantId, _options.ValidateNames);
 
-            var streamId = !string.IsNullOrWhiteSpace(tenantId)
-                ? $"{tenantId}:dcb:{Guid.NewGuid()}"
-                : $"dcb:{Guid.NewGuid()}";
+            var streamId = (!string.IsNullOrWhiteSpace(tenantId)
+                ? StreamId.For(tenantId, StreamId.DcbType, Guid.NewGuid().ToString())
+                : StreamId.For(StreamId.DcbType, Guid.NewGuid().ToString())).ToString();
             SqlServerColumnLimits.EnsureStreamId(streamId, "streamId");
 
             await EnsureEventTypeIdsAsync(envelopes, ct).ConfigureAwait(false);

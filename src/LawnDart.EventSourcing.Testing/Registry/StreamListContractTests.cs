@@ -214,6 +214,14 @@ public abstract class StreamListContractTests : ContractSuite
     }
 
     [Fact]
+    public async Task ListStreams_DefaultTag_ThrowsArgumentException()
+    {
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            store.ListStreamsAsync(new StreamListFilter { Tag = default(Tag) }));
+    }
+
+    [Fact]
     public async Task ListStreams_BadToken_Throws()
     {
         var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;

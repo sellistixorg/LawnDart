@@ -377,6 +377,31 @@ public class AdHocProjectionBuilderTests
     }
 
     [Fact]
+    public async Task SingleStream_TenantScoped_InvalidInstanceId_ReturnsEmptyWithoutThrowing()
+    {
+        var store = new InMemoryEventStore();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await store.AppendAsync(
+            StreamId.For("acme", "Counter", "c1"),
+            [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 3)],
+            metadata: MakeMeta());
+
+        var builder = BuildBuilder(store, SingleStreamRegistrations());
+
+        var bare = await builder.BuildAtAsync(
+            "CounterSummary", "bare-instance-id",
+            ProjectionCutoff.AtSequence(10),
+            cts.Token);
+        Assert.Equal(0, bare.EventsApplied);
+
+        var malformed = await builder.BuildAtAsync(
+            "CounterSummary", ":bad:id",
+            ProjectionCutoff.AtSequence(10),
+            cts.Token);
+        Assert.Equal(0, malformed.EventsApplied);
+    }
+
+    [Fact]
     public async Task UnknownProjectionName_ThrowsInvalidOperation()
     {
         var store = new InMemoryEventStore();

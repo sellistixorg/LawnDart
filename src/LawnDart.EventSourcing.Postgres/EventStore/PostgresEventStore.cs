@@ -352,9 +352,9 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
         var tenantId = AppendTenantRules.TryReadTenantId(envelopes);
         AppendTenantRules.ValidateDcbAppend(tenantId, _options.RequireTenantId, _options.ValidateNames);
 
-        var streamId = !string.IsNullOrWhiteSpace(tenantId)
-            ? $"{tenantId}:dcb:{Guid.NewGuid()}"
-            : $"dcb:{Guid.NewGuid()}";
+        var streamId = (!string.IsNullOrWhiteSpace(tenantId)
+            ? StreamId.For(tenantId, StreamId.DcbType, Guid.NewGuid().ToString())
+            : StreamId.For(StreamId.DcbType, Guid.NewGuid().ToString())).ToString();
         EnsureStreamLength(streamId, "streamId");
         var eventIds = EventIdResolver.ResolveBatch(envelopes.Select(e => e.Metadata).ToList());
         var eventTypes = envelopes.Select(static envelope => envelope.EventType).ToArray();

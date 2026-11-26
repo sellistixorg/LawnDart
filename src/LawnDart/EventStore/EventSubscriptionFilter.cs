@@ -38,7 +38,7 @@ public sealed class EventSubscriptionFilter
     /// Subscribes to events for a single stream, still ordered by global <see cref="SequencedEvent.SequencePosition"/>.
     /// </summary>
     /// <param name="streamId">The stream identifier.</param>
-    /// <exception cref="ArgumentException"><paramref name="streamId"/> is null or whitespace.</exception>
+    /// <exception cref="ArgumentException"><paramref name="streamId"/> is <see langword="default"/>.</exception>
     public static EventSubscriptionFilter ForStream(StreamId streamId)
     {
         EventLogBuffers.RequireStreamId(streamId);
