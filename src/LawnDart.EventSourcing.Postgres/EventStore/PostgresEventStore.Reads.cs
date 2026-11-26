@@ -252,7 +252,7 @@ public sealed partial class PostgresEventStore
                     if (!page.TypesResolved)
                     {
                         if (page.Events.Count < batch)
-                            await WaitPollAsync(ticket, IdleWait(head, visible.Held), cancellation).ConfigureAwait(false);
+                            await WaitPollAsync(ticket, IdleWait(visible), cancellation).ConfigureAwait(false);
                         continue;
                     }
 
@@ -260,7 +260,7 @@ public sealed partial class PostgresEventStore
                         lastDelivered = head;
                     if (delivered > 0 || page.Events.Count >= batch)
                         continue;
-                    await WaitPollAsync(ticket, IdleWait(head, visible.Held), cancellation).ConfigureAwait(false);
+                    await WaitPollAsync(ticket, IdleWait(visible), cancellation).ConfigureAwait(false);
                 }
                 catch (Exception ex) when (IsRetryableReadFailure(ex, hadSuccessfulRead) && !cancellation.IsCancellationRequested)
                 {
@@ -307,8 +307,12 @@ public sealed partial class PostgresEventStore
             ? _options.BackupPollInterval
             : _options.PollOnlyInterval;
 
-    private TimeSpan IdleWait(long head, bool held) =>
-        SubscriptionWake.IdleWait(CurrentPoll(), head, _newEvents.Position, held);
+    private TimeSpan IdleWait(PostgresReadHorizon.HorizonRead visible) =>
+        SubscriptionWake.IdleWait(
+            CurrentPoll(),
+            visible.Head,
+            Math.Max(_newEvents.Position, visible.Committed),
+            visible.Held);
 
     internal static bool IsRetryableReadFailure(Exception exception, bool hadSuccessfulRead)
     {

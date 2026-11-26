@@ -18,16 +18,22 @@ public class OutboxHostOrderTests
     public async Task Outbox_registered_before_the_reactor_delivers_once()
     {
         var reactor = new CountingReactor();
-        using var host = BuildHost(reactor, subscribe: true);
-        var writer = Writer(host);
+        var inner = new InMemoryOutboxWriter();
         var id = Guid.NewGuid();
-        await writer.WriteAsync(Message(id));
+        var marked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var signaling = new MarkSignalOutboxWriter(inner, id, marked);
+        using var host = BuildHost(
+            reactor,
+            subscribe: true,
+            configure: services => services.AddKeyedSingleton<IOutboxWriter>("default", signaling));
+        await inner.WriteAsync(Message(id));
 
         await host.StartAsync().WaitAsync(TimeSpan.FromSeconds(10));
         try
         {
-            await WaitUntilAsync(() => reactor.CallCount == 1);
-            var row = Assert.Single(writer.Snapshot());
+            await marked.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(1, reactor.CallCount);
+            var row = Assert.Single(inner.Snapshot());
             Assert.Equal(id, row.Id);
             Assert.Equal(0, row.Attempts);
             Assert.NotNull(row.ProcessedAt);
@@ -298,5 +304,48 @@ public class OutboxHostOrderTests
             {
             }
         }
+    }
+
+    private sealed class MarkSignalOutboxWriter(
+        InMemoryOutboxWriter inner,
+        Guid targetId,
+        TaskCompletionSource marked) : IOutboxWriter
+    {
+        public Task InitializeSchemaAsync(CancellationToken cancellationToken = default)
+            => inner.InitializeSchemaAsync(cancellationToken);
+
+        public Task WriteAsync(OutboxMessage message, CancellationToken cancellationToken = default)
+            => inner.WriteAsync(message, cancellationToken);
+
+        public Task WriteBatchAsync(IEnumerable<OutboxMessage> messages, CancellationToken cancellationToken = default)
+            => inner.WriteBatchAsync(messages, cancellationToken);
+
+        public Task<IReadOnlyList<OutboxMessage>> GetUnprocessedAsync(
+            int batchSize, CancellationToken cancellationToken = default)
+            => inner.GetUnprocessedAsync(batchSize, cancellationToken);
+
+        public async Task MarkAsProcessedAsync(Guid messageId, CancellationToken cancellationToken = default)
+        {
+            await inner.MarkAsProcessedAsync(messageId, cancellationToken).ConfigureAwait(false);
+            if (messageId == targetId)
+                marked.TrySetResult();
+        }
+
+        public Task RecordFailureAsync(
+            Guid messageId, string error, long publishedTo = 0, CancellationToken cancellationToken = default)
+            => inner.RecordFailureAsync(messageId, error, publishedTo, cancellationToken);
+
+        public Task MarkAsDeadLetteredAsync(Guid messageId, CancellationToken cancellationToken = default)
+            => inner.MarkAsDeadLetteredAsync(messageId, cancellationToken);
+
+        public Task<IReadOnlyList<OutboxMessage>> GetDeadLetteredAsync(
+            int batchSize, CancellationToken cancellationToken = default)
+            => inner.GetDeadLetteredAsync(batchSize, cancellationToken);
+
+        public Task<bool> ResetDeadLetteredAsync(Guid messageId, CancellationToken cancellationToken = default)
+            => inner.ResetDeadLetteredAsync(messageId, cancellationToken);
+
+        public Task<int> ResetAllDeadLetteredAsync(CancellationToken cancellationToken = default)
+            => inner.ResetAllDeadLetteredAsync(cancellationToken);
     }
 }

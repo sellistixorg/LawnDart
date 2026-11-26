@@ -35,9 +35,18 @@ namespace LawnDart.EventSourcing.Postgres.EventStore;
 /// watches the hole. A row that shows up in the hole later is logged as an error.
 /// A read-only transaction has no transaction id and does not hold M.
 /// </para>
+/// <para>
+/// Startup initialization. On the first read of a new store instance, M is not
+/// scanned forward from zero. Instead, the reader reads the highest committed
+/// position together with <c>pg_current_snapshot()</c>. Once every in-progress
+/// transaction on that initial snapshot has finished, no transaction can commit
+/// at or below that position, so M starts there directly.
+/// </para>
 /// </remarks>
 internal sealed class PostgresReadHorizon
 {
+    private const long SmallLogThreshold = 1000;
+
     private readonly PostgresNames _names;
     private readonly PostgresEventStoreOptions _options;
     private readonly ILogger? _logger;
@@ -45,6 +54,9 @@ internal sealed class PostgresReadHorizon
     private readonly List<WatchedRange> _watched = [];
     private readonly HashSet<long> _reported = [];
     private long _mark;
+    private bool _initialized;
+    private long _seedCommitted;
+    private IReadOnlyList<string>? _seedXids;
     private string? _holdKey;
     private DateTime _holdSinceUtc;
     private bool _warned;
@@ -56,8 +68,28 @@ internal sealed class PostgresReadHorizon
         _logger = logger;
     }
 
+    /// <summary>Current gap-free head mark maintained by this instance.</summary>
+    internal long Mark
+    {
+        get { lock (_sync) return _mark; }
+    }
+
+    /// <summary>Test seam invoked with the mark parameter used by each hole-scan sample query.</summary>
+    internal Action<long>? OnSampleRead { get; set; }
+
     internal async Task<HorizonRead> ResolveAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
     {
+        bool initialized;
+        lock (_sync)
+            initialized = _initialized;
+
+        if (!initialized)
+        {
+            var initial = await InitializeAsync(connection, cancellationToken).ConfigureAwait(false);
+            if (initial is { } ready)
+                return ready;
+        }
+
         for (var pass = 0; pass < 16; pass++)
         {
             var sample = await ReadSampleAsync(connection, cancellationToken).ConfigureAwait(false);
@@ -67,7 +99,7 @@ internal sealed class PostgresReadHorizon
             {
                 MoveMark(sample.Contiguous);
                 ClearHold();
-                return new HorizonRead(Mark, Held: false);
+                return new HorizonRead(Mark, Held: false, sample.Committed);
             }
 
             var open = await StillOpenAsync(connection, sample.InProgress, cancellationToken).ConfigureAwait(false);
@@ -88,21 +120,186 @@ internal sealed class PostgresReadHorizon
             MoveMark(sample.Contiguous);
             var held = await HoldMillisecondsAsync(connection, open, cancellationToken).ConfigureAwait(false);
             if (WaitsForever(_options.ReadHorizonGracePeriod) || held <= _options.ReadHorizonGracePeriod.TotalMilliseconds)
-                return new HorizonRead(Mark, Held: true);
+                return new HorizonRead(Mark, Held: true, sample.Committed);
 
             Remember(sample.Contiguous, sample.Committed, await PositionsBetweenAsync(
                 connection, sample.Contiguous, sample.Committed + 1, cancellationToken).ConfigureAwait(false));
             Warn(held, open, sample.Contiguous, sample.Committed);
             MoveMark(sample.Committed);
-            return new HorizonRead(Mark, Held: false);
+            return new HorizonRead(Mark, Held: false, sample.Committed);
         }
 
-        return new HorizonRead(Mark, Held: false);
+        var current = Mark;
+        return new HorizonRead(current, Held: false, current);
     }
 
-    private long Mark
+    private async Task<HorizonRead?> InitializeAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
     {
-        get { lock (_sync) return _mark; }
+        IReadOnlyList<string>? seedXids;
+        long seedCommitted;
+        lock (_sync)
+        {
+            if (_initialized)
+                return null;
+            seedXids = _seedXids;
+            seedCommitted = _seedCommitted;
+        }
+
+        if (seedXids is null)
+        {
+            var (snapshot, committed) = await ReadSeedAsync(connection, cancellationToken).ConfigureAwait(false);
+            if (committed == 0)
+            {
+                lock (_sync)
+                {
+                    if (!_initialized)
+                    {
+                        _initialized = true;
+                        _seedXids = null;
+                    }
+                }
+
+                ClearHold();
+                return null;
+            }
+
+            var xip = ParseXip(snapshot);
+            if (xip.Count == 0)
+            {
+                lock (_sync)
+                {
+                    if (!_initialized)
+                    {
+                        if (committed > _mark)
+                            _mark = committed;
+                        _initialized = true;
+                        _seedXids = null;
+                    }
+                }
+
+                ClearHold();
+                return new HorizonRead(Mark, Held: false, committed);
+            }
+
+            var open = await StillOpenAsync(connection, xip, cancellationToken).ConfigureAwait(false);
+            if (open.Count == 0)
+            {
+                lock (_sync)
+                {
+                    if (!_initialized)
+                    {
+                        if (committed > _mark)
+                            _mark = committed;
+                        _initialized = true;
+                        _seedXids = null;
+                    }
+                }
+
+                ClearHold();
+                return null;
+            }
+
+            if (committed <= SmallLogThreshold)
+            {
+                lock (_sync)
+                {
+                    if (!_initialized)
+                    {
+                        _initialized = true;
+                        _seedXids = null;
+                    }
+                }
+
+                return null;
+            }
+
+            lock (_sync)
+            {
+                if (_initialized)
+                    return null;
+                if (_seedXids is null)
+                {
+                    _seedCommitted = committed;
+                    _seedXids = open;
+                }
+
+                seedXids = _seedXids;
+                seedCommitted = _seedCommitted;
+            }
+        }
+        else
+        {
+            var open = await StillOpenAsync(connection, seedXids, cancellationToken).ConfigureAwait(false);
+            if (open.Count == 0)
+            {
+                lock (_sync)
+                {
+                    if (!_initialized)
+                    {
+                        if (seedCommitted > _mark)
+                            _mark = seedCommitted;
+                        _initialized = true;
+                        _seedXids = null;
+                    }
+                }
+
+                ClearHold();
+                return null;
+            }
+
+            lock (_sync)
+            {
+                if (_initialized)
+                    return null;
+                _seedXids = open;
+                seedXids = open;
+                seedCommitted = _seedCommitted;
+            }
+        }
+
+        var held = await HoldMillisecondsAsync(connection, seedXids, cancellationToken).ConfigureAwait(false);
+        if (WaitsForever(_options.ReadHorizonGracePeriod) || held <= _options.ReadHorizonGracePeriod.TotalMilliseconds)
+            return new HorizonRead(Mark, Held: true, seedCommitted);
+
+        // Grace expired while waiting for initial open transactions to finish.
+        // Watch only a bounded tail window so cold starts never pull the entire log.
+        var watchAfter = Math.Max(0L, seedCommitted - 1000L);
+        var seen = await PositionsBetweenAsync(
+            connection, watchAfter, seedCommitted + 1, cancellationToken).ConfigureAwait(false);
+        if (seen.Count < seedCommitted - watchAfter)
+            Remember(watchAfter, seedCommitted + 1, seen);
+        Warn(held, seedXids, Mark, seedCommitted);
+        lock (_sync)
+        {
+            if (!_initialized)
+            {
+                if (seedCommitted > _mark)
+                    _mark = seedCommitted;
+                _initialized = true;
+                _seedXids = null;
+            }
+        }
+
+        return new HorizonRead(Mark, Held: false, seedCommitted);
+    }
+
+    private async Task<(string Snapshot, long Committed)> ReadSeedAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        var sql = $"""
+            SELECT
+                pg_current_snapshot()::text,
+                COALESCE((SELECT MAX(global_position) FROM {_names.Events}), 0) AS committed
+            """;
+        var command = new NpgsqlCommand(sql, connection);
+        await using var commandDisposal = command.ConfigureAwait(false);
+        var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var readerDisposal = reader.ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            return ("", 0);
+
+        return (reader.GetString(0), reader.GetInt64(1));
     }
 
     private void MoveMark(long value)
@@ -128,6 +325,8 @@ internal sealed class PostgresReadHorizon
         long mark;
         lock (_sync)
             mark = _mark;
+
+        OnSampleRead?.Invoke(mark);
 
         var sql = $"""
             WITH nxt AS (
@@ -372,7 +571,7 @@ internal sealed class PostgresReadHorizon
     private static bool WaitsForever(TimeSpan grace) =>
         grace < TimeSpan.Zero || grace == TimeSpan.MaxValue;
 
-    internal readonly record struct HorizonRead(long Head, bool Held);
+    internal readonly record struct HorizonRead(long Head, bool Held, long Committed = 0);
 
     private readonly record struct Sample(long Contiguous, long? NextAfter, long Committed, IReadOnlyList<string> InProgress);
 

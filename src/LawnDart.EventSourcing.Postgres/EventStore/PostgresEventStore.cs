@@ -88,6 +88,9 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
     /// <summary>Wake-up listener for this store.</summary>
     internal PostgresNotificationListener Listener => _listener;
 
+    /// <summary>Read horizon state for this store.</summary>
+    internal PostgresReadHorizon Horizon => _horizon;
+
     /// <summary>Channel used by <c>pg_notify</c>. The payload is the newest position.</summary>
     internal string NotifyChannel => _names.NotifyChannel;
 
