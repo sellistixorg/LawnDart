@@ -76,7 +76,16 @@ internal static class SplitMix
 internal static class TagPicker
 {
     public const int Vocabulary = 2000;
+    public const int ManyTagCount = 16;
     private static readonly double[] Cumulative = Build();
+
+    public static string[] ManyTags()
+    {
+        var tags = new string[ManyTagCount];
+        for (var i = 0; i < ManyTagCount; i++)
+            tags[i] = Rank(i);
+        return tags;
+    }
 
     public static string Pick(ulong seed, long ordinal, ulong salt)
     {
@@ -102,7 +111,7 @@ internal static class TagPicker
     {
         var count = 1 + (int)(SplitMix.Mix(seed, 11, unchecked((ulong)ordinal)) % 3UL);
         var tags = new List<string>(count);
-        if (eventType is "note-added" or "price-changed")
+        if (eventType is "note-added" or "price-changed" or EventGenerator.RareType)
             tags.Add(Rank(0));
         if (eventType == "price-changed" && count >= 2)
             tags.Add(Rank(1));
@@ -229,8 +238,10 @@ internal sealed class DatasetCatalog
     public string[] HotTags { get; set; } = [];
     public string QueryTag { get; set; } = "sku:0";
     public string QueryType { get; set; } = "note-added";
+    public string RareType { get; set; } = EventGenerator.RareType;
     public string MultiTagA { get; set; } = "sku:0";
     public string MultiTagB { get; set; } = "sku:1";
+    public string[] ManyTags { get; set; } = TagPicker.ManyTags();
     public List<StreamSample> Streams { get; set; } = [];
 
     public void Save(string path)
@@ -282,6 +293,7 @@ internal sealed class EventGenerator
 {
     public const string QueryTag = "sku:0";
     public const string QueryType = "note-added";
+    public const string RareType = "rare-audit";
     public const string MultiTagA = "sku:0";
     public const string MultiTagB = "sku:1";
 
@@ -307,7 +319,7 @@ internal sealed class EventGenerator
     {
         _plan = plan;
         _lengths = BuildLengths(plan, out _ends);
-        var names = EventsByType.Values.SelectMany(x => x).Concat(DcbEventTypes).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+        var names = EventsByType.Values.SelectMany(x => x).Concat(DcbEventTypes).Append(RareType).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
         _payloads = PayloadFactory.Build(names);
         _metadata = new string[plan.Tenants];
         for (var i = 0; i < plan.Tenants; i++)
@@ -322,6 +334,7 @@ internal sealed class EventGenerator
         "payment-refunded",
         "payment-taken",
         "price-changed",
+        "rare-audit",
         "shipment-packed",
         "shipment-sent",
         "stock-moved"
@@ -337,8 +350,10 @@ internal sealed class EventGenerator
             MaxPosition = _plan.Size,
             QueryTag = QueryTag,
             QueryType = QueryType,
+            RareType = RareType,
             MultiTagA = MultiTagA,
-            MultiTagB = MultiTagB
+            MultiTagB = MultiTagB,
+            ManyTags = TagPicker.ManyTags()
         };
 
         var hot = 0;
@@ -464,8 +479,23 @@ internal sealed class EventGenerator
         var tenant = Tenant(tenantIndex);
         var aggregateId = GuidFor(2, unchecked((ulong)ordinal));
         var streamId = tenant + ":dcb:" + aggregateId.ToString("D");
-        var eventType = DcbEventTypes[(int)(ordinal % DcbEventTypes.Length)];
-        var tags = TagPicker.DcbTags(_plan.MixSeed, ordinal, eventType);
+        string eventType;
+        string[] tags;
+        if (ordinal % 500 == 250)
+        {
+            eventType = RareType;
+            tags = TagPicker.DcbTags(_plan.MixSeed, ordinal, eventType);
+        }
+        else if (ordinal % 500 == 125)
+        {
+            eventType = "price-changed";
+            tags = TagPicker.ManyTags();
+        }
+        else
+        {
+            eventType = DcbEventTypes[(int)(ordinal % DcbEventTypes.Length)];
+            tags = TagPicker.DcbTags(_plan.MixSeed, ordinal, eventType);
+        }
         return new EventRow
         {
             Tenant = tenant,
@@ -611,6 +641,9 @@ internal static class GeneratorChecks
         var generator = new EventGenerator(plan);
         long count = 0;
         long dcb = 0;
+        long rare = 0;
+        long manyTag = 0;
+        var expectedManyTags = TagPicker.ManyTags();
         var versions = new Dictionary<string, long>(StringComparer.Ordinal);
         var closed = new Dictionary<string, long>(StringComparer.Ordinal);
         foreach (var batch in generator.Batches(1024))
@@ -632,15 +665,27 @@ internal static class GeneratorChecks
                     dcb++;
                     if (row.Version != 0)
                         throw new InvalidOperationException("A dynamic consistency boundary event has a non zero version.");
-                    if (row.Tags.Length < 1 || row.Tags.Length > 3)
+                    if (row.Tags.Length < 1 || (row.Tags.Length > 3 && row.Tags.Length != TagPicker.ManyTagCount))
                         throw new InvalidOperationException("A dynamic consistency boundary event has the wrong number of tags.");
                     if (!row.StreamId.Contains(":dcb:", StringComparison.Ordinal))
                         throw new InvalidOperationException("A dynamic consistency boundary stream id has the wrong shape.");
                     if (row.EventType == "note-added" && row.Tags[0] != "sku:0")
                         throw new InvalidOperationException("A note event is missing its tag.");
+                    if (row.EventType == EventGenerator.RareType)
+                    {
+                        rare++;
+                        if (row.Tags[0] != "sku:0")
+                            throw new InvalidOperationException("A rare event is missing its tag.");
+                    }
                     if (row.EventType == "price-changed" && row.Tags.Length >= 2
                         && (row.Tags[0] != "sku:0" || row.Tags[1] != "sku:1"))
                         throw new InvalidOperationException("A price event is missing its tag pair.");
+                    if (row.Tags.Length == TagPicker.ManyTagCount)
+                    {
+                        manyTag++;
+                        if (!row.Tags.SequenceEqual(expectedManyTags, StringComparer.Ordinal))
+                            throw new InvalidOperationException("A many-tag event does not carry the expected tag sequence.");
+                    }
                 }
                 else
                 {
@@ -670,6 +715,10 @@ internal static class GeneratorChecks
             throw new InvalidOperationException("The generator did not produce the requested number of events.");
         if (dcb != plan.Size / 5)
             throw new InvalidOperationException("The dynamic consistency boundary share is wrong.");
+        if (plan.Size >= 2_500 && rare < 1)
+            throw new InvalidOperationException("The generator did not produce any rare events.");
+        if (plan.Size >= 2_500 && manyTag < 1)
+            throw new InvalidOperationException("The generator did not produce any many-tag events.");
         foreach (var pair in versions)
         {
             if (!closed.TryGetValue(pair.Key, out var end) || end != pair.Value)

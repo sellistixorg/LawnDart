@@ -77,8 +77,14 @@ internal static class Loader
         var types = await InsertPgTypesAsync(connection, cancellationToken).ConfigureAwait(false);
         await ExecAsync(connection, "ALTER TABLE lawndart.streams DISABLE TRIGGER USER", cancellationToken).ConfigureAwait(false);
         var generator = new EventGenerator(plan);
+        long loaded = 0;
         foreach (var batch in generator.Batches(4000))
+        {
             await CopyPostgresAsync(connection, batch, types, cancellationToken).ConfigureAwait(false);
+            loaded += batch.Events.Count;
+            if (plan.Size > DatasetPlan.OneMillion && (loaded % 1_000_000 == 0 || loaded == plan.Size))
+                Console.WriteLine("postgres loaded " + loaded.ToString(CultureInfo.InvariantCulture) + " of " + plan.Size.ToString(CultureInfo.InvariantCulture));
+        }
         await ExecAsync(connection, "ALTER TABLE lawndart.streams ENABLE TRIGGER USER", cancellationToken).ConfigureAwait(false);
         await ExecAsync(connection, "SELECT setval('lawndart.event_position', " + plan.Size.ToString(CultureInfo.InvariantCulture) + ", true)", cancellationToken).ConfigureAwait(false);
         await ExecAsync(connection, """
@@ -107,8 +113,14 @@ internal static class Loader
         var streamKeys = new Dictionary<string, long>(StringComparer.Ordinal);
         var tagIds = new Dictionary<string, int>(StringComparer.Ordinal);
         long nextStreamKey = 1;
+        long loaded = 0;
         foreach (var batch in generator.Batches(4000))
+        {
             nextStreamKey = await CopySqlAsync(connection, batch, types, streamKeys, tagIds, nextStreamKey, cancellationToken).ConfigureAwait(false);
+            loaded += batch.Events.Count;
+            if (plan.Size > DatasetPlan.OneMillion && (loaded % 1_000_000 == 0 || loaded == plan.Size))
+                Console.WriteLine("sqlserver loaded " + loaded.ToString(CultureInfo.InvariantCulture) + " of " + plan.Size.ToString(CultureInfo.InvariantCulture));
+        }
 
         var next = (plan.Size + 1).ToString(CultureInfo.InvariantCulture);
         await ExecSqlAsync(connection, "ALTER SEQUENCE dbo.EventSequencePosition RESTART WITH " + next, cancellationToken).ConfigureAwait(false);
@@ -355,6 +367,8 @@ internal static class Loader
                     continue;
                 streamTags.Add([tagId, streamKey]);
             }
+
+            streamKeys.Remove(row.StreamId);
         }
 
         await BulkAsync(connection, "dbo.Events",
@@ -651,5 +665,22 @@ internal static class ShapeProof
             cancellationToken: cancellationToken).ConfigureAwait(false);
         if (query.Events.Count < 1)
             throw new InvalidOperationException("A tag and type query returned no event.");
+
+        if (catalog.Size >= 2_500)
+        {
+            var rare = await log.ReadByQueryAsync(
+                Query.FromItems(QueryItem.ByTypeAndTags([catalog.RareType], [catalog.QueryTag])),
+                limit: 1,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (rare.Events.Count < 1)
+                throw new InvalidOperationException("A rare type and tag query returned no event.");
+
+            var many = await log.ReadByQueryAsync(
+                Query.FromItems(QueryItem.ByTags(catalog.ManyTags)),
+                limit: 1,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (many.Events.Count < 1)
+                throw new InvalidOperationException("A many-tag query returned no event.");
+        }
     }
 }
