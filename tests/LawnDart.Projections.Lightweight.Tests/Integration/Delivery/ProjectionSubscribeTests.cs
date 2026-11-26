@@ -40,7 +40,7 @@ public sealed class ProjectionSubscribeTests
         var runner = CreateGlobalRunner(store, views, checkpoints, options);
         await runner.StartAsync(CancellationToken.None);
 
-        await store.AppendAsync("system:Tags:warm", [Tag("warm")], metadata: Meta());
+        await store.AppendAsync(StreamId.Parse("system:Tags:warm"), [Tag("warm")], metadata: Meta());
         await WaitCursorAsync(runner, await store.GetCurrentSequenceAsync(), TimeSpan.FromSeconds(10));
         Assert.True(runner.HasLiveSubscription);
 
@@ -48,7 +48,7 @@ public sealed class ProjectionSubscribeTests
         for (var i = 0; i < 7; i++)
         {
             var sw = Stopwatch.StartNew();
-            await store.AppendAsync($"system:Tags:idle-{i}", [Tag($"idle-{i}")], metadata: Meta());
+            await store.AppendAsync(StreamId.Parse($"system:Tags:idle-{i}"), [Tag($"idle-{i}")], metadata: Meta());
             var head = await store.GetCurrentSequenceAsync();
             await WaitCursorAsync(runner, head, TimeSpan.FromSeconds(5));
             sw.Stop();
@@ -81,7 +81,7 @@ public sealed class ProjectionSubscribeTests
             BatchSize = 100
         };
 
-        await store.AppendAsync("system:Tags:head", [Tag("head")], metadata: Meta());
+        await store.AppendAsync(StreamId.Parse("system:Tags:head"), [Tag("head")], metadata: Meta());
 
         var runner = CreateGlobalRunner(store, views, checkpoints, options);
         await runner.StartAsync(CancellationToken.None);
@@ -99,8 +99,8 @@ public sealed class ProjectionSubscribeTests
         var noise = new IEvent[2_500];
         for (var i = 0; i < noise.Length; i++)
             noise[i] = new OrderCreatedLocal(Guid.NewGuid(), DateTime.UtcNow, Guid.NewGuid(), "noise");
-        await store.AppendAsync("tenant:OrderAggregate:noise", noise, metadata: Meta());
-        await store.AppendAsync("system:Tags:tail", [Tag("tail")], metadata: Meta());
+        await store.AppendAsync(StreamId.Parse("tenant:OrderAggregate:noise"), noise, metadata: Meta());
+        await store.AppendAsync(StreamId.Parse("system:Tags:tail"), [Tag("tail")], metadata: Meta());
 
         var viewJson = await ProjectionRunnerTestHarness.WaitForViewAsync(
             views,
@@ -129,7 +129,7 @@ public sealed class ProjectionSubscribeTests
             BatchSize = 50
         };
 
-        await store.AppendAsync("system:Tags:a", [Tag("a"), Tag("b")], metadata: Meta());
+        await store.AppendAsync(StreamId.Parse("system:Tags:a"), [Tag("a"), Tag("b")], metadata: Meta());
 
         var first = CreateGlobalRunner(store, views, checkpoints, options);
         await first.StartAsync(CancellationToken.None);
@@ -145,7 +145,7 @@ public sealed class ProjectionSubscribeTests
         Assert.NotNull(checkpoint);
         Assert.True(checkpoint!.LastSequencePosition >= 2);
 
-        await store.AppendAsync("system:Tags:c", [Tag("c")], metadata: Meta());
+        await store.AppendAsync(StreamId.Parse("system:Tags:c"), [Tag("c")], metadata: Meta());
 
         var second = CreateGlobalRunner(store, views, checkpoints, options);
         await second.StartAsync(CancellationToken.None);
@@ -184,7 +184,7 @@ public sealed class ProjectionSubscribeTests
         var tags = new IEvent[n];
         for (var i = 0; i < n; i++)
             tags[i] = Tag($"t-{i}");
-        await inner.AppendAsync("system:Tags:bulk", tags, metadata: Meta());
+        await inner.AppendAsync(StreamId.Parse("system:Tags:bulk"), tags, metadata: Meta());
         var head = await inner.GetCurrentSequenceAsync();
 
         var runner = CreateGlobalRunner(store, views, checkpoints, options);

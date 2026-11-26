@@ -33,7 +33,7 @@ public sealed class SqlServerAppendLockPlanTests
     [Fact]
     public void ConditionTags_AreExclusive_OtherWrittenTagsShared_StoreShared()
     {
-        var condition = AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags("course:1", "student:1")));
+        var condition = AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(Tag.Parse("course:1"), Tag.Parse("student:1"))));
         var plan = SqlServerEventStore.BuildAppendLockPlan(
             Scope, [Event("course:1", "student:1", "extra:1")], condition, tagThreshold: 64);
 
@@ -47,7 +47,7 @@ public sealed class SqlServerAppendLockPlanTests
     [Fact]
     public void TypeAndTagItem_DoesNotNeedTheStoreExclusive()
     {
-        var condition = AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTypeAndTags(["T"], ["course:1"])));
+        var condition = AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTypeAndTags(["T"], [Tag.Parse("course:1")])));
         var plan = SqlServerEventStore.BuildAppendLockPlan(Scope, [Event("course:1")], condition, 64);
         Assert.False(plan[0].Exclusive);
         Assert.True(Mode(plan, "course:1"));
@@ -63,8 +63,8 @@ public sealed class SqlServerAppendLockPlanTests
         var query = shape switch
         {
             "types" => Query.FromItems(QueryItem.ByType("T")),
-            "mixed" => Query.FromItems(QueryItem.ByTags("course:1"), QueryItem.ByType("T")),
-            "emptytags" => Query.FromItems(QueryItem.ByTags("")),
+            "mixed" => Query.FromItems(QueryItem.ByTags(Tag.Parse("course:1")), QueryItem.ByType("T")),
+            "emptytags" => Query.FromItems(new QueryItem { Tags = Array.Empty<Tag>() }),
             _ => Query.All()
         };
         var plan = SqlServerEventStore.BuildAppendLockPlan(
@@ -90,7 +90,7 @@ public sealed class SqlServerAppendLockPlanTests
     [Fact]
     public void ThresholdCounts_ConditionAndWrittenTagsTogether()
     {
-        var condition = AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags("c:1", "c:2")));
+        var condition = AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(Tag.Parse("c:1"), Tag.Parse("c:2"))));
         var plan = SqlServerEventStore.BuildAppendLockPlan(Scope, [Event("w:1", "w:2")], condition, tagThreshold: 3);
         Assert.True(Assert.Single(plan).Exclusive);
     }
@@ -122,7 +122,7 @@ public sealed class SqlServerAppendLockPlanTests
         => plan.Single(l => l.Resource == SqlServerEventStore.TagLockName(Scope, tag)).Exclusive;
 
     private static AppendEvent Event(params string[] tags)
-        => new("T", Encoding.UTF8.GetBytes("{}"), tags: tags);
+        => new("T", Encoding.UTF8.GetBytes("{}"), tags: tags.Select(Tag.Parse).ToArray());
 }
 
 [Trait("Category", "Integration")]
@@ -166,7 +166,7 @@ public sealed class SqlServerAppendLockTests : IAsyncLifetime
         checker.BeforeAppendLocks = async ct =>
         {
             if (Interlocked.Increment(ref ran) == 1)
-                await writer.AppendAsync("s-" + Guid.NewGuid().ToString("N"), [new AppendEvent(type, Encoding.UTF8.GetBytes("{}"))], cancellationToken: ct);
+                await writer.AppendAsync(StreamId.For("s", Guid.NewGuid().ToString("N")), [new AppendEvent(type, Encoding.UTF8.GetBytes("{}"))], cancellationToken: ct);
         };
 
         // The checker writes another type, so its own write does not store the name first.
@@ -185,9 +185,9 @@ public sealed class SqlServerAppendLockTests : IAsyncLifetime
         var tag = "course:" + Guid.NewGuid().ToString("N");
         var condition = AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByType("T")));
 
-        await store.AppendAsync([new AppendEvent("T", Encoding.UTF8.GetBytes("{}"), tags: [tag])], condition);
+        await store.AppendAsync([new AppendEvent("T", Encoding.UTF8.GetBytes("{}"), tags: [Tag.Parse(tag)])], condition);
         await Assert.ThrowsAsync<ConcurrencyException>(() =>
-            store.AppendAsync([new AppendEvent("T", Encoding.UTF8.GetBytes("{}"), tags: [tag])], condition));
+            store.AppendAsync([new AppendEvent("T", Encoding.UTF8.GetBytes("{}"), tags: [Tag.Parse(tag)])], condition));
 
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync();

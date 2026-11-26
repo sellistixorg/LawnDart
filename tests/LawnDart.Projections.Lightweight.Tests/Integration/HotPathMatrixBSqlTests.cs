@@ -47,7 +47,7 @@ public sealed class HotPathMatrixBSqlTests
                 readCache: cache));
 
         await store.AppendAsync(
-            "tenant1:Counter:b1",
+            StreamId.Parse("tenant1:Counter:b1"),
             [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 7)],
             metadata: Meta(),
             cancellationToken: cts.Token);
@@ -93,7 +93,7 @@ public sealed class HotPathMatrixBSqlTests
         var cache = new ProjectionReadCache(ProjectionReadCacheMode.Hot);
 
         await store.AppendAsync(
-            "tenant1:Counter:b2",
+            StreamId.Parse("tenant1:Counter:b2"),
             [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 11)],
             metadata: Meta(),
             cancellationToken: cts.Token);
@@ -180,7 +180,7 @@ public sealed class HotPathMatrixBSqlTests
                 readCache: cache));
 
         await store.AppendAsync(
-            "tenant1:Counter:b6",
+            StreamId.Parse("tenant1:Counter:b6"),
             [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)],
             metadata: Meta(),
             cancellationToken: cts.Token);
@@ -191,7 +191,7 @@ public sealed class HotPathMatrixBSqlTests
             checkpoints, MatrixBceSqlHost.CounterStorageKey, head1, TimeSpan.FromSeconds(20), cts.Token);
 
         await store.AppendAsync(
-            "tenant1:Counter:b6",
+            StreamId.Parse("tenant1:Counter:b6"),
             [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 2)],
             metadata: Meta(),
             cancellationToken: cts.Token);
@@ -281,7 +281,7 @@ public sealed class HotPathMatrixBSqlTests
                 readCache: cache));
 
         await store.AppendAsync(
-            "tenant1:Counter:b8",
+            StreamId.Parse("tenant1:Counter:b8"),
             [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 4)],
             metadata: Meta(),
             cancellationToken: cts.Token);
@@ -413,7 +413,7 @@ public sealed class HotPathMatrixBSqlTests
 
         // First event flushes successfully.
         await store.AppendAsync(
-            "tenant1:Counter:b11",
+            StreamId.Parse("tenant1:Counter:b11"),
             [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)],
             metadata: Meta(),
             cancellationToken: cts.Token);
@@ -442,7 +442,7 @@ public sealed class HotPathMatrixBSqlTests
                 readCache: cache));
 
         await store.AppendAsync(
-            "tenant1:Counter:b11",
+            StreamId.Parse("tenant1:Counter:b11"),
             [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 10)],
             metadata: Meta(),
             cancellationToken: cts.Token);

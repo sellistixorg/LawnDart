@@ -188,7 +188,7 @@ public abstract class ReactorOutboxDeliveryContractTests : BackendContractSuite
             Payload = JsonSerializer.SerializeToUtf8Bytes(evt, MessagingJson.Options),
             Metadata = "{}",
             CreatedAt = DateTime.UtcNow,
-            StreamId = "reactor-outbox",
+            StreamId = "reactor:outbox",
             SequencePosition = 1
         };
     }

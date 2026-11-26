@@ -643,7 +643,7 @@ internal static class ShapeProof
 {
     public static async Task AssertAsync(IEventLog log, ISnapshotStore snapshots, DatasetCatalog catalog, CancellationToken cancellationToken)
     {
-        var hot = await log.ReadStreamAsync(catalog.HotStreamId, cancellationToken: cancellationToken).ConfigureAwait(false);
+        var hot = await log.ReadStreamAsync(StreamId.Parse(catalog.HotStreamId), cancellationToken: cancellationToken).ConfigureAwait(false);
         if (hot.Count != catalog.HotVersion)
             throw new InvalidOperationException("The hot stream does not have its generated events.");
 
@@ -655,12 +655,12 @@ internal static class ShapeProof
         if (loaded.State is null || loaded.Info is null || loaded.Info.Version != sample.SnapshotVersion)
             throw new InvalidOperationException("The snapshot did not load.");
 
-        var tail = await log.ReadStreamAsync(sample.Id, sample.SnapshotVersion + 1, cancellationToken: cancellationToken).ConfigureAwait(false);
+        var tail = await log.ReadStreamAsync(StreamId.Parse(sample.Id), sample.SnapshotVersion + 1, cancellationToken: cancellationToken).ConfigureAwait(false);
         if (tail.Count != sample.Version - sample.SnapshotVersion)
             throw new InvalidOperationException("The stream tail does not match the snapshot.");
 
         var query = await log.ReadByQueryAsync(
-            Query.FromItems(QueryItem.ByTypeAndTags([EventGenerator.QueryType], [EventGenerator.QueryTag])),
+            Query.FromItems(QueryItem.ByTypeAndTags([EventGenerator.QueryType], [Tag.Parse(EventGenerator.QueryTag)])),
             limit: 1,
             cancellationToken: cancellationToken).ConfigureAwait(false);
         if (query.Events.Count < 1)
@@ -669,14 +669,14 @@ internal static class ShapeProof
         if (catalog.Size >= 2_500)
         {
             var rare = await log.ReadByQueryAsync(
-                Query.FromItems(QueryItem.ByTypeAndTags([catalog.RareType], [catalog.QueryTag])),
+                Query.FromItems(QueryItem.ByTypeAndTags([catalog.RareType], [Tag.Parse(catalog.QueryTag)])),
                 limit: 1,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
             if (rare.Events.Count < 1)
                 throw new InvalidOperationException("A rare type and tag query returned no event.");
 
             var many = await log.ReadByQueryAsync(
-                Query.FromItems(QueryItem.ByTags(catalog.ManyTags)),
+                Query.FromItems(QueryItem.ByTags(catalog.ManyTags.Select(Tag.Parse).ToArray())),
                 limit: 1,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
             if (many.Events.Count < 1)

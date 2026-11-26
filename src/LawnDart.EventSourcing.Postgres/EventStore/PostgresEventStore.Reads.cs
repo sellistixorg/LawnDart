@@ -26,17 +26,16 @@ public sealed partial class PostgresEventStore
     }
 
     async Task<IReadOnlyList<RecordedEvent>> IEventLog.ReadStreamAsync(
-        string streamId, long fromVersion, long? toVersion, DateTime? toCommitTimestamp, CancellationToken cancellationToken)
+        StreamId streamId, long fromVersion, long? toVersion, DateTime? toCommitTimestamp, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(streamId))
-            throw new ArgumentException("Stream ID cannot be null or empty", nameof(streamId));
+        EventLogBuffers.RequireStreamId(streamId);
         var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var connectionDisposal = connection.ConfigureAwait(false);
-        return await ReadStreamCoreAsync(connection, streamId, fromVersion, toVersion, toCommitTimestamp, cancellationToken).ConfigureAwait(false);
+        return await ReadStreamCoreAsync(connection, streamId.ToString(), fromVersion, toVersion, toCommitTimestamp, cancellationToken).ConfigureAwait(false);
     }
 
     async IAsyncEnumerable<RecordedEvent> IEventLog.ReadStreamEnumerableAsync(
-        string streamId, long fromVersion, long? toVersion, DateTime? toCommitTimestamp, [EnumeratorCancellation] CancellationToken cancellationToken)
+        StreamId streamId, long fromVersion, long? toVersion, DateTime? toCommitTimestamp, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var rows = await ((IEventLog)this).ReadStreamAsync(streamId, fromVersion, toVersion, toCommitTimestamp, cancellationToken).ConfigureAwait(false);
         foreach (var row in rows)
@@ -91,11 +90,12 @@ public sealed partial class PostgresEventStore
     }
 
     /// <inheritdoc />
-    public async Task<StreamMetadata?> GetStreamAsync(string streamId, CancellationToken cancellationToken = default)
+    public async Task<StreamMetadata?> GetStreamAsync(StreamId streamId, CancellationToken cancellationToken = default)
     {
+        EventLogBuffers.RequireStreamId(streamId);
         var rows = await QueryStreamsAsync(
             "stream_id = @stream",
-            command => command.Parameters.Add(new NpgsqlParameter("stream", streamId)),
+            command => command.Parameters.Add(new NpgsqlParameter("stream", streamId.ToString())),
             one: true,
             cancellationToken).ConfigureAwait(false);
         return rows.Count == 0 ? null : rows[0];
@@ -106,11 +106,11 @@ public sealed partial class PostgresEventStore
         => QueryStreamsAsync("status = 'Active' AND aggregate_type = @type", command => command.Parameters.Add(new NpgsqlParameter("type", aggregateType)), one: false, cancellationToken);
 
     /// <inheritdoc />
-    public Task<IReadOnlyList<StreamMetadata>> GetStreamsByTagAsync(string tag, CancellationToken cancellationToken = default)
-        => QueryStreamsAsync("status = 'Active' AND @tag = ANY(tags)", command => command.Parameters.Add(new NpgsqlParameter("tag", tag)), one: false, cancellationToken);
+    public Task<IReadOnlyList<StreamMetadata>> GetStreamsByTagAsync(Tag tag, CancellationToken cancellationToken = default)
+        => QueryStreamsAsync("status = 'Active' AND @tag = ANY(tags)", command => command.Parameters.Add(new NpgsqlParameter("tag", EventLogBuffers.RequireTag(tag).ToString())), one: false, cancellationToken);
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<string>> EnumerateStreamIdsAsync(string? prefix = null, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<StreamId>> EnumerateStreamIdsAsync(string? prefix = null, CancellationToken cancellationToken = default)
     {
         var (where, parameters) = ActivePrefix(prefix);
         var sql = $"SELECT stream_id FROM {_names.Streams} {where} ORDER BY stream_id";
@@ -125,7 +125,7 @@ public sealed partial class PostgresEventStore
         await using var readerDisposal = reader.ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             ids.Add(reader.GetString(0));
-        return ids;
+        return ids.Select(StreamId.Parse).ToList();
     }
 
     /// <inheritdoc />
@@ -533,14 +533,14 @@ public sealed partial class PostgresEventStore
             frames.Add(new RecordedEvent(
                 token,
                 row.Payload,
-                row.StreamId,
+                StreamId.Parse(row.StreamId),
                 row.Version,
                 row.SequencePosition,
                 timestamp,
                 row.Metadata,
                 row.SchemaVersion,
                 row.CodecId,
-                row.Tags));
+                row.Tags.Select(Tag.Parse).ToArray()));
         }
 
         return frames;
@@ -581,8 +581,8 @@ public sealed partial class PostgresEventStore
         var tags = reader.IsDBNull(8) ? [] : reader.GetFieldValue<string[]>(8);
         return new StreamMetadata
         {
-            StreamId = streamId,
-            TenantId = StreamIdParser.ExtractTenantId(streamId),
+            StreamId = StreamId.Parse(streamId),
+            TenantId = StreamIdText.TenantId(streamId),
             AggregateType = reader.GetString(1),
             AggregateId = reader.IsDBNull(2) ? null : reader.GetGuid(2),
             CurrentVersion = reader.GetInt64(3),
@@ -590,7 +590,7 @@ public sealed partial class PostgresEventStore
             CreatedAt = AsUtc(reader.GetFieldValue<DateTime>(5)),
             LastEventAt = AsUtc(reader.GetFieldValue<DateTime>(6)),
             EventCount = reader.GetInt64(7),
-            Tags = tags,
+            Tags = tags.Select(Tag.Parse).ToArray(),
             Status = Enum.Parse<StreamStatus>(reader.GetString(9))
         };
     }
@@ -608,7 +608,7 @@ public sealed partial class PostgresEventStore
         StreamPageToken.CheckPageSize(pageSize);
         var after = StreamPageToken.ReadAfter(pageToken, filter);
         var prefix = StreamPageToken.Normalize(filter?.Prefix);
-        var tag = StreamPageToken.Normalize(filter?.Tag);
+        var tag = StreamPageToken.Normalize(filter?.Tag?.ToString());
         var aggregateType = StreamPageToken.Normalize(filter?.AggregateType);
         var tenant = prefix is null ? null : TenantKey.ForPrefix(prefix);
 

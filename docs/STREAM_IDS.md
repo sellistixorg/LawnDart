@@ -16,6 +16,26 @@ Examples:
 When `RequireTenantId` is false (Academy), still keep a stable prefix so IDs
 stay unique across demos.
 
+## The StreamId type
+
+Every store method that takes or returns a stream id uses `LawnDart.EventStore.StreamId`, a small value type. There is no implicit conversion from or to `string`. Build one with:
+
+- `StreamId.For(type, id)` for `{type}:{id}`
+- `StreamId.For(tenantId, type, id)` for `{tenantId}:{type}:{id}`
+- `StreamId.Dcb(tenantId)` for the reserved dynamic consistency boundary stream, `dcb` or `{tenantId}:dcb`
+- `StreamId.Parse(text)` or `StreamId.TryParse(text, out var streamId)` for text you already have
+
+`ToString()` returns the canonical text. `TenantId`, `Type`, and `Id` return the parts. `IsDcb` is true for the reserved form. Two values are equal when their text is equal, character by character, with case. JSON writes and reads a stream id as its canonical string.
+
+The rules are the same on every store:
+
+- Tenant, type, and id are not empty and do not start or end with whitespace.
+- Tenant and type do not contain a colon. With a tenant, the id is everything after the type, so it may contain colons.
+- Without a tenant, the id does not contain a colon, because the text would read back as `{tenantId}:{type}:{id}`. The id is not `dcb`.
+- The whole text is at most 255 characters (`StreamId.MaxLength`).
+
+`StreamId.Parse` throws `FormatException` when the text breaks a rule. `StreamId.For` throws `ArgumentException`. A store throws `ArgumentException` for a `default` stream id.
+
 ## Aggregates
 
 One stream per aggregate instance. The repository loads that stream, applies
@@ -24,10 +44,10 @@ events to state, and appends with expected version.
 `GetAsync(Guid)` / `GetOrCreateAsync(Guid)` / `CreateAsync(Guid)` still build
 `{tenant}:{type}:{guid}` (or `{type}:{guid}` when no tenant). When the stream
 is not that shape, for example
-`{account}:InboundShipment:{plan}:{shipment}`, load with the string overloads:
+`{account}:InboundShipment:{plan}:{shipment}`, load with the `StreamId` overloads:
 
 ```csharp
-var streamId = $"{accountId}:InboundShipment:{planId:N}:{shipmentId}";
+var streamId = StreamId.For(accountId, "InboundShipment", $"{planId:N}:{shipmentId}");
 var shipment = await repo.GetOrCreateAsync<InboundShipmentAggregate>(streamId);
 ```
 
@@ -44,7 +64,7 @@ Academy WebApi builds stream IDs from `ITenantContextProvider`:
 
 ```csharp
 var tenantId = _tenant.GetTenantId() ?? "default";
-var streamId = $"{tenantId}:Student:{command.StudentId}";
+var streamId = StreamId.For(tenantId, "Student", command.StudentId.ToString());
 ```
 
 Tenant prefix comes from `ITenantContextProvider`. That host sets `RequireTenantId` to false, so the append does not run the tenant id check. With `RequireTenantId` on, `default` in any casing is rejected. See [Metadata](METADATA.md).
@@ -55,7 +75,7 @@ A bounded context name starts with a letter or digit. Then letters, digits, `.`,
 
 The stored spelling is the spelling you registered. A second context whose name differs only by case is rejected. The default context is `default`. `Default` is rejected. Keyed services for the unkeyed alias use that lowercase spelling.
 
-A tenant id uses the same character rule. `default` in any casing is reserved for a tenant id. `ValidateTenantId` rejects it when name validation is on. An empty string is rejected. A colon is rejected, because a stream id is `{tenantId}:{type}:{id}` and is split on every colon.
+A tenant id uses the same character rule. `default` in any casing is reserved for a tenant id. `ValidateTenantId` rejects it when name validation is on. An empty string is rejected. A colon is rejected, because a stream id is `{tenantId}:{type}:{id}` and the tenant ends at the first colon.
 
 `LawnDartOptions.ValidateNames` defaults to true. Set it to false before `AddBoundedContext` when an existing name does not match. Call `AddLawnDart` first so registration sees the flag. The same flag keeps an existing tenant id of `default` in any casing. A colon in a tenant id is still rejected. An empty tenant id is still rejected.
 

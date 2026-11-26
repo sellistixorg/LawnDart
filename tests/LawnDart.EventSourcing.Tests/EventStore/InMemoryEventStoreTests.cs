@@ -12,10 +12,10 @@ public class InMemoryEventStoreTests
     {
         // Arrange
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
-        var streamId = "test-stream";
+        var streamId = "test:test-stream";
 
         // Act
-        var result = await store.ReadStreamAsync(streamId);
+        var result = await store.ReadStreamAsync(StreamId.Parse(streamId));
 
         // Assert
         Assert.Empty(result);
@@ -26,7 +26,7 @@ public class InMemoryEventStoreTests
     {
         // Arrange
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
-        var streamId = "test-stream";
+        var streamId = "test:test-stream";
         var events = new[]
         {
             new TestEvent(Guid.NewGuid(), DateTime.UtcNow),
@@ -34,8 +34,8 @@ public class InMemoryEventStoreTests
         };
 
         // Act
-        await store.AppendAsync(streamId, events);
-        var result = await store.ReadStreamAsync(streamId);
+        await store.AppendAsync(StreamId.Parse(streamId), events);
+        var result = await store.ReadStreamAsync(StreamId.Parse(streamId));
 
         // Assert
         Assert.Equal(2, result.Count);
@@ -48,19 +48,19 @@ public class InMemoryEventStoreTests
     {
         // Arrange
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
-        var streamId = "test-stream";
+        var streamId = "test:test-stream";
         var events1 = new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) };
         var events2 = new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) };
 
         // Act — empty stream reports current version -1; first event is version 1.
-        await store.AppendAsync(streamId, events1, expectedVersion: -1);
-        await store.AppendAsync(streamId, events2, expectedVersion: 1);
+        await store.AppendAsync(StreamId.Parse(streamId), events1, expectedVersion: -1);
+        await store.AppendAsync(StreamId.Parse(streamId), events2, expectedVersion: 1);
 
         // Assert
-        var result = await store.ReadStreamAsync(streamId);
+        var result = await store.ReadStreamAsync(StreamId.Parse(streamId));
         Assert.Equal(2, result.Count);
         await Assert.ThrowsAsync<ConcurrencyException>(
-            () => store.AppendAsync(streamId, events2, expectedVersion: 1));
+            () => store.AppendAsync(StreamId.Parse(streamId), events2, expectedVersion: 1));
     }
 
     [Fact]
@@ -68,14 +68,14 @@ public class InMemoryEventStoreTests
     {
         // Arrange
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
-        var streamId = "test-stream";
+        var streamId = "test:test-stream";
         var events1 = new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) };
         var events2 = new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) };
 
         // Act
-        await store.AppendAsync(streamId, events1, expectedVersion: -1);
+        await store.AppendAsync(StreamId.Parse(streamId), events1, expectedVersion: -1);
         await Assert.ThrowsAsync<ConcurrencyException>(
-            () => store.AppendAsync(streamId, events2, expectedVersion: 5));
+            () => store.AppendAsync(StreamId.Parse(streamId), events2, expectedVersion: 5));
     }
 
 
@@ -84,14 +84,14 @@ public class InMemoryEventStoreTests
     {
         // Arrange
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
-        var streamId = "test-stream";
+        var streamId = "test:test-stream";
         IEvent[] events = new IEvent[]
         {
             new TestEvent(Guid.NewGuid(), DateTime.UtcNow),
             new AnotherEvent(Guid.NewGuid(), DateTime.UtcNow)
         };
 
-        await store.AppendAsync(streamId, events);
+        await store.AppendAsync(StreamId.Parse(streamId), events);
         var query = Query.FromItems(QueryItem.ByType(EventTypeCatalog.TryGetDeclaredName(typeof(TestEvent))!));
 
         // Act
@@ -107,19 +107,19 @@ public class InMemoryEventStoreTests
     {
         // Arrange
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
-        var streamId = "test-stream";
+        var streamId = "test:test-stream";
         var events = new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) };
-        var tags = new[] { "tag1", "tag2" };
+        var tags = new[] { "tag:tag1", "tag:tag2" };
 
-        await store.AppendAsync(streamId, events.Select(e => new TaggedEvent(e, tags)).ToList());
-        var query = Query.FromItems(QueryItem.ByTags("tag1"));
+        await store.AppendAsync(StreamId.Parse(streamId), events.Select(e => new TaggedEvent(e, tags.Select(Tag.Parse).ToArray())).ToList());
+        var query = Query.FromItems(QueryItem.ByTags(Tag.Parse("tag:tag1")));
 
         // Act
         var result = await store.ReadByQueryAsync(query);
 
         // Assert
         Assert.Single(result.Events);
-        Assert.Contains("tag1", result.Events[0].Tags);
+        Assert.Contains(Tag.Parse("tag:tag1"), result.Events[0].Tags);
     }
 
     [Fact]
@@ -143,11 +143,11 @@ public class InMemoryEventStoreTests
     {
         // Arrange
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
-        var streamId = "test-stream";
+        var streamId = "test:test-stream";
         var events1 = new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) };
         var events2 = new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) };
 
-        await store.AppendAsync(streamId, events1);
+        await store.AppendAsync(StreamId.Parse(streamId), events1);
         var query = Query.FromItems(QueryItem.ByType(EventTypeCatalog.TryGetDeclaredName(typeof(TestEvent))!));
         var condition = AppendCondition.FailIfMatches(query);
 
@@ -168,7 +168,7 @@ public class InMemoryEventStoreTests
         var events3 = new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) };
 
         // Append first event and capture its sequence position
-        var positions1 = await store.AppendAsync("stream1", events1);
+        var positions1 = await store.AppendAsync(StreamId.Parse("test:stream1"), events1);
         var lastPosition = positions1.SequencePositions[0];
 
         // Create condition that checks for TestEvent but only AFTER the first position
@@ -194,7 +194,7 @@ public class InMemoryEventStoreTests
         var events3 = new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) };
 
         // Append first event and capture its sequence position
-        var positions1 = await store.AppendAsync("stream1", events1);
+        var positions1 = await store.AppendAsync(StreamId.Parse("test:stream1"), events1);
         var lastPosition = positions1.SequencePositions[0];
 
         // Create condition that checks for TestEvent but only after first position
@@ -202,7 +202,7 @@ public class InMemoryEventStoreTests
         var condition = AppendCondition.FailIfMatches(query, after: lastPosition);
 
         // Append second event AFTER the position (should cause failure when we try to append events3)
-        await store.AppendAsync("stream2", events2);
+        await store.AppendAsync(StreamId.Parse("test:stream2"), events2);
 
         // Act & Assert - Should fail because matching event exists after the position
         await Assert.ThrowsAsync<ConcurrencyException>(
@@ -218,14 +218,14 @@ public class InMemoryEventStoreTests
         var events2 = new[] { new AnotherEvent(Guid.NewGuid(), DateTime.UtcNow) };
 
         // Append event with one tag
-        await store.AppendAsync("stream1", events1.Select(e => new TaggedEvent(e, "order:12345")).ToList());
+        await store.AppendAsync(StreamId.Parse("test:stream1"), events1.Select(e => new TaggedEvent(e, Tag.Parse("order:12345"))).ToList());
 
         // Create condition that checks for different tag
-        var query = Query.FromItems(QueryItem.ByTags("order:67890"));
+        var query = Query.FromItems(QueryItem.ByTags(Tag.Parse("order:67890")));
         var condition = AppendCondition.FailIfMatches(query);
 
         // Act - Should succeed because no events match the tag query
-        var result = await store.AppendAsync(events2.Select(e => new TaggedEvent(e, "order:67890")).ToList(), condition);
+        var result = await store.AppendAsync(events2.Select(e => new TaggedEvent(e, Tag.Parse("order:67890"))).ToList(), condition);
 
         // Assert
         Assert.Single(result.SequencePositions);
@@ -240,15 +240,15 @@ public class InMemoryEventStoreTests
         var events2 = new[] { new AnotherEvent(Guid.NewGuid(), DateTime.UtcNow) };
 
         // Append event with tag
-        await store.AppendAsync("stream1", events1.Select(e => new TaggedEvent(e, "order:12345")).ToList());
+        await store.AppendAsync(StreamId.Parse("test:stream1"), events1.Select(e => new TaggedEvent(e, Tag.Parse("order:12345"))).ToList());
 
         // Create condition that checks for the same tag
-        var query = Query.FromItems(QueryItem.ByTags("order:12345"));
+        var query = Query.FromItems(QueryItem.ByTags(Tag.Parse("order:12345")));
         var condition = AppendCondition.FailIfMatches(query);
 
         // Act & Assert - Should fail because event with matching tag exists
         await Assert.ThrowsAsync<ConcurrencyException>(
-            () => store.AppendAsync(events2.Select(e => new TaggedEvent(e, "order:12345")).ToList(), condition));
+            () => store.AppendAsync(events2.Select(e => new TaggedEvent(e, Tag.Parse("order:12345"))).ToList(), condition));
     }
 
     [Fact]
@@ -260,14 +260,14 @@ public class InMemoryEventStoreTests
         var events2 = new[] { new AnotherEvent(Guid.NewGuid(), DateTime.UtcNow) };
 
         // Append event with only one tag (missing the second tag)
-        await store.AppendAsync("stream1", events1.Select(e => new TaggedEvent(e, "order:12345")).ToList());
+        await store.AppendAsync(StreamId.Parse("test:stream1"), events1.Select(e => new TaggedEvent(e, Tag.Parse("order:12345"))).ToList());
 
         // Create condition that requires BOTH tags
-        var query = Query.FromItems(QueryItem.ByTags("order:12345", "payment:abc"));
+        var query = Query.FromItems(QueryItem.ByTags(Tag.Parse("order:12345"), Tag.Parse("payment:abc")));
         var condition = AppendCondition.FailIfMatches(query);
 
         // Act - Should succeed because no event has both tags
-        var result = await store.AppendAsync(events2.Select(e => new TaggedEvent(e, "order:12345", "payment:abc")).ToList(), condition);
+        var result = await store.AppendAsync(events2.Select(e => new TaggedEvent(e, Tag.Parse("order:12345"), Tag.Parse("payment:abc"))).ToList(), condition);
 
         // Assert
         Assert.Single(result.SequencePositions);
@@ -282,15 +282,15 @@ public class InMemoryEventStoreTests
         var events2 = new[] { new AnotherEvent(Guid.NewGuid(), DateTime.UtcNow) };
 
         // Append event with both tags
-        await store.AppendAsync("stream1", events1.Select(e => new TaggedEvent(e, "order:12345", "payment:abc")).ToList());
+        await store.AppendAsync(StreamId.Parse("test:stream1"), events1.Select(e => new TaggedEvent(e, Tag.Parse("order:12345"), Tag.Parse("payment:abc"))).ToList());
 
         // Create condition that requires both tags
-        var query = Query.FromItems(QueryItem.ByTags("order:12345", "payment:abc"));
+        var query = Query.FromItems(QueryItem.ByTags(Tag.Parse("order:12345"), Tag.Parse("payment:abc")));
         var condition = AppendCondition.FailIfMatches(query);
 
         // Act & Assert - Should fail because event with both tags exists
         await Assert.ThrowsAsync<ConcurrencyException>(
-            () => store.AppendAsync(events2.Select(e => new TaggedEvent(e, "order:12345", "payment:abc")).ToList(), condition));
+            () => store.AppendAsync(events2.Select(e => new TaggedEvent(e, Tag.Parse("order:12345"), Tag.Parse("payment:abc"))).ToList(), condition));
     }
 
     [Fact]
@@ -302,18 +302,18 @@ public class InMemoryEventStoreTests
         var events2 = new[] { new AnotherEvent(Guid.NewGuid(), DateTime.UtcNow) };
 
         // Append event matching first query item
-        await store.AppendAsync("stream1", events1.Select(e => new TaggedEvent(e, "order:12345")).ToList());
+        await store.AppendAsync(StreamId.Parse("test:stream1"), events1.Select(e => new TaggedEvent(e, Tag.Parse("order:12345"))).ToList());
 
         // Create query with OR logic (matches if ANY item matches)
         var query = Query.FromItems(
-            QueryItem.ByTags("order:12345"),
-            QueryItem.ByTags("order:67890")
+            QueryItem.ByTags(Tag.Parse("order:12345")),
+            QueryItem.ByTags(Tag.Parse("order:67890"))
         );
         var condition = AppendCondition.FailIfMatches(query);
 
         // Act & Assert - Should fail because first query item matches
         await Assert.ThrowsAsync<ConcurrencyException>(
-            () => store.AppendAsync(events2.Select(e => new TaggedEvent(e, "order:99999")).ToList(), condition));
+            () => store.AppendAsync(events2.Select(e => new TaggedEvent(e, Tag.Parse("order:99999"))).ToList(), condition));
     }
 
     [Fact]
@@ -323,24 +323,24 @@ public class InMemoryEventStoreTests
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         
         // Append events for different entities but same order (cross-entity scenario)
-        await store.AppendAsync("order-stream", 
-            [new TaggedEvent(new TestEvent(Guid.NewGuid(), DateTime.UtcNow), new[] { "order:12345" })]);
+        await store.AppendAsync(StreamId.Parse("test:order-stream"),
+            [new TaggedEvent(new TestEvent(Guid.NewGuid(), DateTime.UtcNow), new[] { Tag.Parse("order:12345") })]);
         
-        await store.AppendAsync("payment-stream", 
-            [new TaggedEvent(new AnotherEvent(Guid.NewGuid(), DateTime.UtcNow), new[] { "order:12345", "payment:abc" })]);
+        await store.AppendAsync(StreamId.Parse("test:payment-stream"),
+            [new TaggedEvent(new AnotherEvent(Guid.NewGuid(), DateTime.UtcNow), new[] { Tag.Parse("order:12345"), Tag.Parse("payment:abc") })]);
         
-        await store.AppendAsync("inventory-stream", 
-            [new TaggedEvent(new TestEvent(Guid.NewGuid(), DateTime.UtcNow), new[] { "order:12345", "product:xyz" })]);
+        await store.AppendAsync(StreamId.Parse("test:inventory-stream"),
+            [new TaggedEvent(new TestEvent(Guid.NewGuid(), DateTime.UtcNow), new[] { Tag.Parse("order:12345"), Tag.Parse("product:xyz") })]);
 
         // Query for all events related to this order (crosses multiple streams/entities)
-        var query = Query.FromItems(QueryItem.ByTags("order:12345"));
+        var query = Query.FromItems(QueryItem.ByTags(Tag.Parse("order:12345")));
 
         // Act
         var result = await store.ReadByQueryAsync(query);
 
         // Assert - Should return all 3 events across different streams
         Assert.Equal(3, result.Events.Count);
-        Assert.All(result.Events, e => Assert.Contains("order:12345", e.Tags));
+        Assert.All(result.Events, e => Assert.Contains("order:12345", e.Tags.Select(static t => t.ToString()).ToArray()));
     }
 
     [Fact]
@@ -355,9 +355,9 @@ public class InMemoryEventStoreTests
 
         // Simulate: Read current state (no events exist yet)
         var query = Query.FromItems(
-            QueryItem.ByTags(orderId),
-            QueryItem.ByTags(paymentId),
-            QueryItem.ByTags(productId)
+            QueryItem.ByTags(Tag.Parse(orderId)),
+            QueryItem.ByTags(Tag.Parse(paymentId)),
+            QueryItem.ByTags(Tag.Parse(productId))
         );
         var lastPosition = 0L;
 
@@ -373,7 +373,7 @@ public class InMemoryEventStoreTests
         };
 
         var result = await store.AppendAsync(
-            workflowEvents.Select(e => new TaggedEvent(e, orderId, paymentId, productId)).ToList(), 
+            workflowEvents.Select(e => new TaggedEvent(e, Tag.Parse(orderId), Tag.Parse(paymentId), Tag.Parse(productId))).ToList(),
             condition);
 
         // Assert - Both events appended atomically
@@ -389,21 +389,21 @@ public class InMemoryEventStoreTests
     {
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         var append = await store.AppendAsync(
-            [new TaggedEvent(new TestEvent(Guid.NewGuid(), DateTime.UtcNow), new[] { "order:9001" })],
-            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags("order:9001"))),
+            [new TaggedEvent(new TestEvent(Guid.NewGuid(), DateTime.UtcNow), new[] { Tag.Parse("order:9001") })],
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(Tag.Parse("order:9001")))),
             metadata: new EventMetadata { TenantId = "tenant-x" });
 
         var query = await store.ReadByQueryAsync(Query.All(), fromSequencePosition: append.SequencePositions[0], limit: 1);
         var evt = Assert.Single(query.Events);
 
-        Assert.StartsWith("tenant-x:dcb:", evt.StreamId);
+        Assert.StartsWith("tenant-x:dcb:", evt.StreamId.ToString());
     }
 
     [Fact]
     public async Task ReadStreamAsync_WithToVersion_LimitsResults()
     {
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
-        var streamId = "test-stream";
+        var streamId = "test:test-stream";
         var events = new[]
         {
             new TestEvent(Guid.NewGuid(), DateTime.UtcNow),
@@ -411,9 +411,9 @@ public class InMemoryEventStoreTests
             new TestEvent(Guid.NewGuid(), DateTime.UtcNow),
             new TestEvent(Guid.NewGuid(), DateTime.UtcNow)
         };
-        await store.AppendAsync(streamId, events);
+        await store.AppendAsync(StreamId.Parse(streamId), events);
 
-        var result = await store.ReadStreamAsync(streamId, fromVersion: 0, toVersion: 2);
+        var result = await store.ReadStreamAsync(StreamId.Parse(streamId), fromVersion: 0, toVersion: 2);
 
         Assert.Equal(2, result.Count);
         Assert.Equal(1, result[0].Version);
@@ -424,16 +424,16 @@ public class InMemoryEventStoreTests
     public async Task ReadStreamAsync_WithToTimestamp_LimitsResults()
     {
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
-        var streamId = "test-stream";
+        var streamId = "test:test-stream";
         var t1 = new DateTime(2025, 1, 1, 10, 0, 0, DateTimeKind.Utc);
         var t2 = new DateTime(2025, 1, 1, 11, 0, 0, DateTimeKind.Utc);
         var t3 = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
-        await store.AppendAsync(streamId, new[] { new TestEvent(Guid.NewGuid(), t1) }, metadata: new EventMetadata { Timestamp = t1 });
-        await store.AppendAsync(streamId, new[] { new TestEvent(Guid.NewGuid(), t2) }, metadata: new EventMetadata { Timestamp = t2 });
-        await store.AppendAsync(streamId, new[] { new TestEvent(Guid.NewGuid(), t3) }, metadata: new EventMetadata { Timestamp = t3 });
+        await store.AppendAsync(StreamId.Parse(streamId), new[] { new TestEvent(Guid.NewGuid(), t1) }, metadata: new EventMetadata { Timestamp = t1 });
+        await store.AppendAsync(StreamId.Parse(streamId), new[] { new TestEvent(Guid.NewGuid(), t2) }, metadata: new EventMetadata { Timestamp = t2 });
+        await store.AppendAsync(StreamId.Parse(streamId), new[] { new TestEvent(Guid.NewGuid(), t3) }, metadata: new EventMetadata { Timestamp = t3 });
 
         // Include events with Timestamp <= t2 (v1 and v2)
-        var result = await store.ReadStreamAsync(streamId, fromVersion: 0, toTimestamp: t2);
+        var result = await store.ReadStreamAsync(StreamId.Parse(streamId), fromVersion: 0, toTimestamp: t2);
 
         Assert.Equal(2, result.Count);
         Assert.True(result.All(e => e.Metadata.Timestamp <= t2));
@@ -446,16 +446,16 @@ public class InMemoryEventStoreTests
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         var business = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         await store.AppendAsync(
-            "clock-stream",
+            StreamId.Parse("test:clock-stream"),
             [new TestEvent(Guid.NewGuid(), business)],
             metadata: new EventMetadata { Timestamp = business });
 
-        var stored = Assert.Single(await store.ReadStreamAsync("clock-stream"));
+        var stored = Assert.Single(await store.ReadStreamAsync(StreamId.Parse("test:clock-stream")));
         Assert.Equal(business, stored.Metadata.Timestamp);
         Assert.NotNull(stored.Metadata.CommitTimestamp);
         Assert.True(stored.Metadata.CommitTimestamp > business);
 
-        var asOfBusiness = await store.ReadStreamAsync("clock-stream", toTimestamp: business);
+        var asOfBusiness = await store.ReadStreamAsync(StreamId.Parse("test:clock-stream"), toTimestamp: business);
         Assert.Single(asOfBusiness);
     }
 
@@ -463,17 +463,17 @@ public class InMemoryEventStoreTests
     public async Task ReadStreamEnumerableAsync_YieldsEventsInOrder()
     {
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
-        var streamId = "test-stream";
+        var streamId = "test:test-stream";
         var events = new[]
         {
             new TestEvent(Guid.NewGuid(), DateTime.UtcNow),
             new TestEvent(Guid.NewGuid(), DateTime.UtcNow),
             new TestEvent(Guid.NewGuid(), DateTime.UtcNow)
         };
-        await store.AppendAsync(streamId, events);
+        await store.AppendAsync(StreamId.Parse(streamId), events);
 
         var collected = new List<SequencedEvent>();
-        await foreach (var evt in store.ReadStreamEnumerableAsync(streamId))
+        await foreach (var evt in store.ReadStreamEnumerableAsync(StreamId.Parse(streamId)))
         {
             collected.Add(evt);
         }
@@ -488,8 +488,8 @@ public class InMemoryEventStoreTests
     public async Task ReadStreamEnumerableAsync_WithToVersion_RespectsLimit()
     {
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
-        var streamId = "test-stream";
-        await store.AppendAsync(streamId, new[]
+        var streamId = "test:test-stream";
+        await store.AppendAsync(StreamId.Parse(streamId), new[]
         {
             new TestEvent(Guid.NewGuid(), DateTime.UtcNow),
             new TestEvent(Guid.NewGuid(), DateTime.UtcNow),
@@ -497,7 +497,7 @@ public class InMemoryEventStoreTests
         });
 
         var collected = new List<SequencedEvent>();
-        await foreach (var evt in store.ReadStreamEnumerableAsync(streamId, toVersion: 2))
+        await foreach (var evt in store.ReadStreamEnumerableAsync(StreamId.Parse(streamId), toVersion: 2))
         {
             collected.Add(evt);
         }
@@ -509,15 +509,15 @@ public class InMemoryEventStoreTests
     public async Task ReadStreamAsync_WithToVersionAndToTimestamp_AppliesBothFilters()
     {
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
-        var streamId = "test-stream";
+        var streamId = "test:test-stream";
         var t1 = new DateTime(2025, 1, 2, 10, 0, 0, DateTimeKind.Utc);
         var t2 = new DateTime(2025, 1, 2, 11, 0, 0, DateTimeKind.Utc);
         var t3 = new DateTime(2025, 1, 2, 12, 0, 0, DateTimeKind.Utc);
-        await store.AppendAsync(streamId, new[] { new TestEvent(Guid.NewGuid(), t1) }, metadata: new EventMetadata { Timestamp = t1 });
-        await store.AppendAsync(streamId, new[] { new TestEvent(Guid.NewGuid(), t2) }, metadata: new EventMetadata { Timestamp = t2 });
-        await store.AppendAsync(streamId, new[] { new TestEvent(Guid.NewGuid(), t3) }, metadata: new EventMetadata { Timestamp = t3 });
+        await store.AppendAsync(StreamId.Parse(streamId), new[] { new TestEvent(Guid.NewGuid(), t1) }, metadata: new EventMetadata { Timestamp = t1 });
+        await store.AppendAsync(StreamId.Parse(streamId), new[] { new TestEvent(Guid.NewGuid(), t2) }, metadata: new EventMetadata { Timestamp = t2 });
+        await store.AppendAsync(StreamId.Parse(streamId), new[] { new TestEvent(Guid.NewGuid(), t3) }, metadata: new EventMetadata { Timestamp = t3 });
 
-        var result = await store.ReadStreamAsync(streamId, fromVersion: 1, toVersion: 2, toTimestamp: t2);
+        var result = await store.ReadStreamAsync(StreamId.Parse(streamId), fromVersion: 1, toVersion: 2, toTimestamp: t2);
 
         Assert.Equal(2, result.Count);
         Assert.Equal(1, result[0].Version);
@@ -529,12 +529,12 @@ public class InMemoryEventStoreTests
     public async Task ReadByQueryAsync_WithToSequencePosition_LimitsResults()
     {
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
-        var streamId = "test-stream";
-        await store.AppendAsync(streamId, [new TaggedEvent(new TestEvent(Guid.NewGuid(), DateTime.UtcNow), new[] { "order:1" })]);
-        var append2 = await store.AppendAsync(streamId, [new TaggedEvent(new TestEvent(Guid.NewGuid(), DateTime.UtcNow), new[] { "order:1" })]);
-        await store.AppendAsync(streamId, [new TaggedEvent(new TestEvent(Guid.NewGuid(), DateTime.UtcNow), new[] { "order:1" })]);
+        var streamId = "test:test-stream";
+        await store.AppendAsync(StreamId.Parse(streamId), [new TaggedEvent(new TestEvent(Guid.NewGuid(), DateTime.UtcNow), new[] { Tag.Parse("order:1") })]);
+        var append2 = await store.AppendAsync(StreamId.Parse(streamId), [new TaggedEvent(new TestEvent(Guid.NewGuid(), DateTime.UtcNow), new[] { Tag.Parse("order:1") })]);
+        await store.AppendAsync(StreamId.Parse(streamId), [new TaggedEvent(new TestEvent(Guid.NewGuid(), DateTime.UtcNow), new[] { Tag.Parse("order:1") })]);
 
-        var query = Query.FromItems(QueryItem.ByTags("order:1"));
+        var query = Query.FromItems(QueryItem.ByTags(Tag.Parse("order:1")));
         var result = await store.ReadByQueryAsync(query, toSequencePosition: append2.SequencePositions[0]);
 
         Assert.Equal(2, result.Events.Count);
@@ -547,11 +547,11 @@ public class InMemoryEventStoreTests
         var t1 = new DateTime(2025, 4, 1, 10, 0, 0, DateTimeKind.Utc);
         var t2 = new DateTime(2025, 4, 1, 11, 0, 0, DateTimeKind.Utc);
         var t3 = new DateTime(2025, 4, 1, 12, 0, 0, DateTimeKind.Utc);
-        await store.AppendAsync("s1", [new TaggedEvent(new TestEvent(Guid.NewGuid(), t1), new[] { "order:2" })], metadata: new EventMetadata { Timestamp = t1 });
-        await store.AppendAsync("s1", [new TaggedEvent(new TestEvent(Guid.NewGuid(), t2), new[] { "order:2" })], metadata: new EventMetadata { Timestamp = t2 });
-        await store.AppendAsync("s1", [new TaggedEvent(new TestEvent(Guid.NewGuid(), t3), new[] { "order:2" })], metadata: new EventMetadata { Timestamp = t3 });
+        await store.AppendAsync(StreamId.Parse("test:s1"), [new TaggedEvent(new TestEvent(Guid.NewGuid(), t1), new[] { Tag.Parse("order:2") })], metadata: new EventMetadata { Timestamp = t1 });
+        await store.AppendAsync(StreamId.Parse("test:s1"), [new TaggedEvent(new TestEvent(Guid.NewGuid(), t2), new[] { Tag.Parse("order:2") })], metadata: new EventMetadata { Timestamp = t2 });
+        await store.AppendAsync(StreamId.Parse("test:s1"), [new TaggedEvent(new TestEvent(Guid.NewGuid(), t3), new[] { Tag.Parse("order:2") })], metadata: new EventMetadata { Timestamp = t3 });
 
-        var query = Query.FromItems(QueryItem.ByTags("order:2"));
+        var query = Query.FromItems(QueryItem.ByTags(Tag.Parse("order:2")));
         var result = await store.ReadByQueryAsync(query, toTimestamp: t2);
 
         Assert.Equal(2, result.Events.Count);
@@ -563,8 +563,8 @@ public class InMemoryEventStoreTests
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         var evt = new TestEvent(Guid.NewGuid(), DateTime.UtcNow);
 
-        await store.AppendAsync("identity-stream", [evt]);
-        var stored = Assert.Single(await store.ReadStreamAsync("identity-stream"));
+        await store.AppendAsync(StreamId.Parse("test:identity-stream"), [evt]);
+        var stored = Assert.Single(await store.ReadStreamAsync(StreamId.Parse("test:identity-stream")));
 
         Assert.False(ReferenceEquals(evt, stored.Event));
         Assert.Equal(evt.Id, stored.Event.Id);
@@ -578,11 +578,11 @@ public class InMemoryEventStoreTests
         var metadata = new byte[] { 9, 8, 7 };
         var envelope = new AppendEvent("tests.inmemory.test-event", payload, metadata);
 
-        await store.AppendAsync("buffer-stream", [envelope]);
+        await store.AppendAsync(StreamId.Parse("test:buffer-stream"), [envelope]);
         payload[0] = 99;
         metadata[0] = 99;
 
-        var recorded = Assert.Single(await ((IEventLog)store).ReadStreamAsync("buffer-stream"));
+        var recorded = Assert.Single(await ((IEventLog)store).ReadStreamAsync(StreamId.Parse("test:buffer-stream")));
         Assert.Equal(new byte[] { 1, 2, 3 }, recorded.Payload.ToArray());
         Assert.Equal(new byte[] { 9, 8, 7 }, recorded.Metadata.ToArray());
     }
@@ -593,10 +593,10 @@ public class InMemoryEventStoreTests
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         var metadata = new EventMetadata { UserId = "u-1", Timestamp = DateTime.UtcNow };
 
-        await store.AppendAsync("meta-stream", [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)], metadata: metadata);
+        await store.AppendAsync(StreamId.Parse("test:meta-stream"), [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)], metadata: metadata);
         metadata.UserId = "mutated";
 
-        var stored = Assert.Single(await store.ReadStreamAsync("meta-stream"));
+        var stored = Assert.Single(await store.ReadStreamAsync(StreamId.Parse("test:meta-stream")));
         Assert.Equal("u-1", stored.Metadata.UserId);
         Assert.NotSame(metadata, stored.Metadata);
         Assert.NotNull(stored.Metadata.CommitTimestamp);
@@ -606,7 +606,7 @@ public class InMemoryEventStoreTests
     public async Task ReadByQueryAsync_WithAliasedTypeFilter_UsesEventTypeAlias()
     {
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
-        await store.AppendAsync("tenant:Order:1", new IEvent[]
+        await store.AppendAsync(StreamId.Parse("tenant:Order:1"), new IEvent[]
         {
             new AliasedEvent(Guid.NewGuid(), DateTime.UtcNow),
             new TestEvent(Guid.NewGuid(), DateTime.UtcNow)
@@ -632,18 +632,18 @@ public class InMemoryEventStoreTests
             options: new InMemoryEventStoreOptions { RequireTenantId = false },
             session: new EventSession(new LawnDart.EventSourcing.Serialization.JsonEventSerializer(), catalog));
 
-        await store.AppendAsync("stream-v1", [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);
-        await store.AppendAsync("stream-v2", [new SchemaCurrent(Guid.NewGuid(), DateTime.UtcNow, "Ada", "bio")]);
+        await store.AppendAsync(StreamId.Parse("test:stream-v1"), [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);
+        await store.AppendAsync(StreamId.Parse("test:stream-v2"), [new SchemaCurrent(Guid.NewGuid(), DateTime.UtcNow, "Ada", "bio")]);
 
-        var typedV1 = Assert.Single(await store.ReadStreamAsync("stream-v1"));
+        var typedV1 = Assert.Single(await store.ReadStreamAsync(StreamId.Parse("test:stream-v1")));
         Assert.IsType<TestEvent>(typedV1.Event);
         Assert.Equal(1, typedV1.Metadata.SchemaVersion);
-        Assert.Equal(1, Assert.Single(await ((IEventLog)store).ReadStreamAsync("stream-v1")).SchemaVersion);
+        Assert.Equal(1, Assert.Single(await ((IEventLog)store).ReadStreamAsync(StreamId.Parse("test:stream-v1"))).SchemaVersion);
 
-        var typedV2 = Assert.Single(await store.ReadStreamAsync("stream-v2"));
+        var typedV2 = Assert.Single(await store.ReadStreamAsync(StreamId.Parse("test:stream-v2")));
         Assert.IsType<SchemaCurrent>(typedV2.Event);
         Assert.Equal(2, typedV2.Metadata.SchemaVersion);
-        Assert.Equal(2, Assert.Single(await ((IEventLog)store).ReadStreamAsync("stream-v2")).SchemaVersion);
+        Assert.Equal(2, Assert.Single(await ((IEventLog)store).ReadStreamAsync(StreamId.Parse("test:stream-v2"))).SchemaVersion);
     }
 
     [Fact]
@@ -659,13 +659,13 @@ public class InMemoryEventStoreTests
         var payload = serializer.Serialize(v1, v1.GetType());
 
         await ((IEventLog)store).AppendAsync(
-            "evolved-stream",
+            StreamId.Parse("test:evolved-stream"),
             [new AppendEvent("tests.inmemory.schema-evolved", payload, schemaVersion: 1)]);
 
-        var recorded = Assert.Single(await ((IEventLog)store).ReadStreamAsync("evolved-stream"));
+        var recorded = Assert.Single(await ((IEventLog)store).ReadStreamAsync(StreamId.Parse("test:evolved-stream")));
         Assert.Equal(1, recorded.SchemaVersion);
 
-        var typed = Assert.Single(await store.ReadStreamAsync("evolved-stream"));
+        var typed = Assert.Single(await store.ReadStreamAsync(StreamId.Parse("test:evolved-stream")));
         var current = Assert.IsType<SchemaCurrent>(typed.Event);
         Assert.Equal("Ada", current.Name);
         Assert.Equal("", current.Bio);
@@ -683,15 +683,15 @@ public class InMemoryEventStoreTests
         var metadata = """{"UserId":"log"}"""u8.ToArray();
 
         await ((IEventLog)store).AppendAsync(
-            "opaque-stream",
+            StreamId.Parse("test:opaque-stream"),
             [new AppendEvent("foreign-family", payload, metadata, schemaVersion: 1)]);
 
-        var recorded = Assert.Single(await ((IEventLog)store).ReadStreamAsync("opaque-stream"));
+        var recorded = Assert.Single(await ((IEventLog)store).ReadStreamAsync(StreamId.Parse("test:opaque-stream")));
         Assert.Equal("foreign-family", recorded.EventType);
         Assert.Equal(payload, recorded.Payload.ToArray());
 
         var ex = await Assert.ThrowsAsync<UnknownEventFamilyException>(
-            () => store.ReadStreamAsync("opaque-stream"));
+            () => store.ReadStreamAsync(StreamId.Parse("test:opaque-stream")));
         Assert.Equal("foreign-family", ex.FamilyToken);
     }
 
@@ -706,14 +706,14 @@ public class InMemoryEventStoreTests
         var metadata = """{"UserId":"log"}"""u8.ToArray();
 
         await ((IEventLog)store).AppendAsync(
-            "newer-stream",
+            StreamId.Parse("test:newer-stream"),
             [new AppendEvent("tests.inmemory.test-event", payload, metadata, schemaVersion: 99)]);
 
-        var recorded = Assert.Single(await ((IEventLog)store).ReadStreamAsync("newer-stream"));
+        var recorded = Assert.Single(await ((IEventLog)store).ReadStreamAsync(StreamId.Parse("test:newer-stream")));
         Assert.Equal(99, recorded.SchemaVersion);
 
         var ex = await Assert.ThrowsAsync<EventSchemaTooNewException>(
-            () => store.ReadStreamAsync("newer-stream"));
+            () => store.ReadStreamAsync(StreamId.Parse("test:newer-stream")));
         Assert.Equal("tests.inmemory.test-event", ex.FamilyToken);
         Assert.Equal(99, ex.SchemaVersion);
         Assert.Equal(1, ex.ProcessCurrentVersion);
@@ -724,10 +724,10 @@ public class InMemoryEventStoreTests
     {
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         await ((IEventLog)store).AppendAsync(
-            "codec-r2",
+            StreamId.Parse("test:codec-r2"),
             [new AppendEvent("family", new byte[] { 1 }, codecId: EventCodec.MemoryPack)]);
 
-        var recorded = Assert.Single(await ((IEventLog)store).ReadStreamAsync("codec-r2"));
+        var recorded = Assert.Single(await ((IEventLog)store).ReadStreamAsync(StreamId.Parse("test:codec-r2")));
         Assert.Equal(EventCodec.MemoryPack, recorded.CodecId);
         Assert.Equal(typeof(byte), recorded.CodecId.GetType());
         Assert.DoesNotContain("application/vnd.lawndart.memorypack", recorded.CodecId.ToString());

@@ -21,11 +21,11 @@ public static class EventStoreAppendExtensions
     /// <param name="expectedVersion">Expected version for optimistic concurrency. Null means no version check.</param>
     /// <param name="metadata">Metadata for all events.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The result of <see cref="IEventStore.AppendAsync(string, IEnumerable{TaggedEvent}, long?, EventMetadata?, CancellationToken)"/>.</returns>
+    /// <returns>The result of <see cref="IEventStore.AppendAsync(StreamId, IEnumerable{TaggedEvent}, long?, EventMetadata?, CancellationToken)"/>.</returns>
     [System.Diagnostics.CodeAnalysis.SuppressMessage("ApiDesign", "RS0026:Do not add multiple public overloads with optional parameters", Justification = "The two appends take different required parameters (a stream id or an append condition), so a call always picks one.")]
     public static Task<AppendResult> AppendAsync(
         this IEventStore store,
-        string streamId,
+        StreamId streamId,
         IEnumerable<IEvent> events,
         long? expectedVersion = null,
         EventMetadata? metadata = null,

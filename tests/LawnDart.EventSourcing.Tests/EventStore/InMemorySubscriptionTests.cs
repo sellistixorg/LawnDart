@@ -13,8 +13,8 @@ public class InMemorySubscriptionTests
     public async Task Global_CatchUp_Then_Live_Is_Continuous()
     {
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
-        await store.AppendAsync("s1", [Evt()]);
-        await store.AppendAsync("s1", [Evt()]);
+        await store.AppendAsync(StreamId.Parse("test:s1"), [Evt()]);
+        await store.AppendAsync(StreamId.Parse("test:s1"), [Evt()]);
 
         await using var handle = store.Subscribe("sub-global", fromSequence: 1);
         var received = new List<SequencedEvent>();
@@ -29,7 +29,7 @@ public class InMemorySubscriptionTests
             }
         });
 
-        await store.AppendAsync("s1", [Evt()]);
+        await store.AppendAsync(StreamId.Parse("test:s1"), [Evt()]);
         await readTask.WaitAsync(TimeSpan.FromSeconds(5));
 
         Assert.Equal(new long[] { 1, 2, 3 }, received.Select(e => e.SequencePosition));
@@ -40,17 +40,17 @@ public class InMemorySubscriptionTests
     public async Task Stream_Scope_Isolates_Other_Streams()
     {
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
-        await store.AppendAsync("a", [Evt()]);
-        await store.AppendAsync("b", [Evt()]);
-        await store.AppendAsync("a", [Evt()]);
+        await store.AppendAsync(StreamId.Parse("test:a"), [Evt()]);
+        await store.AppendAsync(StreamId.Parse("test:b"), [Evt()]);
+        await store.AppendAsync(StreamId.Parse("test:a"), [Evt()]);
 
         await using var handle = store.Subscribe(
             "sub-stream",
             fromSequence: 1,
-            EventSubscriptionFilter.ForStream("a"));
+            EventSubscriptionFilter.ForStream(StreamId.Parse("test:a")));
 
         var received = await ReadExactlyAsync(handle, count: 2, TimeSpan.FromSeconds(5));
-        Assert.All(received, e => Assert.Equal("a", e.StreamId));
+        Assert.All(received, e => Assert.Equal(StreamId.Parse("test:a"), e.StreamId));
         Assert.Equal(new long[] { 1, 3 }, received.Select(e => e.SequencePosition));
     }
 
@@ -58,11 +58,11 @@ public class InMemorySubscriptionTests
     public async Task Query_Scope_Matches_ReadByQuery()
     {
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
-        await store.AppendAsync("s1", [new TaggedEvent(Evt(), ["order:1"])]);
-        await store.AppendAsync("s1", [new TaggedEvent(Evt(), ["other"])]);
-        await store.AppendAsync("s1", [new TaggedEvent(Evt(), ["order:1"])]);
+        await store.AppendAsync(StreamId.Parse("test:s1"), [new TaggedEvent(Evt(), [Tag.Parse("order:1")])]);
+        await store.AppendAsync(StreamId.Parse("test:s1"), [new TaggedEvent(Evt(), [Tag.Parse("tag:other")])]);
+        await store.AppendAsync(StreamId.Parse("test:s1"), [new TaggedEvent(Evt(), [Tag.Parse("order:1")])]);
 
-        var query = Query.FromItems(QueryItem.ByTags("order:1"));
+        var query = Query.FromItems(QueryItem.ByTags(Tag.Parse("order:1")));
         var expected = (await store.ReadByQueryAsync(query)).Events
             .Select(e => e.SequencePosition)
             .ToArray();
@@ -80,7 +80,7 @@ public class InMemorySubscriptionTests
     public async Task FromSequence_Is_Inclusive()
     {
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
-        await store.AppendAsync("s1", [Evt(), Evt(), Evt()]);
+        await store.AppendAsync(StreamId.Parse("test:s1"), [Evt(), Evt(), Evt()]);
 
         await using var handle = store.Subscribe("sub-inclusive", fromSequence: 2);
         var received = await ReadExactlyAsync(handle, count: 2, TimeSpan.FromSeconds(5));
@@ -92,13 +92,13 @@ public class InMemorySubscriptionTests
     {
         var store = new InMemoryEventStore(
             options: new InMemoryEventStoreOptions { SubscriptionChannelCapacity = 8, RequireTenantId = false });
-        await store.AppendAsync("s1", [Evt()]);
+        await store.AppendAsync(StreamId.Parse("test:s1"), [Evt()]);
 
         var handle = store.Subscribe("sub-dispose", fromSequence: 1);
         _ = await ReadExactlyAsync(handle, count: 1, TimeSpan.FromSeconds(5));
         await handle.DisposeAsync();
 
-        await store.AppendAsync("s1", [Evt()]);
+        await store.AppendAsync(StreamId.Parse("test:s1"), [Evt()]);
         await Task.Delay(100);
 
         Assert.True(handle.Events.Completion.IsCompleted);
@@ -115,7 +115,7 @@ public class InMemorySubscriptionTests
 
         // Fill catch-up / live path with more events than capacity.
         for (var i = 0; i < 5; i++)
-            await store.AppendAsync("s1", [Evt()]);
+            await store.AppendAsync(StreamId.Parse("test:s1"), [Evt()]);
 
         // Give the delivery loop time to block on the full channel.
         await Task.Delay(100);
@@ -128,14 +128,14 @@ public class InMemorySubscriptionTests
     public async Task Multiple_Independent_Subscribers()
     {
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
-        await store.AppendAsync("s1", [Evt()]);
+        await store.AppendAsync(StreamId.Parse("test:s1"), [Evt()]);
 
         await using var a = store.Subscribe("a", fromSequence: 1);
         await using var b = store.Subscribe("b", fromSequence: 1);
 
         var ra = ReadExactlyAsync(a, 2, TimeSpan.FromSeconds(5));
         var rb = ReadExactlyAsync(b, 2, TimeSpan.FromSeconds(5));
-        await store.AppendAsync("s1", [Evt()]);
+        await store.AppendAsync(StreamId.Parse("test:s1"), [Evt()]);
 
         Assert.Equal(new long[] { 1, 2 }, (await ra).Select(e => e.SequencePosition));
         Assert.Equal(new long[] { 1, 2 }, (await rb).Select(e => e.SequencePosition));
@@ -146,13 +146,13 @@ public class InMemorySubscriptionTests
     {
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         for (var i = 0; i < 50; i++)
-            await store.AppendAsync("s1", [Evt()]);
+            await store.AppendAsync(StreamId.Parse("test:s1"), [Evt()]);
 
         await using var handle = store.Subscribe("sub-race", fromSequence: 1);
         var appendTask = Task.Run(async () =>
         {
             for (var i = 0; i < 50; i++)
-                await store.AppendAsync("s1", [Evt()]);
+                await store.AppendAsync(StreamId.Parse("test:s1"), [Evt()]);
         });
 
         var received = await ReadExactlyAsync(handle, count: 100, TimeSpan.FromSeconds(15));
@@ -182,14 +182,14 @@ public class InMemorySubscriptionTests
         await using var orderingHandle = orderingSubs.Subscribe("o", fromSequence: 1);
         await using var catalogHandle = catalogSubs.Subscribe("c", fromSequence: 1);
 
-        await orderingStore.AppendAsync("acme:Order:1", [Evt()]);
-        await catalogStore.AppendAsync("acme:Product:1", [Evt()]);
+        await orderingStore.AppendAsync(StreamId.Parse("acme:Order:1"), [Evt()]);
+        await catalogStore.AppendAsync(StreamId.Parse("acme:Product:1"), [Evt()]);
 
         var o = await ReadExactlyAsync(orderingHandle, 1, TimeSpan.FromSeconds(5));
         var c = await ReadExactlyAsync(catalogHandle, 1, TimeSpan.FromSeconds(5));
 
-        Assert.Equal("acme:Order:1", o[0].StreamId);
-        Assert.Equal("acme:Product:1", c[0].StreamId);
+        Assert.Equal("acme:Order:1", o[0].StreamId.ToString());
+        Assert.Equal("acme:Product:1", c[0].StreamId.ToString());
         Assert.Equal(1, o[0].SequencePosition);
         Assert.Equal(1, c[0].SequencePosition);
     }

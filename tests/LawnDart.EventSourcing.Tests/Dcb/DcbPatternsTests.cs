@@ -19,7 +19,7 @@ public class DcbProjectorTests
         var tags = projector.GetTagsForProjection();
 
         // Assert
-        Assert.Equal(new[] { "order", "payment" }, tags);
+        Assert.Equal(new[] { "order:1", "payment:1" }, tags);
     }
 
     [Fact]
@@ -47,8 +47,8 @@ public class DcbProjectorTests
 
         // Add events with matching tags
         await eventStore.AppendAsync(
-            "stream1",
-            [new TaggedEvent(new TestProjectionEvent { Value = "event1" }, "order"), new TaggedEvent(new TestProjectionEvent { Value = "event2" }, "order")],
+            StreamId.Parse("test:stream1"),
+            [new TaggedEvent(new TestProjectionEvent { Value = "event1" }, Tag.Parse("order:1")), new TaggedEvent(new TestProjectionEvent { Value = "event2" }, Tag.Parse("order:1"))],
             null,
             new EventMetadata());
 
@@ -70,14 +70,14 @@ public class DcbProjectorTests
 
         // Add events in specific order
         await eventStore.AppendAsync(
-            "stream1",
-            [new TaggedEvent(new TestProjectionEvent { Value = "first" }, "order")],
+            StreamId.Parse("test:stream1"),
+            [new TaggedEvent(new TestProjectionEvent { Value = "first" }, Tag.Parse("order:1"))],
             null,
             new EventMetadata());
 
         await eventStore.AppendAsync(
-            "stream2",
-            [new TaggedEvent(new TestProjectionEvent { Value = "second" }, "order")],
+            StreamId.Parse("test:stream2"),
+            [new TaggedEvent(new TestProjectionEvent { Value = "second" }, Tag.Parse("order:1"))],
             null,
             new EventMetadata());
 
@@ -182,7 +182,7 @@ public class TestProjector : DcbProjector<TestState>
 
     public override string[] GetTagsForProjection()
     {
-        return new[] { "order", "payment" };
+        return new[] { "order:1", "payment:1" };
     }
 
     public override Task ProjectEventAsync(IEvent @event, EventMetadata metadata, CancellationToken cancellationToken = default)

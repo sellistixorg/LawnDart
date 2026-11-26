@@ -299,9 +299,9 @@ public abstract class OutboxPublicationContractTests : ContractSuite
         return await opened.Outbox!.GetUnprocessedAsync(20);
     }
 
-    private static string Stream() => "test-tenant:TestAggregate:" + Guid.NewGuid().ToString("N");
+    private static StreamId Stream() => StreamId.For("test-tenant", "TestAggregate", Guid.NewGuid().ToString("N"));
 
-    private static string Tag() => "pub-" + Guid.NewGuid().ToString("N");
+    private static LawnDart.EventStore.Tag Tag() => LawnDart.EventStore.Tag.Create("pub", Guid.NewGuid().ToString("N"));
 
     private static ContractOutboxEvent Pass(string value)
         => new() { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow, Value = value };

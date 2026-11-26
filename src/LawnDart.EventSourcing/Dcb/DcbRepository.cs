@@ -276,26 +276,26 @@ public class DcbRepository : IDcbRepository
             // Build each event's tags: that event's own tags, the tag provider's tags for
             // that event, and the tenant tag when tenant isolation is on. Tags from other
             // events in the batch are not added.
-            string? tenantTag = null;
+            Tag? tenantTag = null;
             var tagged = new List<TaggedEvent>(callerEvents.Count);
             foreach (var item in callerEvents)
             {
-                var eventTags = new List<string>(item.Tags);
+                var eventTags = new List<Tag>(item.Tags);
                 if (_eventSourcingOptions.EnforceDcbTenantIsolation
-                    && !eventTags.Any(t => t.StartsWith("tenant:", StringComparison.OrdinalIgnoreCase)))
+                    && !eventTags.Any(IsTenantTag))
                 {
                     if (tenantTag is null)
                     {
-                        var injected = new List<string>();
+                        var injected = new List<Tag>();
                         EnsureTenantTag(injected);
                         tenantTag = injected[0];
                     }
 
-                    eventTags.Add(tenantTag);
+                    eventTags.Add(tenantTag.Value);
                 }
 
                 if (_tagProvider != null)
-                    eventTags.AddRange(_tagProvider.GetTags(item.Event, null));
+                    eventTags.AddRange(_tagProvider.GetTags(item.Event, null).Select(Tag.Parse));
                 tagged.Add(new TaggedEvent(item.Event, eventTags));
             }
             
@@ -312,28 +312,29 @@ public class DcbRepository : IDcbRepository
                     LawnDartNames.ValidateTenantId(tenantId, nameof(commandMetadata), _options.ValidateNames);
             }
 
-            string? streamId = null;
+            StreamId? streamId = null;
             if (condition == null)
             {
-                // Use tenant-aware stream ID for DCB
+                // Use tenant-aware stream ID for DCB. Each append still gets its own stream
+                // until the fixed dcb / {tenant}:dcb stream lands.
                 var tenantId = metadata.TenantId ?? _tenantContextProvider.GetTenantId();
-                streamId = tenantId != null 
-                    ? $"{tenantId}:dcb:{Guid.NewGuid()}"
-                    : $"dcb:{Guid.NewGuid()}";
+                streamId = tenantId != null
+                    ? StreamId.For(tenantId, StreamId.DcbType, Guid.NewGuid().ToString())
+                    : StreamId.For(StreamId.DcbType, Guid.NewGuid().ToString());
             }
 
             // Append to event store
             // One atomic append; each event carries only its own tags.
             var appendResult = condition != null
                 ? await _eventStore.AppendAsync(tagged, condition, eventMetadata, cancellationToken).ConfigureAwait(false)
-                : await _eventStore.AppendAsync(streamId!, tagged, null, eventMetadata, cancellationToken).ConfigureAwait(false);
+                : await _eventStore.AppendAsync(streamId!.Value, tagged, null, eventMetadata, cancellationToken).ConfigureAwait(false);
 
             var sequencePositions = appendResult.SequencePositions;
             
             DcbTelemetry.RecordAppend(tagged.Count, stopwatch.Elapsed);
             if (_logger is not null)
             {
-                var distinctTagCount = tagged.SelectMany(t => t.Tags).Distinct(StringComparer.Ordinal).Count();
+                var distinctTagCount = tagged.SelectMany(t => t.Tags).Distinct().Count();
                 DcbRepositoryLog.EventsAppended(_logger, tagged.Count, distinctTagCount);
             }
             
@@ -500,7 +501,7 @@ public class DcbRepository : IDcbRepository
             var pendingTags = entity.PendingEventTags;
             var pendingTagged = new List<TaggedEvent>(pendingEvents.Count);
             for (var i = 0; i < pendingEvents.Count; i++)
-                pendingTagged.Add(new TaggedEvent(pendingEvents[i], i < pendingTags.Count ? pendingTags[i] : []));
+                pendingTagged.Add(new TaggedEvent(pendingEvents[i], i < pendingTags.Count ? pendingTags[i].Select(Tag.Parse).ToArray() : []));
             var sequencePositions = await AppendEventsAsync(
                 pendingTagged,
                 condition,
@@ -588,7 +589,7 @@ public class DcbRepository : IDcbRepository
         foreach (var item in condition.FailIfEventsMatch.Items)
         {
             if (item.Tags is { Count: > 0 })
-                WarnOnQueriedTags(item.Tags);
+                WarnOnQueriedTags(item.Tags.Select(static t => t.ToString()));
         }
     }
 
@@ -632,15 +633,15 @@ public class DcbRepository : IDcbRepository
 
             if (item.Types is not null && item.Types.Any(t => t is null))
                 throw new ArgumentException("A decision query event type cannot be null.", nameof(query));
-            if (item.Tags is not null && item.Tags.Any(t => t is null))
-                throw new ArgumentException("A decision query tag cannot be null.", nameof(query));
+            if (item.Tags is not null && item.Tags.Any(static t => t.IsDefault))
+                throw new ArgumentException("A decision query tag cannot be empty. Build tags with Tag.Create or Tag.Parse.", nameof(query));
         }
 
         if (!_eventSourcingOptions.EnforceDcbTenantIsolation)
             return query;
 
         if (query.Items.Any(item =>
-                item.Tags?.Any(t => t.StartsWith("tenant:", StringComparison.OrdinalIgnoreCase)) == true))
+                item.Tags?.Any(IsTenantTag) == true))
             return query;
 
         var tenantId = _tenantContextProvider.GetTenantId();
@@ -651,7 +652,7 @@ public class DcbRepository : IDcbRepository
                 "Either provide a tenant tag in the format 'tenant:{id}' or ensure ITenantContextProvider is properly configured.");
         }
 
-        var tenantTag = $"tenant:{tenantId}";
+        var tenantTag = Tag.Create("tenant", tenantId);
         var cloned = new QueryItem[query.Items.Count];
         for (var i = 0; i < query.Items.Count; i++)
         {
@@ -684,8 +685,9 @@ public class DcbRepository : IDcbRepository
                 continue;
             foreach (var tag in item.Tags)
             {
-                if (!tags.Contains(tag))
-                    tags.Add(tag);
+                var text = tag.ToString();
+                if (!tags.Contains(text))
+                    tags.Add(text);
             }
         }
 
@@ -695,10 +697,10 @@ public class DcbRepository : IDcbRepository
     /// <summary>
     /// Ensures tags include a tenant tag when DCB tenant isolation is enforced.
     /// </summary>
-    private void EnsureTenantTag(List<string> tags)
+    private void EnsureTenantTag(List<Tag> tags)
     {
         // Check if tags already contain a tenant tag
-        if (tags.Any(t => t.StartsWith("tenant:", StringComparison.OrdinalIgnoreCase)))
+        if (tags.Any(IsTenantTag))
         {
             return; // Tenant tag already present
         }
@@ -708,7 +710,7 @@ public class DcbRepository : IDcbRepository
         if (tenantId != null)
         {
             // Auto-inject tenant tag
-            tags.Add($"tenant:{tenantId}");
+            tags.Add(Tag.Create("tenant", tenantId));
             if (_logger is not null)
                 DcbRepositoryLog.TenantTagInjected(_logger, tenantId);
         }
@@ -720,4 +722,8 @@ public class DcbRepository : IDcbRepository
                 "Either provide a tenant tag in the format 'tenant:{id}' or ensure ITenantContextProvider is properly configured.");
         }
     }
+
+    // The tenant tag key is matched without case, as before typed tags.
+    private static bool IsTenantTag(Tag tag)
+        => string.Equals(tag.Key, "tenant", StringComparison.OrdinalIgnoreCase);
 }

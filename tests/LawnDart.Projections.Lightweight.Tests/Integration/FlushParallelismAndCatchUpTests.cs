@@ -39,7 +39,7 @@ public class FlushParallelismAndCatchUpTests
 
         for (var i = 0; i < 16; i++)
         {
-            await store.AppendAsync($"tenant1:Counter:p-{i}", [
+            await store.AppendAsync(StreamId.Parse($"tenant1:Counter:p-{i}"), [
                 new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)
             ], metadata: Meta(), cancellationToken: cts.Token);
         }
@@ -76,10 +76,10 @@ public class FlushParallelismAndCatchUpTests
         var store = new LawnDart.EventSourcing.EventStore.InMemoryEventStore();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 
-        await store.AppendAsync("tenant1:Counter:a", [
+        await store.AppendAsync(StreamId.Parse("tenant1:Counter:a"), [
             new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)
         ], metadata: Meta(), cancellationToken: cts.Token);
-        await store.AppendAsync("tenant1:Counter:b", [
+        await store.AppendAsync(StreamId.Parse("tenant1:Counter:b"), [
             new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 2)
         ], metadata: Meta(), cancellationToken: cts.Token);
 
@@ -126,7 +126,7 @@ public class FlushParallelismAndCatchUpTests
 
         for (var i = 0; i < 5; i++)
         {
-            await store.AppendAsync($"tenant1:Counter:s-{i}", [
+            await store.AppendAsync(StreamId.Parse($"tenant1:Counter:s-{i}"), [
                 new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, i + 1)
             ], metadata: Meta(), cancellationToken: cts.Token);
         }

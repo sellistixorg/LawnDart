@@ -32,26 +32,26 @@ public abstract class AggregateEventTagContractTests : ContractSuite
 
         var course = Guid.NewGuid();
         var student = "student:" + Guid.NewGuid().ToString("N");
-        var aggregate = await repository.CreateAsync<CourseAggregate>($"test-tenant:CourseAggregate:{course}");
+        var aggregate = await repository.CreateAsync<CourseAggregate>(StreamId.Parse($"test-tenant:CourseAggregate:{course}"));
         aggregate.Raise(new ContractCourseCreated(Guid.NewGuid(), course.ToString()));
         aggregate.Raise(new ContractStudentSubscribed(Guid.NewGuid(), course.ToString(), student));
 
         await repository.SaveAsync(aggregate, new CommandMetadata { UserId = "contract", TenantId = "test-tenant" });
 
-        var events = await store.ReadStreamAsync(aggregate.StreamId);
+        var events = await store.ReadStreamAsync(StreamId.Parse(aggregate.StreamId));
         Assert.Equal(2, events.Count);
         var created = Assert.Single(events, e => e.Event is ContractCourseCreated);
         var subscribed = Assert.Single(events, e => e.Event is ContractStudentSubscribed);
 
-        Assert.DoesNotContain(student, created.Tags);
-        Assert.Contains(student, subscribed.Tags);
+        Assert.DoesNotContain(student, created.Tags.Select(static t => t.ToString()).ToArray());
+        Assert.Contains(student, subscribed.Tags.Select(static t => t.ToString()).ToArray());
 
         // Both events still carry the aggregate tag.
         var aggregateTag = Assert.Single(created.Tags);
-        Assert.StartsWith("CourseAggregate:", aggregateTag, StringComparison.Ordinal);
+        Assert.StartsWith("CourseAggregate:", aggregateTag.ToString(), StringComparison.Ordinal);
         Assert.Contains(aggregateTag, subscribed.Tags);
 
-        var forStudent = (await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(student)))).Events;
+        var forStudent = (await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(student))))).Events;
         Assert.IsType<ContractStudentSubscribed>(Assert.Single(forStudent).Event);
     }
 

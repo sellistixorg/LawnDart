@@ -196,13 +196,13 @@ public class DcbECommerceDemo
         // Demonstrate cross-entity query
         Console.WriteLine("\n=== Cross-Entity Query Demo ===");
         Console.WriteLine("Querying all events related to the order using tags...");
-        var orderQuery = Query.FromItems(QueryItem.ByTags($"order:{orderId}"));
+        var orderQuery = Query.FromItems(QueryItem.ByTags(Tag.Parse($"order:{orderId}")));
         var orderEventsRaw = new List<SequencedEvent>();
         await foreach (var evt in _eventStore.ReadByQueryStreamAsync(orderQuery))
             orderEventsRaw.Add(evt);
         Console.WriteLine($"Found {orderEventsRaw.Count} events tagged with order:{orderId}");
 
-        var cartQuery = Query.FromItems(QueryItem.ByTags($"cart:{cartId}"));
+        var cartQuery = Query.FromItems(QueryItem.ByTags(Tag.Parse($"cart:{cartId}")));
         var cartEventsRaw = new List<SequencedEvent>();
         await foreach (var evt in _eventStore.ReadByQueryStreamAsync(cartQuery))
             cartEventsRaw.Add(evt);

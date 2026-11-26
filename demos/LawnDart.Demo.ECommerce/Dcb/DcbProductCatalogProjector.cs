@@ -28,7 +28,7 @@ public class DcbProductCatalogProjector
         // Group events by product ID (from tags)
         var productGroups = allProductEvents
             .SelectMany(e => e.Tags
-                .Where(t => t.StartsWith("product:"))
+                .Where(t => t.ToString().StartsWith("product:"))
                 .Select(t => new { Tag = t, Event = e }))
             .GroupBy(x => x.Tag)
             .ToList();
@@ -37,7 +37,7 @@ public class DcbProductCatalogProjector
 
         foreach (var group in productGroups)
         {
-            var productId = ExtractProductIdFromTag(group.Key);
+            var productId = ExtractProductIdFromTag(group.Key.ToString());
             if (productId == null) continue;
 
             var events = group.Select(g => g.Event).OrderBy(e => e.SequencePosition);

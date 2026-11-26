@@ -101,8 +101,8 @@ public class SqlServerSubscriptionTests : IAsyncLifetime
         await store.InitializeSchemaAsync();
 
         var log = (IEventLog)store;
-        var stream = "s-" + Guid.NewGuid().ToString("N");
-        await log.AppendAsync(stream, [new AppendEvent("hidden-probe", new byte[] { 1 })]);
+        var stream = "s:" + Guid.NewGuid().ToString("N");
+        await log.AppendAsync(StreamId.Parse(stream), [new AppendEvent("hidden-probe", new byte[] { 1 })]);
         var head = await log.GetCurrentSequenceAsync();
         await using var handle = ((IEventLogSubscriptions)store).Subscribe("hidden", head + 1);
         await WaitForWaitersAsync(store.NewEvents, 1);
@@ -115,7 +115,7 @@ public class SqlServerSubscriptionTests : IAsyncLifetime
             "INSERT INTO [" + schema + "].[AppendFence] DEFAULT VALUES", connection, transaction))
             await insert.ExecuteNonQueryAsync();
 
-        var appended = await log.AppendAsync(stream, [new AppendEvent("hidden-probe", new byte[] { 2 })]);
+        var appended = await log.AppendAsync(StreamId.Parse(stream), [new AppendEvent("hidden-probe", new byte[] { 2 })]);
         using (var duringHold = new CancellationTokenSource(TimeSpan.FromMilliseconds(400)))
         {
             var sawEarly = false;

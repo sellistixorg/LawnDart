@@ -31,7 +31,7 @@ internal static class OrderStreams
         if (string.IsNullOrEmpty(buyerTenant))
             return repository.GetOrCreateAsync<OrderAggregate>(orderId, cancellationToken);
 
-        return repository.GetOrCreateAsync<OrderAggregate>(Id(orderId, buyerTenant), cancellationToken);
+        return repository.GetOrCreateAsync<OrderAggregate>(StreamId.Parse(Id(orderId, buyerTenant)), cancellationToken);
     }
 }
 
@@ -60,7 +60,7 @@ public sealed class CreateProductCommandHandler : ICommandHandler<CreateProductC
         //    Two concurrent requests for the same seller+SKU will race here; only one wins.
         var skuTags  = SkuRegistryEntity.GetSkuTags(tenantId, command.Sku);
         var skuEntity = await _dcb.GetOrCreateEntityAsync<SkuRegistryEntity>(
-            Query.FromItems(QueryItem.ByTags(skuTags)), cancellationToken);
+            Query.FromItems(QueryItem.ByTags(skuTags.Select(Tag.Parse).ToArray())), cancellationToken);
         await _dcb.HandleCommandAsync<SkuRegistryEntity, ReserveSkuCommand>(
             skuEntity,
             new ReserveSkuCommand(Guid.NewGuid(), command.Sku, command.ProductId, tenantId),
@@ -164,7 +164,7 @@ public sealed class PlaceOrderCommandHandler : ICommandHandler<PlaceOrderCommand
         // Load with the product tag so the DCB query finds product and stock events.
         var tags = InventoryEntity.GetProductTags(command.ProductId);
         var entity = await _dcb.GetOrCreateEntityAsync<InventoryEntity>(
-            Query.FromItems(QueryItem.ByTags(tags)), cancellationToken)
+            Query.FromItems(QueryItem.ByTags(tags.Select(Tag.Parse).ToArray())), cancellationToken)
             .ConfigureAwait(false);
         await _dcb.HandleCommandAsync<InventoryEntity, PlaceOrderCommand>(entity, command, meta, cancellationToken)
             .ConfigureAwait(false);

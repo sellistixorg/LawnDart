@@ -71,7 +71,7 @@ public class SqlServerEventStoreTests : IAsyncLifetime
     public async Task GetCurrentSequenceAsync_ReturnsMaxCommittedSequence_NotSequenceAllocatorHead()
     {
         var streamId = "test-tenant:TestAggregate:seq-head";
-        await _eventStore!.AppendAsync(streamId, new IEvent[]
+        await _eventStore!.AppendAsync(StreamId.Parse(streamId), new IEvent[]
         {
             new TestEvent(Guid.NewGuid(), DateTime.UtcNow),
             new TestEvent(Guid.NewGuid(), DateTime.UtcNow),
@@ -94,7 +94,7 @@ public class SqlServerEventStoreTests : IAsyncLifetime
             await burn.ExecuteNonQueryAsync();
         }
 
-        var append = await _eventStore!.AppendAsync(streamId, new IEvent[]
+        var append = await _eventStore!.AppendAsync(StreamId.Parse(streamId), new IEvent[]
         {
             new TestEvent(Guid.NewGuid(), DateTime.UtcNow),
         });
@@ -130,7 +130,7 @@ public class SqlServerEventStoreTests : IAsyncLifetime
     public async Task New_append_writes_payload_and_codec_id()
     {
         var streamId = "test-tenant:TestAggregate:binary-column";
-        await _eventStore!.AppendAsync(streamId, [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);
+        await _eventStore!.AppendAsync(StreamId.Parse(streamId), [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);
 
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -142,7 +142,7 @@ public class SqlServerEventStoreTests : IAsyncLifetime
             WHERE s.StreamId = @StreamId
             """,
             connection);
-        command.Parameters.AddWithValue("@StreamId", streamId);
+        command.Parameters.AddWithValue("@StreamId", streamId.ToString());
 
         await using var reader = await command.ExecuteReaderAsync();
         Assert.True(await reader.ReadAsync());
@@ -151,7 +151,7 @@ public class SqlServerEventStoreTests : IAsyncLifetime
         Assert.Equal(1, reader.GetInt32("SchemaVersion"));
         Assert.Equal(EventCodec.Json, reader.GetByte("CodecId"));
 
-        var stored = Assert.Single(await _eventStore.ReadStreamAsync(streamId));
+        var stored = Assert.Single(await _eventStore.ReadStreamAsync(StreamId.Parse(streamId)));
         Assert.NotNull(stored.Metadata.CommitTimestamp);
         Assert.Equal(1, stored.Metadata.SchemaVersion);
     }
@@ -267,7 +267,7 @@ public class SqlServerEventStoreTests : IAsyncLifetime
     public async Task Write_path_does_not_parameterize_a_mime_string()
     {
         var streamId = "test-tenant:TestAggregate:no-mime";
-        await _eventStore!.AppendAsync(streamId, [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);
+        await _eventStore!.AppendAsync(StreamId.Parse(streamId), [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);
 
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -281,7 +281,7 @@ public class SqlServerEventStoreTests : IAsyncLifetime
             """,
             connection))
         {
-            cmd.Parameters.AddWithValue("@StreamId", streamId);
+            cmd.Parameters.AddWithValue("@StreamId", streamId.ToString());
             await using var reader = await cmd.ExecuteReaderAsync();
             Assert.True(await reader.ReadAsync());
             Assert.Equal(EventCodec.Json, reader.GetByte("CodecId"));
@@ -405,11 +405,11 @@ public class SqlServerEventStoreTests : IAsyncLifetime
         var log = (IEventLog)_eventStore!;
 
         await Task.WhenAll(
-            log.AppendAsync(streamA, [new AppendEvent(token, new byte[] { 1 })]),
-            log.AppendAsync(streamB, [new AppendEvent(token, new byte[] { 2 })]));
+            log.AppendAsync(StreamId.Parse(streamA), [new AppendEvent(token, new byte[] { 1 })]),
+            log.AppendAsync(StreamId.Parse(streamB), [new AppendEvent(token, new byte[] { 2 })]));
 
-        Assert.Equal(token, Assert.Single(await log.ReadStreamAsync(streamA)).EventType);
-        Assert.Equal(token, Assert.Single(await log.ReadStreamAsync(streamB)).EventType);
+        Assert.Equal(token, Assert.Single(await log.ReadStreamAsync(StreamId.Parse(streamA))).EventType);
+        Assert.Equal(token, Assert.Single(await log.ReadStreamAsync(StreamId.Parse(streamB))).EventType);
 
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -489,18 +489,18 @@ public class SqlServerEventStoreTests : IAsyncLifetime
 
         var streamV1 = "test-tenant:Schema:v1";
         var streamV2 = "test-tenant:Schema:v2";
-        await store.AppendAsync(streamV1, [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);
-        await store.AppendAsync(streamV2, [new SchemaCurrent(Guid.NewGuid(), DateTime.UtcNow, "Ada", "bio")]);
+        await store.AppendAsync(StreamId.Parse(streamV1), [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);
+        await store.AppendAsync(StreamId.Parse(streamV2), [new SchemaCurrent(Guid.NewGuid(), DateTime.UtcNow, "Ada", "bio")]);
 
-        var typedV1 = Assert.Single(await store.ReadStreamAsync(streamV1));
+        var typedV1 = Assert.Single(await store.ReadStreamAsync(StreamId.Parse(streamV1)));
         Assert.IsType<TestEvent>(typedV1.Event);
         Assert.Equal(1, typedV1.Metadata.SchemaVersion);
-        Assert.Equal(1, Assert.Single(await ((IEventLog)store).ReadStreamAsync(streamV1)).SchemaVersion);
+        Assert.Equal(1, Assert.Single(await ((IEventLog)store).ReadStreamAsync(StreamId.Parse(streamV1))).SchemaVersion);
 
-        var typedV2 = Assert.Single(await store.ReadStreamAsync(streamV2));
+        var typedV2 = Assert.Single(await store.ReadStreamAsync(StreamId.Parse(streamV2)));
         Assert.IsType<SchemaCurrent>(typedV2.Event);
         Assert.Equal(2, typedV2.Metadata.SchemaVersion);
-        Assert.Equal(2, Assert.Single(await ((IEventLog)store).ReadStreamAsync(streamV2)).SchemaVersion);
+        Assert.Equal(2, Assert.Single(await ((IEventLog)store).ReadStreamAsync(StreamId.Parse(streamV2))).SchemaVersion);
 
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -512,7 +512,7 @@ public class SqlServerEventStoreTests : IAsyncLifetime
             WHERE s.StreamId = @StreamId
             """,
             connection);
-        command.Parameters.AddWithValue("@StreamId", streamV2);
+        command.Parameters.AddWithValue("@StreamId", streamV2.ToString());
         Assert.Equal(2, (int)(await command.ExecuteScalarAsync())!);
     }
 

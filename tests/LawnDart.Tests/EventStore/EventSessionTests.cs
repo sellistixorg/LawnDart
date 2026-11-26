@@ -17,12 +17,12 @@ public class EventSessionTests
         var session = new EventSession(new StjEventSerializer(), catalog);
         var evt = new AuthorRegistered(Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), new DateTime(2026, 1, 2, 3, 4, 5, DateTimeKind.Utc), "Ada");
 
-        var append = session.ToAppendEvent(evt, new EventMetadata { UserId = "u-1" }, ["author:1"]);
+        var append = session.ToAppendEvent(evt, new EventMetadata { UserId = "u-1" }, [Tag.Parse("author:1")]);
 
         Assert.Equal("author-registered", append.EventType);
         Assert.Equal(1, append.SchemaVersion);
         Assert.Equal(EventCodec.Json, append.CodecId);
-        Assert.Equal(["author:1"], append.Tags);
+        Assert.Equal(["author:1"], append.Tags.Select(static t => t.ToString()).ToArray());
         var json = Encoding.UTF8.GetString(append.Payload.Span);
         Assert.StartsWith("{", json);
         Assert.Contains("\"Name\":\"Ada\"", json);
@@ -85,7 +85,7 @@ public class EventSessionTests
         var recorded = new RecordedEvent(
             "author-registered",
             payload,
-            "authors-1",
+            StreamId.Parse("test:authors-1"),
             streamVersion: 3,
             sequencePosition: 42,
             commitTimestamp: commit,
@@ -96,7 +96,7 @@ public class EventSessionTests
 
         Assert.Equal(42, sequenced.SequencePosition);
         Assert.Equal(3, sequenced.Version);
-        Assert.Equal("authors-1", sequenced.StreamId);
+        Assert.Equal("test:authors-1", sequenced.StreamId.ToString());
         var hydrated = Assert.IsType<AuthorRegistered>(sequenced.Event);
         Assert.Equal("Ada", hydrated.Name);
         Assert.Equal(commit, sequenced.Metadata.CommitTimestamp);
@@ -116,7 +116,7 @@ public class EventSessionTests
         var recorded = new RecordedEvent(
             "author-registered",
             new StjEventSerializer().Serialize(evt, evt.GetType()),
-            "s",
+            StreamId.Parse("test:s"),
             streamVersion: 1,
             sequencePosition: 1,
             commitTimestamp: commit);
@@ -137,7 +137,7 @@ public class EventSessionTests
         var recorded = new RecordedEvent(
             "author-registered",
             new StjEventSerializer().Serialize(evt, evt.GetType()),
-            "s",
+            StreamId.Parse("test:s"),
             streamVersion: 1,
             sequencePosition: 1,
             commitTimestamp: DateTime.UtcNow,
@@ -160,7 +160,7 @@ public class EventSessionTests
         var recorded = new RecordedEvent(
             "author-registered",
             new StjEventSerializer().Serialize(evt, evt.GetType()),
-            "s",
+            StreamId.Parse("test:s"),
             streamVersion: 1,
             sequencePosition: 1,
             commitTimestamp: DateTime.UtcNow,
@@ -181,7 +181,7 @@ public class EventSessionTests
         var recorded = new RecordedEvent(
             "author-registered",
             new byte[] { 1, 2, 3 },
-            "s",
+            StreamId.Parse("test:s"),
             streamVersion: 1,
             sequencePosition: 1,
             commitTimestamp: DateTime.UtcNow,
@@ -201,7 +201,7 @@ public class EventSessionTests
         var recorded = new RecordedEvent(
             "foreign-family",
             Encoding.UTF8.GetBytes("""{"kind":"opaque"}"""),
-            "s",
+            StreamId.Parse("test:s"),
             streamVersion: 1,
             sequencePosition: 1,
             commitTimestamp: DateTime.UtcNow);
@@ -221,7 +221,7 @@ public class EventSessionTests
         var recorded = new RecordedEvent(
             "author-registered",
             Encoding.UTF8.GetBytes("""{"Id":"00000000-0000-0000-0000-000000000000"}"""),
-            "s",
+            StreamId.Parse("test:s"),
             streamVersion: 1,
             sequencePosition: 1,
             commitTimestamp: DateTime.UtcNow,
@@ -242,7 +242,7 @@ public class EventSessionTests
         var recorded = new RecordedEvent(
             "author-evolved",
             Encoding.UTF8.GetBytes("""{"Id":"00000000-0000-0000-0000-000000000000"}"""),
-            "s",
+            StreamId.Parse("test:s"),
             streamVersion: 1,
             sequencePosition: 1,
             commitTimestamp: DateTime.UtcNow,
@@ -262,7 +262,7 @@ public class EventSessionTests
         var recorded = new RecordedEvent(
             "author-registered",
             Encoding.UTF8.GetBytes("not-json"),
-            "s",
+            StreamId.Parse("test:s"),
             streamVersion: 1,
             sequencePosition: 1,
             commitTimestamp: DateTime.UtcNow,
@@ -285,7 +285,7 @@ public class EventSessionTests
         var append = session.ToAppendEvent(evt, new EventMetadata { UserId = "u-1" });
         Assert.Equal(1, catalog.ResolveCalls);
 
-        var recorded = log.Commit("authors-1", append);
+        var recorded = log.Commit("test:authors-1", append);
         Assert.Equal(0, log.TypeResolves);
         Assert.Equal("author-registered", recorded.EventType);
 
@@ -350,7 +350,7 @@ public class EventSessionTests
         var recorded = new RecordedEvent(
             "author-evolved",
             new StjEventSerializer().Serialize(v1, v1.GetType()),
-            "authors-1",
+            StreamId.Parse("test:authors-1"),
             streamVersion: 1,
             sequencePosition: 1,
             commitTimestamp: DateTime.UtcNow,
@@ -373,7 +373,7 @@ public class EventSessionTests
         var recorded = new RecordedEvent(
             "author-evolved",
             new StjEventSerializer().Serialize(v1, v1.GetType()),
-            "authors-1",
+            StreamId.Parse("test:authors-1"),
             streamVersion: 1,
             sequencePosition: 1,
             commitTimestamp: DateTime.UtcNow,
@@ -401,7 +401,7 @@ public class EventSessionTests
         var recorded = new RecordedEvent(
             "author-evolved",
             payload,
-            "authors-1",
+            StreamId.Parse("test:authors-1"),
             streamVersion: 1,
             sequencePosition: 1,
             commitTimestamp: DateTime.UtcNow,
@@ -434,7 +434,7 @@ public class EventSessionTests
         var recorded = new RecordedEvent(
             "author-registered",
             new StjEventSerializer().Serialize(evt, evt.GetType()),
-            "s",
+            StreamId.Parse("test:s"),
             streamVersion: 1,
             sequencePosition: 1,
             commitTimestamp: frameTime,
@@ -526,7 +526,7 @@ public class EventSessionTests
             return new RecordedEvent(
                 envelope.EventType,
                 envelope.Payload,
-                streamId,
+                StreamId.Parse(streamId),
                 streamVersion: 1,
                 sequencePosition: 1,
                 commitTimestamp: new DateTime(2026, 9, 16, 12, 0, 0, DateTimeKind.Utc),

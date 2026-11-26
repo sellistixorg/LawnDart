@@ -34,16 +34,15 @@ public class SqlServerStreamIdLengthTests
     }
 
     [Fact]
-    public async Task AppendAsync_StreamIdLongerThanColumn_ThrowsBeforeSql()
+    public void StreamId_LongerThanColumn_CannotBeBuilt()
     {
-        var store = new SqlServerEventStore(UnusedConnection);
-        var streamId = new string('a', SqlServerColumnLimits.StreamId + 1);
+        Assert.Equal(SqlServerColumnLimits.StreamId, StreamId.MaxLength);
 
-        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
-            store.AppendAsync(streamId, [new AppendEvent("length-check", new byte[] { 1 })]));
-
+        var ex = Assert.Throws<FormatException>(() => StreamId.Parse("a:" + new string('a', SqlServerColumnLimits.StreamId - 1)));
         Assert.Contains("255", ex.Message);
-        Assert.Equal(nameof(streamId), ex.ParamName);
+
+        var longest = StreamId.Parse("a:" + new string('a', SqlServerColumnLimits.StreamId - 2));
+        Assert.Equal(SqlServerColumnLimits.StreamId, longest.ToString().Length);
     }
 
     [Fact]

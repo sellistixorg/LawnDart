@@ -75,7 +75,7 @@ public class DispatcherMessageContextTests
 
         await dispatcher.DispatchAsync(command, inbound);
 
-        var events = await store.ReadStreamAsync($"{nameof(TickAggregate)}:{command.AggregateId}");
+        var events = await store.ReadStreamAsync(StreamId.Parse($"{nameof(TickAggregate)}:{command.AggregateId}"));
         Assert.Equal(2, events.Count);
         Assert.All(events, e => Assert.Equal("saga-corr-w6", e.Metadata.CorrelationId));
         Assert.All(events, e => Assert.Equal(command.Id.ToString(), e.Metadata.CausationId));

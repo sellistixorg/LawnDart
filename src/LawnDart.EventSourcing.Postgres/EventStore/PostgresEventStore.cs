@@ -144,12 +144,12 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
 
     /// <inheritdoc />
     public Task<IReadOnlyList<SequencedEvent>> ReadStreamAsync(
-        string streamId, long fromVersion = 0, long? toVersion = null, DateTime? toTimestamp = null, CancellationToken cancellationToken = default)
+        StreamId streamId, long fromVersion = 0, long? toVersion = null, DateTime? toTimestamp = null, CancellationToken cancellationToken = default)
         => _adapter.ReadStreamAsync(streamId, fromVersion, toVersion, toTimestamp, cancellationToken);
 
     /// <inheritdoc />
     public IAsyncEnumerable<SequencedEvent> ReadStreamEnumerableAsync(
-        string streamId, long fromVersion = 0, long? toVersion = null, DateTime? toTimestamp = null, CancellationToken cancellationToken = default)
+        StreamId streamId, long fromVersion = 0, long? toVersion = null, DateTime? toTimestamp = null, CancellationToken cancellationToken = default)
         => _adapter.ReadStreamEnumerableAsync(streamId, fromVersion, toVersion, toTimestamp, cancellationToken);
 
     /// <inheritdoc />
@@ -164,7 +164,7 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
 
     /// <inheritdoc />
     public Task<AppendResult> AppendAsync(
-        string streamId, IEnumerable<TaggedEvent> events, long? expectedVersion = null, LawnDart.Metadata.EventMetadata? metadata = null, CancellationToken cancellationToken = default)
+        StreamId streamId, IEnumerable<TaggedEvent> events, long? expectedVersion = null, LawnDart.Metadata.EventMetadata? metadata = null, CancellationToken cancellationToken = default)
         => _adapter.AppendAsync(streamId, events, expectedVersion, metadata, cancellationToken);
 
     /// <inheritdoc />
@@ -314,14 +314,13 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
 
     /// <inheritdoc />
     public async Task<AppendResult> AppendAsync(
-        string streamId,
+        StreamId streamId,
         IEnumerable<AppendEvent> events,
         long? expectedVersion = null,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(streamId))
-            throw new ArgumentException("Stream ID cannot be null or empty", nameof(streamId));
-        EnsureStreamLength(streamId, nameof(streamId));
+        EventLogBuffers.RequireStreamId(streamId);
+        EnsureStreamLength(streamId.ToString(), nameof(streamId));
         var envelopes = events?.ToList() ?? throw new ArgumentNullException(nameof(events));
         if (envelopes.Count == 0)
             throw new ArgumentException("At least one event is required", nameof(events));
@@ -331,8 +330,8 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
         var eventIds = EventIdResolver.ResolveBatch(envelopes.Select(e => e.Metadata).ToList());
         var eventTypes = envelopes.Select(static envelope => envelope.EventType).ToArray();
         return await AppendWithRetry(
-            ct => AppendCoreAsync(streamId, envelopes, eventIds, expectedVersion, condition: null, isDcb: false, ct),
-            streamId,
+            ct => AppendCoreAsync(streamId.ToString(), envelopes, eventIds, expectedVersion, condition: null, isDcb: false, ct),
+            streamId.ToString(),
             eventIds,
             eventTypes,
             isDcb: false,

@@ -28,7 +28,7 @@ public sealed class ControllableQueryEventStore : IEventStore
     public InMemoryEventStore Inner => _inner;
 
     public Task<AppendResult> AppendAsync(
-        string streamId,
+        StreamId streamId,
         IEnumerable<TaggedEvent> events,
         long? expectedVersion = null,
         EventMetadata? metadata = null,
@@ -94,7 +94,7 @@ public sealed class ControllableQueryEventStore : IEventStore
     }
 
     public Task<IReadOnlyList<SequencedEvent>> ReadStreamAsync(
-        string streamId,
+        StreamId streamId,
         long fromVersion = 0,
         long? toVersion = null,
         DateTime? toTimestamp = null,
@@ -102,14 +102,14 @@ public sealed class ControllableQueryEventStore : IEventStore
         => _inner.ReadStreamAsync(streamId, fromVersion, toVersion, toTimestamp, cancellationToken);
 
     public IAsyncEnumerable<SequencedEvent> ReadStreamEnumerableAsync(
-        string streamId,
+        StreamId streamId,
         long fromVersion = 0,
         long? toVersion = null,
         DateTime? toTimestamp = null,
         CancellationToken cancellationToken = default)
         => _inner.ReadStreamEnumerableAsync(streamId, fromVersion, toVersion, toTimestamp, cancellationToken);
 
-    public Task<StreamMetadata?> GetStreamAsync(string streamId, CancellationToken cancellationToken = default)
+    public Task<StreamMetadata?> GetStreamAsync(StreamId streamId, CancellationToken cancellationToken = default)
         => _inner.GetStreamAsync(streamId, cancellationToken);
 
     public Task<IReadOnlyList<StreamMetadata>> GetStreamsByAggregateTypeAsync(
@@ -118,11 +118,11 @@ public sealed class ControllableQueryEventStore : IEventStore
         => _inner.GetStreamsByAggregateTypeAsync(aggregateType, cancellationToken);
 
     public Task<IReadOnlyList<StreamMetadata>> GetStreamsByTagAsync(
-        string tag,
+        Tag tag,
         CancellationToken cancellationToken = default)
         => _inner.GetStreamsByTagAsync(tag, cancellationToken);
 
-    public Task<IReadOnlyList<string>> EnumerateStreamIdsAsync(
+    public Task<IReadOnlyList<StreamId>> EnumerateStreamIdsAsync(
         string? prefix = null,
         CancellationToken cancellationToken = default)
         => _inner.EnumerateStreamIdsAsync(prefix, cancellationToken);

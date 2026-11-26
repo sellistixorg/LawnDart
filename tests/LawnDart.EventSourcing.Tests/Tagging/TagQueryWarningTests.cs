@@ -18,8 +18,8 @@ public class TagQueryWarningTests
         var logger = new ListLogger();
         var repo = Repository(store, logger, warn: true);
         var id = Guid.NewGuid();
-        var bad = $"Student:{id:D}";
-        var good = LowercaseTagFormat.Instance.Tag("student", id);
+        var bad = LawnDart.EventStore.Tag.Parse($"Student:{id:D}");
+        var good = LawnDart.EventStore.Tag.Parse(LowercaseTagFormat.Instance.Tag("student", id));
 
         await repo.AppendWithContextAsync([new TaggedEvent(Event(), [bad])]);
 
@@ -30,8 +30,8 @@ public class TagQueryWarningTests
         Assert.Equal(1, first.Count);
         Assert.Equal(1, second.Count);
         Assert.Equal(0, formatted.Count);
-        Assert.Equal(1, logger.WarningsFor(bad));
-        Assert.Equal(0, logger.WarningsFor(good));
+        Assert.Equal(1, logger.WarningsFor(bad.ToString()));
+        Assert.Equal(0, logger.WarningsFor(good.ToString()));
     }
 
     [Fact]
@@ -40,17 +40,17 @@ public class TagQueryWarningTests
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         var logger = new ListLogger();
         var repo = Repository(store, logger, warn: true);
-        var first = $"Student:{Guid.NewGuid():D}";
-        var second = $"Student:{Guid.NewGuid():D}";
+        var first = LawnDart.EventStore.Tag.Parse($"Student:{Guid.NewGuid():D}");
+        var second = LawnDart.EventStore.Tag.Parse($"Student:{Guid.NewGuid():D}");
 
         await repo.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags([first])));
         await repo.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags([second])));
 
         var other = Repository(new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false }), logger, warn: true);
-        await other.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags($"Student:{Guid.NewGuid():D}")));
+        await other.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags(Tag.Parse($"Student:{Guid.NewGuid():D}"))));
 
-        Assert.Equal(1, logger.WarningsFor(first));
-        Assert.Equal(0, logger.WarningsFor(second));
+        Assert.Equal(1, logger.WarningsFor(first.ToString()));
+        Assert.Equal(0, logger.WarningsFor(second.ToString()));
         Assert.Equal(2, logger.Warnings.Count(message => message.Contains("Student:", StringComparison.Ordinal)));
     }
 
@@ -61,11 +61,11 @@ public class TagQueryWarningTests
         var logger = new ListLogger();
         var repo = Repository(store, logger, warn: true, warnings: new UnknownTagWarningLog(maxTypes: 2));
 
-        await repo.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags($"TypeA:{Guid.NewGuid():D}")));
-        await repo.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags($"TypeB:{Guid.NewGuid():D}")));
-        await repo.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags($"TypeC:{Guid.NewGuid():D}")));
-        await repo.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags($"TypeD:{Guid.NewGuid():D}")));
-        await repo.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags($"TypeA:{Guid.NewGuid():D}")));
+        await repo.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags(Tag.Parse($"TypeA:{Guid.NewGuid():D}"))));
+        await repo.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags(Tag.Parse($"TypeB:{Guid.NewGuid():D}"))));
+        await repo.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags(Tag.Parse($"TypeC:{Guid.NewGuid():D}"))));
+        await repo.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags(Tag.Parse($"TypeD:{Guid.NewGuid():D}"))));
+        await repo.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags(Tag.Parse($"TypeA:{Guid.NewGuid():D}"))));
 
         Assert.Equal(1, logger.WarningsFor("TypeA:"));
         Assert.Equal(1, logger.WarningsFor("TypeB:"));
@@ -79,7 +79,7 @@ public class TagQueryWarningTests
     {
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         var logger = new ListLogger();
-        var bad = $"Student:{Guid.NewGuid():D}";
+        var bad = LawnDart.EventStore.Tag.Parse($"Student:{Guid.NewGuid():D}");
         var quiet = Repository(store, logger, warn: false);
 
         await quiet.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags([bad])));
@@ -91,7 +91,7 @@ public class TagQueryWarningTests
         await loud.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags([bad])));
         await loud.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags([bad])));
 
-        Assert.Equal(1, logger.WarningsFor(bad));
+        Assert.Equal(1, logger.WarningsFor(bad.ToString()));
     }
 
     [Fact]
@@ -101,8 +101,8 @@ public class TagQueryWarningTests
         var logger = new ListLogger();
         var repo = Repository(store, logger, warn: true);
         var format = LowercaseTagFormat.Instance;
-        var student = format.Tag("student", Guid.NewGuid());
-        var tenant = format.Tag("tenant", "academy-tenant");
+        var student = LawnDart.EventStore.Tag.Parse(format.Tag("student", Guid.NewGuid()));
+        var tenant = LawnDart.EventStore.Tag.Parse(format.Tag("tenant", "academy-tenant"));
 
         await repo.AppendWithContextAsync([new TaggedEvent(Event(), [student, tenant])]);
         var state = await repo.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags([student, tenant])));
@@ -117,19 +117,19 @@ public class TagQueryWarningTests
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         var logger = new ListLogger();
         var repo = Repository(store, logger, warn: true);
-        var compact = $"student:{Guid.NewGuid():N}";
+        var compact = LawnDart.EventStore.Tag.Parse($"student:{Guid.NewGuid():N}");
         var fence = $"Section:{Guid.NewGuid():D}";
-        var condition = AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(fence)));
+        var condition = AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(Tag.Parse(fence))));
 
         await repo.GetLastSequencePositionAsync(Query.FromItems(QueryItem.ByTags([compact])));
         await repo.AppendWithContextAsync(
-            [new TaggedEvent(Event(), [LowercaseTagFormat.Instance.Tag("section", Guid.NewGuid())])],
+            [new TaggedEvent(Event(), [Tag.Parse(LowercaseTagFormat.Instance.Tag("section", Guid.NewGuid()))])],
             condition);
         await repo.AppendWithContextAsync(
-            [new TaggedEvent(Event(), [LowercaseTagFormat.Instance.Tag("section", Guid.NewGuid())])],
+            [new TaggedEvent(Event(), [Tag.Parse(LowercaseTagFormat.Instance.Tag("section", Guid.NewGuid()))])],
             condition);
 
-        Assert.Equal(1, logger.WarningsFor(compact));
+        Assert.Equal(1, logger.WarningsFor(compact.ToString()));
         Assert.Equal(1, logger.WarningsFor(fence));
     }
 
@@ -139,13 +139,13 @@ public class TagQueryWarningTests
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         var logger = new ListLogger();
         var repo = Repository(store, logger, warn: true, format: new ThrowingFormat());
-        var tag = $"student:{Guid.NewGuid():D}";
+        var tag = LawnDart.EventStore.Tag.Parse($"student:{Guid.NewGuid():D}");
 
         await repo.AppendWithContextAsync([new TaggedEvent(Event(), [tag])]);
         var state = await repo.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags([tag])));
 
         Assert.Equal(1, state.Count);
-        Assert.Equal(1, logger.WarningsFor(tag));
+        Assert.Equal(1, logger.WarningsFor(tag.ToString()));
     }
 
     [Fact]
@@ -153,13 +153,13 @@ public class TagQueryWarningTests
     {
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         var logger = new ListLogger();
-        var projectionTag = $"Order:{Guid.NewGuid():D}";
+        var projectionTag = LawnDart.EventStore.Tag.Parse($"Order:{Guid.NewGuid():D}");
         var reactionTag = $"Payment:{Guid.NewGuid():D}";
         await store.AppendAsync(
-            $"dcb:{Guid.NewGuid():N}",
+            StreamId.Parse($"dcb:{Guid.NewGuid():N}"),
             [new TaggedEvent(new NotedEvent(Guid.NewGuid(), DateTime.UtcNow, "seen"), [projectionTag])]);
 
-        var projector = new NotedProjector(projectionTag);
+        var projector = new NotedProjector(projectionTag.ToString());
         projector.UseTagFormat(LowercaseTagFormat.Instance, logger);
         await projector.InitializeFromHistoryAsync(store);
         await projector.InitializeFromHistoryAsync(store);
@@ -172,7 +172,7 @@ public class TagQueryWarningTests
         Assert.Equal(["seen", "seen"], projector.Seen);
         Assert.Equal("go", Assert.IsType<NotedCommand>(Assert.Single(first)).Value);
         Assert.Equal("go", Assert.IsType<NotedCommand>(Assert.Single(second)).Value);
-        Assert.Equal(1, logger.WarningsFor(projectionTag));
+        Assert.Equal(1, logger.WarningsFor(projectionTag.ToString()));
         Assert.Equal(1, logger.WarningsFor(reactionTag));
     }
 

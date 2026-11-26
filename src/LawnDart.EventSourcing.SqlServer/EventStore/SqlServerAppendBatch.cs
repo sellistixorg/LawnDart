@@ -392,9 +392,9 @@ public partial class SqlServerEventStore
         {
             foreach (var tag in envelopes[i].Tags)
             {
-                if (string.IsNullOrEmpty(tag))
+                if (tag.IsDefault)
                     continue;
-                if (!byTag.TryGetValue(tag, out var expression))
+                if (!byTag.TryGetValue(tag.ToString(), out var expression))
                     throw new InvalidOperationException("A written tag was not registered.");
                 pending.Add((i, expression));
             }
@@ -435,25 +435,25 @@ public partial class SqlServerEventStore
         {
             foreach (var tag in envelope.Tags)
             {
-                if (string.IsNullOrEmpty(tag) || !seen.Add(tag))
+                if (tag.IsDefault || !seen.Add(tag.ToString()))
                     continue;
 
                 var ordinal = written.Count.ToString(CultureInfo.InvariantCulture);
-                if (_tagIds.TryGetId(tag, out var id))
+                if (_tagIds.TryGetId(tag.ToString(), out var id))
                 {
                     var name = "@KTag" + ordinal;
                     parameters.Add(new SqlParameter(name, SqlDbType.Int) { Value = id });
-                    written.Add(new WrittenTag(tag, name, Learned: false));
+                    written.Add(new WrittenTag(tag.ToString(), name, Learned: false));
                     continue;
                 }
 
                 var variable = "@NTag" + ordinal;
                 var param = "@NText" + ordinal;
                 var gate = "@NGate" + ordinal;
-                parameters.Add(new SqlParameter(param, SqlDbType.NVarChar, 256) { Value = tag });
+                parameters.Add(new SqlParameter(param, SqlDbType.NVarChar, 256) { Value = tag.ToString() });
                 parameters.Add(new SqlParameter(gate, SqlDbType.NVarChar, 255)
                 {
-                    Value = "LawnDart.tagid:" + TagLockName(AppendLockScope, tag)
+                    Value = "LawnDart.tagid:" + TagLockName(AppendLockScope, tag.ToString())
                 });
                 sql.Append("DECLARE ").Append(variable).Append(" int = (SELECT Id FROM ").Append(_qTagRegistry)
                     .Append(" WHERE Tag = ").Append(param).Append(" COLLATE ").Append(TagCollation).AppendLine(");");
@@ -475,7 +475,7 @@ public partial class SqlServerEventStore
                 sql.AppendLine("END");
                 sql.Append("IF ").Append(variable).Append(" IS NULL THROW ").Append(AppendTagRegistrationError)
                     .AppendLine(", N'A tag id could not be registered.', 1;");
-                written.Add(new WrittenTag(tag, variable, Learned: true));
+                written.Add(new WrittenTag(tag.ToString(), variable, Learned: true));
             }
         }
 
@@ -581,7 +581,7 @@ public partial class SqlServerEventStore
                 continue;
             foreach (var tag in item.Tags)
             {
-                var text = tag ?? string.Empty;
+                var text = tag.ToString();
                 if (tagVars.ContainsKey(text))
                     continue;
                 var variable = "@CId" + nextTag.ToString(CultureInfo.InvariantCulture);
@@ -645,20 +645,20 @@ public partial class SqlServerEventStore
         if (hasTags)
         {
             var sql = new StringBuilder();
-            var tag0 = tagVars[item.Tags![0] ?? string.Empty];
+            var tag0 = tagVars[item.Tags![0].ToString()];
             // A missing tag id matches nothing. The seek runs only when the id is known.
             sql.Append('(').Append(tag0).Append(" IS NOT NULL AND EXISTS (SELECT 1 FROM ").Append(_qTags)
                 .Append(" AS et0 WITH (FORCESEEK)");
             for (var j = 1; j < item.Tags!.Count; j++)
             {
                 var alias = "et" + j.ToString(CultureInfo.InvariantCulture);
-                var tagVar = tagVars[item.Tags[j] ?? string.Empty];
+                var tagVar = tagVars[item.Tags[j].ToString()];
                 sql.Append(" INNER LOOP JOIN ").Append(_qTags).Append(" AS ").Append(alias).Append(" WITH (FORCESEEK)")
                     .Append(" ON ").Append(alias).Append(".TagId = ").Append(tagVar)
                     .Append(" AND ").Append(alias).Append(".GlobalSequencePosition = et0.GlobalSequencePosition");
             }
 
-            sql.Append(" WHERE et0.TagId = ").Append(tagVars[item.Tags[0] ?? string.Empty]);
+            sql.Append(" WHERE et0.TagId = ").Append(tagVars[item.Tags[0].ToString()]);
             if (hasAfter)
                 sql.Append(" AND et0.GlobalSequencePosition > @After");
             if (hasTypes)

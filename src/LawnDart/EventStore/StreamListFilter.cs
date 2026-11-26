@@ -16,7 +16,7 @@ public sealed record StreamListFilter
     /// <summary>
     /// Stream tag. The match is the whole tag.
     /// </summary>
-    public string? Tag { get; init; }
+    public Tag? Tag { get; init; }
 
     /// <summary>
     /// Aggregate type name stored on the stream.

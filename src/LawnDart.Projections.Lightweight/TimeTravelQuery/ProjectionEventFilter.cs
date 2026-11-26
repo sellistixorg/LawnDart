@@ -56,14 +56,14 @@ internal static class ProjectionEventFilter
             // SingleStream: only yield events belonging to the requested instance.
             // TenantScoped: instanceId is the full stream ID → exact match.
             // SystemGlobal/TenantGlobal: the runner strips the tenant prefix before saving,
-            //   so instanceId may be just the bare aggregate ID → match via StreamIdParser.
+            //   so instanceId may be just the bare aggregate ID → match via the stream id parts.
             //   If the caller did supply a full stream ID (contains ':'), fall back to exact match.
             if (registration.Kind == ProjectionKind.SingleStream)
             {
                 bool matches = IsFullStreamId(registration, instanceId)
-                    ? string.Equals(se.StreamId, instanceId, StringComparison.OrdinalIgnoreCase)
+                    ? string.Equals(se.StreamId.ToString(), instanceId, StringComparison.OrdinalIgnoreCase)
                     : string.Equals(
-                        StreamIdParser.ExtractAggregateIdString(se.StreamId),
+                        se.StreamId.IsDcb ? null : se.StreamId.Id,
                         instanceId,
                         StringComparison.OrdinalIgnoreCase);
 
@@ -111,27 +111,27 @@ internal static class ProjectionEventFilter
                     {
                         CutoffKind.Version =>
                             eventStore.ReadStreamEnumerableAsync(
-                                instanceId,
+                                StreamId.Parse(instanceId),
                                 fromVersion: 0,
                                 toVersion: cutoff!.Version,
                                 cancellationToken: ct),
 
                         CutoffKind.Timestamp =>
                             eventStore.ReadStreamEnumerableAsync(
-                                instanceId,
+                                StreamId.Parse(instanceId),
                                 fromVersion: 0,
                                 toTimestamp: cutoff!.Timestamp,
                                 cancellationToken: ct),
 
                         _ => // AtSequence or no cutoff: read open-ended; caller breaks as needed.
                             eventStore.ReadStreamEnumerableAsync(
-                                instanceId,
+                                StreamId.Parse(instanceId),
                                 fromVersion: 0,
                                 cancellationToken: ct)
                     };
                 }
                 // Bare aggregate ID — fall through to global scan; GetAppliedEventsAsync will
-                // match via StreamIdParser.ExtractAggregateIdString.
+                // match via the stream id parts.ExtractAggregateIdString.
                 goto default;
 
             case ProjectionKind.Dcb when registration.DcbQueryTypes.Count > 0:

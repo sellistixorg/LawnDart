@@ -66,7 +66,7 @@ internal static class CatchUpCostHarness
             var batch = new List<IEvent>(take);
             for (var j = 0; j < take; j++)
                 batch.Add(new CatchUpTick(Guid.NewGuid(), now, 0));
-            await store.AppendAsync("CatchUp:lane:0", batch, metadata: meta);
+            await store.AppendAsync(StreamId.Parse("CatchUp:lane:0"), batch, metadata: meta);
         }
     }
 

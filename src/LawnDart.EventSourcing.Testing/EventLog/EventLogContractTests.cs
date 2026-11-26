@@ -29,24 +29,24 @@ public abstract class EventLogContractTests : ContractSuite
         var copyStreamId = Unique("no-clr-copy");
 
         await log.AppendAsync(
-            streamId,
-            [new AppendEvent(OutsideEventName, payload, metadata, schemaVersion: 1, tags: ["order:outside"])]);
+            StreamId.Parse(streamId),
+            [new AppendEvent(OutsideEventName, payload, metadata, schemaVersion: 1, tags: [Tag.Parse("order:outside")])]);
 
-        var recorded = Assert.Single(await log.ReadStreamAsync(streamId));
+        var recorded = Assert.Single(await log.ReadStreamAsync(StreamId.Parse(streamId)));
         Assert.Equal(OutsideEventName, recorded.EventType);
         AssertStoredPayload(payload, recorded.Payload, recorded.CodecId);
         AssertStoredMetadata(metadata, recorded.Metadata);
         Assert.Equal(1, recorded.SchemaVersion);
-        Assert.Contains("order:outside", recorded.Tags);
+        Assert.Contains("order:outside", recorded.Tags.Select(static t => t.ToString()).ToArray());
 
         var byToken = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByType(OutsideEventName)));
         Assert.Contains(byToken.Events, e => e.SequencePosition == recorded.SequencePosition);
 
-        var byTag = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags("order:outside")));
+        var byTag = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse("order:outside"))));
         Assert.Contains(byTag.Events, e => e.SequencePosition == recorded.SequencePosition);
 
         await log.AppendAsync(
-            copyStreamId,
+            StreamId.Parse(copyStreamId),
             [new AppendEvent(
                 recorded.EventType,
                 recorded.Payload,
@@ -55,7 +55,7 @@ public abstract class EventLogContractTests : ContractSuite
                 recorded.CodecId,
                 recorded.Tags)]);
 
-        var copy = Assert.Single(await log.ReadStreamAsync(copyStreamId));
+        var copy = Assert.Single(await log.ReadStreamAsync(StreamId.Parse(copyStreamId)));
         Assert.Equal(recorded.EventType, copy.EventType);
         AssertStoredPayload(recorded.Payload.ToArray(), copy.Payload, copy.CodecId);
         AssertStoredMetadata(recorded.Metadata.ToArray(), copy.Metadata);
@@ -69,9 +69,9 @@ public abstract class EventLogContractTests : ContractSuite
         var payload = Encoding.UTF8.GetBytes("""{"value":"round-trip"}""");
         var streamId = Unique("payload");
 
-        await log.AppendAsync(streamId, [new AppendEvent(OutsideEventName, payload)]);
+        await log.AppendAsync(StreamId.Parse(streamId), [new AppendEvent(OutsideEventName, payload)]);
 
-        var recorded = Assert.Single(await log.ReadStreamAsync(streamId));
+        var recorded = Assert.Single(await log.ReadStreamAsync(StreamId.Parse(streamId)));
         AssertStoredPayload(payload, recorded.Payload, recorded.CodecId);
         Assert.Equal(OutsideEventName, recorded.EventType);
     }
@@ -82,22 +82,22 @@ public abstract class EventLogContractTests : ContractSuite
         var log = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Log;
         var streamId = Unique("query");
         await log.AppendAsync(
-            streamId,
+            StreamId.Parse(streamId),
             [
-                new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("1"), tags: ["keep"]),
-                new AppendEvent("log-contract.other-event", Encoding.UTF8.GetBytes("2"), tags: ["drop"]),
-                new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("3"), tags: ["keep"])
+                new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("1"), tags: [Tag.Parse("tag:keep")]),
+                new AppendEvent("log-contract.other-event", Encoding.UTF8.GetBytes("2"), tags: [Tag.Parse("tag:drop")]),
+                new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("3"), tags: [Tag.Parse("tag:keep")])
             ]);
 
         var byToken = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByType(OutsideEventName)));
-        Assert.Equal(2, byToken.Events.Count(e => e.StreamId == streamId));
-        Assert.All(byToken.Events.Where(e => e.StreamId == streamId), e => Assert.Equal(OutsideEventName, e.EventType));
+        Assert.Equal(2, byToken.Events.Count(e => e.StreamId.ToString() == streamId));
+        Assert.All(byToken.Events.Where(e => e.StreamId.ToString() == streamId), e => Assert.Equal(OutsideEventName, e.EventType));
 
-        var byTag = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags("keep")));
-        Assert.Equal(2, byTag.Events.Count(e => e.StreamId == streamId));
-        Assert.All(byTag.Events.Where(e => e.StreamId == streamId), e => Assert.Contains("keep", e.Tags));
+        var byTag = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse("tag:keep"))));
+        Assert.Equal(2, byTag.Events.Count(e => e.StreamId.ToString() == streamId));
+        Assert.All(byTag.Events.Where(e => e.StreamId.ToString() == streamId), e => Assert.Contains(Tag.Parse("tag:keep"), e.Tags));
 
-        var max = await log.GetMaxSequencePositionAsync(Query.FromItems(QueryItem.ByTags("keep")));
+        var max = await log.GetMaxSequencePositionAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse("tag:keep"))));
         Assert.Equal(byTag.Events.Max(e => e.SequencePosition), max);
     }
 
@@ -110,8 +110,8 @@ public abstract class EventLogContractTests : ContractSuite
         var streamId = Unique("typed");
         var tick = new ContractTick(Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"), new DateTime(2026, 4, 5, 6, 7, 8, DateTimeKind.Utc), "Ada");
 
-        await adapter.AppendAsync(streamId, [tick]);
-        var sequenced = Assert.Single(await adapter.ReadStreamAsync(streamId));
+        await adapter.AppendAsync(StreamId.Parse(streamId), [tick]);
+        var sequenced = Assert.Single(await adapter.ReadStreamAsync(StreamId.Parse(streamId)));
         var read = Assert.IsType<ContractTick>(sequenced.Event);
         Assert.Equal(tick.Id, read.Id);
         Assert.Equal(tick.Name, read.Name);
@@ -123,15 +123,15 @@ public abstract class EventLogContractTests : ContractSuite
     {
         var log = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Log;
         var streamId = Unique("unknown");
-        await log.AppendAsync(streamId, [new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("{}"))]);
+        await log.AppendAsync(StreamId.Parse(streamId), [new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("{}"))]);
 
-        var recorded = Assert.Single(await log.ReadStreamAsync(streamId));
+        var recorded = Assert.Single(await log.ReadStreamAsync(StreamId.Parse(streamId)));
         Assert.Equal(OutsideEventName, recorded.EventType);
 
         var adapter = new EventStoreAdapter(
             log,
             new EventSession(new JsonEventSerializer(), MapCatalog.For<ContractTick>("log-contract.tick")));
-        var ex = await Assert.ThrowsAsync<UnknownEventFamilyException>(() => adapter.ReadStreamAsync(streamId));
+        var ex = await Assert.ThrowsAsync<UnknownEventFamilyException>(() => adapter.ReadStreamAsync(StreamId.Parse(streamId)));
         Assert.Contains(OutsideEventName, ex.Message);
     }
 
@@ -141,7 +141,7 @@ public abstract class EventLogContractTests : ContractSuite
         var log = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Log;
         var streamId = Unique("ctype");
         await log.AppendAsync(
-            streamId,
+            StreamId.Parse(streamId),
             [new AppendEvent(
                 "log-contract.tick",
                 Encoding.UTF8.GetBytes("{}"),
@@ -150,7 +150,7 @@ public abstract class EventLogContractTests : ContractSuite
         var adapter = new EventStoreAdapter(
             log,
             new EventSession(new JsonEventSerializer(), MapCatalog.For<ContractTick>("log-contract.tick")));
-        var ex = await Assert.ThrowsAsync<EventContentTypeMismatchException>(() => adapter.ReadStreamAsync(streamId));
+        var ex = await Assert.ThrowsAsync<EventContentTypeMismatchException>(() => adapter.ReadStreamAsync(StreamId.Parse(streamId)));
         Assert.Equal(EventCodec.MemoryPack, ex.StoredCodecId);
         Assert.Equal(EventCodec.Json, ex.SessionCodecId);
         Assert.Contains(EventCodec.MemoryPackMime, ex.Message);
@@ -163,10 +163,10 @@ public abstract class EventLogContractTests : ContractSuite
         var log = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Log;
         var streamId = Unique("codec2");
         await log.AppendAsync(
-            streamId,
+            StreamId.Parse(streamId),
             [new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("{}"), codecId: EventCodec.MemoryPack)]);
 
-        var recorded = Assert.Single(await log.ReadStreamAsync(streamId));
+        var recorded = Assert.Single(await log.ReadStreamAsync(StreamId.Parse(streamId)));
         Assert.Equal(EventCodec.MemoryPack, recorded.CodecId);
     }
 
@@ -178,24 +178,24 @@ public abstract class EventLogContractTests : ContractSuite
         var upper = "Customer:ABC:" + Guid.NewGuid().ToString("N");
         var lower = upper.ToLowerInvariant();
         await log.AppendAsync(
-            streamId,
-            [new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("{}"), tags: [upper])]);
+            StreamId.Parse(streamId),
+            [new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("{}"), tags: [Tag.Parse(upper)])]);
 
-        var exact = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(upper)));
-        Assert.Contains(exact.Events, e => e.StreamId == streamId);
+        var exact = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(upper))));
+        Assert.Contains(exact.Events, e => e.StreamId.ToString() == streamId);
         Assert.True(exact.TypesResolved);
 
-        var otherCase = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(lower)));
-        Assert.DoesNotContain(otherCase.Events, e => e.StreamId == streamId);
+        var otherCase = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(lower))));
+        Assert.DoesNotContain(otherCase.Events, e => e.StreamId.ToString() == streamId);
 
         var bothId = Unique("tag-both");
         await log.AppendAsync(
-            bothId,
-            [new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("{}"), tags: [upper, lower])]);
-        var byUpper = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(upper)));
-        var byLower = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(lower)));
-        Assert.Contains(byUpper.Events, e => e.StreamId == bothId);
-        Assert.Contains(byLower.Events, e => e.StreamId == bothId);
+            StreamId.Parse(bothId),
+            [new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("{}"), tags: [Tag.Parse(upper), Tag.Parse(lower)])]);
+        var byUpper = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(upper))));
+        var byLower = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(lower))));
+        Assert.Contains(byUpper.Events, e => e.StreamId.ToString() == bothId);
+        Assert.Contains(byLower.Events, e => e.StreamId.ToString() == bothId);
     }
 
     [Fact]
@@ -206,14 +206,14 @@ public abstract class EventLogContractTests : ContractSuite
         var upper = "Customer:ABC:" + Guid.NewGuid().ToString("N");
         var lower = upper.ToLowerInvariant();
         var appended = await opened.Log.AppendAsync(
-            streamId,
-            [new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("{}"), tags: [upper])]);
+            StreamId.Parse(streamId),
+            [new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("{}"), tags: [Tag.Parse(upper)])]);
         var sequence = appended.SequencePositions[0];
 
         if (opened.Store is not IEventLogSubscriptions subscriptions)
             throw new InvalidOperationException("Store does not subscribe.");
 
-        var exact = Query.FromItems(QueryItem.ByTags(upper));
+        var exact = Query.FromItems(QueryItem.ByTags(Tag.Parse(upper)));
         await using (var handle = subscriptions.Subscribe(
             "tag-case-exact-" + Guid.NewGuid().ToString("N"),
             sequence,
@@ -223,7 +223,7 @@ public abstract class EventLogContractTests : ContractSuite
             Assert.Equal(sequence, Assert.Single(received).SequencePosition);
         }
 
-        var other = Query.FromItems(QueryItem.ByTags(lower));
+        var other = Query.FromItems(QueryItem.ByTags(Tag.Parse(lower)));
         await using (var handle = subscriptions.Subscribe(
             "tag-case-other-" + Guid.NewGuid().ToString("N"),
             sequence,
@@ -241,13 +241,13 @@ public abstract class EventLogContractTests : ContractSuite
         var eventId = Guid.NewGuid();
         var metadata = Encoding.UTF8.GetBytes($$"""{"EventId":"{{eventId}}"}""");
         var first = Unique("event-id");
-        await log.AppendAsync(first, [new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("{}"), metadata)]);
+        await log.AppendAsync(StreamId.Parse(first), [new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("{}"), metadata)]);
 
         var ex = await Assert.ThrowsAsync<EventAlreadyAppendedException>(() =>
-            log.AppendAsync(Unique("event-id-replay"), [new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("{}"), metadata)]));
+            log.AppendAsync(StreamId.Parse(Unique("event-id-replay")), [new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("{}"), metadata)]));
         Assert.Equal(eventId, ex.EventId);
 
-        var stored = await log.ReadStreamAsync(first);
+        var stored = await log.ReadStreamAsync(StreamId.Parse(first));
         Assert.Single(stored);
     }
 
@@ -259,19 +259,19 @@ public abstract class EventLogContractTests : ContractSuite
         var metadata = Encoding.UTF8.GetBytes($$"""{"EventId":"{{eventId}}"}""");
         var first = "alpha:Order:" + Guid.NewGuid().ToString("N");
         var second = "beta:Order:" + Guid.NewGuid().ToString("N");
-        await log.AppendAsync(first, [new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("{}"), metadata)]);
+        await log.AppendAsync(StreamId.Parse(first), [new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("{}"), metadata)]);
 
         if (Cap.EnforcesEventIdAcrossTenants)
         {
             var ex = await Assert.ThrowsAsync<EventAlreadyAppendedException>(() =>
-                log.AppendAsync(second, [new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("{}"), metadata)]));
+                log.AppendAsync(StreamId.Parse(second), [new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("{}"), metadata)]));
             Assert.Equal(eventId, ex.EventId);
-            Assert.Empty(await log.ReadStreamAsync(second));
+            Assert.Empty(await log.ReadStreamAsync(StreamId.Parse(second)));
         }
         else
         {
-            await log.AppendAsync(second, [new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("{}"), metadata)]);
-            Assert.Single(await log.ReadStreamAsync(second));
+            await log.AppendAsync(StreamId.Parse(second), [new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("{}"), metadata)]);
+            Assert.Single(await log.ReadStreamAsync(StreamId.Parse(second)));
         }
     }
 

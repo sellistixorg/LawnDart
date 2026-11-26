@@ -173,5 +173,5 @@ public sealed class PostgresStoreBenchmarks(ITestOutputHelper output)
         return Convert.ToInt32(await command.ExecuteScalarAsync());
     }
 
-    private static string StreamId() => "bench:Order:" + Guid.NewGuid().ToString("N");
+    private static LawnDart.EventStore.StreamId StreamId() => LawnDart.EventStore.StreamId.For("bench", "Order", Guid.NewGuid().ToString("N"));
 }

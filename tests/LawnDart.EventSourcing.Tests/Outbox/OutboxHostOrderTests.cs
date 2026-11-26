@@ -213,7 +213,7 @@ public class OutboxHostOrderTests
             Payload = JsonSerializer.SerializeToUtf8Bytes(evt, MessagingJson.Options),
             Metadata = "{}",
             CreatedAt = DateTime.UtcNow,
-            StreamId = "outbox-host",
+            StreamId = "outbox:host",
             SequencePosition = sequence
         };
     }

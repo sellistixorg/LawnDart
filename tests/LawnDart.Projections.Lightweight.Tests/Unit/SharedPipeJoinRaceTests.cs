@@ -106,7 +106,7 @@ public class SharedPipeJoinRaceTests
         {
             var id = Guid.NewGuid();
             ids.Add(id);
-            await store.AppendAsync("join", [new JoinRaceEvent(id, meta.Timestamp)], metadata: meta);
+            await store.AppendAsync(StreamId.Parse("test:join"), [new JoinRaceEvent(id, meta.Timestamp)], metadata: meta);
         }
 
         return ids;
@@ -250,7 +250,7 @@ public class SharedPipeJoinRaceTests
         }
 
         public Task<AppendResult> AppendAsync(
-            string streamId,
+            StreamId streamId,
             IEnumerable<TaggedEvent> events,
             long? expectedVersion = null,
             EventMetadata? metadata = null,
@@ -276,11 +276,11 @@ public class SharedPipeJoinRaceTests
             => _inner.GetMaxSequencePositionAsync(query, fromSequencePosition, toSequencePosition, toTimestamp, cancellationToken);
 
         public Task<IReadOnlyList<SequencedEvent>> ReadStreamAsync(
-            string streamId, long fromVersion = 0, long? toVersion = null, DateTime? toTimestamp = null, CancellationToken cancellationToken = default)
+            StreamId streamId, long fromVersion = 0, long? toVersion = null, DateTime? toTimestamp = null, CancellationToken cancellationToken = default)
             => _inner.ReadStreamAsync(streamId, fromVersion, toVersion, toTimestamp, cancellationToken);
 
         public IAsyncEnumerable<SequencedEvent> ReadStreamEnumerableAsync(
-            string streamId, long fromVersion = 0, long? toVersion = null, DateTime? toTimestamp = null, CancellationToken cancellationToken = default)
+            StreamId streamId, long fromVersion = 0, long? toVersion = null, DateTime? toTimestamp = null, CancellationToken cancellationToken = default)
             => _inner.ReadStreamEnumerableAsync(streamId, fromVersion, toVersion, toTimestamp, cancellationToken);
 
         public IAsyncEnumerable<SequencedEvent> ReadByQueryStreamAsync(
@@ -291,16 +291,16 @@ public class SharedPipeJoinRaceTests
             string subscriberId, long fromSequence, EventSubscriptionFilter? filter = null, CancellationToken cancellationToken = default)
             => _inner.Subscribe(subscriberId, fromSequence, filter, cancellationToken);
 
-        public Task<StreamMetadata?> GetStreamAsync(string streamId, CancellationToken cancellationToken = default)
+        public Task<StreamMetadata?> GetStreamAsync(StreamId streamId, CancellationToken cancellationToken = default)
             => _inner.GetStreamAsync(streamId, cancellationToken);
 
         public Task<IReadOnlyList<StreamMetadata>> GetStreamsByAggregateTypeAsync(string aggregateType, CancellationToken cancellationToken = default)
             => _inner.GetStreamsByAggregateTypeAsync(aggregateType, cancellationToken);
 
-        public Task<IReadOnlyList<StreamMetadata>> GetStreamsByTagAsync(string tag, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<StreamMetadata>> GetStreamsByTagAsync(Tag tag, CancellationToken cancellationToken = default)
             => _inner.GetStreamsByTagAsync(tag, cancellationToken);
 
-        public Task<IReadOnlyList<string>> EnumerateStreamIdsAsync(string? prefix = null, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<StreamId>> EnumerateStreamIdsAsync(string? prefix = null, CancellationToken cancellationToken = default)
             => _inner.EnumerateStreamIdsAsync(prefix, cancellationToken);
 
         public Task<IReadOnlyList<StreamMetadata>> GetStreamsUpdatedAfterAsync(long afterSequencePosition, int? limit = null, CancellationToken cancellationToken = default)

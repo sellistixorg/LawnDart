@@ -150,13 +150,13 @@ public class OutboundEventTests
         var removed = new MemberRemoved(Guid.NewGuid(), At, "g-1", "u-3", Silent: false);
 
         await adapter.AppendAsync(
-            "group-g-1",
+            StreamId.Parse("test:group-g-1"),
             [
-                new TaggedEvent(owner, "group:g-1"),
-                new TaggedEvent(joined, "group:g-1", "user:u-1"),
-                new TaggedEvent(role, "group:g-1"),
-                new TaggedEvent(silent, "group:g-1"),
-                new TaggedEvent(removed, "group:g-1")
+                new TaggedEvent(owner, Tag.Parse("group:g-1")),
+                new TaggedEvent(joined, Tag.Parse("group:g-1"), Tag.Parse("user:u-1")),
+                new TaggedEvent(role, Tag.Parse("group:g-1")),
+                new TaggedEvent(silent, Tag.Parse("group:g-1")),
+                new TaggedEvent(removed, Tag.Parse("group:g-1"))
             ],
             metadata: FullMetadata());
 
@@ -189,7 +189,7 @@ public class OutboundEventTests
         Assert.Equal("membership.member-left", removedOut.EventType);
 
         // The stored envelopes themselves are unchanged.
-        Assert.Equal(["group:g-1", "user:u-1"], envelopes[1].Tags);
+        Assert.Equal(["group:g-1", "user:u-1"], envelopes[1].Tags.Select(static t => t.ToString()).ToArray());
         Assert.Contains("only-inside", Encoding.UTF8.GetString(envelopes[1].Payload.Span));
         var storedMeta = JsonSerializer.Deserialize<EventMetadata>(envelopes[1].Metadata.Span)!;
         Assert.Equal("user-7", storedMeta.UserId);
@@ -204,7 +204,7 @@ public class OutboundEventTests
         var role = new RoleChanged(Guid.NewGuid(), At, "g-1", "u-1", "owner");
 
         await adapter.AppendAsync(
-            [new TaggedEvent(joined, "group:g-1"), new TaggedEvent(role, "group:g-1")],
+            [new TaggedEvent(joined, Tag.Parse("group:g-1")), new TaggedEvent(role, Tag.Parse("group:g-1"))],
             AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByType("membership-member-joined"))));
 
         var envelopes = Assert.Single(captured);
@@ -222,7 +222,7 @@ public class OutboundEventTests
         var adapter = new EventStoreAdapter(log, Session());
 
         await adapter.AppendAsync(
-            "group-g-1",
+            StreamId.Parse("test:group-g-1"),
             [new TaggedEvent(new OwnerAdded(Guid.NewGuid(), At, "g-1", "u-0")), new TaggedEvent(new MemberJoined(Guid.NewGuid(), At, "g-1", "u-1", "admin", "x"))]);
 
         Assert.All(Assert.Single(captured), e => Assert.Null(e.Outbound));
@@ -233,7 +233,7 @@ public class OutboundEventTests
         var calls = new List<List<AppendEvent>>();
         captured = calls;
         var log = Substitute.For<IEventLog>();
-        log.AppendAsync(Arg.Any<string>(), Arg.Any<IEnumerable<AppendEvent>>(), Arg.Any<long?>(), Arg.Any<CancellationToken>())
+        log.AppendAsync(Arg.Any<StreamId>(), Arg.Any<IEnumerable<AppendEvent>>(), Arg.Any<long?>(), Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
                 calls.Add(ci.ArgAt<IEnumerable<AppendEvent>>(1).ToList());

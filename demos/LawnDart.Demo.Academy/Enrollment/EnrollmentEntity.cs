@@ -26,7 +26,7 @@ public class EnrollmentEntity : DcbEntity<EnrollmentState>
     /// </summary>
     public static Query EnrollmentDecision(Guid studentId, Guid sectionId) =>
         Query.FromItems(
-            QueryItem.ByTags($"section:{sectionId}"),
+            QueryItem.ByTags(Tag.Parse($"section:{sectionId}")),
             QueryItem.ByTypeAndTags(
                 [
                     "StudentRegistered",
@@ -34,7 +34,7 @@ public class EnrollmentEntity : DcbEntity<EnrollmentState>
                     "RegistrationConfirmationSent",
                     "RegistrationCancelled"
                 ],
-                [$"student:{studentId}"]));
+                [Tag.Parse($"student:{studentId}")]));
 
     // The student/section IDs are read back from the entity state after loading.
     private Guid _studentId => State.StudentId == Guid.Empty ? Guid.Empty : State.StudentId;

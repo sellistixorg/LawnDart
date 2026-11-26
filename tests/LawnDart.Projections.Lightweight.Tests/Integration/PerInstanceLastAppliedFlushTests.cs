@@ -39,7 +39,7 @@ public sealed class PerInstanceLastAppliedFlushTests
         // Two streams: early event on A, later event on B. After catch-up flush, A's stored
         // checkpoint must be A's apply seq — not B's (wave) position.
         await store.AppendAsync(
-            "tenant1:Counter:early",
+            StreamId.Parse("tenant1:Counter:early"),
             [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)],
             metadata: new EventMetadata { Timestamp = DateTime.UtcNow, UserId = "test" },
             cancellationToken: cts.Token);
@@ -48,14 +48,14 @@ public sealed class PerInstanceLastAppliedFlushTests
         for (var i = 0; i < 5; i++)
         {
             await store.AppendAsync(
-                $"tenant1:Other:pad-{i}",
+                StreamId.Parse($"tenant1:Other:pad-{i}"),
                 [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)],
                 metadata: new EventMetadata { Timestamp = DateTime.UtcNow, UserId = "test" },
                 cancellationToken: cts.Token);
         }
 
         await store.AppendAsync(
-            "tenant1:Counter:late",
+            StreamId.Parse("tenant1:Counter:late"),
             [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 9)],
             metadata: new EventMetadata { Timestamp = DateTime.UtcNow, UserId = "test" },
             cancellationToken: cts.Token);

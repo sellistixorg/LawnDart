@@ -38,7 +38,7 @@ public sealed class WorkingSetMatrixCSqlTests
         for (var i = 0; i < 5; i++)
         {
             await store.AppendAsync(
-                $"tenant1:Counter:c1-{i}",
+                StreamId.Parse($"tenant1:Counter:c1-{i}"),
                 [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 10 + i)],
                 metadata: Meta(),
                 cancellationToken: cts.Token);
@@ -66,7 +66,7 @@ public sealed class WorkingSetMatrixCSqlTests
         Assert.Equal(0, lazy.WorkingSetCount);
 
         await store.AppendAsync(
-            "tenant1:Counter:c1-0",
+            StreamId.Parse("tenant1:Counter:c1-0"),
             [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)],
             metadata: Meta(),
             cancellationToken: cts.Token);
@@ -95,7 +95,7 @@ public sealed class WorkingSetMatrixCSqlTests
         for (var i = 0; i < n; i++)
         {
             await store.AppendAsync(
-                $"tenant1:Counter:c2-{i}",
+                StreamId.Parse($"tenant1:Counter:c2-{i}"),
                 [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, i + 1)],
                 metadata: Meta(),
                 cancellationToken: cts.Token);
@@ -131,11 +131,11 @@ public sealed class WorkingSetMatrixCSqlTests
         var store = new InMemoryEventStore();
 
         await store.AppendAsync(
-            "tenant1:Counter:c3-keep",
+            StreamId.Parse("tenant1:Counter:c3-keep"),
             [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)],
             metadata: Meta(), cancellationToken: cts.Token);
         await store.AppendAsync(
-            "tenant1:Counter:c3-evict",
+            StreamId.Parse("tenant1:Counter:c3-evict"),
             [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 2)],
             metadata: Meta(), cancellationToken: cts.Token);
 
@@ -155,7 +155,7 @@ public sealed class WorkingSetMatrixCSqlTests
             runner, maxCount: 1, TimeSpan.FromSeconds(10));
 
         await store.AppendAsync(
-            "tenant1:Counter:c3-evict",
+            StreamId.Parse("tenant1:Counter:c3-evict"),
             [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 3)],
             metadata: Meta(), cancellationToken: cts.Token);
         var head2 = await store.GetCurrentSequenceAsync(cts.Token);
@@ -184,7 +184,7 @@ public sealed class WorkingSetMatrixCSqlTests
         for (var i = 0; i < n; i++)
         {
             await store.AppendAsync(
-                $"tenant1:Counter:c4-{i}",
+                StreamId.Parse($"tenant1:Counter:c4-{i}"),
                 [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, i + 1)],
                 metadata: Meta(), cancellationToken: cts.Token);
         }
@@ -247,7 +247,7 @@ public sealed class WorkingSetMatrixCSqlTests
             for (var i = 0; i < 5; i++)
             {
                 await store.AppendAsync(
-                    $"tenant1:Counter:c6-{i}",
+                    StreamId.Parse($"tenant1:Counter:c6-{i}"),
                     [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)],
                     metadata: Meta(), cancellationToken: cts.Token);
             }

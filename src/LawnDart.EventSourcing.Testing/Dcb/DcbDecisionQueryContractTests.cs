@@ -40,7 +40,7 @@ public abstract class DcbDecisionQueryContractTests : ContractSuite
         await repository.AppendWithContextAsync(
             [new TaggedEvent(new ContractDecisionAdded(Guid.NewGuid()), [book])]);
 
-        var entity = await repository.GetOrCreateEntityAsync<DecisionProbe>(LoanQuery(book, member));
+        var entity = await repository.GetOrCreateEntityAsync<DecisionProbe>(LoanQuery(book.ToString(), member.ToString()));
 
         Assert.Equal(["added"], entity.State.Kinds);
     }
@@ -57,7 +57,7 @@ public abstract class DcbDecisionQueryContractTests : ContractSuite
         await repository.AppendWithContextAsync(
             [new TaggedEvent(new ContractDecisionNoted(Guid.NewGuid()), [member])]);
 
-        var entity = await repository.GetOrCreateEntityAsync<DecisionProbe>(LoanQuery(book, member));
+        var entity = await repository.GetOrCreateEntityAsync<DecisionProbe>(LoanQuery(book.ToString(), member.ToString()));
 
         Assert.Equal(["borrowed"], entity.State.Kinds);
     }
@@ -71,7 +71,7 @@ public abstract class DcbDecisionQueryContractTests : ContractSuite
         await repository.AppendWithContextAsync(
             [new TaggedEvent(new ContractDecisionBorrowed(Guid.NewGuid()), [book, member])]);
 
-        var entity = await repository.GetOrCreateEntityAsync<DecisionProbe>(LoanQuery(book, member));
+        var entity = await repository.GetOrCreateEntityAsync<DecisionProbe>(LoanQuery(book.ToString(), member.ToString()));
 
         Assert.Equal(1, entity.State.Applied);
         Assert.Equal(["borrowed"], entity.State.Kinds);
@@ -83,7 +83,7 @@ public abstract class DcbDecisionQueryContractTests : ContractSuite
         var (_, repository) = await OpenAsync();
         var book = Tag("book");
         var member = Tag("member");
-        var query = LoanQuery(book, member);
+        var query = LoanQuery(book.ToString(), member.ToString());
         var first = (await repository.AppendWithContextAsync(
             [new TaggedEvent(new ContractDecisionAdded(Guid.NewGuid()), [book])]))[0];
         await repository.AppendWithContextAsync(
@@ -112,13 +112,13 @@ public abstract class DcbDecisionQueryContractTests : ContractSuite
         await repository.AppendWithContextAsync(
             [new TaggedEvent(new ContractDecisionAdded(Guid.NewGuid()), [book, replayed])]);
 
-        var entity = await repository.GetOrCreateEntityAsync<DecisionProbe>(LoanQuery(book, member));
+        var entity = await repository.GetOrCreateEntityAsync<DecisionProbe>(LoanQuery(book.ToString(), member.ToString()));
         await repository.HandleCommandAsync(
             entity,
-            new EmitProbe(new ContractDecisionNoted(Guid.NewGuid()), [writtenTag]));
+            new EmitProbe(new ContractDecisionNoted(Guid.NewGuid()), [writtenTag.ToString()]));
 
         var written = Assert.Single((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(writtenTag)))).Events);
-        Assert.Equal([writtenTag], written.Tags.Order(StringComparer.Ordinal).ToArray());
+        Assert.Equal([writtenTag], written.Tags.Order().ToArray());
         Assert.DoesNotContain(book, written.Tags);
         Assert.DoesNotContain(member, written.Tags);
         Assert.DoesNotContain(replayed, written.Tags);
@@ -130,11 +130,11 @@ public abstract class DcbDecisionQueryContractTests : ContractSuite
         var (store, repository) = await OpenAsync();
         var book = Tag("book");
         var member = Tag("member");
-        var query = LoanQuery(book, member);
+        var query = LoanQuery(book.ToString(), member.ToString());
         var entity = await repository.GetOrCreateEntityAsync<DecisionProbe>(query);
         await repository.HandleCommandAsync(
             entity,
-            new EmitProbe(new ContractDecisionAdded(Guid.NewGuid()), [book]));
+            new EmitProbe(new ContractDecisionAdded(Guid.NewGuid()), [book.ToString()]));
 
         var again = await repository.GetOrCreateEntityAsync<DecisionProbe>(query);
         Assert.Equal(["added"], again.State.Kinds);
@@ -149,13 +149,13 @@ public abstract class DcbDecisionQueryContractTests : ContractSuite
         var member = Tag("member");
         await repository.AppendWithContextAsync(
             [new TaggedEvent(new ContractDecisionAdded(Guid.NewGuid()), [book])]);
-        var entity = await repository.GetOrCreateEntityAsync<DecisionProbe>(LoanQuery(book, member));
+        var entity = await repository.GetOrCreateEntityAsync<DecisionProbe>(LoanQuery(book.ToString(), member.ToString()));
         await repository.AppendWithContextAsync(
             [new TaggedEvent(new ContractDecisionAdded(Guid.NewGuid()), [book])]);
 
         await Assert.ThrowsAsync<ConcurrencyException>(() => repository.HandleCommandAsync(
             entity,
-            new EmitProbe(new ContractDecisionNoted(Guid.NewGuid()), [book])));
+            new EmitProbe(new ContractDecisionNoted(Guid.NewGuid()), [book.ToString()])));
     }
 
     [Fact]
@@ -166,13 +166,13 @@ public abstract class DcbDecisionQueryContractTests : ContractSuite
         var member = Tag("member");
         await repository.AppendWithContextAsync(
             [new TaggedEvent(new ContractDecisionAdded(Guid.NewGuid()), [book])]);
-        var entity = await repository.GetOrCreateEntityAsync<DecisionProbe>(LoanQuery(book, member));
+        var entity = await repository.GetOrCreateEntityAsync<DecisionProbe>(LoanQuery(book.ToString(), member.ToString()));
         await repository.AppendWithContextAsync(
             [new TaggedEvent(new ContractDecisionBorrowed(Guid.NewGuid()), [member, Tag("book")])]);
 
         await Assert.ThrowsAsync<ConcurrencyException>(() => repository.HandleCommandAsync(
             entity,
-            new EmitProbe(new ContractDecisionNoted(Guid.NewGuid()), [book])));
+            new EmitProbe(new ContractDecisionNoted(Guid.NewGuid()), [book.ToString()])));
     }
 
     [Fact]
@@ -183,13 +183,13 @@ public abstract class DcbDecisionQueryContractTests : ContractSuite
         var member = Tag("member");
         await repository.AppendWithContextAsync(
             [new TaggedEvent(new ContractDecisionAdded(Guid.NewGuid()), [book])]);
-        var entity = await repository.GetOrCreateEntityAsync<DecisionProbe>(LoanQuery(book, member));
+        var entity = await repository.GetOrCreateEntityAsync<DecisionProbe>(LoanQuery(book.ToString(), member.ToString()));
         await repository.AppendWithContextAsync(
             [new TaggedEvent(new ContractDecisionFiller(Guid.NewGuid()), [Tag("other")])]);
 
         await repository.HandleCommandAsync(
             entity,
-            new EmitProbe(new ContractDecisionNoted(Guid.NewGuid()), [book]));
+            new EmitProbe(new ContractDecisionNoted(Guid.NewGuid()), [book.ToString()]));
 
         Assert.Equal(2, (await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(book)))).Events.Count);
     }
@@ -198,7 +198,7 @@ public abstract class DcbDecisionQueryContractTests : ContractSuite
     public async Task CreateEntityAsync_SetsDecisionQuery_EmitAndReplayLeaveIt()
     {
         var (_, repository) = await OpenAsync();
-        var query = LoanQuery(Tag("book"), Tag("member"));
+        var query = LoanQuery(Tag("book").ToString(), Tag("member").ToString());
         var entity = await repository.CreateEntityAsync<DecisionProbe>(query);
         Assert.Same(query, entity.DecisionQuery);
 
@@ -207,10 +207,10 @@ public abstract class DcbDecisionQueryContractTests : ContractSuite
             new SequencedEvent(
                 new ContractDecisionAdded(Guid.NewGuid()),
                 sequencePosition: 3,
-                streamId: "probe",
+                streamId: StreamId.Parse("test:probe"),
                 version: 0,
                 metadata: new EventMetadata(),
-                tags: ["book"])
+                tags: [LawnDart.EventStore.Tag.Parse("tag:book")])
         ]);
         entity.Handle(new EmitProbe(new ContractDecisionNoted(Guid.NewGuid()), ["noted"]));
 
@@ -231,26 +231,26 @@ public abstract class DcbDecisionQueryContractTests : ContractSuite
         var callerBookTags = caller.Items[0].Tags!.ToArray();
 
         await repository.AppendWithContextAsync(
-            [new TaggedEvent(new ContractDecisionAdded(Guid.NewGuid()), [book, "tenant:other"])]);
+            [new TaggedEvent(new ContractDecisionAdded(Guid.NewGuid()), [book, LawnDart.EventStore.Tag.Parse("tenant:other")])]);
         var missed = await repository.GetOrCreateEntityAsync<DecisionProbe>(caller);
 
         Assert.Equal(0, missed.State.Applied);
         Assert.NotSame(caller, missed.DecisionQuery);
-        Assert.All(missed.DecisionQuery!.Items, item => Assert.Contains($"tenant:{tenant}", item.Tags!));
+        Assert.All(missed.DecisionQuery!.Items, item => Assert.Contains($"tenant:{tenant}", item.Tags!.Select(static t => t.ToString()).ToArray()));
         Assert.Equal(callerBookTags, caller.Items[0].Tags);
         Assert.Null(caller.Items[1].Tags);
 
         await repository.AppendWithContextAsync(
-            [new TaggedEvent(new ContractDecisionAdded(Guid.NewGuid()), [book, $"tenant:{tenant}"])]);
+            [new TaggedEvent(new ContractDecisionAdded(Guid.NewGuid()), [book, LawnDart.EventStore.Tag.Parse($"tenant:{tenant}")])]);
         var seen = await repository.GetOrCreateEntityAsync<DecisionProbe>(caller);
         Assert.Equal(["added"], seen.State.Kinds);
 
         await repository.HandleCommandAsync(
             seen,
-            new EmitProbe(new ContractDecisionNoted(Guid.NewGuid()), [book]));
+            new EmitProbe(new ContractDecisionNoted(Guid.NewGuid()), [book.ToString()]));
         var written = Assert.Single(
             (await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByType("backend-contract.decision-noted")))).Events);
-        Assert.Contains($"tenant:{tenant}", written.Tags);
+        Assert.Contains($"tenant:{tenant}", written.Tags.Select(static t => t.ToString()).ToArray());
         Assert.Contains(book, written.Tags);
     }
 
@@ -276,7 +276,7 @@ public abstract class DcbDecisionQueryContractTests : ContractSuite
         await Assert.ThrowsAsync<ArgumentException>(() =>
             repository.GetOrCreateEntityAsync<DecisionProbe>(Query.FromItems(new QueryItem
             {
-                Tags = ["book"],
+                Tags = [LawnDart.EventStore.Tag.Parse("tag:book")],
                 PartitionFilter = new PartitionFilter(0, 2)
             })));
     }
@@ -296,10 +296,10 @@ public abstract class DcbDecisionQueryContractTests : ContractSuite
 
             var results = await RaceLoadsAsync(
                 repository,
-                LoanQuery(book, member),
-                new EmitProbe(new ContractDecisionBorrowed(Guid.NewGuid()), [book, member]),
+                LoanQuery(book.ToString(), member.ToString()),
+                new EmitProbe(new ContractDecisionBorrowed(Guid.NewGuid()), [book.ToString(), member.ToString()]),
                 Query.FromItems(QueryItem.ByTags(book)),
-                new EmitProbe(new ContractDecisionAdded(Guid.NewGuid()), [book]));
+                new EmitProbe(new ContractDecisionAdded(Guid.NewGuid()), [book.ToString()]));
 
             AssertOneWinner(results);
         }
@@ -321,10 +321,10 @@ public abstract class DcbDecisionQueryContractTests : ContractSuite
 
             var results = await RaceLoadsAsync(
                 repository,
-                LoanQuery(book, member),
-                new EmitProbe(new ContractDecisionBorrowed(Guid.NewGuid()), [book, member]),
+                LoanQuery(book.ToString(), member.ToString()),
+                new EmitProbe(new ContractDecisionBorrowed(Guid.NewGuid()), [book.ToString(), member.ToString()]),
                 Query.FromItems(QueryItem.ByTypeAndTags([Borrowed], [member])),
-                new EmitProbe(new ContractDecisionBorrowed(Guid.NewGuid()), [otherBook, member]));
+                new EmitProbe(new ContractDecisionBorrowed(Guid.NewGuid()), [otherBook.ToString(), member.ToString()]));
 
             AssertOneWinner(results);
         }
@@ -350,8 +350,8 @@ public abstract class DcbDecisionQueryContractTests : ContractSuite
             eventSourcingOptions: Options.Create(new EventSourcingOptions { EnforceDcbTenantIsolation = isolate }));
 
     private static Query LoanQuery(string book, string member) => Query.FromItems(
-        QueryItem.ByTags(book),
-        QueryItem.ByTypeAndTags([Borrowed], [member]));
+        QueryItem.ByTags(LawnDart.EventStore.Tag.Parse(book)),
+        QueryItem.ByTypeAndTags([Borrowed], [LawnDart.EventStore.Tag.Parse(member)]));
 
     private static async Task<Exception?[]> RaceLoadsAsync(
         DcbRepository repository,
@@ -408,7 +408,7 @@ public abstract class DcbDecisionQueryContractTests : ContractSuite
         Assert.Equal(1, results.Count(e => e is ConcurrencyException));
     }
 
-    private static string Tag(string kind) => kind + ":" + Guid.NewGuid().ToString("N");
+    private static LawnDart.EventStore.Tag Tag(string kind) => LawnDart.EventStore.Tag.Create(kind, Guid.NewGuid().ToString("N"));
 }
 
 [EventTypeName("backend-contract.decision-added")]

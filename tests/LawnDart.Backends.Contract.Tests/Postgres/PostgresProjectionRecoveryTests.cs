@@ -34,13 +34,13 @@ public sealed class PostgresProjectionRecoveryTests
         await runner.StartAsync(CancellationToken.None);
         try
         {
-            await AppendAsync(events, streamId, 3);
+            await AppendAsync(events, streamId.ToString(), 3);
             await WaitForCheckpointAsync(checkpoints, reg.StorageKey, await events.GetCurrentSequenceAsync());
             await KillLeaderAsync();
-            await AppendAsync(events, streamId, 3);
+            await AppendAsync(events, streamId.ToString(), 3);
             await WaitForCheckpointAsync(checkpoints, reg.StorageKey, await events.GetCurrentSequenceAsync());
             Assert.False(runner.ExecuteTask!.IsCompleted);
-            await AssertCountAsync(views, reg.StorageKey, streamId, 6);
+            await AssertCountAsync(views, reg.StorageKey, streamId.ToString(), 6);
         }
         finally
         {
@@ -66,17 +66,17 @@ public sealed class PostgresProjectionRecoveryTests
         await runnerB.StartAsync(CancellationToken.None);
         try
         {
-            await AppendAsync(events, streamId, 2);
+            await AppendAsync(events, streamId.ToString(), 2);
             await WaitForCheckpointAsync(storeA, reg.StorageKey, await events.GetCurrentSequenceAsync());
             await KillLeaderAsync();
-            await AppendAsync(events, streamId, 2);
+            await AppendAsync(events, streamId.ToString(), 2);
             await WaitForCheckpointAsync(storeA, reg.StorageKey, await events.GetCurrentSequenceAsync());
             await KillLeaderAsync();
-            await AppendAsync(events, streamId, 2);
+            await AppendAsync(events, streamId.ToString(), 2);
             await WaitForCheckpointAsync(storeA, reg.StorageKey, await events.GetCurrentSequenceAsync());
             Assert.False(runnerA.ExecuteTask!.IsCompleted);
             Assert.False(runnerB.ExecuteTask!.IsCompleted);
-            await AssertCountAsync(views, reg.StorageKey, streamId, 6);
+            await AssertCountAsync(views, reg.StorageKey, streamId.ToString(), 6);
         }
         finally
         {
@@ -122,7 +122,7 @@ public sealed class PostgresProjectionRecoveryTests
         var events = NewEvents();
         var reg = Registration();
         var streamId = Stream();
-        await AppendAsync(events, streamId, total);
+        await AppendAsync(events, streamId.ToString(), total);
         var runnerOptions = FastOptions();
         var bundle = new PostgresProjectionStore(views, checkpoints);
         var manager = new BoundedContextProjectionRunnerManager(
@@ -133,11 +133,11 @@ public sealed class PostgresProjectionRecoveryTests
         await manager.StartAsync(reg.StorageKey);
         try
         {
-            await WaitForCountAsync(views, reg.StorageKey, streamId, total);
+            await WaitForCountAsync(views, reg.StorageKey, streamId.ToString(), total);
             var stored = await checkpoints.GetCheckpointAsync(reg.StorageKey, 0);
             Assert.NotNull(stored);
             var epoch = await LeaderEpochAsync(checkpoints.QualifiedTableName, reg.StorageKey);
-            var viewJson = await views.GetViewAsync(reg.StorageKey, streamId);
+            var viewJson = await views.GetViewAsync(reg.StorageKey, streamId.ToString());
             Assert.Equal(total, CountOf(viewJson));
             var waiter = new PostgresCheckpointStore(options, views);
             waiter.BindLeaderEpoch(reg.StorageKey, 0, epoch);
@@ -156,12 +156,12 @@ public sealed class PostgresProjectionRecoveryTests
                     connection,
                     transaction);
                 stillThere.Parameters.AddWithValue("type", reg.StorageKey);
-                stillThere.Parameters.AddWithValue("id", streamId);
+                stillThere.Parameters.AddWithValue("id", streamId.ToString());
                 Assert.Equal(total, CountOf((string)(await stillThere.ExecuteScalarAsync(ct))!));
 
                 save = waiter.SaveViewsAndCheckpointAsync(
                     reg.StorageKey,
-                    [(streamId, viewJson!, stored.LastSequencePosition)],
+                    [(streamId.ToString(), viewJson!, stored.LastSequencePosition)],
                     Checkpoint(reg.StorageKey, stored.LastSequencePosition));
                 await Task.Delay(TimeSpan.FromMilliseconds(150), ct);
             };
@@ -169,8 +169,8 @@ public sealed class PostgresProjectionRecoveryTests
             await admin.RebuildAsync("ContractCounter");
             Assert.NotNull(save);
             await Assert.ThrowsAsync<ProjectionLeadershipLostException>(() => save!);
-            await WaitForCountAsync(views, reg.StorageKey, streamId, total);
-            Assert.Equal(total, CountOf(await views.GetViewAsync(reg.StorageKey, streamId)));
+            await WaitForCountAsync(views, reg.StorageKey, streamId.ToString(), total);
+            Assert.Equal(total, CountOf(await views.GetViewAsync(reg.StorageKey, streamId.ToString())));
             var head = await events.GetCurrentSequenceAsync();
             Assert.Equal(head, (await checkpoints.GetCheckpointAsync(reg.StorageKey, 0))!.LastSequencePosition);
         }
@@ -189,7 +189,7 @@ public sealed class PostgresProjectionRecoveryTests
         var events = NewEvents();
         var reg = Registration();
         var streamId = Stream();
-        await AppendAsync(events, streamId, 5);
+        await AppendAsync(events, streamId.ToString(), 5);
         var runnerOptions = FastOptions();
         var bundle = new PostgresProjectionStore(views, checkpoints);
         var manager = new BoundedContextProjectionRunnerManager(
@@ -206,10 +206,10 @@ public sealed class PostgresProjectionRecoveryTests
         {
             await WaitForCheckpointAsync(checkpoints, reg.StorageKey, await events.GetCurrentSequenceAsync());
             await admin.RebuildAsync("ContractCounter");
-            await WaitForCountAsync(views, reg.StorageKey, streamId, 5);
-            var before = CountOf(await views.GetViewAsync(reg.StorageKey, streamId));
-            await AppendAsync(events, streamId, 1);
-            await WaitForCountAsync(views, reg.StorageKey, streamId, before + 1);
+            await WaitForCountAsync(views, reg.StorageKey, streamId.ToString(), 5);
+            var before = CountOf(await views.GetViewAsync(reg.StorageKey, streamId.ToString()));
+            await AppendAsync(events, streamId.ToString(), 1);
+            await WaitForCountAsync(views, reg.StorageKey, streamId.ToString(), before + 1);
             Assert.False(waiter.ExecuteTask!.IsCompleted);
         }
         finally
@@ -308,7 +308,7 @@ public sealed class PostgresProjectionRecoveryTests
         for (var i = 0; i < count; i++)
         {
             await events.AppendAsync(
-                streamId,
+                StreamId.Parse(streamId),
                 [new ContractCounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)],
                 metadata: new EventMetadata { Timestamp = DateTime.UtcNow, UserId = "test" });
         }
@@ -370,7 +370,7 @@ public sealed class PostgresProjectionRecoveryTests
 
     private static string Schema() => "r" + Guid.NewGuid().ToString("N");
 
-    private static string Stream() => "acct:Counter:" + Guid.NewGuid().ToString("N");
+    private static StreamId Stream() => StreamId.For("acct", "Counter", Guid.NewGuid().ToString("N"));
 }
 
 [Trait("Category", "Integration")]
@@ -447,7 +447,7 @@ public sealed class PostgresProjectionRunnerRestartTests
             for (var i = 0; i < 3; i++)
             {
                 await events.AppendAsync(
-                    streamId,
+                    StreamId.Parse(streamId),
                     [new ContractCounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)],
                     metadata: new EventMetadata { Timestamp = DateTime.UtcNow, UserId = "test" });
             }
@@ -464,7 +464,7 @@ public sealed class PostgresProjectionRunnerRestartTests
             for (var i = 0; i < 3; i++)
             {
                 await events.AppendAsync(
-                    streamId,
+                    StreamId.Parse(streamId),
                     [new ContractCounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)],
                     metadata: new EventMetadata { Timestamp = DateTime.UtcNow, UserId = "test" });
             }

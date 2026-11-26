@@ -72,7 +72,7 @@ public class GlobalProjectionMultiNodeTests
         var reg = MakeGlobalRegistration();
         var storageKey = reg.StorageKey;
 
-        await store.AppendAsync("system:Tags:1", [
+        await store.AppendAsync(StreamId.Parse("system:Tags:1"), [
             new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, "alpha"),
             new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, "beta")
         ], metadata: Meta(), cancellationToken: cts.Token);
@@ -125,7 +125,7 @@ public class GlobalProjectionMultiNodeTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         var reg = MakeGlobalRegistration();
 
-        await store.AppendAsync("system:Tags:1", [
+        await store.AppendAsync(StreamId.Parse("system:Tags:1"), [
             new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, "solo")
         ], metadata: Meta(), cancellationToken: cts.Token);
 
@@ -173,7 +173,7 @@ public class GlobalProjectionMultiNodeTests
 
         Assert.NotNull(streamId);
 
-        await store.AppendAsync(streamId!, [
+        await store.AppendAsync(StreamId.Parse(streamId!), [
             new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 7)
         ], metadata: Meta(), cancellationToken: cts.Token);
 
@@ -233,7 +233,7 @@ public class GlobalProjectionMultiNodeTests
         Assert.NotNull(orderId);
         var entityKeyOwned = orderId!.Value.ToString();
 
-        await store.AppendAsync($"OrderAggregate:{orderId}", [
+        await store.AppendAsync(StreamId.Parse($"OrderAggregate:{orderId}"), [
             new OrderCreatedLocal(Guid.NewGuid(), DateTime.UtcNow, orderId.Value, "Acme")
         ], metadata: Meta(), cancellationToken: cts.Token);
 

@@ -86,7 +86,7 @@ public class ProjectionRunnerServiceTests
 
         // Append two events to a counter stream
         var streamId = "tenant1:Counter:aaa";
-        await store.AppendAsync(streamId, [
+        await store.AppendAsync(StreamId.Parse(streamId), [
             new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 5),
             new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 3)
         ], metadata: MakeMeta(), cancellationToken: cts.Token);
@@ -116,7 +116,7 @@ public class ProjectionRunnerServiceTests
         var (store, views, checkpoints) = BuildInMemoryStores();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
-        await store.AppendAsync("system:Tags:1", [
+        await store.AppendAsync(StreamId.Parse("system:Tags:1"), [
             new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, "alpha"),
             new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, "beta")
         ], metadata: MakeMeta(), cancellationToken: cts.Token);
@@ -153,7 +153,7 @@ public class ProjectionRunnerServiceTests
         await Task.Delay(100, CancellationToken.None); // let runner reach steady state first
 
         var newStreamId = "tenant1:Counter:new-one";
-        await store.AppendAsync(newStreamId, [
+        await store.AppendAsync(StreamId.Parse(newStreamId), [
             new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 42)
         ], metadata: MakeMeta(), cancellationToken: cts.Token);
 
@@ -178,7 +178,7 @@ public class ProjectionRunnerServiceTests
         var (store, views, checkpoints) = BuildInMemoryStores();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
-        await store.AppendAsync("tenant1:Counter:bbb", [
+        await store.AppendAsync(StreamId.Parse("tenant1:Counter:bbb"), [
             new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)
         ], metadata: MakeMeta(), cancellationToken: cts.Token);
 
@@ -209,7 +209,7 @@ public class ProjectionRunnerServiceTests
         var streamId = "tenant1:Counter:ccc";
 
         // First run — process 2 events
-        await store.AppendAsync(streamId, [
+        await store.AppendAsync(StreamId.Parse(streamId), [
             new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 10)
         ], metadata: MakeMeta(), cancellationToken: cts.Token);
 
@@ -224,7 +224,7 @@ public class ProjectionRunnerServiceTests
         await runner1.StopAsync(CancellationToken.None);
 
         // Second run — should restore saved view (count=10) and process 1 more event
-        await store.AppendAsync(streamId, [
+        await store.AppendAsync(StreamId.Parse(streamId), [
             new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 7)
         ], metadata: MakeMeta(), cancellationToken: cts.Token);
 
@@ -250,7 +250,7 @@ public class ProjectionRunnerServiceTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         // Append to an unrelated stream type
-        await store.AppendAsync("tenant1:Widget:xyz", [
+        await store.AppendAsync(StreamId.Parse("tenant1:Widget:xyz"), [
             new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 99)
         ], metadata: MakeMeta(), cancellationToken: cts.Token);
 

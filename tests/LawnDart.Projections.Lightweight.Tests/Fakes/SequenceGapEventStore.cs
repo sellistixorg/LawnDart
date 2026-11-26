@@ -83,7 +83,7 @@ public sealed class SequenceGapEventStore : IEventStore
         => EventQueryMatcher.Matches(se, query, EventTypeCatalog.Materialize([]));
 
     public Task<AppendResult> AppendAsync(
-        string streamId,
+        StreamId streamId,
         IEnumerable<TaggedEvent> events,
         long? expectedVersion = null,
         EventMetadata? metadata = null,
@@ -98,7 +98,7 @@ public sealed class SequenceGapEventStore : IEventStore
         => throw new NotSupportedException();
 
     public Task<IReadOnlyList<SequencedEvent>> ReadStreamAsync(
-        string streamId,
+        StreamId streamId,
         long fromVersion = 0,
         long? toVersion = null,
         DateTime? toTimestamp = null,
@@ -106,14 +106,14 @@ public sealed class SequenceGapEventStore : IEventStore
         => throw new NotSupportedException();
 
     public IAsyncEnumerable<SequencedEvent> ReadStreamEnumerableAsync(
-        string streamId,
+        StreamId streamId,
         long fromVersion = 0,
         long? toVersion = null,
         DateTime? toTimestamp = null,
         CancellationToken cancellationToken = default)
         => throw new NotSupportedException();
 
-    public Task<StreamMetadata?> GetStreamAsync(string streamId, CancellationToken cancellationToken = default)
+    public Task<StreamMetadata?> GetStreamAsync(StreamId streamId, CancellationToken cancellationToken = default)
         => throw new NotSupportedException();
 
     public Task<IReadOnlyList<StreamMetadata>> GetStreamsByAggregateTypeAsync(
@@ -122,11 +122,11 @@ public sealed class SequenceGapEventStore : IEventStore
         => throw new NotSupportedException();
 
     public Task<IReadOnlyList<StreamMetadata>> GetStreamsByTagAsync(
-        string tag,
+        Tag tag,
         CancellationToken cancellationToken = default)
         => throw new NotSupportedException();
 
-    public Task<IReadOnlyList<string>> EnumerateStreamIdsAsync(
+    public Task<IReadOnlyList<StreamId>> EnumerateStreamIdsAsync(
         string? prefix = null,
         CancellationToken cancellationToken = default)
         => throw new NotSupportedException();

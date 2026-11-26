@@ -136,7 +136,7 @@ public abstract class EventNameTableContractTests : BackendContractSuite
         }
     }
 
-    private static string Stream() => "test-tenant:TestAggregate:" + Guid.NewGuid().ToString("N");
+    private static StreamId Stream() => StreamId.For("test-tenant", "TestAggregate", Guid.NewGuid().ToString("N"));
 
     private sealed class ReloadGate
     {

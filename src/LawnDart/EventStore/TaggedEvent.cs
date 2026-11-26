@@ -9,16 +9,16 @@ namespace LawnDart.EventStore;
 /// repeated tag is kept once (the first copy, in order). Tags compare exactly, so
 /// <c>A:1</c> and <c>a:1</c> are different tags.
 /// <para>
-/// Use: <c>new TaggedEvent(orderPlaced, "order:42", "customer:7")</c>.
+/// Use: <c>new TaggedEvent(orderPlaced, Tag.Create("order", "42"), Tag.Create("customer", "7"))</c>.
 /// </para>
 /// </remarks>
 /// <param name="Event">Event to append. Required.</param>
 /// <param name="Tags">Tags for this event. Null or none means the event has no tags.</param>
-public sealed record TaggedEvent(IEvent Event, params IReadOnlyList<string> Tags)
+public sealed record TaggedEvent(IEvent Event, params IReadOnlyList<Tag> Tags)
 {
     /// <summary>Event to append.</summary>
     public IEvent Event { get; } = Event ?? throw new ArgumentNullException(nameof(Event));
 
     /// <summary>Tags for this event, each one once, in the order first given.</summary>
-    public IReadOnlyList<string> Tags { get; } = EventLogBuffers.SnapshotTags(Tags);
+    public IReadOnlyList<Tag> Tags { get; } = EventLogBuffers.SnapshotTags(Tags);
 }

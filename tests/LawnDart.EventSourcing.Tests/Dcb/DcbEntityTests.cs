@@ -117,17 +117,17 @@ public class DcbEntityTests
             new SequencedEvent(
                 @event: new TestEvent { Value = "event1" },
                 sequencePosition: 1,
-                streamId: "stream1",
+                streamId: StreamId.Parse("test:stream1"),
                 version: 0,
                 metadata: new Metadata.EventMetadata(),
-                tags: new[] { "tag1" }),
+                tags: new[] { Tag.Parse("tag:tag1") }),
             new SequencedEvent(
                 @event: new TestEvent { Value = "event2" },
                 sequencePosition: 2,
-                streamId: "stream1",
+                streamId: StreamId.Parse("test:stream1"),
                 version: 0,
                 metadata: new Metadata.EventMetadata(),
-                tags: new[] { "tag2" })
+                tags: new[] { Tag.Parse("tag:tag2") })
         };
 
         // Act
@@ -154,17 +154,17 @@ public class DcbEntityTests
             new SequencedEvent(
                 @event: new TestEvent { Value = "second" },
                 sequencePosition: 2,
-                streamId: "stream1",
+                streamId: StreamId.Parse("test:stream1"),
                 version: 0,
                 metadata: new Metadata.EventMetadata(),
-                tags: Array.Empty<string>()),
+                tags: Array.Empty<Tag>()),
             new SequencedEvent(
                 @event: new TestEvent { Value = "first" },
                 sequencePosition: 1,
-                streamId: "stream1",
+                streamId: StreamId.Parse("test:stream1"),
                 version: 0,
                 metadata: new Metadata.EventMetadata(),
-                tags: Array.Empty<string>())
+                tags: Array.Empty<Tag>())
         };
 
         // Act
@@ -178,7 +178,7 @@ public class DcbEntityTests
     public void ReplayEvents_DoesNotMutateDecisionQuery()
     {
         var entity = new TestDcbEntityForEntityTests();
-        var query = Query.FromItems(QueryItem.ByTags("product:sku-1"));
+        var query = Query.FromItems(QueryItem.ByTags(Tag.Parse("product:sku-1")));
         entity.SetDecisionQuery(query);
 
         entity.ReplayEvents(new[]
@@ -186,10 +186,10 @@ public class DcbEntityTests
             new SequencedEvent(
                 @event: new TestEvent { Value = "event1" },
                 sequencePosition: 1,
-                streamId: "stream1",
+                streamId: StreamId.Parse("test:stream1"),
                 version: 0,
                 metadata: new Metadata.EventMetadata(),
-                tags: new[] { "product:sku-1", "order:order-9" })
+                tags: new[] { Tag.Parse("product:sku-1"), Tag.Parse("order:order-9") })
         });
 
         Assert.Same(query, entity.DecisionQuery);
@@ -217,7 +217,7 @@ public class DcbEntityTests
     public void Emit_DoesNotMutateDecisionQuery()
     {
         var entity = new TestDcbEntityForEntityTests();
-        var query = Query.FromItems(QueryItem.ByTags("tag1"));
+        var query = Query.FromItems(QueryItem.ByTags(Tag.Parse("tag:tag1")));
         entity.SetTags("tag1");
         entity.SetDecisionQuery(query);
 
@@ -231,7 +231,7 @@ public class DcbEntityTests
     public void SetTags_DoesNotChangeDecisionQuery()
     {
         var entity = new TestDcbEntityForEntityTests();
-        var query = Query.FromItems(QueryItem.ByTags("fence:a"));
+        var query = Query.FromItems(QueryItem.ByTags(Tag.Parse("fence:a")));
         entity.SetDecisionQuery(query);
         entity.SetTags("payload:b");
 
@@ -243,7 +243,7 @@ public class DcbEntityTests
     public void DecisionQuery_IsIgnoredByJson()
     {
         var entity = new TestDcbEntityForEntityTests();
-        entity.SetDecisionQuery(Query.FromItems(QueryItem.ByTags("fence:a")));
+        entity.SetDecisionQuery(Query.FromItems(QueryItem.ByTags(Tag.Parse("fence:a"))));
 
         var json = System.Text.Json.JsonSerializer.Serialize(entity, entity.GetType());
 
@@ -258,9 +258,9 @@ public class DcbEntityTests
         entity.ReplayEvents(new[]
         {
             new SequencedEvent(
-                new TestEvent { Value = "a" }, 1, "s", 0, new Metadata.EventMetadata(), Array.Empty<string>()),
+                new TestEvent { Value = "a" }, 1, StreamId.Parse("test:s"), 0, new Metadata.EventMetadata(), Array.Empty<Tag>()),
             new SequencedEvent(
-                new TestEvent { Value = "b" }, 2, "s", 0, new Metadata.EventMetadata(), Array.Empty<string>())
+                new TestEvent { Value = "b" }, 2, StreamId.Parse("test:s"), 0, new Metadata.EventMetadata(), Array.Empty<Tag>())
         });
 
         Assert.Equal(2, entity.EventsSinceLastSnapshot);
@@ -273,7 +273,7 @@ public class DcbEntityTests
         entity.ReplayEvents(new[]
         {
             new SequencedEvent(
-                new TestEvent { Value = "old" }, 10, "s", 0, new Metadata.EventMetadata(), Array.Empty<string>())
+                new TestEvent { Value = "old" }, 10, StreamId.Parse("test:s"), 0, new Metadata.EventMetadata(), Array.Empty<Tag>())
         });
         Assert.Equal(1, entity.EventsSinceLastSnapshot);
 
@@ -287,7 +287,7 @@ public class DcbEntityTests
         entity.ReplayEvents(new[]
         {
             new SequencedEvent(
-                new TestEvent { Value = "delta" }, 11, "s", 0, new Metadata.EventMetadata(), Array.Empty<string>())
+                new TestEvent { Value = "delta" }, 11, StreamId.Parse("test:s"), 0, new Metadata.EventMetadata(), Array.Empty<Tag>())
         });
 
         Assert.Equal(1, entity.EventsSinceLastSnapshot);

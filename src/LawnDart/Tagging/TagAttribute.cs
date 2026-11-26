@@ -14,7 +14,7 @@ public class TagAttribute : Attribute
     /// <summary>
     /// Creates a tag attribute.
     /// </summary>
-    /// <param name="value">The tag value (e.g., "order:12345", "high-priority").</param>
+    /// <param name="value">The tag in <c>key:value</c> form (e.g., "order:12345", "priority:high"). Checked with <see cref="LawnDart.EventStore.Tag.Parse(string)"/> when the event is saved.</param>
     public TagAttribute(string value)
     {
         Value = value ?? throw new ArgumentNullException(nameof(value));

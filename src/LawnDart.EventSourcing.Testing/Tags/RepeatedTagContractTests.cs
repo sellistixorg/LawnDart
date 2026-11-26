@@ -79,7 +79,7 @@ public abstract class RepeatedTagContractTests : ContractSuite
         await repository.AppendWithContextAsync([new TaggedEvent(new ContractDcbEvent(Guid.NewGuid(), DateTime.UtcNow, 1), [a, b, a, b])]);
         var read = await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(a)));
         var evt = Assert.Single(read.Events);
-        Assert.Equal(evt.Tags.Count, evt.Tags.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(evt.Tags.Count, evt.Tags.Distinct().Count());
         Assert.Contains(a, evt.Tags);
         Assert.Contains(b, evt.Tags);
     }
@@ -89,8 +89,8 @@ public abstract class RepeatedTagContractTests : ContractSuite
     {
         var log = await OpenLogAsync();
         var id = Guid.NewGuid().ToString("N");
-        var upper = "Course:" + id;
-        var lower = "course:" + id;
+        var upper = LawnDart.EventStore.Tag.Create("Course", id);
+        var lower = LawnDart.EventStore.Tag.Create("course", id);
         var stream = Stream();
         await log.AppendAsync(stream, [Event(upper, lower, upper)]);
 
@@ -125,7 +125,7 @@ public abstract class RepeatedTagContractTests : ContractSuite
         var log = await OpenLogAsync();
         var type = "repeat.type." + Guid.NewGuid().ToString("N");
         var (a, b) = (Tag("a"), Tag("b"));
-        string[] tags = repeated ? [a, b, a, b] : [a, b];
+        LawnDart.EventStore.Tag[] tags = repeated ? [a, b, a, b] : [a, b];
         var head = await log.GetCurrentSequenceAsync();
 
         // Only tag a exists: the item needs both tags, so nothing matches.
@@ -172,10 +172,10 @@ public abstract class RepeatedTagContractTests : ContractSuite
     private async Task<IEventLog> OpenLogAsync()
         => (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Log;
 
-    private static AppendEvent Event(params string[] tags)
+    private static AppendEvent Event(params LawnDart.EventStore.Tag[] tags)
         => new("repeat.event", Encoding.UTF8.GetBytes("{}"), tags: tags);
 
-    private static string Stream() => "repeat:" + Guid.NewGuid().ToString("N");
+    private static StreamId Stream() => StreamId.For("repeat", Guid.NewGuid().ToString("N"));
 
-    private static string Tag(string kind) => kind + ":" + Guid.NewGuid().ToString("N");
+    private static LawnDart.EventStore.Tag Tag(string kind) => LawnDart.EventStore.Tag.Create(kind, Guid.NewGuid().ToString("N"));
 }

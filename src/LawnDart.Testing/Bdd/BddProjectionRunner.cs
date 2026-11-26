@@ -78,7 +78,7 @@ public sealed class BddProjectionRunner
     /// </summary>
     public async Task ProjectStreamAsync(
         IEventStore store,
-        string streamId,
+        StreamId streamId,
         CancellationToken cancellationToken = default)
     {
         var events = await store.ReadStreamAsync(streamId, cancellationToken: cancellationToken).ConfigureAwait(false);

@@ -64,7 +64,7 @@ public sealed class EventSession
     public AppendEvent ToAppendEvent(
         IEvent @event,
         EventMetadata? metadata = null,
-        IEnumerable<string>? tags = null)
+        IEnumerable<Tag>? tags = null)
     {
         ArgumentNullException.ThrowIfNull(@event);
 

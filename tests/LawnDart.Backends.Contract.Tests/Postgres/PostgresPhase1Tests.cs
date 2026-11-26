@@ -92,15 +92,14 @@ public sealed class PostgresPhase1Tests
         var bare = "Order:" + Guid.NewGuid().ToString("N");
         var prefixed = "acme:Order:" + Guid.NewGuid().ToString("N");
         var emptyPrefix = ":order:" + Guid.NewGuid().ToString("N");
-        await opened.Store.AppendAsync(bare, [ContractEvent.Tick()]);
-        await opened.Store.AppendAsync(prefixed, [ContractEvent.Tick()]);
-        await opened.Store.AppendAsync(emptyPrefix, [ContractEvent.Tick()]);
+        await opened.Store.AppendAsync(StreamId.Parse(bare), [ContractEvent.Tick()]);
+        await opened.Store.AppendAsync(StreamId.Parse(prefixed), [ContractEvent.Tick()]);
 
         Assert.Equal("default", await TenantOfAsync(opened.SchemaName, bare));
         Assert.Equal("acme", await TenantOfAsync(opened.SchemaName, prefixed));
-        Assert.Equal("default", await TenantOfAsync(opened.SchemaName, emptyPrefix));
+        Assert.False(StreamId.TryParse(emptyPrefix, out _));
 
-        var bareMeta = await opened.Store.GetStreamAsync(bare);
+        var bareMeta = await opened.Store.GetStreamAsync(StreamId.Parse(bare));
         Assert.Null(bareMeta!.TenantId);
     }
 
@@ -136,7 +135,7 @@ public sealed class PostgresPhase1Tests
             "cc:Order:" + Guid.NewGuid().ToString("N")
         };
         foreach (var stream in streams)
-            await opened.Store.AppendAsync(stream, [ContractEvent.Tick()]);
+            await opened.Store.AppendAsync(StreamId.Parse(stream), [ContractEvent.Tick()]);
 
         await using var connection = await ConnectAsync();
         var explain = $"""
@@ -172,10 +171,10 @@ public sealed class PostgresPhase1Tests
     {
         var opened = await OpenAsync(requireTenantId: false);
         var stream = "Order:" + Guid.NewGuid().ToString("N");
-        await opened.Store.AppendAsync(stream, [ContractEvent.Tick()]);
+        await opened.Store.AppendAsync(StreamId.Parse(stream), [ContractEvent.Tick()]);
         var before = await SequenceValueAsync(opened.SchemaName);
         await Assert.ThrowsAsync<ConcurrencyException>(() =>
-            opened.Store.AppendAsync(stream, [ContractEvent.Tick()], expectedVersion: 0));
+            opened.Store.AppendAsync(StreamId.Parse(stream), [ContractEvent.Tick()], expectedVersion: 0));
         Assert.Equal(before, await SequenceValueAsync(opened.SchemaName));
     }
 
@@ -183,13 +182,13 @@ public sealed class PostgresPhase1Tests
     public async Task KilledWriter_ReleasesTheReadHorizon()
     {
         var opened = await OpenAsync(requireTenantId: false);
-        await opened.Store.AppendAsync("s1", [ContractEvent.Tick()]);
+        await opened.Store.AppendAsync(StreamId.Parse("test:s1"), [ContractEvent.Tick()]);
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         opened.Hooks.PauseNextAppendBeforeCommit(entered, release);
-        var slow = opened.Store.AppendAsync("slow", [ContractEvent.Tick()]);
+        var slow = opened.Store.AppendAsync(StreamId.Parse("test:slow"), [ContractEvent.Tick()]);
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
-        var fast = await opened.Store.AppendAsync("fast", [ContractEvent.Tick()]);
+        var fast = await opened.Store.AppendAsync(StreamId.Parse("test:fast"), [ContractEvent.Tick()]);
         Assert.Equal(1, await opened.Store.GetCurrentSequenceAsync());
         await opened.Hooks.KillOpenConnectionAsync();
         release.TrySetResult();
@@ -203,7 +202,7 @@ public sealed class PostgresPhase1Tests
     {
         var opened = await OpenAsync(requireTenantId: false);
         var stream = "Order:" + Guid.NewGuid().ToString("N");
-        await opened.Store.AppendAsync(stream, [ContractEvent.Tick()]);
+        await opened.Store.AppendAsync(StreamId.Parse(stream), [ContractEvent.Tick()]);
         await using var connection = await ConnectAsync();
         await using (var setval = new NpgsqlCommand(
             "SELECT setval(format('%I.event_position', @schema), 50)",
@@ -213,7 +212,7 @@ public sealed class PostgresPhase1Tests
             await setval.ExecuteScalarAsync();
         }
 
-        var second = await opened.Store.AppendAsync(stream, [ContractEvent.Tick()]);
+        var second = await opened.Store.AppendAsync(StreamId.Parse(stream), [ContractEvent.Tick()]);
         Assert.Equal(51, second.SequencePositions[0]);
         var head = await WaitForHeadAsync(opened.Store, 51, TimeSpan.FromSeconds(5));
         Assert.Equal(51, head);
@@ -230,7 +229,7 @@ public sealed class PostgresPhase1Tests
         await using (var xid = new NpgsqlCommand("SELECT pg_current_xact_id()", holder, hold))
             await xid.ExecuteScalarAsync();
 
-        await opened.Store.AppendAsync("first", [ContractEvent.Tick()]);
+        await opened.Store.AppendAsync(StreamId.Parse("test:first"), [ContractEvent.Tick()]);
         await using (var connection = await ConnectAsync())
         await using (var setval = new NpgsqlCommand(
             "SELECT setval(format('%I.event_position', @schema), 20)",
@@ -240,7 +239,7 @@ public sealed class PostgresPhase1Tests
             await setval.ExecuteScalarAsync();
         }
 
-        var later = await opened.Store.AppendAsync("later", [ContractEvent.Tick()]);
+        var later = await opened.Store.AppendAsync(StreamId.Parse("test:later"), [ContractEvent.Tick()]);
         var head = await WaitForHeadAsync(opened.Store, later.SequencePositions[0], TimeSpan.FromSeconds(5));
         Assert.Equal(later.SequencePositions[0], head);
         Assert.Contains(opened.ReadLogEntries(), e => e.Level == LogLevel.Warning && e.Message.Contains("Read horizon advanced", StringComparison.Ordinal));
@@ -271,11 +270,11 @@ public sealed class PostgresPhase1Tests
     public async Task DcbCheck_SeesTheAppendThatHeldTheTagLock()
     {
         var opened = await OpenAsync(requireTenantId: false);
-        var tag = "tag-" + Guid.NewGuid().ToString("N");
+        var tag = LawnDart.EventStore.Tag.Parse("tag:" + Guid.NewGuid().ToString("N"));
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         opened.Hooks.PauseNextAppendBeforeCommit(entered, release);
-        var normal = opened.Store.AppendAsync("held", [new TaggedEvent(ContractEvent.Tick(), [tag])]);
+        var normal = opened.Store.AppendAsync(StreamId.Parse("test:held"), [new TaggedEvent(ContractEvent.Tick(), [tag])]);
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
         var dcb = opened.Store.AppendAsync(
             [new TaggedEvent(ContractEvent.Tick(), [tag])],
@@ -291,7 +290,7 @@ public sealed class PostgresPhase1Tests
     public async Task TypesOnlyCondition_BlocksOtherAppends()
     {
         var opened = await OpenAsync(requireTenantId: false);
-        await opened.Store.AppendAsync("seed", [new ContractAnotherEvent(Guid.NewGuid(), DateTime.UtcNow)]);
+        await opened.Store.AppendAsync(StreamId.Parse("test:seed"), [new ContractAnotherEvent(Guid.NewGuid(), DateTime.UtcNow)]);
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         opened.Hooks.PauseNextAppendBeforeCommit(entered, release);
@@ -299,7 +298,7 @@ public sealed class PostgresPhase1Tests
             [ContractEvent.Tick()],
             AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByType("no.such.type.for.lock"))));
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
-        var blocked = opened.Store.AppendAsync("other", [ContractEvent.Tick()]);
+        var blocked = opened.Store.AppendAsync(StreamId.Parse("test:other"), [ContractEvent.Tick()]);
         await Task.Delay(250);
         Assert.False(blocked.IsCompleted);
         release.TrySetResult();
@@ -314,11 +313,11 @@ public sealed class PostgresPhase1Tests
         var nul = Encoding.UTF8.GetBytes("{\"note\":\"a\\u0000b\"}");
         var binary = new byte[] { 1, 2, 0, 3 };
         var stream = "Order:" + Guid.NewGuid().ToString("N");
-        await opened.Log.AppendAsync(stream, [
+        await opened.Log.AppendAsync(StreamId.Parse(stream), [
             new AppendEvent("payload.nul", nul),
             new AppendEvent("payload.bin", binary, codecId: EventCodec.MemoryPack)
         ]);
-        var rows = await opened.Log.ReadStreamAsync(stream);
+        var rows = await opened.Log.ReadStreamAsync(StreamId.Parse(stream));
         Assert.Equal(nul, rows[0].Payload.ToArray());
         Assert.Equal(EventCodec.Json, rows[0].CodecId);
         Assert.Equal(binary, rows[1].Payload.ToArray());
@@ -326,8 +325,8 @@ public sealed class PostgresPhase1Tests
 
         var typed = "Order:" + Guid.NewGuid().ToString("N");
         var tick = new ContractEventWithProperties(Guid.NewGuid(), DateTime.UtcNow, "sku", 4);
-        await opened.Store.AppendAsync(typed, [tick]);
-        var read = Assert.IsType<ContractEventWithProperties>(Assert.Single(await opened.Store.ReadStreamAsync(typed)).Event);
+        await opened.Store.AppendAsync(StreamId.Parse(typed), [tick]);
+        var read = Assert.IsType<ContractEventWithProperties>(Assert.Single(await opened.Store.ReadStreamAsync(StreamId.Parse(typed))).Event);
         Assert.Equal("sku", read.ProductId);
         Assert.Equal(4, read.Quantity);
     }
@@ -356,10 +355,10 @@ public sealed class PostgresPhase1Tests
     {
         var opened = await OpenAsync(requireTenantId: false);
         var id = Guid.NewGuid().ToString("N");
-        await opened.Store.AppendAsync($"acme:Order:{id}", [ContractEvent.Tick()]);
-        await opened.Store.AppendAsync($"acme:order:{id}", [ContractEvent.Tick()]);
-        Assert.Single(await opened.Store.ReadStreamAsync($"acme:Order:{id}"));
-        Assert.Single(await opened.Store.ReadStreamAsync($"acme:order:{id}"));
+        await opened.Store.AppendAsync(StreamId.Parse($"acme:Order:{id}"), [ContractEvent.Tick()]);
+        await opened.Store.AppendAsync(StreamId.Parse($"acme:order:{id}"), [ContractEvent.Tick()]);
+        Assert.Single(await opened.Store.ReadStreamAsync(StreamId.Parse($"acme:Order:{id}")));
+        Assert.Single(await opened.Store.ReadStreamAsync(StreamId.Parse($"acme:order:{id}")));
     }
 
     [Fact]
@@ -375,7 +374,7 @@ public sealed class PostgresPhase1Tests
         {
             while (!stop.IsCancellationRequested)
             {
-                var stream = "w" + worker + ":" + Guid.NewGuid().ToString("N");
+                var stream = "test:w" + worker + ":" + Guid.NewGuid().ToString("N");
                 if (Random.Shared.Next(5) == 0)
                 {
                     await ((PostgresEventStore)opened.Store).AppendAndRollbackAsync(
@@ -385,7 +384,7 @@ public sealed class PostgresPhase1Tests
                 }
                 else
                 {
-                    var result = await opened.Store.AppendAsync(stream, [ContractEvent.Tick()], cancellationToken: CancellationToken.None);
+                    var result = await opened.Store.AppendAsync(StreamId.Parse(stream), [ContractEvent.Tick()], cancellationToken: CancellationToken.None);
                     committed.TryAdd(result.SequencePositions[0], 0);
                 }
                 await Task.Delay(Random.Shared.Next(0, 5));
@@ -418,10 +417,10 @@ public sealed class PostgresPhase1Tests
         };
 
         var stream = "Order:" + Guid.NewGuid().ToString("N");
-        var result = await store.AppendAsync(stream, [ContractEvent.Tick()]);
+        var result = await store.AppendAsync(StreamId.Parse(stream), [ContractEvent.Tick()]);
         Assert.Equal(1, attempts);
-        Assert.Single(await store.ReadStreamAsync(stream));
-        Assert.Equal(result.SequencePositions[0], (await store.ReadStreamAsync(stream))[0].SequencePosition);
+        Assert.Single(await store.ReadStreamAsync(StreamId.Parse(stream)));
+        Assert.Equal(result.SequencePositions[0], (await store.ReadStreamAsync(StreamId.Parse(stream)))[0].SequencePosition);
     }
 
     [Fact]
@@ -430,12 +429,12 @@ public sealed class PostgresPhase1Tests
         var opened = await OpenAsync(requireTenantId: false);
         await HoldCrossTagsAsync(
             opened,
-            writeTag: "left-" + Guid.NewGuid().ToString("N"),
-            checkTag: "right-" + Guid.NewGuid().ToString("N"));
+            writeTag: "left:" + Guid.NewGuid().ToString("N"),
+            checkTag: "right:" + Guid.NewGuid().ToString("N"));
         await HoldCrossTagsAsync(
             opened,
-            writeTag: "right-" + Guid.NewGuid().ToString("N"),
-            checkTag: "left-" + Guid.NewGuid().ToString("N"));
+            writeTag: "right:" + Guid.NewGuid().ToString("N"),
+            checkTag: "left:" + Guid.NewGuid().ToString("N"));
     }
 
     [Fact]
@@ -443,8 +442,8 @@ public sealed class PostgresPhase1Tests
     {
         var opened = await OpenAsync(requireTenantId: false);
         var typeName = "backend-contract.test-event";
-        var writtenByTypesOnly = "types-" + Guid.NewGuid().ToString("N");
-        var checkedByTagCondition = "tag-" + Guid.NewGuid().ToString("N");
+        var writtenByTypesOnly = LawnDart.EventStore.Tag.Parse("types:" + Guid.NewGuid().ToString("N"));
+        var checkedByTagCondition = "tag:" + Guid.NewGuid().ToString("N");
 
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -467,7 +466,7 @@ public sealed class PostgresPhase1Tests
         opened.Hooks.PauseNextAppendBeforeCommit(entered, release);
         tagged = opened.Store.AppendAsync(
             [ContractEvent.Tick()],
-            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(checkedByTagCondition))));
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(Tag.Parse(checkedByTagCondition)))));
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
         typesOnly = opened.Store.AppendAsync(
             [ContractEvent.Tick()],
@@ -483,11 +482,11 @@ public sealed class PostgresPhase1Tests
     public async Task MixedCondition_TypeItemPlusTag_WaitsForAnOpenAppend()
     {
         var opened = await OpenAsync(requireTenantId: false);
-        var tag = "mix-" + Guid.NewGuid().ToString("N");
+        var tag = LawnDart.EventStore.Tag.Parse("mix:" + Guid.NewGuid().ToString("N"));
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         opened.Hooks.PauseNextAppendBeforeCommit(entered, release);
-        var normal = opened.Store.AppendAsync("held", [ContractEvent.Tick()]);
+        var normal = opened.Store.AppendAsync(StreamId.Parse("test:held"), [ContractEvent.Tick()]);
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
         var dcb = opened.Store.AppendAsync(
             [new TaggedEvent(ContractEvent.Tick(), [tag])],
@@ -510,12 +509,12 @@ public sealed class PostgresPhase1Tests
             throw new OperationCanceledException("cancelled after the statement was sent");
 
         var stream = "Order:" + Guid.NewGuid().ToString("N");
-        var result = await store.AppendAsync(stream, [ContractEvent.Tick()]);
-        Assert.Equal(result.SequencePositions[0], (await store.ReadStreamAsync(stream))[0].SequencePosition);
+        var result = await store.AppendAsync(StreamId.Parse(stream), [ContractEvent.Tick()]);
+        Assert.Equal(result.SequencePositions[0], (await store.ReadStreamAsync(StreamId.Parse(stream)))[0].SequencePosition);
 
         store.FailAppendReadBack = true;
         var ex = await Assert.ThrowsAsync<AppendOutcomeUnknownException>(() =>
-            store.AppendAsync("Order:" + Guid.NewGuid().ToString("N"), [ContractEvent.Tick()]));
+            store.AppendAsync(StreamId.Parse("Order:" + Guid.NewGuid().ToString("N")), [ContractEvent.Tick()]));
         Assert.Contains("could not tell whether it was saved", ex.Message, StringComparison.Ordinal);
     }
 
@@ -533,7 +532,7 @@ public sealed class PostgresPhase1Tests
         };
 
         var ex = await Assert.ThrowsAsync<AppendOutcomeUnknownException>(() =>
-            store.AppendAsync("Order:" + Guid.NewGuid().ToString("N"), [ContractEvent.Tick()]));
+            store.AppendAsync(StreamId.Parse("Order:" + Guid.NewGuid().ToString("N")), [ContractEvent.Tick()]));
         Assert.Equal(1, attempts);
         Assert.Contains("could not tell whether it was saved", ex.Message, StringComparison.Ordinal);
 
@@ -545,7 +544,7 @@ public sealed class PostgresPhase1Tests
             throw new NpgsqlException("commit connection reset");
         };
         var ex2 = await Assert.ThrowsAsync<AppendOutcomeUnknownException>(() =>
-            store.AppendAsync("Order:" + Guid.NewGuid().ToString("N"), [ContractEvent.Tick()]));
+            store.AppendAsync(StreamId.Parse("Order:" + Guid.NewGuid().ToString("N")), [ContractEvent.Tick()]));
         Assert.Equal(1, calls);
         Assert.Contains("could not tell whether it was saved", ex2.Message, StringComparison.Ordinal);
     }
@@ -581,11 +580,12 @@ public sealed class PostgresPhase1Tests
     public async Task StreamId_LongerThan255_Throws()
     {
         var opened = await OpenAsync(requireTenantId: false);
-        var ok = new string('a', 255);
+        var ok = StreamId.Parse("a:" + new string('a', 253));
+        Assert.Equal(255, ok.ToString().Length);
         await opened.Store.AppendAsync(ok, [ContractEvent.Tick()]);
         Assert.Single(await opened.Store.ReadStreamAsync(ok));
-        var tooLong = new string('b', 256);
-        var ex = await Assert.ThrowsAsync<ArgumentException>(() => opened.Store.AppendAsync(tooLong, [ContractEvent.Tick()]));
+        var tooLong = "b:" + new string('b', 254);
+        var ex = Assert.Throws<FormatException>(() => StreamId.Parse(tooLong));
         Assert.Contains("255", ex.Message, StringComparison.Ordinal);
     }
 
@@ -609,9 +609,9 @@ public sealed class PostgresPhase1Tests
         await ordering.InitializeSchemaAsync();
         await catalog.InitializeSchemaAsync();
         var stream = "ordering:Order:" + Guid.NewGuid().ToString("N");
-        await ordering.AppendAsync(stream, [ContractEvent.Tick()], metadata: new LawnDart.Metadata.EventMetadata { TenantId = "ordering" });
-        Assert.Single(await ordering.ReadStreamAsync(stream));
-        Assert.Empty(await catalog.ReadStreamAsync(stream));
+        await ordering.AppendAsync(StreamId.Parse(stream), [ContractEvent.Tick()], metadata: new LawnDart.Metadata.EventMetadata { TenantId = "ordering" });
+        Assert.Single(await ordering.ReadStreamAsync(StreamId.Parse(stream)));
+        Assert.Empty(await catalog.ReadStreamAsync(StreamId.Parse(stream)));
 
         await using var connection = new NpgsqlConnection(_fixture.AdminConnectionString);
         await connection.OpenAsync();
@@ -710,7 +710,7 @@ public sealed class PostgresPhase1Tests
     public async Task FirstRead_DoesNotSkipPausedConcurrentAppend_AndResumesInOrder()
     {
         var opened = await OpenAsync(requireTenantId: false, grace: TimeSpan.FromSeconds(10));
-        await opened.Store.AppendAsync("seed", [ContractEvent.Tick(), ContractEvent.Tick(), ContractEvent.Tick()]);
+        await opened.Store.AppendAsync(StreamId.Parse("test:seed"), [ContractEvent.Tick(), ContractEvent.Tick(), ContractEvent.Tick()]);
         await using (var connection = await ConnectAsync())
         await using (var setval = new NpgsqlCommand(
             "SELECT setval(format('%I.event_position', @schema), 1050)",
@@ -720,14 +720,14 @@ public sealed class PostgresPhase1Tests
             await setval.ExecuteScalarAsync();
         }
 
-        var tailSeed = await opened.Store.AppendAsync("seed-tail", [ContractEvent.Tick()]);
+        var tailSeed = await opened.Store.AppendAsync(StreamId.Parse("test:seed-tail"), [ContractEvent.Tick()]);
 
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         opened.Hooks.PauseNextAppendBeforeCommit(entered, release);
-        var slow = opened.Store.AppendAsync("slow", [ContractEvent.Tick()]);
+        var slow = opened.Store.AppendAsync(StreamId.Parse("test:slow"), [ContractEvent.Tick()]);
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
-        var fast = await opened.Store.AppendAsync("fast", [ContractEvent.Tick()]);
+        var fast = await opened.Store.AppendAsync(StreamId.Parse("test:fast"), [ContractEvent.Tick()]);
 
         var fresh = new PostgresEventStore(
             _fixture.ConnectionString,
@@ -764,7 +764,7 @@ public sealed class PostgresPhase1Tests
     {
         var opened = await OpenAsync(requireTenantId: false, grace: TimeSpan.FromSeconds(10));
         for (var i = 0; i < 50; i++)
-            await opened.Store.AppendAsync("seed-" + i, [ContractEvent.Tick()]);
+            await opened.Store.AppendAsync(StreamId.Parse("seed:" + i), [ContractEvent.Tick()]);
 
         var committed = new System.Collections.Concurrent.ConcurrentDictionary<long, byte>();
         for (long pos = 1; pos <= 50; pos++)
@@ -773,10 +773,10 @@ public sealed class PostgresPhase1Tests
         using var stop = new CancellationTokenSource();
         var writerTasks = Enumerable.Range(0, 8).Select(worker => Task.Run(async () =>
         {
-            var stream = $"w-{worker}-{Guid.NewGuid():N}";
+            var stream = $"w:{worker}-{Guid.NewGuid():N}";
             while (!stop.IsCancellationRequested)
             {
-                var result = await opened.Store.AppendAsync(stream, [ContractEvent.Tick()], cancellationToken: CancellationToken.None);
+                var result = await opened.Store.AppendAsync(StreamId.Parse(stream), [ContractEvent.Tick()], cancellationToken: CancellationToken.None);
                 committed[result.SequencePositions[0]] = 0;
             }
         })).ToArray();
@@ -825,14 +825,14 @@ public sealed class PostgresPhase1Tests
     public async Task FirstRead_HeldPastGrace_AdvancesWithWarning_AndLogsLateRow()
     {
         var opened = await OpenAsync(requireTenantId: false, grace: TimeSpan.FromMilliseconds(250));
-        await opened.Store.AppendAsync("seed", [ContractEvent.Tick(), ContractEvent.Tick()]);
+        await opened.Store.AppendAsync(StreamId.Parse("test:seed"), [ContractEvent.Tick(), ContractEvent.Tick()]);
 
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         opened.Hooks.PauseNextAppendBeforeCommit(entered, release);
-        var slow = opened.Store.AppendAsync("slow", [ContractEvent.Tick()]);
+        var slow = opened.Store.AppendAsync(StreamId.Parse("test:slow"), [ContractEvent.Tick()]);
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
-        var fast = await opened.Store.AppendAsync("fast", [ContractEvent.Tick()]);
+        var fast = await opened.Store.AppendAsync(StreamId.Parse("test:fast"), [ContractEvent.Tick()]);
 
         var logger = new ListLogger<PostgresEventStore>();
         var fresh = new PostgresEventStore(
@@ -862,7 +862,7 @@ public sealed class PostgresPhase1Tests
     public async Task FirstRead_Subscription_DeliversHiddenCommitWithoutBackupPoll()
     {
         var opened = await OpenAsync(requireTenantId: false);
-        await opened.Store.AppendAsync("seed", [ContractEvent.Tick()]);
+        await opened.Store.AppendAsync(StreamId.Parse("test:seed"), [ContractEvent.Tick()]);
         await using (var connection = await ConnectAsync())
         await using (var setval = new NpgsqlCommand(
             "SELECT setval(format('%I.event_position', @schema), 1050)",
@@ -872,7 +872,7 @@ public sealed class PostgresPhase1Tests
             await setval.ExecuteScalarAsync();
         }
 
-        var tailSeed = await opened.Store.AppendAsync("seed-tail", [ContractEvent.Tick()]);
+        var tailSeed = await opened.Store.AppendAsync(StreamId.Parse("test:seed-tail"), [ContractEvent.Tick()]);
 
         await using var holder = await ConnectAsync();
         await using var transaction = await holder.BeginTransactionAsync();
@@ -882,7 +882,7 @@ public sealed class PostgresPhase1Tests
             $"SELECT nextval('{Quote(opened.SchemaName)}.event_position')", holder, transaction))
             await next.ExecuteScalarAsync();
 
-        var appended = await opened.Store.AppendAsync("fast", [ContractEvent.Tick()]);
+        var appended = await opened.Store.AppendAsync(StreamId.Parse("test:fast"), [ContractEvent.Tick()]);
         var fresh = new PostgresEventStore(
             _fixture.ConnectionString,
             options: new PostgresEventStoreOptions
@@ -978,12 +978,12 @@ public sealed class PostgresPhase1Tests
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         opened.Hooks.PauseNextAppendBeforeCommit(entered, release);
         var held = opened.Store.AppendAsync(
-            [new TaggedEvent(ContractEvent.Tick(), [writeTag])],
-            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(checkTag))));
+            [new TaggedEvent(ContractEvent.Tick(), [Tag.Parse(writeTag)])],
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(Tag.Parse(checkTag)))));
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
         var waiter = opened.Store.AppendAsync(
-            [new TaggedEvent(ContractEvent.Tick(), [checkTag])],
-            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(writeTag))));
+            [new TaggedEvent(ContractEvent.Tick(), [Tag.Parse(checkTag)])],
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(Tag.Parse(writeTag)))));
         await Task.Delay(200);
         Assert.False(waiter.IsCompleted);
         release.TrySetResult();
@@ -1009,7 +1009,7 @@ public sealed class PostgresPhase1Tests
         await using var command = new NpgsqlCommand(
             $"SELECT tenant_id FROM {Quote(schema)}.events WHERE stream_id = @id",
             connection);
-        command.Parameters.AddWithValue("id", streamId);
+        command.Parameters.AddWithValue("id", streamId.ToString());
         return (string)(await command.ExecuteScalarAsync())!;
     }
 
@@ -1051,7 +1051,7 @@ public sealed class PostgresPhase1Tests
         return head;
     }
 
-    private static string Stream(string tenant) => tenant + ":Order:" + Guid.NewGuid().ToString("N");
+    private static StreamId Stream(string tenant) => StreamId.For(tenant, "Order", Guid.NewGuid().ToString("N"));
 
     private static string Quote(string name) => "\"" + name.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
 }

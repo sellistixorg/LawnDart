@@ -20,7 +20,7 @@ public class SequencedEvent
     /// <summary>
     /// Stream ID (for traditional stream-per-aggregate approach).
     /// </summary>
-    public string StreamId { get; init; }
+    public StreamId StreamId { get; init; }
 
     /// <summary>
     /// Version within the stream (for traditional approach).
@@ -35,22 +35,22 @@ public class SequencedEvent
     /// <summary>
     /// Tags associated with the event (for DCB approach).
     /// </summary>
-    public IReadOnlyList<string> Tags { get; init; } = Array.Empty<string>();
+    public IReadOnlyList<Tag> Tags { get; init; } = Array.Empty<Tag>();
 
     public SequencedEvent(
         IEvent @event,
         long sequencePosition,
-        string streamId,
+        StreamId streamId,
         long version,
         EventMetadata metadata,
-        IReadOnlyList<string>? tags = null)
+        IReadOnlyList<Tag>? tags = null)
     {
         Event = @event ?? throw new ArgumentNullException(nameof(@event));
         SequencePosition = sequencePosition;
-        StreamId = streamId ?? throw new ArgumentNullException(nameof(streamId));
+        StreamId = EventLogBuffers.RequireStreamId(streamId);
         Version = version;
         Metadata = metadata ?? throw new ArgumentNullException(nameof(metadata));
-        Tags = tags ?? Array.Empty<string>();
+        Tags = tags is null ? Array.Empty<Tag>() : EventLogBuffers.RequireTags(tags);
     }
 }
 

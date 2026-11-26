@@ -216,10 +216,10 @@ public sealed class DcbSpecBuilder<TEntity, TCommand>
     {
         foreach (var item in _givenEvents)
         {
-            var seedStream = $"bdd-seed:{Guid.NewGuid():N}";
+            var seedStream = StreamId.For("bdd-seed", Guid.NewGuid().ToString("N"));
             await _context.EventStore.AppendAsync(
                     seedStream,
-                    [new TaggedEvent(item.Event, item.Tags)],
+                    [new TaggedEvent(item.Event, item.Tags.Select(Tag.Parse).ToArray())],
                     cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -281,7 +281,7 @@ public sealed class DcbSpecBuilder<TEntity, TCommand>
         }
 
         var taggedEvents = emitted.Events
-            .Select(e => new DcbEmittedEvent(e.Event, e.Tags))
+            .Select(e => new DcbEmittedEvent(e.Event, e.Tags.Select(static t => t.ToString()).ToArray()))
             .ToArray();
 
         var result = new DcbSpecResult<TEntity>(

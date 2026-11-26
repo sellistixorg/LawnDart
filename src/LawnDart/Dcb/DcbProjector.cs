@@ -70,7 +70,7 @@ public abstract class DcbProjector<TState> where TState : IState, new()
             _tagWarnings.Warn(_tagLogger, _tagFormat, tags);
 
         // Create a query with OR logic - match events with ANY of the specified tags
-        var queryItems = tags.Select(tag => QueryItem.ByTags(new[] { tag })).ToArray();
+        var queryItems = tags.Select(tag => QueryItem.ByTags(Tag.Parse(tag))).ToArray();
         var query = Query.FromItems(queryItems);
 
         // Collect then sort — streaming yields per-segment, not globally ordered.

@@ -164,11 +164,11 @@ public sealed partial class PostgresEventStore
             metadata[i] = MetadataJson(envelope.Metadata);
             foreach (var tag in envelope.Tags)
             {
-                if (string.IsNullOrEmpty(tag))
+                if (tag.IsDefault)
                     continue;
                 tagOrds.Add(i + 1);
-                tagValues.Add(tag);
-                streamTags.Add(tag);
+                tagValues.Add(tag.ToString());
+                streamTags.Add(tag.ToString());
             }
         }
 
@@ -279,8 +279,8 @@ public sealed partial class PostgresEventStore
         command.Parameters.Add(new NpgsqlParameter("tenant_id", tenant));
         command.Parameters.Add(new NpgsqlParameter("expected", NpgsqlDbType.Bigint) { Value = (object?)expectedVersion ?? DBNull.Value });
         command.Parameters.Add(new NpgsqlParameter("is_dcb", isDcb));
-        command.Parameters.Add(new NpgsqlParameter("aggregate_type", StreamIdParser.ExtractAggregateType(streamId)));
-        var aggregateId = StreamIdParser.ExtractAggregateId(streamId);
+        command.Parameters.Add(new NpgsqlParameter("aggregate_type", StreamIdText.AggregateType(streamId)));
+        var aggregateId = StreamIdText.AggregateId(streamId);
         command.Parameters.Add(new NpgsqlParameter("aggregate_id", NpgsqlDbType.Uuid) { Value = (object?)aggregateId ?? DBNull.Value });
         command.Parameters.Add(new NpgsqlParameter("event_ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid) { Value = eventIds.ToArray() });
         command.Parameters.Add(new NpgsqlParameter("type_ids", NpgsqlDbType.Array | NpgsqlDbType.Integer) { Value = typeIds });
@@ -487,8 +487,8 @@ public sealed partial class PostgresEventStore
 
         foreach (var tag in envelopes.SelectMany(envelope => envelope.Tags))
         {
-            if (!string.IsNullOrEmpty(tag) && !exclusive.Contains(tag))
-                shared.Add(tag);
+            if (!tag.IsDefault && !exclusive.Contains(tag.ToString()))
+                shared.Add(tag.ToString());
         }
 
         if (exclusive.Count + shared.Count > _options.AdvisoryLockTagThreshold)
@@ -519,7 +519,7 @@ public sealed partial class PostgresEventStore
 
         foreach (var item in condition.FailIfEventsMatch.Items)
         {
-            if (item.Tags is not { Count: > 0 } || item.Tags.All(string.IsNullOrEmpty))
+            if (item.Tags is not { Count: > 0 } || item.Tags.All(static t => t.IsDefault))
                 return true;
         }
 
@@ -535,8 +535,8 @@ public sealed partial class PostgresEventStore
                 continue;
             foreach (var tag in item.Tags)
             {
-                if (!string.IsNullOrEmpty(tag))
-                    tags.Add(tag);
+                if (!tag.IsDefault)
+                    tags.Add(tag.ToString());
             }
         }
 
@@ -621,10 +621,10 @@ public sealed partial class PostgresEventStore
                 withTags.Add(number);
                 foreach (var tag in item.Tags)
                 {
-                    if (string.IsNullOrEmpty(tag))
+                    if (tag.IsDefault)
                         continue;
                     tagsI.Add(number);
-                    tagsV.Add(tag);
+                    tagsV.Add(tag.ToString());
                 }
             }
         }

@@ -24,7 +24,7 @@ public class DcbOrderService
     public async Task<OrderState> GetOrderStateAsync(Guid orderId)
     {
         // Query by tag instead of reading stream
-        var query = Query.FromItems(QueryItem.ByTags($"order:{orderId}"));
+        var query = Query.FromItems(QueryItem.ByTags(Tag.Parse($"order:{orderId}")));
         var events = new List<SequencedEvent>();
         await foreach (var evt in _eventStore.ReadByQueryStreamAsync(query))
             events.Add(evt);
@@ -39,7 +39,7 @@ public class DcbOrderService
         
         // Create append condition
         var condition = AppendCondition.FailIfMatches(
-            Query.FromItems(QueryItem.ByTags($"order:{orderId}")),
+            Query.FromItems(QueryItem.ByTags(Tag.Parse($"order:{orderId}"))),
             after: lastPosition);
 
         var @event = new OrderCreated(Guid.NewGuid(), DateTime.UtcNow, orderId, cartId, customerId);
@@ -50,7 +50,7 @@ public class DcbOrderService
         var operationTag = $"operation:{operationId}";
 
         await _eventStore.AppendAsync(
-            [new TaggedEvent(@event, operationTag, $"order:{orderId}", $"cart:{cartId}", $"customer:{customerId}")],
+            [new TaggedEvent(@event, Tag.Parse(operationTag), Tag.Parse($"order:{orderId}"), Tag.Parse($"cart:{cartId}"), Tag.Parse($"customer:{customerId}"))],
             condition,
             metadata);
     }
@@ -61,7 +61,7 @@ public class DcbOrderService
         
         // Create append condition
         var condition = AppendCondition.FailIfMatches(
-            Query.FromItems(QueryItem.ByTags($"order:{orderId}")),
+            Query.FromItems(QueryItem.ByTags(Tag.Parse($"order:{orderId}"))),
             after: lastPosition);
 
         var @event = new OrderItemAdded(Guid.NewGuid(), DateTime.UtcNow, productId, quantity, unitPrice);
@@ -72,7 +72,7 @@ public class DcbOrderService
         var operationTag = $"operation:{operationId}";
 
         await _eventStore.AppendAsync(
-            [new TaggedEvent(@event, operationTag, $"order:{orderId}", $"product:{productId}")],
+            [new TaggedEvent(@event, Tag.Parse(operationTag), Tag.Parse($"order:{orderId}"), Tag.Parse($"product:{productId}"))],
             condition,
             metadata);
     }
@@ -83,7 +83,7 @@ public class DcbOrderService
         
         // Create append condition
         var condition = AppendCondition.FailIfMatches(
-            Query.FromItems(QueryItem.ByTags($"order:{orderId}")),
+            Query.FromItems(QueryItem.ByTags(Tag.Parse($"order:{orderId}"))),
             after: lastPosition);
 
         var @event = new OrderCompleted(Guid.NewGuid(), DateTime.UtcNow);
@@ -94,14 +94,14 @@ public class DcbOrderService
         var operationTag = $"operation:{operationId}";
 
         await _eventStore.AppendAsync(
-            [new TaggedEvent(@event, operationTag, $"order:{orderId}")],
+            [new TaggedEvent(@event, Tag.Parse(operationTag), Tag.Parse($"order:{orderId}"))],
             condition,
             metadata);
     }
 
     private async Task<long> GetLastSequencePositionAsync(string tag)
     {
-        var query = Query.FromItems(QueryItem.ByTags(tag));
+        var query = Query.FromItems(QueryItem.ByTags(Tag.Parse(tag)));
         var maxSeq = 0L;
         await foreach (var evt in _eventStore.ReadByQueryStreamAsync(query))
         {

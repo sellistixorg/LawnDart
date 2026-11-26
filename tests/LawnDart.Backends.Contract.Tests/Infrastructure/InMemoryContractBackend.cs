@@ -85,7 +85,7 @@ public sealed class InMemoryContractBackend : IFullContractBackend
         string streamId,
         CancellationToken cancellationToken)
     {
-        var metadata = await store.GetStreamAsync(streamId, cancellationToken).ConfigureAwait(false);
+        var metadata = await store.GetStreamAsync(StreamId.Parse(streamId), cancellationToken).ConfigureAwait(false);
         Assert.NotNull(metadata);
         metadata!.Status = StreamStatus.Archived;
     }

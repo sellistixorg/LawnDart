@@ -158,7 +158,7 @@ public class EventTypeCatalogTests
         var recorded = new RecordedEvent(
             "author-registered",
             ReadOnlyMemory<byte>.Empty,
-            "authors-1",
+            StreamId.Parse("test:authors-1"),
             streamVersion: 1,
             sequencePosition: 1,
             commitTimestamp: DateTime.UtcNow,

@@ -75,7 +75,7 @@ public sealed class ProjectionAdminTests
 
         // Seed 5 events before the first run
         for (var i = 1; i <= 5; i++)
-            await eventStore.AppendAsync(streamId,
+            await eventStore.AppendAsync(StreamId.Parse(streamId),
                 [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)],
                 metadata: Meta(), cancellationToken: cts.Token);
 
@@ -91,7 +91,7 @@ public sealed class ProjectionAdminTests
         {
             for (var i = 0; i < 10; i++)
             {
-                await eventStore.AppendAsync(streamId,
+                await eventStore.AppendAsync(StreamId.Parse(streamId),
                     [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)],
                     metadata: Meta(), cancellationToken: cts.Token);
                 await Task.Delay(5, cts.Token);
@@ -138,7 +138,7 @@ public sealed class ProjectionAdminTests
 
         // Append one Counter event (processed by CounterSummary)
         var streamId = $"Counter:{Guid.NewGuid()}";
-        await eventStore.AppendAsync(streamId,
+        await eventStore.AppendAsync(StreamId.Parse(streamId),
             [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 7)],
             metadata: Meta(), cancellationToken: cts.Token);
 
@@ -152,12 +152,12 @@ public sealed class ProjectionAdminTests
 
         // Append more counter events (CounterSummary is stopped, GlobalTagIndex still running)
         for (var i = 0; i < 3; i++)
-            await eventStore.AppendAsync(streamId,
+            await eventStore.AppendAsync(StreamId.Parse(streamId),
                 [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)],
                 metadata: Meta(), cancellationToken: cts.Token);
 
         // Append a global event (GlobalTagIndex should consume it while CounterSummary is down)
-        await eventStore.AppendAsync("Global:tag",
+        await eventStore.AppendAsync(StreamId.Parse("Global:tag"),
             [new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, "test-tag")],
             metadata: Meta(), cancellationToken: cts.Token);
 
@@ -211,10 +211,10 @@ public sealed class ProjectionAdminTests
         // Seed the same events in both stores
         for (var i = 0; i < 3; i++)
         {
-            await esA.AppendAsync(streamId,
+            await esA.AppendAsync(StreamId.Parse(streamId),
                 [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)],
                 metadata: Meta(), cancellationToken: cts.Token);
-            await esB.AppendAsync(streamId,
+            await esB.AppendAsync(StreamId.Parse(streamId),
                 [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)],
                 metadata: Meta(), cancellationToken: cts.Token);
         }
@@ -275,7 +275,7 @@ public sealed class ProjectionAdminTests
 
         // Seed and run to steady state
         for (var i = 0; i < 3; i++)
-            await eventStore.AppendAsync(streamId,
+            await eventStore.AppendAsync(StreamId.Parse(streamId),
                 [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)],
                 metadata: Meta(), cancellationToken: cts.Token);
 
@@ -329,7 +329,7 @@ public sealed class ProjectionAdminTests
         var checkpoints = new InMemoryCheckpointStore(views);
 
         for (var i = 0; i < 2; i++)
-            await eventStore.AppendAsync(streamId,
+            await eventStore.AppendAsync(StreamId.Parse(streamId),
                 [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)],
                 metadata: Meta(), cancellationToken: cts.Token);
 

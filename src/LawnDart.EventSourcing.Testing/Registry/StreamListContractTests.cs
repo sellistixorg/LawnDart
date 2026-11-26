@@ -42,7 +42,7 @@ public abstract class StreamListContractTests : ContractSuite
             for (var i = 0; i < 8; i++)
             {
                 await AppendAsync(store, prefix + "m" + i.ToString("D4"));
-                await AppendAsync(store, prefix + " " + i.ToString("D4"));
+                await AppendAsync(store, prefix + "-" + i.ToString("D4"));
             }
         });
 
@@ -52,7 +52,7 @@ public abstract class StreamListContractTests : ContractSuite
         do
         {
             var page = await store.ListStreamsAsync(filter, token, pageSize: 3);
-            seen.AddRange(page.Streams.Select(stream => stream.StreamId));
+            seen.AddRange(page.Streams.Select(stream => stream.StreamId).Select(static s => s.ToString()).ToList());
             token = page.NextPageToken;
         }
         while (token is not null);
@@ -70,19 +70,19 @@ public abstract class StreamListContractTests : ContractSuite
     public async Task ListStreams_FiltersCombine()
     {
         var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
-        await AppendAsync(store, "acme:Order:1", "red");
-        await AppendAsync(store, "acme:Order:2", "blue");
-        await AppendAsync(store, "acme:Customer:1", "red");
-        await AppendAsync(store, "other:Order:1", "red");
+        await AppendAsync(store, "acme:Order:1", "color:red");
+        await AppendAsync(store, "acme:Order:2", "color:blue");
+        await AppendAsync(store, "acme:Customer:1", "color:red");
+        await AppendAsync(store, "other:Order:1", "color:red");
 
         var page = await store.ListStreamsAsync(new StreamListFilter
         {
             Prefix = "acme:",
-            Tag = "red",
+            Tag = Tag.Parse("color:red"),
             AggregateType = "Order"
         });
 
-        Assert.Equal(["acme:Order:1"], page.Streams.Select(stream => stream.StreamId).ToArray());
+        Assert.Equal([StreamId.Parse("acme:Order:1")], page.Streams.Select(stream => stream.StreamId).ToArray());
         Assert.Null(page.NextPageToken);
     }
 
@@ -95,7 +95,7 @@ public abstract class StreamListContractTests : ContractSuite
         await AppendAsync(store, $"acmeXwest{suffix}:Order:1");
 
         var page = await store.ListStreamsAsync(new StreamListFilter { Prefix = $"acme_west{suffix}:" });
-        Assert.Equal([$"acme_west{suffix}:Order:1"], page.Streams.Select(stream => stream.StreamId).ToArray());
+        Assert.Equal([StreamId.Parse($"acme_west{suffix}:Order:1")], page.Streams.Select(stream => stream.StreamId).ToArray());
     }
 
     [Fact]
@@ -121,11 +121,11 @@ public abstract class StreamListContractTests : ContractSuite
             "7:Order:b",
         };
         foreach (var id in matching)
-            await AppendAsync(store, id, digitTag.Contains(id) ? ["digit"] : []);
+            await AppendAsync(store, id, digitTag.Contains(id) ? ["kind:digit"] : []);
 
-        await AppendAsync(store, "70:Order:1", "digit");
+        await AppendAsync(store, "70:Order:1", "kind:digit");
         await AppendAsync(store, "8:Order:1");
-        await AppendAsync(store, "a:Order:1", "digit");
+        await AppendAsync(store, "a:Order:1", "kind:digit");
 
         var expected = matching.OrderBy(id => id, StringComparer.Ordinal).ToArray();
         foreach (var pageSize in new[] { 1, 3, 100 })
@@ -142,7 +142,7 @@ public abstract class StreamListContractTests : ContractSuite
         var tagged = digitTag.OrderBy(id => id, StringComparer.Ordinal).ToArray();
         foreach (var pageSize in new[] { 1, 2, 50 })
         {
-            var page = await DrainAsync(store, new StreamListFilter { Prefix = "7:", Tag = "digit" }, pageSize);
+            var page = await DrainAsync(store, new StreamListFilter { Prefix = "7:", Tag = Tag.Parse("kind:digit") }, pageSize);
             Assert.Equal(tagged, page.Ids);
             Assert.Null(page.LastToken);
             Assert.DoesNotContain("70:Order:1", page.Ids);
@@ -159,13 +159,13 @@ public abstract class StreamListContractTests : ContractSuite
         {
             var id = "acme:Order:" + i.ToString("D4");
             expected.Add(id);
-            await AppendAsync(store, id, "shared");
+            await AppendAsync(store, id, "kind:shared");
         }
 
-        await AppendAsync(store, "acme:Order:other", "lonely");
+        await AppendAsync(store, "acme:Order:other", "kind:lonely");
         expected.Sort(StringComparer.Ordinal);
 
-        var page = await DrainAsync(store, new StreamListFilter { Tag = "shared" }, pageSize: 7);
+        var page = await DrainAsync(store, new StreamListFilter { Tag = Tag.Parse("kind:shared") }, pageSize: 7);
         Assert.Equal(expected, page.Ids);
         Assert.DoesNotContain("acme:Order:other", page.Ids);
     }
@@ -175,15 +175,15 @@ public abstract class StreamListContractTests : ContractSuite
     {
         var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
         var streamId = "acme:Order:" + Guid.NewGuid().ToString("N");
-        await AppendAsync(store, streamId, "alpha");
-        await AppendAsync(store, streamId, "beta");
+        await AppendAsync(store, streamId, "kind:alpha");
+        await AppendAsync(store, streamId, "kind:beta");
 
-        var alpha = await store.ListStreamsAsync(new StreamListFilter { Tag = "alpha" });
-        var beta = await store.ListStreamsAsync(new StreamListFilter { Tag = "beta" });
-        Assert.Equal(streamId, Assert.Single(alpha.Streams).StreamId);
-        Assert.Equal(streamId, Assert.Single(beta.Streams).StreamId);
-        Assert.Contains("alpha", alpha.Streams[0].Tags);
-        Assert.Contains("beta", beta.Streams[0].Tags);
+        var alpha = await store.ListStreamsAsync(new StreamListFilter { Tag = Tag.Parse("kind:alpha") });
+        var beta = await store.ListStreamsAsync(new StreamListFilter { Tag = Tag.Parse("kind:beta") });
+        Assert.Equal(streamId, Assert.Single(alpha.Streams).StreamId.ToString());
+        Assert.Equal(streamId, Assert.Single(beta.Streams).StreamId.ToString());
+        Assert.Contains("kind:alpha", alpha.Streams[0].Tags.Select(static t => t.ToString()).ToArray());
+        Assert.Contains("kind:beta", beta.Streams[0].Tags.Select(static t => t.ToString()).ToArray());
     }
 
     [Fact]
@@ -195,11 +195,11 @@ public abstract class StreamListContractTests : ContractSuite
         var filter = new StreamListFilter { Prefix = "acme:Order:" };
 
         var first = await store.ListStreamsAsync(filter, pageSize: 1);
-        Assert.Equal("acme:Order:1", Assert.Single(first.Streams).StreamId);
+        Assert.Equal("acme:Order:1", Assert.Single(first.Streams).StreamId.ToString());
         Assert.NotNull(first.NextPageToken);
 
         var second = await store.ListStreamsAsync(filter, first.NextPageToken, pageSize: 1);
-        Assert.Equal("acme:Order:2", Assert.Single(second.Streams).StreamId);
+        Assert.Equal("acme:Order:2", Assert.Single(second.Streams).StreamId.ToString());
         Assert.Null(second.NextPageToken);
     }
 
@@ -207,8 +207,8 @@ public abstract class StreamListContractTests : ContractSuite
     public async Task ListStreams_NoMatches_ReturnsEmptyPage()
     {
         var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
-        await AppendAsync(store, "acme:Order:1", "red");
-        var page = await store.ListStreamsAsync(new StreamListFilter { Tag = "missing" });
+        await AppendAsync(store, "acme:Order:1", "color:red");
+        var page = await store.ListStreamsAsync(new StreamListFilter { Tag = Tag.Parse("tag:missing") });
         Assert.Empty(page.Streams);
         Assert.Null(page.NextPageToken);
     }
@@ -225,12 +225,12 @@ public abstract class StreamListContractTests : ContractSuite
     public async Task ListStreams_TokenFromAnotherFilter_Throws()
     {
         var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
-        await AppendAsync(store, "acme:Order:1", "red");
-        await AppendAsync(store, "acme:Order:2", "red");
-        var issued = await store.ListStreamsAsync(new StreamListFilter { Tag = "red" }, pageSize: 1);
+        await AppendAsync(store, "acme:Order:1", "color:red");
+        await AppendAsync(store, "acme:Order:2", "color:red");
+        var issued = await store.ListStreamsAsync(new StreamListFilter { Tag = Tag.Parse("color:red") }, pageSize: 1);
         Assert.NotNull(issued.NextPageToken);
         await Assert.ThrowsAsync<ArgumentException>(() =>
-            store.ListStreamsAsync(new StreamListFilter { Tag = "blue" }, issued.NextPageToken));
+            store.ListStreamsAsync(new StreamListFilter { Tag = Tag.Parse("color:blue") }, issued.NextPageToken));
     }
 
     [Fact]
@@ -257,25 +257,26 @@ public abstract class StreamListContractTests : ContractSuite
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
         var store = opened.Store;
         var streamId = "acme:Order:" + Guid.NewGuid().ToString("N");
-        await AppendAsync(store, streamId, "red");
+        await AppendAsync(store, streamId, "color:red");
         SkipUnless(opened.MarkStreamArchivedAsync is not null, "This backend cannot mark a stream archived.");
         await opened.MarkStreamArchivedAsync!(streamId, CancellationToken.None);
 
-        Assert.NotNull(await store.GetStreamAsync(streamId));
-        Assert.Equal(StreamStatus.Archived, (await store.GetStreamAsync(streamId))!.Status);
+        Assert.NotNull(await store.GetStreamAsync(StreamId.Parse(streamId)));
+        Assert.Equal(StreamStatus.Archived, (await store.GetStreamAsync(StreamId.Parse(streamId)))!.Status);
         Assert.Empty((await store.ListStreamsAsync(new StreamListFilter { Prefix = "acme:Order:" })).Streams);
         Assert.Empty(await store.EnumerateStreamIdsAsync("acme:Order:"));
         Assert.Equal(0, await store.GetStreamCountAsync("acme:Order:"));
-        Assert.Empty(await store.GetStreamsByTagAsync("red"));
+        Assert.Empty(await store.GetStreamsByTagAsync(Tag.Parse("color:red")));
         Assert.Empty(await store.GetStreamsByAggregateTypeAsync("Order"));
     }
 
     private static async Task AppendAsync(IEventStore store, string streamId, params string[] tags)
     {
-        var tenant = StreamIdParser.ExtractTenantId(streamId);
+        var id = StreamId.Parse(streamId);
+        var tenant = id.TenantId;
         await store.AppendAsync(
-            streamId,
-            [new TaggedEvent(ContractEvent.Tick(), tags)],
+            id,
+            [new TaggedEvent(ContractEvent.Tick(), tags.Select(Tag.Parse).ToArray())],
             metadata: tenant is null ? null : new EventMetadata { TenantId = tenant });
     }
 
@@ -290,7 +291,7 @@ public abstract class StreamListContractTests : ContractSuite
         do
         {
             var page = await store.ListStreamsAsync(filter, token, pageSize);
-            ids.AddRange(page.Streams.Select(stream => stream.StreamId));
+            ids.AddRange(page.Streams.Select(stream => stream.StreamId).Select(static s => s.ToString()).ToList());
             last = page.NextPageToken;
             token = page.NextPageToken;
         }

@@ -22,7 +22,7 @@ public class DcbCartViewProjector
     public async Task<CartView?> GetAsync(Guid cartId, CancellationToken cancellationToken = default)
     {
         // Query by tag instead of reading stream
-        var query = Query.FromItems(QueryItem.ByTags($"cart:{cartId}"));
+        var query = Query.FromItems(QueryItem.ByTags(Tag.Parse($"cart:{cartId}")));
         var events = new List<SequencedEvent>();
         await foreach (var evt in _eventStore.ReadByQueryStreamAsync(query, cancellationToken: cancellationToken))
             events.Add(evt);

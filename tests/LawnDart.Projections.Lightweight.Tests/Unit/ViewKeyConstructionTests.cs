@@ -80,8 +80,9 @@ public class ViewKeyConstructionTests
         string streamId,
         string tenantId)
     {
-        var entityId = LawnDart.EventStore.StreamIdParser
-            .ExtractAggregateIdString(streamId);
+        var entityId = LawnDart.EventStore.StreamId.TryParse(streamId, out var parsed) && !parsed.IsDcb
+            ? parsed.Id
+            : null;
 
         return reg.TenantScope switch
         {

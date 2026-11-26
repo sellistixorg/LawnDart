@@ -195,9 +195,9 @@ public class MapProjectionDebugApiTests : IAsyncLifetime
         var eventStore = Server.Services.GetRequiredService<LawnDart.EventStore.IEventStore>();
         const string streamId = "tenant1:Counter:tl1";
         var meta = new LawnDart.Metadata.EventMetadata { UserId = "test" };
-        await eventStore.AppendAsync(streamId, [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)], metadata: meta);
-        await eventStore.AppendAsync(streamId, [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 2)], metadata: meta);
-        await eventStore.AppendAsync(streamId, [new CounterReset(Guid.NewGuid(), DateTime.UtcNow)], metadata: meta);
+        await eventStore.AppendAsync(StreamId.Parse(streamId), [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)], metadata: meta);
+        await eventStore.AppendAsync(StreamId.Parse(streamId), [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 2)], metadata: meta);
+        await eventStore.AppendAsync(StreamId.Parse(streamId), [new CounterReset(Guid.NewGuid(), DateTime.UtcNow)], metadata: meta);
 
         var response = await Client.SendAsync(
             AuthRequest(HttpMethod.Get, $"{Prefix}/projections/CounterSummary/instances/{Uri.EscapeDataString(streamId)}/timeline?pageSize=50", tenantId: "tenant1"));
@@ -227,11 +227,11 @@ public class MapProjectionDebugApiTests : IAsyncLifetime
         var eventStore = Server.Services.GetRequiredService<LawnDart.EventStore.IEventStore>();
         const string streamId = "tenant1:Counter:seq1";
         var meta = new LawnDart.Metadata.EventMetadata { UserId = "test" };
-        await eventStore.AppendAsync(streamId, [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 10)], metadata: meta);
-        await eventStore.AppendAsync(streamId, [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 5)], metadata: meta);
+        await eventStore.AppendAsync(StreamId.Parse(streamId), [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 10)], metadata: meta);
+        await eventStore.AppendAsync(StreamId.Parse(streamId), [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 5)], metadata: meta);
 
         // Versions are 1-indexed; version 1 = the first event.
-        var seqAfterFirst = (await eventStore.ReadStreamAsync(streamId, toVersion: 1)).First().SequencePosition;
+        var seqAfterFirst = (await eventStore.ReadStreamAsync(StreamId.Parse(streamId), toVersion: 1)).First().SequencePosition;
 
         var response = await Client.SendAsync(
             AuthRequest(HttpMethod.Get,
@@ -249,8 +249,8 @@ public class MapProjectionDebugApiTests : IAsyncLifetime
         var eventStore = Server.Services.GetRequiredService<LawnDart.EventStore.IEventStore>();
         const string streamId = "tenant1:Counter:idx1";
         var meta = new LawnDart.Metadata.EventMetadata { UserId = "test" };
-        await eventStore.AppendAsync(streamId, [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 3)], metadata: meta);
-        await eventStore.AppendAsync(streamId, [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 7)], metadata: meta);
+        await eventStore.AppendAsync(StreamId.Parse(streamId), [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 3)], metadata: meta);
+        await eventStore.AppendAsync(StreamId.Parse(streamId), [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 7)], metadata: meta);
 
         var response = await Client.SendAsync(
             AuthRequest(HttpMethod.Get,
@@ -303,8 +303,8 @@ public class MapProjectionDebugApiTests : IAsyncLifetime
         var eventStore = Server.Services.GetRequiredService<LawnDart.EventStore.IEventStore>();
         const string streamId = "tenant1:Counter:step1";
         var meta = new LawnDart.Metadata.EventMetadata { UserId = "test" };
-        await eventStore.AppendAsync(streamId, [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 5)], metadata: meta);
-        await eventStore.AppendAsync(streamId, [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 3)], metadata: meta);
+        await eventStore.AppendAsync(StreamId.Parse(streamId), [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 5)], metadata: meta);
+        await eventStore.AppendAsync(StreamId.Parse(streamId), [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 3)], metadata: meta);
 
         var request = AuthRequest(
             HttpMethod.Post,
@@ -328,8 +328,8 @@ public class MapProjectionDebugApiTests : IAsyncLifetime
     {
         var eventStore = Server.Services.GetRequiredService<LawnDart.EventStore.IEventStore>();
         var meta = new LawnDart.Metadata.EventMetadata { UserId = "test" };
-        await eventStore.AppendAsync("tag-source-1", [new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, "alpha")], metadata: meta);
-        await eventStore.AppendAsync("tag-source-2", [new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, "beta")], metadata: meta);
+        await eventStore.AppendAsync(StreamId.Parse("test:tag-source-1"), [new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, "alpha")], metadata: meta);
+        await eventStore.AppendAsync(StreamId.Parse("test:tag-source-2"), [new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, "beta")], metadata: meta);
 
         var request = AuthRequest(
             HttpMethod.Post,
@@ -359,8 +359,8 @@ public class MapProjectionDebugApiTests : IAsyncLifetime
         var eventStore = Server.Services.GetRequiredService<LawnDart.EventStore.IEventStore>();
         const string streamId = "tenant1:Counter:back1";
         var meta = new LawnDart.Metadata.EventMetadata { UserId = "test" };
-        await eventStore.AppendAsync(streamId, [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 10)], metadata: meta);
-        await eventStore.AppendAsync(streamId, [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 20)], metadata: meta);
+        await eventStore.AppendAsync(StreamId.Parse(streamId), [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 10)], metadata: meta);
+        await eventStore.AppendAsync(StreamId.Parse(streamId), [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 20)], metadata: meta);
 
         var request = AuthRequest(
             HttpMethod.Post,
@@ -381,7 +381,7 @@ public class MapProjectionDebugApiTests : IAsyncLifetime
         var eventStore = Server.Services.GetRequiredService<LawnDart.EventStore.IEventStore>();
         const string streamId = "tenant1:Counter:boundary";
         var meta = new LawnDart.Metadata.EventMetadata { UserId = "test" };
-        await eventStore.AppendAsync(streamId, [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 5)], metadata: meta);
+        await eventStore.AppendAsync(StreamId.Parse(streamId), [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 5)], metadata: meta);
 
         // Step back from index 0 → targetIndex = -1 → empty state.
         var request = AuthRequest(

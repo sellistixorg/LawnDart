@@ -232,7 +232,7 @@ public sealed class AggregateSpecBuilder<TAggregate>
             throw new BddSpecAssertionException("When(...) must be configured before RunAsync().");
         }
 
-        var streamId = $"{typeof(TAggregate).Name}:{_aggregateId}";
+        var streamId = StreamId.For(typeof(TAggregate).Name, _aggregateId.ToString());
         if (_givenEvents.Count > 0)
         {
             await _context.EventStore.AppendAsync(streamId, _givenEvents, cancellationToken: cancellationToken)
@@ -271,7 +271,7 @@ public sealed class AggregateSpecBuilder<TAggregate>
                         fromSequencePosition: baselineSeq + 1,
                         cancellationToken: cancellationToken).ConfigureAwait(false);
                     return (IReadOnlySet<string>)allNew.Events
-                        .Select(e => e.StreamId)
+                        .Select(e => e.StreamId.ToString())
                         .ToHashSet(StringComparer.Ordinal);
                 },
                 fallback: (IReadOnlySet<string>)new HashSet<string>(),
@@ -312,7 +312,7 @@ public sealed class AggregateSpecBuilder<TAggregate>
         }
 
         var result = new AggregateSpecResult<TAggregate>(
-            streamId,
+            streamId.ToString(),
             finalAggregate,
             emitted.Select(e => e.Event).ToArray(),
             emitted.ToArray(),

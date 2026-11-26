@@ -23,7 +23,7 @@ public class UnresolvedTypeCatchUpTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
 
         await store.AppendAsync(
-            "acme:ListingAggregate:listing-a",
+            StreamId.Parse("acme:ListingAggregate:listing-a"),
             [new CatalogItemAdded(Guid.NewGuid(), DateTime.UtcNow, Guid.NewGuid(), Guid.NewGuid())],
             metadata: ProjectionRunnerTestHarness.MakeMeta(),
             cancellationToken: cts.Token);
@@ -71,7 +71,7 @@ public class UnresolvedTypeCatchUpTests
         }
 
         public Task<AppendResult> AppendAsync(
-            string streamId,
+            StreamId streamId,
             IEnumerable<TaggedEvent> events,
             long? expectedVersion = null,
             EventMetadata? metadata = null,
@@ -97,7 +97,7 @@ public class UnresolvedTypeCatchUpTests
             => Task.FromResult(0L);
 
         public Task<IReadOnlyList<SequencedEvent>> ReadStreamAsync(
-            string streamId,
+            StreamId streamId,
             long fromVersion = 0,
             long? toVersion = null,
             DateTime? toTimestamp = null,
@@ -105,14 +105,14 @@ public class UnresolvedTypeCatchUpTests
             => _inner.ReadStreamAsync(streamId, fromVersion, toVersion, toTimestamp, cancellationToken);
 
         public IAsyncEnumerable<SequencedEvent> ReadStreamEnumerableAsync(
-            string streamId,
+            StreamId streamId,
             long fromVersion = 0,
             long? toVersion = null,
             DateTime? toTimestamp = null,
             CancellationToken cancellationToken = default)
             => _inner.ReadStreamEnumerableAsync(streamId, fromVersion, toVersion, toTimestamp, cancellationToken);
 
-        public Task<StreamMetadata?> GetStreamAsync(string streamId, CancellationToken cancellationToken = default)
+        public Task<StreamMetadata?> GetStreamAsync(StreamId streamId, CancellationToken cancellationToken = default)
             => _inner.GetStreamAsync(streamId, cancellationToken);
 
         public Task<IReadOnlyList<StreamMetadata>> GetStreamsByAggregateTypeAsync(
@@ -121,11 +121,11 @@ public class UnresolvedTypeCatchUpTests
             => _inner.GetStreamsByAggregateTypeAsync(aggregateType, cancellationToken);
 
         public Task<IReadOnlyList<StreamMetadata>> GetStreamsByTagAsync(
-            string tag,
+            Tag tag,
             CancellationToken cancellationToken = default)
             => _inner.GetStreamsByTagAsync(tag, cancellationToken);
 
-        public Task<IReadOnlyList<string>> EnumerateStreamIdsAsync(
+        public Task<IReadOnlyList<StreamId>> EnumerateStreamIdsAsync(
             string? prefix = null,
             CancellationToken cancellationToken = default)
             => _inner.EnumerateStreamIdsAsync(prefix, cancellationToken);

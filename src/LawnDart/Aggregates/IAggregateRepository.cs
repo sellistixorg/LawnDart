@@ -1,3 +1,4 @@
+using LawnDart.EventStore;
 using LawnDart.Metadata;
 
 namespace LawnDart.Aggregates;
@@ -24,7 +25,8 @@ public interface IAggregateRepository
     /// <param name="streamId">The durable stream identifier.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The loaded aggregate, or null if not found.</returns>
-    Task<T?> GetAsync<T>(string streamId, CancellationToken cancellationToken = default) where T : AggregateRoot, new();
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("ApiDesign", "RS0026:Do not add multiple public overloads with optional parameters", Justification = "One overload takes a Guid and the other a StreamId, so a call always picks one.")]
+    Task<T?> GetAsync<T>(StreamId streamId, CancellationToken cancellationToken = default) where T : AggregateRoot, new();
 
     /// <summary>
     /// Creates a new aggregate instance with the StreamId automatically set.
@@ -39,13 +41,14 @@ public interface IAggregateRepository
     /// <summary>
     /// Creates a new aggregate instance with <paramref name="streamId"/> set.
     /// Does not check whether the stream already exists — use
-    /// <see cref="GetOrCreateAsync{T}(string, CancellationToken)"/> for that.
+    /// <see cref="GetOrCreateAsync{T}(StreamId, CancellationToken)"/> for that.
     /// </summary>
     /// <typeparam name="T">The aggregate type.</typeparam>
     /// <param name="streamId">The durable stream identifier.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A new aggregate instance with StreamId set and CommittedVersion -1.</returns>
-    Task<T> CreateAsync<T>(string streamId, CancellationToken cancellationToken = default) where T : AggregateRoot, new();
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("ApiDesign", "RS0026:Do not add multiple public overloads with optional parameters", Justification = "One overload takes a Guid and the other a StreamId, so a call always picks one.")]
+    Task<T> CreateAsync<T>(StreamId streamId, CancellationToken cancellationToken = default) where T : AggregateRoot, new();
 
     /// <summary>
     /// Gets an existing aggregate or creates a new one if it doesn't exist.
@@ -68,7 +71,8 @@ public interface IAggregateRepository
     /// <param name="streamId">The durable stream identifier.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The existing aggregate (with state loaded) or a new aggregate instance.</returns>
-    Task<T> GetOrCreateAsync<T>(string streamId, CancellationToken cancellationToken = default) where T : AggregateRoot, new();
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("ApiDesign", "RS0026:Do not add multiple public overloads with optional parameters", Justification = "One overload takes a Guid and the other a StreamId, so a call always picks one.")]
+    Task<T> GetOrCreateAsync<T>(StreamId streamId, CancellationToken cancellationToken = default) where T : AggregateRoot, new();
 
     /// <summary>
     /// Persists an aggregate's pending events to the event store.

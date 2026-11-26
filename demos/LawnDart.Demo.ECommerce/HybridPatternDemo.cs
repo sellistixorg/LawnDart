@@ -129,7 +129,7 @@ public class HybridPatternDemo
                     $"Product stream was '{product.StreamId}'. Expected '{expectedStream}'.");
             }
 
-            var written = await _eventStore.ReadStreamAsync(product.StreamId);
+            var written = await _eventStore.ReadStreamAsync(StreamId.Parse(product.StreamId));
             if (written.Count == 0)
                 throw new InvalidOperationException($"No events on {product.StreamId}.");
 
@@ -189,7 +189,7 @@ public class HybridPatternDemo
             };
 
             await _dcbRepository.AppendWithContextAsync(
-                [new TaggedEvent(inventoryEvent, tags)]);
+                [new TaggedEvent(inventoryEvent, tags.Select(Tag.Parse).ToArray())]);
 
             Console.WriteLine($"[ok] Allocated Inventory (DCB):");
             Console.WriteLine($"   Product: {productId}");
@@ -253,7 +253,7 @@ public class HybridPatternDemo
 
         // One append. A later write is a separate append.
         // An AppendCondition would fence a concurrent transfer of the same stock.
-        var positions = await _dcbRepository.AppendWithContextAsync(events.Select(e => new TaggedEvent(e, transferTags)).ToList());
+        var positions = await _dcbRepository.AppendWithContextAsync(events.Select(e => new TaggedEvent(e, transferTags.Select(Tag.Parse).ToArray())).ToList());
         if (positions.Count != 2)
         {
             throw new InvalidOperationException(
@@ -261,10 +261,10 @@ public class HybridPatternDemo
         }
 
         var transferred = (await _eventStore.ReadByQueryAsync(
-            Query.FromItems(QueryItem.ByTags($"transfer:{transferId}")))).Events;
+            Query.FromItems(QueryItem.ByTags(Tag.Parse($"transfer:{transferId}"))))).Events;
         var transferStreams = transferred
             .Select(e => e.StreamId)
-            .Distinct(StringComparer.Ordinal)
+            .Distinct()
             .ToList();
         if (transferred.Count != 2 || transferStreams.Count != 1)
         {
@@ -317,7 +317,7 @@ public class HybridPatternDemo
         };
 
         await _dcbRepository.AppendWithContextAsync(
-            [new TaggedEvent(orderCreatedEvent, orderTags)]);
+            [new TaggedEvent(orderCreatedEvent, orderTags.Select(Tag.Parse).ToArray())]);
 
         Console.WriteLine($"[ok] Order Created (DCB):");
         Console.WriteLine($"   Order ID: {orderId}");
@@ -328,7 +328,7 @@ public class HybridPatternDemo
 
         // Step 2: Reserve Inventory from Warehouse
         var workflowLastPos = await _dcbRepository.GetLastSequencePositionAsync(
-            Query.FromItems(QueryItem.ByTags($"order:{orderId}")));
+            Query.FromItems(QueryItem.ByTags(Tag.Parse($"order:{orderId}"))));
 
         var reservationEvent = new InventoryReservedEvent
         {
@@ -350,11 +350,11 @@ public class HybridPatternDemo
         };
 
         var reservationCondition = AppendCondition.FailIfMatches(
-            Query.FromItems(QueryItem.ByTags($"order:{orderId}")),
+            Query.FromItems(QueryItem.ByTags(Tag.Parse($"order:{orderId}"))),
             after: workflowLastPos);
 
         await _dcbRepository.AppendWithContextAsync(
-            [new TaggedEvent(reservationEvent, reservationTags)],
+            [new TaggedEvent(reservationEvent, reservationTags.Select(Tag.Parse).ToArray())],
             reservationCondition);
 
         Console.WriteLine($"[ok] Inventory Reserved:");
@@ -365,7 +365,7 @@ public class HybridPatternDemo
 
         // Step 3: Process Payment
         workflowLastPos = await _dcbRepository.GetLastSequencePositionAsync(
-            Query.FromItems(QueryItem.ByTags($"order:{orderId}")));
+            Query.FromItems(QueryItem.ByTags(Tag.Parse($"order:{orderId}"))));
 
         var paymentId = Guid.NewGuid();
         var paymentEvent = new PaymentProcessedEvent
@@ -388,9 +388,9 @@ public class HybridPatternDemo
         };
 
         await _dcbRepository.AppendWithContextAsync(
-            [new TaggedEvent(paymentEvent, paymentTags)],
+            [new TaggedEvent(paymentEvent, paymentTags.Select(Tag.Parse).ToArray())],
             AppendCondition.FailIfMatches(
-                Query.FromItems(QueryItem.ByTags($"order:{orderId}")),
+                Query.FromItems(QueryItem.ByTags(Tag.Parse($"order:{orderId}"))),
                 after: workflowLastPos));
 
         Console.WriteLine($"[ok] Payment Processed:");
@@ -400,7 +400,7 @@ public class HybridPatternDemo
 
         // Step 4: Ship Order
         workflowLastPos = await _dcbRepository.GetLastSequencePositionAsync(
-            Query.FromItems(QueryItem.ByTags($"order:{orderId}")));
+            Query.FromItems(QueryItem.ByTags(Tag.Parse($"order:{orderId}"))));
 
         var shipmentId = Guid.NewGuid();
         var shippedEvent = new OrderShippedEvent
@@ -423,9 +423,9 @@ public class HybridPatternDemo
         };
 
         await _dcbRepository.AppendWithContextAsync(
-            [new TaggedEvent(shippedEvent, shipmentTags)],
+            [new TaggedEvent(shippedEvent, shipmentTags.Select(Tag.Parse).ToArray())],
             AppendCondition.FailIfMatches(
-                Query.FromItems(QueryItem.ByTags($"order:{orderId}")),
+                Query.FromItems(QueryItem.ByTags(Tag.Parse($"order:{orderId}"))),
                 after: workflowLastPos));
 
         Console.WriteLine($"[ok] Order Shipped:");
@@ -470,12 +470,12 @@ public class HybridPatternDemo
 
         Console.WriteLine($"Query: 'Get all inventory for product:{productId}'");
         var inventoryEventsRaw = new List<SequencedEvent>();
-        await foreach (var evt in _eventStore.ReadByQueryStreamAsync(Query.FromItems(QueryItem.ByTags($"product:{productId}"))))
+        await foreach (var evt in _eventStore.ReadByQueryStreamAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse($"product:{productId}")))))
             inventoryEventsRaw.Add(evt);
         var inventoryEvents = inventoryEventsRaw;
         var warehouseCount = inventoryEvents
             .SelectMany(e => e.Tags)
-            .Where(t => t.StartsWith("warehouse:"))
+            .Where(t => t.ToString().StartsWith("warehouse:"))
             .Distinct()
             .Count();
         Console.WriteLine($"  -> Query by tag: 'product:{productId}'");
@@ -484,12 +484,12 @@ public class HybridPatternDemo
 
         Console.WriteLine($"Query: 'Get all inventory in warehouse:WH-WEST'");
         var warehouseEventsRaw = new List<SequencedEvent>();
-        await foreach (var evt in _eventStore.ReadByQueryStreamAsync(Query.FromItems(QueryItem.ByTags($"warehouse:WH-WEST"))))
+        await foreach (var evt in _eventStore.ReadByQueryStreamAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse($"warehouse:WH-WEST")))))
             warehouseEventsRaw.Add(evt);
         var warehouseEvents = warehouseEventsRaw;
         var productCount = warehouseEvents
             .SelectMany(e => e.Tags)
-            .Where(t => t.StartsWith("product:"))
+            .Where(t => t.ToString().StartsWith("product:"))
             .Distinct()
             .Count();
         Console.WriteLine($"  -> Query by tag: 'warehouse:WH-WEST'");
@@ -498,7 +498,7 @@ public class HybridPatternDemo
 
         Console.WriteLine($"Query: 'Get all order fulfillment workflows'");
         var workflowEventsRaw = new List<SequencedEvent>();
-        await foreach (var evt in _eventStore.ReadByQueryStreamAsync(Query.FromItems(QueryItem.ByTags($"workflow:order-fulfillment"))))
+        await foreach (var evt in _eventStore.ReadByQueryStreamAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse($"workflow:order-fulfillment")))))
             workflowEventsRaw.Add(evt);
         var workflowEvents = workflowEventsRaw;
         Console.WriteLine($"  -> Query by tag: 'workflow:order-fulfillment'");

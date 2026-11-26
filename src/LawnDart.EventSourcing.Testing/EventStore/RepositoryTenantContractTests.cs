@@ -40,7 +40,7 @@ public abstract class RepositoryTenantContractTests : ContractSuite
 
         await repository.SaveAsync(aggregate, new CommandMetadata { TenantId = "default" });
 
-        Assert.Single(await store.ReadStreamAsync(aggregate.StreamId));
+        Assert.Single(await store.ReadStreamAsync(StreamId.Parse(aggregate.StreamId)));
     }
 
     [Fact]
@@ -50,8 +50,8 @@ public abstract class RepositoryTenantContractTests : ContractSuite
         var repository = DcbRepo(store, "default", validateNames: true);
 
         var ex = await Assert.ThrowsAsync<ArgumentException>(() => repository.AppendWithContextAsync(
-            [new TaggedEvent(ContractEvent.Tick(), ["order:absent"])],
-            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags("order:absent"))),
+            [new TaggedEvent(ContractEvent.Tick(), [Tag.Parse("order:absent")])],
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(Tag.Parse("order:absent")))),
             new CommandMetadata { TenantId = "default" }));
         Assert.Contains("reserved", ex.Message);
     }
@@ -63,13 +63,13 @@ public abstract class RepositoryTenantContractTests : ContractSuite
         var repository = DcbRepo(store, "default", validateNames: false);
 
         var positions = await repository.AppendWithContextAsync(
-            [new TaggedEvent(ContractEvent.Tick(), ["order:kept"])],
-            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags("order:kept"))),
+            [new TaggedEvent(ContractEvent.Tick(), [Tag.Parse("order:kept")])],
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(Tag.Parse("order:kept")))),
             new CommandMetadata { TenantId = "default" });
 
         var read = await store.ReadByQueryAsync(Query.All(), fromSequencePosition: positions[0], limit: 1);
         var evt = Assert.Single(read.Events);
-        Assert.StartsWith("default:dcb:", evt.StreamId);
+        Assert.StartsWith("default:dcb:", evt.StreamId.ToString());
     }
 
     [Fact]
@@ -79,8 +79,8 @@ public abstract class RepositoryTenantContractTests : ContractSuite
         var repository = DcbRepo(store, tenantId: null, validateNames: true);
 
         var ex = await Assert.ThrowsAsync<ArgumentException>(() => repository.AppendWithContextAsync(
-            [new TaggedEvent(ContractEvent.Tick(), ["order:absent"])],
-            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags("order:absent")))));
+            [new TaggedEvent(ContractEvent.Tick(), [Tag.Parse("order:absent")])],
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(Tag.Parse("order:absent"))))));
         Assert.Contains("TenantId is required in event metadata", ex.Message);
     }
 
@@ -108,7 +108,7 @@ public abstract class RepositoryTenantContractTests : ContractSuite
 
     private static async Task<ProbeAggregate> PendingAsync(AggregateRepository repository, string tenantId)
     {
-        var aggregate = await repository.CreateAsync<ProbeAggregate>($"{tenantId}:ProbeAggregate:{Guid.NewGuid()}");
+        var aggregate = await repository.CreateAsync<ProbeAggregate>(StreamId.Parse($"{tenantId}:ProbeAggregate:{Guid.NewGuid()}"));
         aggregate.Raise(ContractEvent.Tick());
         return aggregate;
     }

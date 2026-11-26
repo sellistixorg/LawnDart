@@ -160,7 +160,7 @@ public sealed class ProjectionSharedSubscribeTests
         {
             if (batch.Count == 0 || stream is null)
                 return;
-            await store.AppendAsync(stream, batch, metadata: meta);
+            await store.AppendAsync(StreamId.Parse(stream), batch, metadata: meta);
             batch.Clear();
         }
 

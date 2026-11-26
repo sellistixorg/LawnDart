@@ -70,9 +70,9 @@ public class ProjectionTimelineServiceTests
         const string streamId = "tenant1:Counter:abc";
         const string otherStream = "tenant1:Counter:xyz";
 
-        await store.AppendAsync(streamId, [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)], metadata: MakeMeta(), cancellationToken: cts.Token);
-        await store.AppendAsync(otherStream, [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 99)], metadata: MakeMeta(), cancellationToken: cts.Token);
-        await store.AppendAsync(streamId, [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 2)], metadata: MakeMeta(), cancellationToken: cts.Token);
+        await store.AppendAsync(StreamId.Parse(streamId), [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)], metadata: MakeMeta(), cancellationToken: cts.Token);
+        await store.AppendAsync(StreamId.Parse(otherStream), [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 99)], metadata: MakeMeta(), cancellationToken: cts.Token);
+        await store.AppendAsync(StreamId.Parse(streamId), [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 2)], metadata: MakeMeta(), cancellationToken: cts.Token);
 
         var svc    = BuildService(store, SingleStreamRegs());
         var result = await svc.GetTimelinePageAsync("CounterSummary", streamId, fromIndex: 0, pageSize: 50, cts.Token);
@@ -96,9 +96,9 @@ public class ProjectionTimelineServiceTests
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
-        await store.AppendAsync("s1", [new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, "a")], metadata: MakeMeta(), cancellationToken: cts.Token);
-        await store.AppendAsync("s2", [new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, "b")], metadata: MakeMeta(), cancellationToken: cts.Token);
-        await store.AppendAsync("s3", [new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, "c")], metadata: MakeMeta(), cancellationToken: cts.Token);
+        await store.AppendAsync(StreamId.Parse("test:s1"), [new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, "a")], metadata: MakeMeta(), cancellationToken: cts.Token);
+        await store.AppendAsync(StreamId.Parse("test:s2"), [new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, "b")], metadata: MakeMeta(), cancellationToken: cts.Token);
+        await store.AppendAsync(StreamId.Parse("test:s3"), [new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, "c")], metadata: MakeMeta(), cancellationToken: cts.Token);
 
         var svc    = BuildService(store, GlobalRegs());
         var result = await svc.GetTimelinePageAsync("GlobalTagIndex", "global", fromIndex: 0, pageSize: 50, cts.Token);
@@ -116,7 +116,7 @@ public class ProjectionTimelineServiceTests
 
         const string streamId = "tenant1:Counter:paged";
         for (int i = 0; i < 10; i++)
-            await store.AppendAsync(streamId, [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, i + 1)], metadata: MakeMeta(), cancellationToken: cts.Token);
+            await store.AppendAsync(StreamId.Parse(streamId), [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, i + 1)], metadata: MakeMeta(), cancellationToken: cts.Token);
 
         var svc  = BuildService(store, SingleStreamRegs());
 
@@ -137,7 +137,7 @@ public class ProjectionTimelineServiceTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
         const string streamId = "tenant1:Counter:small";
-        await store.AppendAsync(streamId, [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)], metadata: MakeMeta(), cancellationToken: cts.Token);
+        await store.AppendAsync(StreamId.Parse(streamId), [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)], metadata: MakeMeta(), cancellationToken: cts.Token);
 
         var svc    = BuildService(store, SingleStreamRegs());
         var result = await svc.GetTimelinePageAsync("CounterSummary", streamId, fromIndex: 99, pageSize: 10, cts.Token);
@@ -155,7 +155,7 @@ public class ProjectionTimelineServiceTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
         const string streamId = "tenant1:Counter:empty";
-        await store.AppendAsync(streamId, [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 5)], metadata: MakeMeta(), cancellationToken: cts.Token);
+        await store.AppendAsync(StreamId.Parse(streamId), [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 5)], metadata: MakeMeta(), cancellationToken: cts.Token);
 
         var svc    = BuildService(store, SingleStreamRegs());
         var result = await svc.BuildAtAppliedIndexAsync("CounterSummary", streamId, appliedCount: 0, cts.Token);
@@ -172,7 +172,7 @@ public class ProjectionTimelineServiceTests
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
-        await store.AppendAsync("global-tags", [new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, "featured")], metadata: MakeMeta(), cancellationToken: cts.Token);
+        await store.AppendAsync(StreamId.Parse("test:global-tags"), [new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, "featured")], metadata: MakeMeta(), cancellationToken: cts.Token);
 
         var svc = BuildService(store, ListRegs());
         var result = await svc.BuildAtAppliedIndexAsync("GlobalTagList", "global", appliedCount: 0, cts.Token);
@@ -190,7 +190,7 @@ public class ProjectionTimelineServiceTests
         const string streamId = "tenant1:Counter:counted";
 
         for (int i = 0; i < 5; i++)
-            await store.AppendAsync(streamId, [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)], metadata: MakeMeta(), cancellationToken: cts.Token);
+            await store.AppendAsync(StreamId.Parse(streamId), [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)], metadata: MakeMeta(), cancellationToken: cts.Token);
 
         var svc    = BuildService(store, SingleStreamRegs());
         var result = await svc.BuildAtAppliedIndexAsync("CounterSummary", streamId, appliedCount: 3, cts.Token);
@@ -207,7 +207,7 @@ public class ProjectionTimelineServiceTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
         const string streamId = "tenant1:Counter:full";
-        await store.AppendAsync(streamId,
+        await store.AppendAsync(StreamId.Parse(streamId),
             [
                 new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 10),
                 new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 5)
@@ -231,8 +231,8 @@ public class ProjectionTimelineServiceTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
         const string streamId = "tenant1:Counter:step";
-        await store.AppendAsync(streamId, [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 7)], metadata: MakeMeta(), cancellationToken: cts.Token);
-        await store.AppendAsync(streamId, [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 3)], metadata: MakeMeta(), cancellationToken: cts.Token);
+        await store.AppendAsync(StreamId.Parse(streamId), [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 7)], metadata: MakeMeta(), cancellationToken: cts.Token);
+        await store.AppendAsync(StreamId.Parse(streamId), [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 3)], metadata: MakeMeta(), cancellationToken: cts.Token);
 
         var svc = BuildService(store, SingleStreamRegs());
 
@@ -263,9 +263,9 @@ public class ProjectionTimelineServiceTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
         const string streamId = "tenant1:Counter:mid";
-        await store.AppendAsync(streamId, [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)], metadata: MakeMeta(), cancellationToken: cts.Token);
-        await store.AppendAsync(streamId, [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 2)], metadata: MakeMeta(), cancellationToken: cts.Token);
-        await store.AppendAsync(streamId, [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 4)], metadata: MakeMeta(), cancellationToken: cts.Token);
+        await store.AppendAsync(StreamId.Parse(streamId), [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)], metadata: MakeMeta(), cancellationToken: cts.Token);
+        await store.AppendAsync(StreamId.Parse(streamId), [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 2)], metadata: MakeMeta(), cancellationToken: cts.Token);
+        await store.AppendAsync(StreamId.Parse(streamId), [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 4)], metadata: MakeMeta(), cancellationToken: cts.Token);
 
         var svc = BuildService(store, SingleStreamRegs());
 
@@ -288,7 +288,7 @@ public class ProjectionTimelineServiceTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
         const string streamId = "tenant1:Counter:neg";
-        await store.AppendAsync(streamId, [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 5)], metadata: MakeMeta(), cancellationToken: cts.Token);
+        await store.AppendAsync(StreamId.Parse(streamId), [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 5)], metadata: MakeMeta(), cancellationToken: cts.Token);
 
         var svc = BuildService(store, SingleStreamRegs());
 

@@ -125,7 +125,7 @@ public class MessageTransportOutboxPublisherTests
                 Payload = "{}"u8.ToArray(),
                 Metadata = "{}",
                 CreatedAt = DateTime.UtcNow,
-                StreamId = "s",
+                StreamId = "test:s",
                 SequencePosition = 1,
             }));
 

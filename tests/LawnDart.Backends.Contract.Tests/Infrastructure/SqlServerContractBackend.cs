@@ -129,7 +129,7 @@ public sealed class SqlServerContractBackend : IFullContractBackend
         await using var command = new SqlCommand(
             $"UPDATE {store.QualifiedRegistryTable} SET Status = N'Archived' WHERE StreamId = @StreamId",
             connection);
-        command.Parameters.AddWithValue("@StreamId", streamId);
+        command.Parameters.AddWithValue("@StreamId", streamId.ToString());
         Assert.Equal(1, await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false));
     }
 

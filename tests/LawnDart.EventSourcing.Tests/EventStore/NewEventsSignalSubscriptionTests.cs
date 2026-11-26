@@ -20,7 +20,7 @@ public class NewEventsSignalSubscriptionTests
         await WaitForWaitersAsync(store.NewEvents, 1);
 
         var started = Stopwatch.StartNew();
-        await store.AppendAsync("s1", [Evt()]);
+        await store.AppendAsync(StreamId.Parse("test:s1"), [Evt()]);
         var received = await read;
 
         Assert.True(started.Elapsed < TimeSpan.FromSeconds(2), $"woke after {started.Elapsed}");
@@ -33,28 +33,28 @@ public class NewEventsSignalSubscriptionTests
     public async Task FailedAppend_DoesNotSignal()
     {
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
-        await store.AppendAsync("s1", [Evt()]);
+        await store.AppendAsync(StreamId.Parse("test:s1"), [Evt()]);
         Assert.Equal(1, store.NewEvents.Generation);
         Assert.Equal(1, store.NewEvents.Position);
 
         await Assert.ThrowsAsync<ConcurrencyException>(() =>
-            store.AppendAsync("s1", [Evt()], expectedVersion: 0));
+            store.AppendAsync(StreamId.Parse("test:s1"), [Evt()], expectedVersion: 0));
 
         Assert.Equal(1, store.NewEvents.Generation);
         Assert.Equal(1, store.NewEvents.Position);
-        Assert.Single(await store.ReadStreamAsync("s1"));
+        Assert.Single(await store.ReadStreamAsync(StreamId.Parse("test:s1")));
     }
 
     [Fact]
     public async Task CommittedSave_SignalsOnce_WithTheNewestPosition()
     {
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
-        await store.AppendAsync("s1", [Evt(), Evt(), Evt()]);
+        await store.AppendAsync(StreamId.Parse("test:s1"), [Evt(), Evt(), Evt()]);
 
         Assert.Equal(1, store.NewEvents.Generation);
         Assert.Equal(3, store.NewEvents.Position);
 
-        await store.AppendAsync("s2", [Evt()]);
+        await store.AppendAsync(StreamId.Parse("test:s2"), [Evt()]);
         Assert.Equal(2, store.NewEvents.Generation);
         Assert.Equal(4, store.NewEvents.Position);
     }
@@ -70,7 +70,7 @@ public class NewEventsSignalSubscriptionTests
         store.BeforeIdleWait = () =>
         {
             store.BeforeIdleWait = null;
-            store.AppendAsync("s1", [Evt()]).GetAwaiter().GetResult();
+            store.AppendAsync(StreamId.Parse("test:s1"), [Evt()]).GetAwaiter().GetResult();
         };
 
         await using var handle = store.Subscribe("sub-gap", fromSequence: 1);
@@ -96,7 +96,7 @@ public class NewEventsSignalSubscriptionTests
         var read = ReadExactlyAsync(handle, 2, TimeSpan.FromSeconds(3));
         await WaitForWaitersAsync(store.NewEvents, 1);
 
-        await store.AppendAsync("s1", [Evt(), Evt()]);
+        await store.AppendAsync(StreamId.Parse("test:s1"), [Evt(), Evt()]);
         var received = await read;
 
         Assert.Equal(0, store.NewEvents.Generation);

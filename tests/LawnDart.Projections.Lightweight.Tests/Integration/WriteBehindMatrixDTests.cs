@@ -58,7 +58,7 @@ public sealed class WriteBehindMatrixDTests
         for (var i = 0; i < 5; i++)
         {
             await store.AppendAsync(
-                $"tenant1:Counter:d1-{i}",
+                StreamId.Parse($"tenant1:Counter:d1-{i}"),
                 [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, i + 1)],
                 metadata: Meta(),
                 cancellationToken: cts.Token);
@@ -103,7 +103,7 @@ public sealed class WriteBehindMatrixDTests
         var store = new InMemoryEventStore();
 
         await store.AppendAsync(
-            "tenant1:Counter:d2",
+            StreamId.Parse("tenant1:Counter:d2"),
             [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 3)],
             metadata: Meta(),
             cancellationToken: cts.Token);
@@ -167,7 +167,7 @@ public sealed class WriteBehindMatrixDTests
                 readCache: cache));
 
         await store.AppendAsync(
-            "tenant1:Counter:d3",
+            StreamId.Parse("tenant1:Counter:d3"),
             [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 9)],
             metadata: Meta(),
             cancellationToken: cts.Token);
@@ -207,7 +207,7 @@ public sealed class WriteBehindMatrixDTests
                 readCache: cache));
 
         await store.AppendAsync(
-            "tenant1:Counter:d3",
+            StreamId.Parse("tenant1:Counter:d3"),
             [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)],
             metadata: Meta(),
             cancellationToken: cts.Token);
@@ -252,7 +252,7 @@ public sealed class WriteBehindMatrixDTests
         var store = new InMemoryEventStore();
 
         await store.AppendAsync(
-            "tenant1:Counter:d4",
+            StreamId.Parse("tenant1:Counter:d4"),
             [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 2)],
             metadata: Meta(),
             cancellationToken: cts.Token);

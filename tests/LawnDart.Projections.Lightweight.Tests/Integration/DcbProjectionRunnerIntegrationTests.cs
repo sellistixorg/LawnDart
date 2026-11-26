@@ -63,7 +63,7 @@ public class DcbProjectionRunnerIntegrationTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         await store.AppendAsync(
-            "any:Counter:one",
+            StreamId.Parse("any:Counter:one"),
             [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 42)],
             metadata: MakeMeta(),
             cancellationToken: cts.Token);
@@ -106,11 +106,11 @@ public class DcbProjectionRunnerIntegrationTests
             for (var j = 0; j < batchSize; j++)
                 batch[j] = new OrderCreatedLocal(Guid.NewGuid(), DateTime.UtcNow, Guid.NewGuid(), "noise");
 
-            await store.AppendAsync(noiseStream, batch, metadata: MakeMeta(), cancellationToken: cts.Token);
+            await store.AppendAsync(StreamId.Parse(noiseStream), batch, metadata: MakeMeta(), cancellationToken: cts.Token);
         }
 
         await store.AppendAsync(
-            "any:Counter:tail",
+            StreamId.Parse("any:Counter:tail"),
             [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 42)],
             metadata: MakeMeta(),
             cancellationToken: cts.Token);

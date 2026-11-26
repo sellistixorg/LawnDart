@@ -311,7 +311,7 @@ public partial class SqlServerEventStore
         StreamPageToken.CheckPageSize(pageSize);
         var after = StreamPageToken.ReadAfter(pageToken, filter);
         var prefix = StreamPageToken.Normalize(filter?.Prefix);
-        var tag = StreamPageToken.Normalize(filter?.Tag);
+        var tag = StreamPageToken.Normalize(filter?.Tag?.ToString());
         var aggregateType = StreamPageToken.Normalize(filter?.AggregateType);
         var binaryPrefix = prefix is not null && PrefixIsBinaryRange(prefix);
         var prefixUpper = binaryPrefix ? ExclusiveUpperBound(prefix!) : null;

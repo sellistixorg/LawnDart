@@ -51,7 +51,7 @@ public class AggregateRepositoryTests
             new TestEvent(Guid.NewGuid(), DateTime.UtcNow)
         };
 
-        await eventStore.AppendAsync(streamId, events);
+        await eventStore.AppendAsync(StreamId.Parse(streamId), events);
 
         // Act
         var result = await repository.GetAsync<TestAggregate>(aggregateId);
@@ -87,7 +87,7 @@ public class AggregateRepositoryTests
 
         // Assert
         Assert.Empty(aggregate.PendingEvents);
-        var events = await eventStore.ReadStreamAsync(aggregate.StreamId);
+        var events = await eventStore.ReadStreamAsync(StreamId.Parse(aggregate.StreamId));
         Assert.Single(events);
     }
 
@@ -159,7 +159,7 @@ public class AggregateRepositoryTests
 
         await repository.SaveAsync(aggregate, new CommandMetadata { TenantId = "default" });
 
-        var events = await eventStore.ReadStreamAsync(aggregate.StreamId);
+        var events = await eventStore.ReadStreamAsync(StreamId.Parse(aggregate.StreamId));
         Assert.Single(events);
     }
 
@@ -256,7 +256,7 @@ public class AggregateRepositoryTests
         await repository.SaveAsync(aggregate, commandMetadata);
 
         // Assert
-        var events = await eventStore.ReadStreamAsync(aggregate.StreamId);
+        var events = await eventStore.ReadStreamAsync(StreamId.Parse(aggregate.StreamId));
         Assert.Single(events);
         Assert.Equal("user123", events[0].Metadata.UserId);
         Assert.Equal("tenant456", events[0].Metadata.TenantId);
@@ -301,7 +301,7 @@ public class AggregateRepositoryTests
             new TestEvent(Guid.NewGuid(), DateTime.UtcNow)
         };
 
-        await eventStore.AppendAsync(streamId, events);
+        await eventStore.AppendAsync(StreamId.Parse(streamId), events);
 
         // Act
         var result = await repository.GetOrCreateAsync<TestAggregate>(aggregateId);
@@ -527,7 +527,7 @@ public class AggregateRepositoryTests
         var streamId    = $"test-tenant:TestAggregate:{aggregateId}";
 
         // Seed two events directly — store assigns versions 1 and 2
-        await eventStore.AppendAsync(streamId, new IEvent[]
+        await eventStore.AppendAsync(StreamId.Parse(streamId), new IEvent[]
         {
             new TestEvent(Guid.NewGuid(), DateTime.UtcNow),
             new TestEvent(Guid.NewGuid(), DateTime.UtcNow)
@@ -589,7 +589,7 @@ public class AggregateRepositoryTests
         var repository = new AggregateRepository(
             new InMemoryEventStore(), new DefaultMetadataProvider(), new TestTenantContextProvider(), CreateOptions());
 
-        var result = await repository.GetAsync<TestAggregate>("42:InboundShipment:abc:SHIP-1");
+        var result = await repository.GetAsync<TestAggregate>(StreamId.Parse("42:InboundShipment:abc:SHIP-1"));
 
         Assert.Null(result);
     }
@@ -601,7 +601,7 @@ public class AggregateRepositoryTests
             new InMemoryEventStore(), new DefaultMetadataProvider(), new TestTenantContextProvider(), CreateOptions());
         const string streamId = "42:InboundShipment:abc:SHIP-1";
 
-        var result = await repository.GetOrCreateAsync<TestAggregate>(streamId);
+        var result = await repository.GetOrCreateAsync<TestAggregate>(StreamId.Parse(streamId));
 
         Assert.Equal(streamId, result.StreamId);
         Assert.Equal(-1, result.CommittedVersion);
@@ -615,13 +615,13 @@ public class AggregateRepositoryTests
         var repository = new AggregateRepository(
             eventStore, new DefaultMetadataProvider(), new TestTenantContextProvider(), CreateOptions());
         const string streamId = "42:InboundShipment:abc:SHIP-1";
-        await eventStore.AppendAsync(streamId, new IEvent[]
+        await eventStore.AppendAsync(StreamId.Parse(streamId), new IEvent[]
         {
             new TestEvent(Guid.NewGuid(), DateTime.UtcNow),
             new TestEvent(Guid.NewGuid(), DateTime.UtcNow)
         });
 
-        var result = await repository.GetOrCreateAsync<TestAggregate>(streamId);
+        var result = await repository.GetOrCreateAsync<TestAggregate>(StreamId.Parse(streamId));
 
         Assert.Equal(streamId, result.StreamId);
         Assert.Equal(2, result.Version);
@@ -638,12 +638,12 @@ public class AggregateRepositoryTests
         const string streamId = "42:InboundShipment:abc:SHIP-1";
         var cmd = new CommandMetadata { TenantId = "42", UserId = "user1" };
 
-        var first = await repository.GetOrCreateAsync<TestAggregate>(streamId);
+        var first = await repository.GetOrCreateAsync<TestAggregate>(StreamId.Parse(streamId));
         first.ApplyTest(new TestEvent(Guid.NewGuid(), DateTime.UtcNow));
         await repository.SaveAsync(first, cmd);
 
-        var a = await repository.GetOrCreateAsync<TestAggregate>(streamId);
-        var b = await repository.GetOrCreateAsync<TestAggregate>(streamId);
+        var a = await repository.GetOrCreateAsync<TestAggregate>(StreamId.Parse(streamId));
+        var b = await repository.GetOrCreateAsync<TestAggregate>(StreamId.Parse(streamId));
         a.ApplyTest(new TestEvent(Guid.NewGuid(), DateTime.UtcNow));
         await repository.SaveAsync(a, cmd);
         b.ApplyTest(new TestEvent(Guid.NewGuid(), DateTime.UtcNow));
@@ -657,7 +657,7 @@ public class AggregateRepositoryTests
         var eventStore = new InMemoryEventStore();
         var snapshots = new MemorySnapshotStore();
         const string streamId = "42:InboundShipment:abc:SHIP-1";
-        await eventStore.AppendAsync(streamId, new IEvent[]
+        await eventStore.AppendAsync(StreamId.Parse(streamId), new IEvent[]
         {
             new TestEvent(Guid.NewGuid(), DateTime.UtcNow),
             new TestEvent(Guid.NewGuid(), DateTime.UtcNow),
@@ -669,7 +669,7 @@ public class AggregateRepositoryTests
             eventStore, new DefaultMetadataProvider(), new TestTenantContextProvider(), CreateOptions(),
             snapshotStore: snapshots);
 
-        var result = await repository.GetAsync<TestAggregate>(streamId);
+        var result = await repository.GetAsync<TestAggregate>(StreamId.Parse(streamId));
 
         Assert.NotNull(result);
         Assert.Equal(streamId, result!.StreamId);
@@ -684,7 +684,7 @@ public class AggregateRepositoryTests
         var repository = new AggregateRepository(
             new InMemoryEventStore(), new DefaultMetadataProvider(), new TestTenantContextProvider(), CreateOptions());
 
-        await Assert.ThrowsAsync<ArgumentException>(() => repository.GetAsync<TestAggregate>(" "));
+        await Assert.ThrowsAsync<ArgumentException>(() => repository.GetAsync<TestAggregate>(default(StreamId)));
     }
 
     // Test aggregate for command batching scenario

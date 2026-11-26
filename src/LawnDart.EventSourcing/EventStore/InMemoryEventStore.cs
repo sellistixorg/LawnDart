@@ -20,10 +20,10 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
     private readonly ILogger<InMemoryEventStore>? _logger;
     private readonly EventSession _session;
     private readonly EventStoreAdapter _adapter;
-    private readonly Dictionary<string, List<RecordedEvent>> _streams = new();
+    private readonly Dictionary<StreamId, List<RecordedEvent>> _streams = new();
     private readonly List<RecordedEvent> _allEvents = new();
     private readonly HashSet<Guid> _eventIds = [];
-    private readonly Dictionary<string, StreamMetadata> _streamRegistry = new();
+    private readonly Dictionary<StreamId, StreamMetadata> _streamRegistry = new();
     private readonly ConcurrentDictionary<InMemorySubscriptionHandle, byte> _subscriptions = new();
     private readonly int _subscriptionChannelCapacity;
     private readonly NewEventsSignal _newEvents = new();
@@ -116,7 +116,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
     }
 
     public Task<IReadOnlyList<SequencedEvent>> ReadStreamAsync(
-        string streamId,
+        StreamId streamId,
         long fromVersion = 0,
         long? toVersion = null,
         DateTime? toTimestamp = null,
@@ -124,7 +124,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         => _adapter.ReadStreamAsync(streamId, fromVersion, toVersion, toTimestamp, cancellationToken);
 
     public IAsyncEnumerable<SequencedEvent> ReadStreamEnumerableAsync(
-        string streamId,
+        StreamId streamId,
         long fromVersion = 0,
         long? toVersion = null,
         DateTime? toTimestamp = null,
@@ -149,7 +149,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         => _adapter.ReadByQueryAsync(query, fromSequencePosition, limit, toSequencePosition, toTimestamp, cancellationToken);
 
     public Task<AppendResult> AppendAsync(
-        string streamId,
+        StreamId streamId,
         IEnumerable<TaggedEvent> events,
         long? expectedVersion = null,
         EventMetadata? metadata = null,
@@ -164,13 +164,12 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         => _adapter.AppendAsync(events, condition, metadata, cancellationToken);
 
     public Task<AppendResult> AppendAsync(
-        string streamId,
+        StreamId streamId,
         IEnumerable<AppendEvent> events,
         long? expectedVersion = null,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(streamId))
-            throw new ArgumentException("Stream ID cannot be null or empty", nameof(streamId));
+        EventLogBuffers.RequireStreamId(streamId);
 
         var envelopes = events?.ToList() ?? throw new ArgumentNullException(nameof(events));
         if (envelopes.Count == 0)
@@ -209,14 +208,13 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
     }
 
     async IAsyncEnumerable<RecordedEvent> IEventLog.ReadStreamEnumerableAsync(
-        string streamId,
+        StreamId streamId,
         long fromVersion,
         long? toVersion,
         DateTime? toCommitTimestamp,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(streamId))
-            throw new ArgumentException("Stream ID cannot be null or empty", nameof(streamId));
+        EventLogBuffers.RequireStreamId(streamId);
 
         foreach (var frame in SnapshotStream(streamId, fromVersion, toVersion, toCommitTimestamp))
         {
@@ -228,14 +226,13 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
     }
 
     Task<IReadOnlyList<RecordedEvent>> IEventLog.ReadStreamAsync(
-        string streamId,
+        StreamId streamId,
         long fromVersion,
         long? toVersion,
         DateTime? toCommitTimestamp,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(streamId))
-            throw new ArgumentException("Stream ID cannot be null or empty", nameof(streamId));
+        EventLogBuffers.RequireStreamId(streamId);
 
         return Task.FromResult<IReadOnlyList<RecordedEvent>>(
             SnapshotStream(streamId, fromVersion, toVersion, toCommitTimestamp));
@@ -395,15 +392,12 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
             _newEvents.NotifyCommittedPositions(result.SequencePositions);
     }
 
-    private static string BuildDcbStreamId(string? tenantId)
-    {
-        if (!string.IsNullOrWhiteSpace(tenantId))
-        {
-            return $"{tenantId}:dcb:{Guid.NewGuid()}";
-        }
-
-        return $"dcb:{Guid.NewGuid()}";
-    }
+    // Each dynamic consistency boundary append still gets its own stream until the fixed
+    // dcb / {tenant}:dcb stream lands.
+    private static StreamId BuildDcbStreamId(string? tenantId)
+        => !string.IsNullOrWhiteSpace(tenantId)
+            ? StreamId.For(tenantId, StreamId.DcbType, Guid.NewGuid().ToString())
+            : StreamId.For(StreamId.DcbType, Guid.NewGuid().ToString());
 
     /// <summary>
     /// Clears all events (for testing). Active subscriptions are disposed.
@@ -424,14 +418,13 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
     }
 
     public Task<StreamMetadata?> GetStreamAsync(
-        string streamId,
+        StreamId streamId,
         CancellationToken cancellationToken = default)
     {
         if (!_enableRegistry)
             throw new InvalidOperationException("Stream registry is not enabled");
 
-        if (string.IsNullOrWhiteSpace(streamId))
-            throw new ArgumentException("Stream ID cannot be null or empty", nameof(streamId));
+        EventLogBuffers.RequireStreamId(streamId);
 
         lock (_lock)
         {
@@ -460,14 +453,13 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
     }
 
     public Task<IReadOnlyList<StreamMetadata>> GetStreamsByTagAsync(
-        string tag,
+        Tag tag,
         CancellationToken cancellationToken = default)
     {
         if (!_enableRegistry)
             throw new InvalidOperationException("Stream registry is not enabled");
 
-        if (string.IsNullOrWhiteSpace(tag))
-            throw new ArgumentException("Tag cannot be null or empty", nameof(tag));
+        EventLogBuffers.RequireTag(tag);
 
         lock (_lock)
         {
@@ -479,7 +471,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         }
     }
 
-    public Task<IReadOnlyList<string>> EnumerateStreamIdsAsync(
+    public Task<IReadOnlyList<StreamId>> EnumerateStreamIdsAsync(
         string? prefix = null,
         CancellationToken cancellationToken = default)
     {
@@ -491,11 +483,11 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
             var streamIds = _streamRegistry.Values
                 .Where(s => s.Status == StreamStatus.Active)
                 .Select(s => s.StreamId)
-                .Where(id => prefix == null || id.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                .Where(id => prefix == null || id.ToString().StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
                 // Prefix match is ordinal ignore-case. SQL Server prefix queries follow the StreamId column collation.
-                .OrderBy(id => id, StringComparer.Ordinal)
+                .OrderBy(id => id)
                 .ToList();
-            return Task.FromResult<IReadOnlyList<string>>(streamIds.AsReadOnly());
+            return Task.FromResult<IReadOnlyList<StreamId>>(streamIds.AsReadOnly());
         }
     }
 
@@ -536,7 +528,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         StreamPageToken.CheckPageSize(pageSize);
         var after = StreamPageToken.ReadAfter(pageToken, filter);
         var prefix = StreamPageToken.Normalize(filter?.Prefix);
-        var tag = StreamPageToken.Normalize(filter?.Tag);
+        var tag = filter?.Tag;
         var aggregateType = StreamPageToken.Normalize(filter?.AggregateType);
 
         lock (_lock)
@@ -546,29 +538,29 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
             {
                 if (metadata.Status != StreamStatus.Active)
                     continue;
-                if (prefix is not null && !metadata.StreamId.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                if (prefix is not null && !metadata.StreamId.ToString().StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
                     continue;
                 if (aggregateType is not null && !string.Equals(metadata.AggregateType, aggregateType, StringComparison.Ordinal))
                     continue;
-                if (tag is not null && !HasTag(metadata, tag))
+                if (tag is { } wanted && !HasTag(metadata, wanted))
                     continue;
-                if (after is not null && string.CompareOrdinal(metadata.StreamId, after) <= 0)
+                if (after is not null && string.CompareOrdinal(metadata.StreamId.ToString(), after) <= 0)
                     continue;
                 rows.Add(metadata);
             }
 
-            rows.Sort(static (left, right) => string.CompareOrdinal(left.StreamId, right.StreamId));
+            rows.Sort(static (left, right) => left.StreamId.CompareTo(right.StreamId));
             if (rows.Count > pageSize + 1)
                 rows.RemoveRange(pageSize + 1, rows.Count - (pageSize + 1));
             return Task.FromResult(StreamPageToken.ToPage(rows, pageSize, filter));
         }
     }
 
-    private static bool HasTag(StreamMetadata metadata, string tag)
+    private static bool HasTag(StreamMetadata metadata, Tag tag)
     {
         foreach (var candidate in metadata.Tags)
         {
-            if (string.Equals(candidate, tag, StringComparison.Ordinal))
+            if (candidate == tag)
                 return true;
         }
 
@@ -585,7 +577,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         {
             var count = _streamRegistry.Values
                 .Where(s => s.Status == StreamStatus.Active &&
-                            (prefix == null || s.StreamId.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
+                            (prefix == null || s.StreamId.ToString().StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
                 // Ordinal ignore-case. SQL Server prefix queries follow the StreamId column collation.
                 .LongCount();
             return Task.FromResult(count);
@@ -612,7 +604,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
             query, fromSequencePosition, toSequencePosition, toTimestamp, cancellationToken);
 
     private List<RecordedEvent> SnapshotStream(
-        string streamId,
+        StreamId streamId,
         long fromVersion,
         long? toVersion,
         DateTime? toCommitTimestamp)
@@ -659,7 +651,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
     }
 
     private AppendResult AppendFramesToStream(
-        string streamId,
+        StreamId streamId,
         IReadOnlyList<AppendEvent> envelopes,
         long? expectedVersion)
     {
@@ -706,7 +698,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
             InMemoryEventStoreLog.StreamEventsAppended(
                 _logger,
                 envelopes.Count,
-                streamId,
+                streamId.ToString(),
                 streamVersion - envelopes.Count + 1,
                 streamVersion);
 
@@ -760,7 +752,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         return new AppendResult(sequencePositions.AsReadOnly());
     }
 
-    private RecordedEvent Record(AppendEvent envelope, string streamId, long streamVersion)
+    private RecordedEvent Record(AppendEvent envelope, StreamId streamId, long streamVersion)
     {
         var sequencePosition = _nextSequencePosition++;
         return new RecordedEvent(
@@ -796,7 +788,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
     /// append leaves no message. The writer finishes before this call returns.
     /// </summary>
     private void WriteDeclaredOutbox(
-        string streamId,
+        StreamId streamId,
         IReadOnlyList<AppendEvent> envelopes,
         IReadOnlyList<long> positions,
         IReadOnlyList<Guid> eventIds)
@@ -823,7 +815,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
                 CodecId = outbound.CodecId,
                 Payload = outbound.Payload,
                 Metadata = metadata,
-                StreamId = streamId,
+                StreamId = streamId.ToString(),
                 SequencePosition = positions[i],
                 CreatedAt = DateTime.UtcNow,
                 Attempts = 0
@@ -836,8 +828,8 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         _outbox.WriteBatchAsync(messages).GetAwaiter().GetResult();
     }
 
-    private static IReadOnlyList<string> UnionTags(IReadOnlyList<AppendEvent> envelopes)
-        => envelopes.SelectMany(e => e.Tags).Distinct(StringComparer.Ordinal).ToList();
+    private static IReadOnlyList<Tag> UnionTags(IReadOnlyList<AppendEvent> envelopes)
+        => envelopes.SelectMany(e => e.Tags).Distinct().ToList();
 
     private static bool MatchesCommitTime(RecordedEvent recorded, DateTime? toCommitTimestamp)
         => !toCommitTimestamp.HasValue || recorded.CommitTimestamp <= toCommitTimestamp.Value;
@@ -855,11 +847,11 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
     }
 
     private void UpdateStreamRegistry(
-        string streamId,
+        StreamId streamId,
         long currentVersion,
         long lastSequencePosition,
         int eventCountDelta,
-        IReadOnlyList<string> tags)
+        IReadOnlyList<Tag> tags)
     {
         if (!_enableRegistry)
             return;
@@ -867,8 +859,8 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         lock (_lock)
         {
             var now = DateTime.UtcNow;
-            var aggregateType = ExtractAggregateType(streamId);
-            var aggregateId = ExtractAggregateId(streamId);
+            var aggregateType = streamId.Type;
+            var aggregateId = Guid.TryParse(streamId.Id, out var parsedId) ? parsedId : (Guid?)null;
 
             if (_streamRegistry.TryGetValue(streamId, out var existing))
             {
@@ -880,7 +872,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
             }
             else
             {
-                var extractedTenant = ExtractTenantId(streamId);
+                var extractedTenant = streamId.TenantId;
                 _streamRegistry[streamId] = new StreamMetadata
                 {
                     StreamId = streamId,
@@ -899,12 +891,4 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         }
     }
 
-    private static string ExtractAggregateType(string streamId)
-        => StreamIdParser.ExtractAggregateType(streamId);
-
-    private static Guid? ExtractAggregateId(string streamId)
-        => StreamIdParser.ExtractAggregateId(streamId);
-
-    private static string? ExtractTenantId(string streamId)
-        => StreamIdParser.ExtractTenantId(streamId);
 }

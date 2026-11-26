@@ -19,22 +19,23 @@ internal static class EventLogBuffers
     /// stays, in its original order. Tags compare exactly (ordinal): <c>A:1</c> and
     /// <c>a:1</c> are two tags, and no spaces are trimmed.
     /// </summary>
-    internal static IReadOnlyList<string> SnapshotTags(IEnumerable<string>? tags)
+    internal static IReadOnlyList<Tag> SnapshotTags(IEnumerable<Tag>? tags)
     {
         if (tags is null)
             return [];
 
-        var copy = new List<string>(tags is ICollection<string> collection ? collection.Count : 4);
-        HashSet<string>? seen = null;
+        var copy = new List<Tag>(tags is ICollection<Tag> collection ? collection.Count : 4);
+        HashSet<Tag>? seen = null;
         foreach (var tag in tags)
         {
+            RequireTag(tag);
             if (copy.Count == 0)
             {
                 copy.Add(tag);
                 continue;
             }
 
-            seen ??= new HashSet<string>(copy, StringComparer.Ordinal);
+            seen ??= new HashSet<Tag>(copy);
             if (seen.Add(tag))
                 copy.Add(tag);
         }
@@ -76,11 +77,27 @@ internal static class EventLogBuffers
         return codecId;
     }
 
-    internal static string RequireStreamId(string streamId)
+    internal static StreamId RequireStreamId(StreamId streamId)
     {
-        if (string.IsNullOrWhiteSpace(streamId))
-            throw new ArgumentException("Stream id is required.", nameof(streamId));
+        if (streamId.IsDefault)
+            throw new ArgumentException("Stream id is required. Build one with StreamId.For, StreamId.Dcb or StreamId.Parse.", nameof(streamId));
 
         return streamId;
+    }
+
+    internal static Tag RequireTag(Tag tag)
+    {
+        if (tag.IsDefault)
+            throw new ArgumentException("Tag is required. Build one with Tag.Create or Tag.Parse.", nameof(tag));
+
+        return tag;
+    }
+
+    internal static IReadOnlyList<Tag> RequireTags(IReadOnlyList<Tag> tags)
+    {
+        for (var i = 0; i < tags.Count; i++)
+            RequireTag(tags[i]);
+
+        return tags;
     }
 }

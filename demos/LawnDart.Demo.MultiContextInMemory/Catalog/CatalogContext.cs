@@ -41,7 +41,7 @@ public sealed class PublishProductHandler : ICommandHandler<PublishProductComman
         var streamId = $"Product:{command.Id}";
         var evt = new ProductPublished(Guid.NewGuid(), DateTime.UtcNow, command.Name, command.Price);
 
-        await _eventStore.AppendAsync(streamId, [evt], cancellationToken: cancellationToken);
+        await _eventStore.AppendAsync(StreamId.Parse(streamId), [evt], cancellationToken: cancellationToken);
 
         _logger.LogInformation(
             "  [catalog] Product '{Name}' (${Price:F2}) published with id {ProductId}",
@@ -68,7 +68,7 @@ public sealed class RetireProductHandler : ICommandHandler<RetireProductCommand>
         var streamId = $"Product:{command.Id}";
         var evt = new ProductRetired(Guid.NewGuid(), DateTime.UtcNow);
 
-        await _eventStore.AppendAsync(streamId, [evt], cancellationToken: cancellationToken);
+        await _eventStore.AppendAsync(StreamId.Parse(streamId), [evt], cancellationToken: cancellationToken);
 
         _logger.LogInformation("  [catalog] Product {ProductId} retired", command.Id);
     }

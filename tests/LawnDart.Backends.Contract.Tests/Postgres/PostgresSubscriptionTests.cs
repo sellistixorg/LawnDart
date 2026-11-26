@@ -716,7 +716,7 @@ public sealed class PostgresSubscriptionTests
 
     private static string NewSchema() => "s" + Guid.NewGuid().ToString("N");
 
-    private static string Stream() => "Order:" + Guid.NewGuid().ToString("N");
+    private static StreamId Stream() => StreamId.For("Order", Guid.NewGuid().ToString("N"));
 
     private static string Quote(string name) => "\"" + name.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
 }

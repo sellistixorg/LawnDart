@@ -21,7 +21,7 @@ public class DcbOrderViewProjector
     public async Task<OrderView?> GetAsync(Guid orderId, CancellationToken cancellationToken = default)
     {
         // Query by tag instead of reading stream
-        var query = Query.FromItems(QueryItem.ByTags($"order:{orderId}"));
+        var query = Query.FromItems(QueryItem.ByTags(Tag.Parse($"order:{orderId}")));
         var events = new List<SequencedEvent>();
         await foreach (var evt in _eventStore.ReadByQueryStreamAsync(query, cancellationToken: cancellationToken))
             events.Add(evt);

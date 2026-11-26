@@ -148,7 +148,7 @@ public class SqlServerMultiContextOutboxTests : IAsyncLifetime
         return (store, outbox);
     }
 
-    private static string Stream(string aggregate) => "acme:" + aggregate + ":" + Guid.NewGuid().ToString("N");
+    private static StreamId Stream(string aggregate) => StreamId.For("acme", aggregate, Guid.NewGuid().ToString("N"));
 
 
 

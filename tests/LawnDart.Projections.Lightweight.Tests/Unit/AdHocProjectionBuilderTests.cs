@@ -80,7 +80,7 @@ public class AdHocProjectionBuilderTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
         const string streamId = "tenant1:Counter:abc";
-        await store.AppendAsync(streamId, [
+        await store.AppendAsync(StreamId.Parse(streamId), [
             new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 5),
             new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 3),
             new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 7)
@@ -104,7 +104,7 @@ public class AdHocProjectionBuilderTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
         const string streamId = "tenant1:Counter:def";
-        await store.AppendAsync(streamId, [
+        await store.AppendAsync(StreamId.Parse(streamId), [
             new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 10),
             new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 20)
         ], metadata: MakeMeta(), cancellationToken: cts.Token);
@@ -129,13 +129,13 @@ public class AdHocProjectionBuilderTests
         const string streamB = "tenant1:Counter:stream-b";
 
         // Append 2 events to stream A — these get sequence positions 1 and 2
-        await store.AppendAsync(streamA, [
+        await store.AppendAsync(StreamId.Parse(streamA), [
             new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 10),
             new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 20)
         ], metadata: MakeMeta(), cancellationToken: cts.Token);
 
         // Append 1 event to stream B — gets sequence position 3
-        await store.AppendAsync(streamB, [
+        await store.AppendAsync(StreamId.Parse(streamB), [
             new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 99)
         ], metadata: MakeMeta(), cancellationToken: cts.Token);
 
@@ -161,11 +161,11 @@ public class AdHocProjectionBuilderTests
         var cutoffTime = new DateTime(2026, 1, 1, 11, 0, 0, DateTimeKind.Utc);
 
         const string streamId = "tenant1:Counter:timestamp-test";
-        await store.AppendAsync(streamId, [
+        await store.AppendAsync(StreamId.Parse(streamId), [
             new CounterIncremented(Guid.NewGuid(), early, 15)
         ], metadata: MakeMeta(early), cancellationToken: cts.Token);
 
-        await store.AppendAsync(streamId, [
+        await store.AppendAsync(StreamId.Parse(streamId), [
             new CounterIncremented(Guid.NewGuid(), late, 30)
         ], metadata: MakeMeta(late), cancellationToken: cts.Token);
 
@@ -185,7 +185,7 @@ public class AdHocProjectionBuilderTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
         const string streamId = "tenant1:Counter:empty-stream";
-        await store.AppendAsync(streamId, [
+        await store.AppendAsync(StreamId.Parse(streamId), [
             new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 42)
         ], metadata: MakeMeta(), cancellationToken: cts.Token);
 
@@ -210,12 +210,12 @@ public class AdHocProjectionBuilderTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
         // Append 4 events to different streams — each gets a unique sequence position
-        await store.AppendAsync("sys:Tags:1", [
+        await store.AppendAsync(StreamId.Parse("sys:Tags:1"), [
             new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, "alpha"),
             new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, "beta")
         ], metadata: MakeMeta(), cancellationToken: cts.Token);
 
-        await store.AppendAsync("sys:Tags:2", [
+        await store.AppendAsync(StreamId.Parse("sys:Tags:2"), [
             new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, "gamma"),
             new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, "delta")
         ], metadata: MakeMeta(), cancellationToken: cts.Token);
@@ -245,11 +245,11 @@ public class AdHocProjectionBuilderTests
         var late   = new DateTime(2026, 3, 1, 15, 0, 0, DateTimeKind.Utc);
         var cutoff = new DateTime(2026, 3, 1, 12, 0, 0, DateTimeKind.Utc);
 
-        await store.AppendAsync("sys:Tags:ts", [
+        await store.AppendAsync(StreamId.Parse("sys:Tags:ts"), [
             new GlobalTagged(Guid.NewGuid(), early, "morning")
         ], metadata: MakeMeta(early), cancellationToken: cts.Token);
 
-        await store.AppendAsync("sys:Tags:ts", [
+        await store.AppendAsync(StreamId.Parse("sys:Tags:ts"), [
             new GlobalTagged(Guid.NewGuid(), late, "afternoon")
         ], metadata: MakeMeta(late), cancellationToken: cts.Token);
 
@@ -272,15 +272,15 @@ public class AdHocProjectionBuilderTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
         // Append a mix: CounterIncremented (matches DCB filter) and GlobalTagged (does not)
-        await store.AppendAsync("sys:Counter:dcb-1", [
+        await store.AppendAsync(StreamId.Parse("sys:Counter:dcb-1"), [
             new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 5)  // seq=1
         ], metadata: MakeMeta(), cancellationToken: cts.Token);
 
-        await store.AppendAsync("sys:Tags:dcb-noise", [
+        await store.AppendAsync(StreamId.Parse("sys:Tags:dcb-noise"), [
             new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, "noise") // seq=2 — filtered out
         ], metadata: MakeMeta(), cancellationToken: cts.Token);
 
-        await store.AppendAsync("sys:Counter:dcb-2", [
+        await store.AppendAsync(StreamId.Parse("sys:Counter:dcb-2"), [
             new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 10), // seq=3
             new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 20)  // seq=4
         ], metadata: MakeMeta(), cancellationToken: cts.Token);
@@ -307,12 +307,12 @@ public class AdHocProjectionBuilderTests
         const string tenant = "acme";
 
         // seq=1: order created
-        await store.AppendAsync($"{tenant}:OrderAggregate:{orderId}", [
+        await store.AppendAsync(StreamId.Parse($"{tenant}:OrderAggregate:{orderId}"), [
             new OrderCreatedLocal(Guid.NewGuid(), DateTime.UtcNow, orderId, "Alice")
         ], metadata: MakeMeta(), cancellationToken: cts.Token);
 
         // seq=2: shipment dispatched
-        await store.AppendAsync($"{tenant}:ShipmentAggregate:{orderId}", [
+        await store.AppendAsync(StreamId.Parse($"{tenant}:ShipmentAggregate:{orderId}"), [
             new ShipmentDispatchedLocal(Guid.NewGuid(), DateTime.UtcNow, orderId, "FedEx")
         ], metadata: MakeMeta(), cancellationToken: cts.Token);
 
@@ -339,11 +339,11 @@ public class AdHocProjectionBuilderTests
         var orderId = Guid.NewGuid();
         const string tenant = "acme";
 
-        await store.AppendAsync($"{tenant}:OrderAggregate:{orderId}", [
+        await store.AppendAsync(StreamId.Parse($"{tenant}:OrderAggregate:{orderId}"), [
             new OrderCreatedLocal(Guid.NewGuid(), DateTime.UtcNow, orderId, "Bob")
         ], metadata: MakeMeta(), cancellationToken: cts.Token);
 
-        await store.AppendAsync($"{tenant}:ShipmentAggregate:{orderId}", [
+        await store.AppendAsync(StreamId.Parse($"{tenant}:ShipmentAggregate:{orderId}"), [
             new ShipmentDispatchedLocal(Guid.NewGuid(), DateTime.UtcNow, orderId, "UPS")
         ], metadata: MakeMeta(), cancellationToken: cts.Token);
 

@@ -43,7 +43,7 @@ internal static class Program
 internal sealed class DemoRunner : IHostedService
 {
     private const string SubscriberId = "demo-file-checkpoint";
-    private const string StreamId = "demo-stream";
+    private const string StreamId = "demo:stream";
 
     private readonly IEventStore _store;
     private readonly IEventStoreSubscriptions _subscriptions;
@@ -101,7 +101,7 @@ internal sealed class DemoRunner : IHostedService
         for (var i = 0; i < 3; i++)
         {
             await _store.AppendAsync(
-                StreamId,
+                LawnDart.EventStore.StreamId.Parse(StreamId),
                 [new DemoEvent(Guid.NewGuid(), DateTime.UtcNow)],
                 cancellationToken: cancellationToken);
         }
@@ -180,7 +180,7 @@ internal sealed class DemoRunner : IHostedService
     {
         await Task.Delay(200, cancellationToken);
         await _store.AppendAsync(
-            StreamId,
+            LawnDart.EventStore.StreamId.Parse(StreamId),
             [new DemoEvent(Guid.NewGuid(), DateTime.UtcNow)],
             cancellationToken: cancellationToken);
     }

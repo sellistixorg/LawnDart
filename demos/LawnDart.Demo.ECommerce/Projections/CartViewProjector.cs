@@ -28,10 +28,10 @@ public class CartViewProjector : IProjector<CartView>
         var @event = sequencedEvent.Event;
         var streamId = sequencedEvent.StreamId;
 
-        if (!_views.TryGetValue(streamId, out var view))
+        if (!_views.TryGetValue(streamId.ToString(), out var view))
         {
-            view = new CartView { CartId = ExtractCartId(streamId) };
-            _views[streamId] = view;
+            view = new CartView { CartId = ExtractCartId(streamId.ToString()) };
+            _views[streamId.ToString()] = view;
         }
 
         switch (@event)
@@ -108,7 +108,7 @@ public class CartViewProjector : IProjector<CartView>
         foreach (var stream in updatedStreams)
         {
             // Handle both tenant-prefixed and non-tenant formats
-            if (!stream.StreamId.Contains(":Cart:") && !stream.StreamId.StartsWith("Cart:"))
+            if (!stream.StreamId.ToString().Contains(":Cart:") && !stream.StreamId.ToString().StartsWith("Cart:"))
                 continue;
 
             var events = await _eventStore.ReadStreamAsync(

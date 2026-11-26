@@ -45,7 +45,7 @@ public class NewEventsSignalProjectionTests
 
             var started = Stopwatch.StartNew();
             const string streamId = "tenant1:Counter:wake";
-            await store.AppendAsync(streamId, [
+            await store.AppendAsync(StreamId.Parse(streamId), [
                 new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 4)
             ], metadata: new EventMetadata { Timestamp = DateTime.UtcNow, UserId = "test" });
 

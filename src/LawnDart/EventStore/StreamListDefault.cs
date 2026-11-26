@@ -16,7 +16,7 @@ internal static class StreamListDefault
         StreamPageToken.CheckPageSize(pageSize);
         var after = StreamPageToken.ReadAfter(pageToken, filter);
         var prefix = StreamPageToken.Normalize(filter?.Prefix);
-        var tag = StreamPageToken.Normalize(filter?.Tag);
+        var tag = filter?.Tag;
         var aggregateType = StreamPageToken.Normalize(filter?.AggregateType);
 
         var ids = await registry.EnumerateStreamIdsAsync(prefix, cancellationToken).ConfigureAwait(false);
@@ -29,25 +29,25 @@ internal static class StreamListDefault
                 continue;
             if (aggregateType is not null && !string.Equals(metadata.AggregateType, aggregateType, StringComparison.Ordinal))
                 continue;
-            if (tag is not null && !HasTag(metadata, tag))
+            if (tag is { } wanted && !HasTag(metadata, wanted))
                 continue;
-            if (after is not null && string.CompareOrdinal(metadata.StreamId, after) <= 0)
+            if (after is not null && string.CompareOrdinal(metadata.StreamId.ToString(), after) <= 0)
                 continue;
             matches.Add(metadata);
         }
 
-        matches.Sort(static (left, right) => string.CompareOrdinal(left.StreamId, right.StreamId));
+        matches.Sort(static (left, right) => left.StreamId.CompareTo(right.StreamId));
         if (matches.Count > pageSize + 1)
             matches.RemoveRange(pageSize + 1, matches.Count - (pageSize + 1));
 
         return StreamPageToken.ToPage(matches, pageSize, filter);
     }
 
-    private static bool HasTag(StreamMetadata metadata, string tag)
+    private static bool HasTag(StreamMetadata metadata, Tag tag)
     {
         foreach (var candidate in metadata.Tags)
         {
-            if (string.Equals(candidate, tag, StringComparison.Ordinal))
+            if (candidate == tag)
                 return true;
         }
 

@@ -9,7 +9,7 @@ public class StreamMetadata
     /// Unique stream identifier (e.g., "tenant-123:Order:order-456" or "tenant-123:Customer:customer-789").
     /// Format: {tenantId}:{aggregateType}:{aggregateId}
     /// </summary>
-    public string StreamId { get; set; } = string.Empty;
+    public StreamId StreamId { get; set; }
 
     /// <summary>
     /// Tenant ID extracted from stream ID.
@@ -56,7 +56,7 @@ public class StreamMetadata
     /// Common tags associated with this stream.
     /// Updated when new tags are added to events.
     /// </summary>
-    public IReadOnlyList<string> Tags { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<Tag> Tags { get; set; } = Array.Empty<Tag>();
 
     /// <summary>
     /// Current status of the stream.

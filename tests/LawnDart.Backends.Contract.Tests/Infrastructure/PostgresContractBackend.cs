@@ -133,7 +133,7 @@ public sealed class PostgresContractBackend : IFullContractBackend
         await using var command = new NpgsqlCommand(
             $"UPDATE {store.QualifiedStreamsTable} SET status = 'Archived' WHERE stream_id = @stream",
             connection);
-        command.Parameters.AddWithValue("stream", streamId);
+        command.Parameters.AddWithValue("stream", streamId.ToString());
         Assert.Equal(1, await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false));
     }
 

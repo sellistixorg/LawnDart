@@ -52,23 +52,23 @@ for the session; the log has `IEventLogSubscriptions`.
 
 **`IEventStore`**
 
-- `ReadStreamAsync(string streamId, long fromVersion = 0, long? toVersion = null, DateTime? toTimestamp = null, CancellationToken cancellationToken = default)`. `toTimestamp` is envelope business time (`EventMetadata.Timestamp`), not `CommitTimestamp`.
-- `ReadStreamEnumerableAsync(string streamId, long fromVersion = 0, long? toVersion = null, DateTime? toTimestamp = null, CancellationToken cancellationToken = default)`
+- `ReadStreamAsync(StreamId streamId, long fromVersion = 0, long? toVersion = null, DateTime? toTimestamp = null, CancellationToken cancellationToken = default)`. `toTimestamp` is envelope business time (`EventMetadata.Timestamp`), not `CommitTimestamp`.
+- `ReadStreamEnumerableAsync(StreamId streamId, long fromVersion = 0, long? toVersion = null, DateTime? toTimestamp = null, CancellationToken cancellationToken = default)`
 - `ReadByQueryAsync(Query query, long? fromSequencePosition = null, int? limit = null, long? toSequencePosition = null, DateTime? toTimestamp = null, CancellationToken cancellationToken = default)`
 - `ReadByQueryStreamAsync(Query query, long? fromSequencePosition = null, long? toSequencePosition = null, DateTime? toTimestamp = null, CancellationToken cancellationToken = default)`
-- `AppendAsync(string streamId, IEnumerable<TaggedEvent> events, long? expectedVersion = null, EventMetadata? metadata = null, CancellationToken cancellationToken = default)`. Each `TaggedEvent` is one event and its own tags.
+- `AppendAsync(StreamId streamId, IEnumerable<TaggedEvent> events, long? expectedVersion = null, EventMetadata? metadata = null, CancellationToken cancellationToken = default)`. Each `TaggedEvent` is one event and its own tags.
 - `AppendAsync(IEnumerable<TaggedEvent> events, AppendCondition condition, EventMetadata? metadata = null, CancellationToken cancellationToken = default)`
 - `GetCurrentSequenceAsync(CancellationToken cancellationToken = default)`
 - `GetMaxSequencePositionAsync(Query query, long? fromSequencePosition = null, long? toSequencePosition = null, DateTime? toTimestamp = null, CancellationToken cancellationToken = default)`
 
-`TaggedEvent(IEvent Event, params IReadOnlyList<string> Tags)` is one event and the tags written on that event only. A repeated tag is kept once. For events with no tags, `EventStoreAppendExtensions` adds `AppendAsync(streamId, IEnumerable<IEvent> events, ...)` and `AppendAsync(IEnumerable<IEvent> events, condition, ...)`. They wrap each event in a `TaggedEvent` with no tags and call the interface.
+`TaggedEvent(IEvent Event, params IReadOnlyList<Tag> Tags)` is one event and the tags written on that event only. A repeated tag is kept once. For events with no tags, `EventStoreAppendExtensions` adds `AppendAsync(streamId, IEnumerable<IEvent> events, ...)` and `AppendAsync(IEnumerable<IEvent> events, condition, ...)`. They wrap each event in a `TaggedEvent` with no tags and call the interface.
 
 **`IStreamRegistry`** (on every `IEventStore`)
 
-- `GetStreamAsync(string streamId, CancellationToken cancellationToken = default)`
+- `GetStreamAsync(StreamId streamId, CancellationToken cancellationToken = default)`
 - `GetStreamsByAggregateTypeAsync(string aggregateType, CancellationToken cancellationToken = default)`. Active streams. The order is undefined.
-- `GetStreamsByTagAsync(string tag, CancellationToken cancellationToken = default)`. Active streams. The order is undefined.
-- `EnumerateStreamIdsAsync(string? prefix = null, CancellationToken cancellationToken = default)`. Active stream ids. The order is undefined.
+- `GetStreamsByTagAsync(Tag tag, CancellationToken cancellationToken = default)`. Active streams. The order is undefined.
+- `EnumerateStreamIdsAsync(string? prefix = null, CancellationToken cancellationToken = default)`. Active stream ids, as `StreamId` values. The order is undefined.
 - `ListStreamsAsync(StreamListFilter? filter = null, string? pageToken = null, int pageSize = 100, CancellationToken cancellationToken = default)`. One page of active streams, ordered by stream id, character by character. See [Stream IDs](../STREAM_IDS.md#stream-pages).
 - `GetStreamsUpdatedAfterAsync(long afterSequencePosition, int? limit = null, CancellationToken cancellationToken = default)`
 - `GetStreamCountAsync(string? prefix = null, CancellationToken cancellationToken = default)`

@@ -38,7 +38,7 @@ internal sealed class CountingEventStore : IEventStore, IEventStoreSubscriptions
     }
 
     public Task<IReadOnlyList<SequencedEvent>> ReadStreamAsync(
-        string streamId,
+        StreamId streamId,
         long fromVersion = 0,
         long? toVersion = null,
         DateTime? toTimestamp = null,
@@ -46,7 +46,7 @@ internal sealed class CountingEventStore : IEventStore, IEventStoreSubscriptions
         _inner.ReadStreamAsync(streamId, fromVersion, toVersion, toTimestamp, cancellationToken);
 
     public IAsyncEnumerable<SequencedEvent> ReadStreamEnumerableAsync(
-        string streamId,
+        StreamId streamId,
         long fromVersion = 0,
         long? toVersion = null,
         DateTime? toTimestamp = null,
@@ -79,7 +79,7 @@ internal sealed class CountingEventStore : IEventStore, IEventStoreSubscriptions
     }
 
     public Task<AppendResult> AppendAsync(
-        string streamId,
+        StreamId streamId,
         IEnumerable<TaggedEvent> events,
         long? expectedVersion = null,
         EventMetadata? metadata = null,
@@ -104,7 +104,7 @@ internal sealed class CountingEventStore : IEventStore, IEventStoreSubscriptions
         CancellationToken cancellationToken = default) =>
         _inner.GetMaxSequencePositionAsync(query, fromSequencePosition, toSequencePosition, toTimestamp, cancellationToken);
 
-    public Task<StreamMetadata?> GetStreamAsync(string streamId, CancellationToken cancellationToken = default) =>
+    public Task<StreamMetadata?> GetStreamAsync(StreamId streamId, CancellationToken cancellationToken = default) =>
         _inner.GetStreamAsync(streamId, cancellationToken);
 
     public Task<IReadOnlyList<StreamMetadata>> GetStreamsByAggregateTypeAsync(
@@ -113,11 +113,11 @@ internal sealed class CountingEventStore : IEventStore, IEventStoreSubscriptions
         _inner.GetStreamsByAggregateTypeAsync(aggregateType, cancellationToken);
 
     public Task<IReadOnlyList<StreamMetadata>> GetStreamsByTagAsync(
-        string tag,
+        Tag tag,
         CancellationToken cancellationToken = default) =>
         _inner.GetStreamsByTagAsync(tag, cancellationToken);
 
-    public Task<IReadOnlyList<string>> EnumerateStreamIdsAsync(
+    public Task<IReadOnlyList<StreamId>> EnumerateStreamIdsAsync(
         string? prefix = null,
         CancellationToken cancellationToken = default) =>
         _inner.EnumerateStreamIdsAsync(prefix, cancellationToken);
@@ -232,7 +232,7 @@ internal sealed class IdleSubscribeEventStore : IEventStore, IEventStoreSubscrip
         new IdleSubscriptionHandle(subscriberId);
 
     public Task<IReadOnlyList<SequencedEvent>> ReadStreamAsync(
-        string streamId,
+        StreamId streamId,
         long fromVersion = 0,
         long? toVersion = null,
         DateTime? toTimestamp = null,
@@ -240,7 +240,7 @@ internal sealed class IdleSubscribeEventStore : IEventStore, IEventStoreSubscrip
         _inner.ReadStreamAsync(streamId, fromVersion, toVersion, toTimestamp, cancellationToken);
 
     public IAsyncEnumerable<SequencedEvent> ReadStreamEnumerableAsync(
-        string streamId,
+        StreamId streamId,
         long fromVersion = 0,
         long? toVersion = null,
         DateTime? toTimestamp = null,
@@ -265,7 +265,7 @@ internal sealed class IdleSubscribeEventStore : IEventStore, IEventStoreSubscrip
         _inner.ReadByQueryStreamAsync(query, fromSequencePosition, toSequencePosition, toTimestamp, cancellationToken);
 
     public Task<AppendResult> AppendAsync(
-        string streamId,
+        StreamId streamId,
         IEnumerable<TaggedEvent> events,
         long? expectedVersion = null,
         EventMetadata? metadata = null,
@@ -290,7 +290,7 @@ internal sealed class IdleSubscribeEventStore : IEventStore, IEventStoreSubscrip
         CancellationToken cancellationToken = default) =>
         _inner.GetMaxSequencePositionAsync(query, fromSequencePosition, toSequencePosition, toTimestamp, cancellationToken);
 
-    public Task<StreamMetadata?> GetStreamAsync(string streamId, CancellationToken cancellationToken = default) =>
+    public Task<StreamMetadata?> GetStreamAsync(StreamId streamId, CancellationToken cancellationToken = default) =>
         _inner.GetStreamAsync(streamId, cancellationToken);
 
     public Task<IReadOnlyList<StreamMetadata>> GetStreamsByAggregateTypeAsync(
@@ -299,11 +299,11 @@ internal sealed class IdleSubscribeEventStore : IEventStore, IEventStoreSubscrip
         _inner.GetStreamsByAggregateTypeAsync(aggregateType, cancellationToken);
 
     public Task<IReadOnlyList<StreamMetadata>> GetStreamsByTagAsync(
-        string tag,
+        Tag tag,
         CancellationToken cancellationToken = default) =>
         _inner.GetStreamsByTagAsync(tag, cancellationToken);
 
-    public Task<IReadOnlyList<string>> EnumerateStreamIdsAsync(
+    public Task<IReadOnlyList<StreamId>> EnumerateStreamIdsAsync(
         string? prefix = null,
         CancellationToken cancellationToken = default) =>
         _inner.EnumerateStreamIdsAsync(prefix, cancellationToken);

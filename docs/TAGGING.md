@@ -9,6 +9,18 @@ under that query. Tags are what one item of that query asks for. They
 are also the key a later search or index uses. The string is data. A
 second spelling misses the event and misses the fence.
 
+## The Tag type
+
+Store methods, queries, and stored events use `LawnDart.EventStore.Tag`, a small value type. There is no implicit conversion from or to `string`. Build one with `Tag.Create(key, value)`, or with `Tag.Parse(text)` / `Tag.TryParse(text, out var tag)` for text you already have, such as the string an `ITagFormat` returns. `ToString()` returns the canonical `key:value` text. `Key` and `Value` return the parts. JSON writes and reads a tag as its canonical string.
+
+The rules are the same on every store:
+
+- A tag is `key:value`. The key and the value are not empty and do not start or end with whitespace.
+- The key does not contain a colon. The first colon splits the key from the value, so the value may contain colons.
+- The whole text is at most 256 characters (`Tag.MaxLength`).
+
+`Tag.Parse` throws `FormatException` when the text breaks a rule. `Tag.Create` throws `ArgumentException`. A `default` tag is rejected with `ArgumentException` wherever a tag is required. Tag providers, `ITagFormat`, `[Tag]` attributes, and `DcbEntity.Emit` still work with strings in `key:value` form. They are checked with `Tag.Parse` when the event is written.
+
 ## What a tag means
 
 A tag says what one event is about: its subjects. `CourseCreated` is
@@ -105,7 +117,7 @@ public sealed class AcademyTagProvider : TagProvider
 
     public Query EnrollmentDecision(Guid studentId, Guid sectionId) =>
         Query.FromItems(
-            QueryItem.ByTags(Tag("section", sectionId)),
+            QueryItem.ByTags(LawnDart.EventStore.Tag.Parse(Tag("section", sectionId))),
             QueryItem.ByTypeAndTags(
                 [
                     "StudentRegistered",
@@ -113,7 +125,7 @@ public sealed class AcademyTagProvider : TagProvider
                     "RegistrationConfirmationSent",
                     "RegistrationCancelled"
                 ],
-                [Tag("student", studentId)]));
+                [LawnDart.EventStore.Tag.Parse(Tag("student", studentId))]));
 
     public string Course(Guid courseId) => Tag("course", courseId);
 
@@ -178,7 +190,7 @@ A query uses the same method:
 
 ```csharp
 var query = Query.FromItems(
-    QueryItem.ByTags(provider.Tag("student", studentId)));
+    QueryItem.ByTags(Tag.Parse(provider.Tag("student", studentId))));
 ```
 
 One `QueryItem` matches an event that has every listed tag. Several
@@ -223,8 +235,8 @@ event is written once.
 ```csharp
 await store.AppendAsync(
     [
-        new TaggedEvent(orderPlaced, "order:42", "customer:7"),
-        new TaggedEvent(paymentTaken, "order:42", "payment:9"),
+        new TaggedEvent(orderPlaced, Tag.Create("order", "42"), Tag.Create("customer", "7")),
+        new TaggedEvent(paymentTaken, Tag.Create("order", "42"), Tag.Create("payment", "9")),
     ],
     condition);
 ```

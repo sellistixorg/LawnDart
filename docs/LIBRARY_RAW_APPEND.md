@@ -27,13 +27,14 @@ Chronicle: `EventLog.Append`. Marten: `StartStream` / `Append` /
 ```csharp
 using LawnDart;
 using LawnDart.EventSourcing.EventStore;
+using LawnDart.EventStore;
 using Library.Domain;
 using Library.Projections;
 
 var store = new InMemoryEventStore();
 
 var bookId = Guid.NewGuid();
-var streamId = $"book:{bookId:N}";
+var streamId = StreamId.For("book", bookId.ToString("N"));
 
 await store.AppendAsync(
     streamId,

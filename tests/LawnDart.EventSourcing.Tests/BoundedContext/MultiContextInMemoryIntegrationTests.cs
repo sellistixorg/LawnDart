@@ -62,10 +62,10 @@ public class MultiContextInMemoryIntegrationTests
         var catalog  = sp.GetRequiredKeyedService<IEventStore>("catalog");
 
         // Append 3 events to ordering, 1 to catalog
-        await ordering.AppendAsync("acme:Order:1", [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);
-        await ordering.AppendAsync("acme:Order:2", [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);
-        await ordering.AppendAsync("acme:Order:3", [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);
-        await catalog.AppendAsync("acme:Product:1", [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);
+        await ordering.AppendAsync(StreamId.Parse("acme:Order:1"), [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);
+        await ordering.AppendAsync(StreamId.Parse("acme:Order:2"), [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);
+        await ordering.AppendAsync(StreamId.Parse("acme:Order:3"), [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);
+        await catalog.AppendAsync(StreamId.Parse("acme:Product:1"), [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);
 
         Assert.Equal(3, await ordering.GetCurrentSequenceAsync());
         Assert.Equal(1, await catalog.GetCurrentSequenceAsync());
@@ -130,7 +130,7 @@ public class MultiContextInMemoryIntegrationTests
 
         public async Task HandleAsync(PlaceOrderCommand cmd, CancellationToken ct = default)
         {
-            await _eventStore.AppendAsync(cmd.Stream, [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)], cancellationToken: ct);
+            await _eventStore.AppendAsync(StreamId.Parse(cmd.Stream), [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)], cancellationToken: ct);
         }
     }
 
@@ -142,7 +142,7 @@ public class MultiContextInMemoryIntegrationTests
 
         public async Task HandleAsync(PublishCatalogItemCommand cmd, CancellationToken ct = default)
         {
-            await _eventStore.AppendAsync(cmd.Stream, [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)], cancellationToken: ct);
+            await _eventStore.AppendAsync(StreamId.Parse(cmd.Stream), [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)], cancellationToken: ct);
         }
     }
 

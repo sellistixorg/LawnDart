@@ -32,7 +32,7 @@ public sealed class RegisterStudentCommandHandler : ICommandHandler<RegisterStud
         var tenantId = _tenant.GetTenantId() ?? "default";
         var streamId = $"{tenantId}:Student:{command.StudentId}";
         var studentEvents = await _eventStore.ReadStreamAsync(
-            streamId,
+            StreamId.Parse(streamId),
             cancellationToken: cancellationToken);
 
         if (studentEvents.Any(e => e.Event is StudentRegistered))
@@ -46,7 +46,7 @@ public sealed class RegisterStudentCommandHandler : ICommandHandler<RegisterStud
             Email: command.Email);
 
         await _eventStore.AppendAsync(
-            streamId,
+            StreamId.Parse(streamId),
             [evt],
             cancellationToken: cancellationToken);
     }
@@ -79,10 +79,10 @@ public sealed class EnrollStudentCommandHandler : ICommandHandler<EnrollStudentC
         var studentStreamId = $"{tenantId}:Student:{command.StudentId}";
         var sectionStreamId = $"{tenantId}:Section:{command.SectionId}";
         var studentEvents = await _eventStore.ReadStreamAsync(
-            studentStreamId,
+            StreamId.Parse(studentStreamId),
             cancellationToken: cancellationToken);
         var sectionEvents = await _eventStore.ReadStreamAsync(
-            sectionStreamId,
+            StreamId.Parse(sectionStreamId),
             cancellationToken: cancellationToken);
 
         if (!studentEvents.Any(e => e.Event is StudentRegistered))
@@ -105,12 +105,12 @@ public sealed class EnrollStudentCommandHandler : ICommandHandler<EnrollStudentC
             throw new DomainException("No seats are currently available.");
 
         await _eventStore.AppendAsync(
-            studentStreamId,
+            StreamId.Parse(studentStreamId),
             [new StudentEnrolled(Guid.NewGuid(), DateTime.UtcNow, command.StudentId, command.SectionId, sectionCreated.Title)],
             cancellationToken: cancellationToken);
 
         await _eventStore.AppendAsync(
-            sectionStreamId,
+            StreamId.Parse(sectionStreamId),
             [new SeatReserved(Guid.NewGuid(), DateTime.UtcNow, command.SectionId, command.StudentId)],
             cancellationToken: cancellationToken);
     }
@@ -142,19 +142,19 @@ public sealed class CancelEnrollmentCommandHandler : ICommandHandler<CancelEnrol
         var tenantId = _tenant.GetTenantId() ?? "default";
         var studentStreamId = $"{tenantId}:Student:{command.StudentId}";
         var studentEvents = await _eventStore.ReadStreamAsync(
-            studentStreamId,
+            StreamId.Parse(studentStreamId),
             cancellationToken: cancellationToken);
 
         if (!AcademyEnrollmentRules.HasActiveEnrollment(studentEvents, command.SectionId))
             throw new DomainException("No active enrollment exists for this section.");
 
         await _eventStore.AppendAsync(
-            studentStreamId,
+            StreamId.Parse(studentStreamId),
             [new EnrollmentCancelled(Guid.NewGuid(), DateTime.UtcNow, command.StudentId, command.SectionId, command.Reason)],
             cancellationToken: cancellationToken);
 
         await _eventStore.AppendAsync(
-            $"{tenantId}:Section:{command.SectionId}",
+            StreamId.Parse($"{tenantId}:Section:{command.SectionId}"),
             [new SeatReleased(Guid.NewGuid(), DateTime.UtcNow, command.SectionId, command.StudentId)],
             cancellationToken: cancellationToken);
     }
@@ -186,7 +186,7 @@ public sealed class CreateCourseSectionCommandHandler : ICommandHandler<CreateCo
         var tenantId = _tenant.GetTenantId() ?? "default";
         var streamId = $"{tenantId}:Section:{command.SectionId}";
         var sectionEvents = await _eventStore.ReadStreamAsync(
-            streamId,
+            StreamId.Parse(streamId),
             cancellationToken: cancellationToken);
 
         if (sectionEvents.Any(e => e.Event is SectionCreated))
@@ -202,7 +202,7 @@ public sealed class CreateCourseSectionCommandHandler : ICommandHandler<CreateCo
             TotalSeats: command.TotalSeats);
 
         await _eventStore.AppendAsync(
-            streamId,
+            StreamId.Parse(streamId),
             [evt],
             cancellationToken: cancellationToken);
     }

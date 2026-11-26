@@ -95,7 +95,7 @@ public sealed class PostgresProjectionPhase3Tests
         for (var i = 0; i < count; i++)
         {
             await events.AppendAsync(
-                "acct:Counter:" + i,
+                StreamId.Parse("acct:Counter:" + i),
                 [new ContractCounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)],
                 metadata: Meta());
         }
@@ -147,7 +147,7 @@ public sealed class PostgresProjectionPhase3Tests
         foreach (var streamId in streams)
         {
             await events.AppendAsync(
-                streamId,
+                StreamId.Parse(streamId),
                 [new ContractCounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)],
                 metadata: Meta());
         }
@@ -241,7 +241,7 @@ public sealed class PostgresProjectionPhase3Tests
             await using var read = new NpgsqlCommand(
                 $"SELECT state_data, btrim(checksum) FROM {snapshots.QualifiedEventTable} WHERE stream_id = @id",
                 connection);
-            read.Parameters.AddWithValue("id", streamId);
+            read.Parameters.AddWithValue("id", streamId.ToString());
             await using var reader = await read.ExecuteReaderAsync();
             Assert.True(await reader.ReadAsync());
             var data = (byte[])reader.GetValue(0);
@@ -256,7 +256,7 @@ public sealed class PostgresProjectionPhase3Tests
                 $"UPDATE {snapshots.QualifiedEventTable} SET checksum = @checksum WHERE stream_id = @id",
                 connection);
             spoil.Parameters.AddWithValue("checksum", new string('a', 64));
-            spoil.Parameters.AddWithValue("id", streamId);
+            spoil.Parameters.AddWithValue("id", streamId.ToString());
             Assert.Equal(1, await spoil.ExecuteNonQueryAsync());
         }
 

@@ -86,7 +86,7 @@ public sealed class PostgresBenchmarkTests
         var warmup = 0;
         while (warmupUntil.Elapsed < TimeSpan.FromSeconds(5))
         {
-            await store.AppendAsync(stream + "w" + warmup, Fresh(batch));
+            await store.AppendAsync(StreamId.Parse(stream + "w" + warmup), Fresh(batch));
             warmup++;
         }
 
@@ -94,7 +94,7 @@ public sealed class PostgresBenchmarkTests
         var appends = 0;
         while (started.Elapsed < window)
         {
-            await store.AppendAsync(stream + "m" + appends, Fresh(batch));
+            await store.AppendAsync(StreamId.Parse(stream + "m" + appends), Fresh(batch));
             appends++;
         }
 

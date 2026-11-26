@@ -13,12 +13,12 @@ public class EventQueryMatcherTests
         var recorded = new RecordedEvent(
             "test.course-created",
             ReadOnlyMemory<byte>.Empty,
-            "s",
+            StreamId.Parse("test:s"),
             streamVersion: 1,
             sequencePosition: 1,
             commitTimestamp: DateTime.UtcNow);
         var raw = RawRecordedEvent.From(recorded);
-        var se = new SequencedEvent(raw, 1, "s", 1, new EventMetadata());
+        var se = new SequencedEvent(raw, 1, StreamId.Parse("test:s"), 1, new EventMetadata());
         var query = Query.FromItems(QueryItem.ByType("test.course-created"));
 
         var catalog = EventTypeCatalog.Materialize([]);
@@ -38,7 +38,7 @@ public class EventQueryMatcherTests
         var se = new SequencedEvent(
             new NamedTick(Guid.NewGuid(), DateTime.UtcNow),
             1,
-            "s",
+            StreamId.Parse("test:s"),
             1,
             new EventMetadata());
 
@@ -59,7 +59,7 @@ public class EventQueryMatcherTests
         var recorded = new RecordedEvent(
             "named.tick",
             ReadOnlyMemory<byte>.Empty,
-            "s",
+            StreamId.Parse("test:s"),
             streamVersion: 1,
             sequencePosition: 1,
             commitTimestamp: DateTime.UtcNow);
@@ -78,17 +78,17 @@ public class EventQueryMatcherTests
         var recorded = new RecordedEvent(
             "named.tick",
             ReadOnlyMemory<byte>.Empty,
-            "s",
+            StreamId.Parse("test:s"),
             streamVersion: 1,
             sequencePosition: 1,
             commitTimestamp: DateTime.UtcNow,
-            tags: ["Customer:ABC"]);
+            tags: [Tag.Parse("Customer:ABC")]);
 
         Assert.True(EventQueryMatcher.Matches(
             recorded,
-            Query.FromItems(QueryItem.ByTags("Customer:ABC"))));
+            Query.FromItems(QueryItem.ByTags(Tag.Parse("Customer:ABC")))));
         Assert.False(EventQueryMatcher.Matches(
             recorded,
-            Query.FromItems(QueryItem.ByTags("customer:abc"))));
+            Query.FromItems(QueryItem.ByTags(Tag.Parse("customer:abc")))));
     }
 }

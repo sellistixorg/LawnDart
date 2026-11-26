@@ -35,10 +35,10 @@ public sealed class RecordedEvent
     public ReadOnlyMemory<byte> Metadata { get; }
 
     /// <summary>Tags as stored.</summary>
-    public IReadOnlyList<string> Tags { get; }
+    public IReadOnlyList<Tag> Tags { get; }
 
     /// <summary>Stream this record belongs to.</summary>
-    public string StreamId { get; }
+    public StreamId StreamId { get; }
 
     /// <summary>Stream-local version. <c>0</c> when the write was a DCB append.</summary>
     public long StreamVersion { get; }
@@ -65,14 +65,14 @@ public sealed class RecordedEvent
     public RecordedEvent(
         string eventType,
         ReadOnlyMemory<byte> payload,
-        string streamId,
+        StreamId streamId,
         long streamVersion,
         long sequencePosition,
         DateTime commitTimestamp,
         ReadOnlyMemory<byte> metadata = default,
         int schemaVersion = 1,
         byte codecId = EventCodec.Json,
-        IEnumerable<string>? tags = null)
+        IEnumerable<Tag>? tags = null)
     {
         EventType = EventLogBuffers.RequireEventType(eventType);
         SchemaVersion = EventLogBuffers.NormalizeSchemaVersion(schemaVersion);

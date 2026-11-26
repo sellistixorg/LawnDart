@@ -15,12 +15,12 @@ public class InMemoryEventStoreRegistryTests
         var events = new IEvent[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) };
 
         // Act
-        await eventStore.AppendAsync(streamId, events);
-        var metadata = await eventStore.GetStreamAsync(streamId);
+        await eventStore.AppendAsync(StreamId.Parse(streamId), events);
+        var metadata = await eventStore.GetStreamAsync(StreamId.Parse(streamId));
 
         // Assert
         Assert.NotNull(metadata);
-        Assert.Equal(streamId, metadata!.StreamId);
+        Assert.Equal(streamId, metadata!.StreamId.ToString());
         Assert.Equal("Order", metadata.AggregateType);
         Assert.Equal(1, metadata.CurrentVersion);
         Assert.Equal(1, metadata.EventCount);
@@ -32,9 +32,9 @@ public class InMemoryEventStoreRegistryTests
     {
         // Arrange
         var eventStore = new InMemoryEventStore(enableRegistry: true, options: new InMemoryEventStoreOptions { RequireTenantId = false });
-        await eventStore.AppendAsync("Order:12345", new IEvent[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) });
-        await eventStore.AppendAsync("Order:67890", new IEvent[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) });
-        await eventStore.AppendAsync("Customer:11111", new IEvent[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) });
+        await eventStore.AppendAsync(StreamId.Parse("Order:12345"), new IEvent[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) });
+        await eventStore.AppendAsync(StreamId.Parse("Order:67890"), new IEvent[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) });
+        await eventStore.AppendAsync(StreamId.Parse("Customer:11111"), new IEvent[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) });
 
         // Act
         var orderStreams = await eventStore.GetStreamsByAggregateTypeAsync("Order");
@@ -49,15 +49,15 @@ public class InMemoryEventStoreRegistryTests
     {
         // Arrange
         var eventStore = new InMemoryEventStore(enableRegistry: true, options: new InMemoryEventStoreOptions { RequireTenantId = false });
-        await eventStore.AppendAsync("Order:12345", [new TaggedEvent(new TestEvent(Guid.NewGuid(), DateTime.UtcNow), new[] { "high-priority" })]);
-        await eventStore.AppendAsync("Order:67890", [new TaggedEvent(new TestEvent(Guid.NewGuid(), DateTime.UtcNow), new[] { "low-priority" })]);
+        await eventStore.AppendAsync(StreamId.Parse("Order:12345"), [new TaggedEvent(new TestEvent(Guid.NewGuid(), DateTime.UtcNow), new[] { Tag.Parse("priority:high") })]);
+        await eventStore.AppendAsync(StreamId.Parse("Order:67890"), [new TaggedEvent(new TestEvent(Guid.NewGuid(), DateTime.UtcNow), new[] { Tag.Parse("priority:low") })]);
 
         // Act
-        var highPriorityStreams = await eventStore.GetStreamsByTagAsync("high-priority");
+        var highPriorityStreams = await eventStore.GetStreamsByTagAsync(Tag.Parse("priority:high"));
 
         // Assert
         Assert.Single(highPriorityStreams);
-        Assert.Contains("high-priority", highPriorityStreams[0].Tags);
+        Assert.Contains(Tag.Parse("priority:high"), highPriorityStreams[0].Tags);
     }
 
     [Fact]
@@ -65,16 +65,16 @@ public class InMemoryEventStoreRegistryTests
     {
         // Arrange
         var eventStore = new InMemoryEventStore(enableRegistry: true, options: new InMemoryEventStoreOptions { RequireTenantId = false });
-        await eventStore.AppendAsync("Order:12345", new IEvent[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) });
-        await eventStore.AppendAsync("Order:67890", new IEvent[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) });
+        await eventStore.AppendAsync(StreamId.Parse("Order:12345"), new IEvent[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) });
+        await eventStore.AppendAsync(StreamId.Parse("Order:67890"), new IEvent[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) });
 
         // Act
         var streamIds = await eventStore.EnumerateStreamIdsAsync();
 
         // Assert
         Assert.Equal(2, streamIds.Count);
-        Assert.Contains("Order:12345", streamIds);
-        Assert.Contains("Order:67890", streamIds);
+        Assert.Contains("Order:12345", streamIds.Select(static s => s.ToString()).ToList());
+        Assert.Contains("Order:67890", streamIds.Select(static s => s.ToString()).ToList());
     }
 
     [Fact]
@@ -82,15 +82,15 @@ public class InMemoryEventStoreRegistryTests
     {
         // Arrange
         var eventStore = new InMemoryEventStore(enableRegistry: true, options: new InMemoryEventStoreOptions { RequireTenantId = false });
-        await eventStore.AppendAsync("Order:12345", new IEvent[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) });
-        await eventStore.AppendAsync("Customer:67890", new IEvent[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) });
+        await eventStore.AppendAsync(StreamId.Parse("Order:12345"), new IEvent[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) });
+        await eventStore.AppendAsync(StreamId.Parse("Customer:67890"), new IEvent[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) });
 
         // Act
         var orderStreamIds = await eventStore.EnumerateStreamIdsAsync("Order:");
 
         // Assert
         Assert.Single(orderStreamIds);
-        Assert.Equal("Order:12345", orderStreamIds[0]);
+        Assert.Equal("Order:12345", orderStreamIds[0].ToString());
     }
 
     [Fact]
@@ -98,17 +98,17 @@ public class InMemoryEventStoreRegistryTests
     {
         // Arrange
         var eventStore = new InMemoryEventStore(enableRegistry: true, options: new InMemoryEventStoreOptions { RequireTenantId = false });
-        await eventStore.AppendAsync("Order:12345", new IEvent[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) });
-        var firstPosition = (await eventStore.GetStreamAsync("Order:12345"))!.LastSequencePosition;
+        await eventStore.AppendAsync(StreamId.Parse("Order:12345"), new IEvent[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) });
+        var firstPosition = (await eventStore.GetStreamAsync(StreamId.Parse("Order:12345")))!.LastSequencePosition;
         
-        await eventStore.AppendAsync("Order:67890", new IEvent[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) });
+        await eventStore.AppendAsync(StreamId.Parse("Order:67890"), new IEvent[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) });
 
         // Act
         var updatedStreams = await eventStore.GetStreamsUpdatedAfterAsync(firstPosition);
 
         // Assert
         Assert.Single(updatedStreams);
-        Assert.Equal("Order:67890", updatedStreams[0].StreamId);
+        Assert.Equal("Order:67890", updatedStreams[0].StreamId.ToString());
     }
 
     [Fact]
@@ -119,7 +119,7 @@ public class InMemoryEventStoreRegistryTests
 
         // Act & Assert
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => eventStore.GetStreamAsync("Order:12345"));
+            () => eventStore.GetStreamAsync(StreamId.Parse("Order:12345")));
     }
 [EventTypeName("in-memory-event-store-registry-t.test-event")]
 
