@@ -64,7 +64,7 @@ public sealed class EventStoreAdapter : IEventStore, IEventStoreSubscriptions
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<SequencedEvent>> ReadStreamAsync(
-        string streamId,
+        StreamId streamId,
         long fromVersion = 0,
         long? toVersion = null,
         DateTime? toTimestamp = null,
@@ -78,7 +78,7 @@ public sealed class EventStoreAdapter : IEventStore, IEventStoreSubscriptions
 
     /// <inheritdoc />
     public async IAsyncEnumerable<SequencedEvent> ReadStreamEnumerableAsync(
-        string streamId,
+        StreamId streamId,
         long fromVersion = 0,
         long? toVersion = null,
         DateTime? toTimestamp = null,
@@ -135,14 +135,13 @@ public sealed class EventStoreAdapter : IEventStore, IEventStoreSubscriptions
     /// <inheritdoc />
     [System.Diagnostics.CodeAnalysis.SuppressMessage("ApiDesign", "RS0026:Do not add multiple public overloads with optional parameters", Justification = "The two appends take different required parameters (a stream id or an append condition), so a call always picks one.")]
     public Task<AppendResult> AppendAsync(
-        string streamId,
+        StreamId streamId,
         IEnumerable<TaggedEvent> events,
         long? expectedVersion = null,
         EventMetadata? metadata = null,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(streamId))
-            throw new ArgumentException("Stream ID cannot be null or empty", nameof(streamId));
+        EventLogBuffers.RequireStreamId(streamId);
 
         var envelopes = ToEnvelopes(events, metadata);
         return _log.AppendAsync(streamId, envelopes, expectedVersion, cancellationToken);
@@ -184,7 +183,7 @@ public sealed class EventStoreAdapter : IEventStore, IEventStoreSubscriptions
         var context = new PublishContext(
             @event.Id,
             envelope.EventType,
-            envelope.Tags,
+            envelope.Tags.Select(static t => t.ToString()).ToArray(),
             metadata?.TenantId,
             metadata?.CorrelationId,
             metadata?.CausationId,
@@ -233,7 +232,7 @@ public sealed class EventStoreAdapter : IEventStore, IEventStoreSubscriptions
     }
 
     /// <inheritdoc />
-    public Task<StreamMetadata?> GetStreamAsync(string streamId, CancellationToken cancellationToken = default)
+    public Task<StreamMetadata?> GetStreamAsync(StreamId streamId, CancellationToken cancellationToken = default)
         => _log.GetStreamAsync(streamId, cancellationToken);
 
     /// <inheritdoc />
@@ -244,12 +243,12 @@ public sealed class EventStoreAdapter : IEventStore, IEventStoreSubscriptions
 
     /// <inheritdoc />
     public Task<IReadOnlyList<StreamMetadata>> GetStreamsByTagAsync(
-        string tag,
+        Tag tag,
         CancellationToken cancellationToken = default)
         => _log.GetStreamsByTagAsync(tag, cancellationToken);
 
     /// <inheritdoc />
-    public Task<IReadOnlyList<string>> EnumerateStreamIdsAsync(
+    public Task<IReadOnlyList<StreamId>> EnumerateStreamIdsAsync(
         string? prefix = null,
         CancellationToken cancellationToken = default)
         => _log.EnumerateStreamIdsAsync(prefix, cancellationToken);

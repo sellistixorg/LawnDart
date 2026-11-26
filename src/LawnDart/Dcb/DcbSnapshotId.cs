@@ -63,7 +63,7 @@ public static class DcbSnapshotId
     {
         ArgumentNullException.ThrowIfNull(item);
         var types = DistinctSorted(item.Types);
-        var tags = DistinctSorted(item.Tags);
+        var tags = DistinctSorted(item.Tags?.Select(static t => t.ToString()).ToArray());
 
         using var ms = new MemoryStream();
         using (var bw = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true))

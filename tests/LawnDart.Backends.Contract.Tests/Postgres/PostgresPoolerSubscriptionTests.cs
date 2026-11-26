@@ -71,7 +71,7 @@ public sealed class PostgresPoolerSubscriptionTests
         var stream = "Order:" + Guid.NewGuid().ToString("N");
         await using var handle = store.Subscribe("pooled", fromSequence: 1);
         await WaitUntilAsync(() => store.Listener.Mode == PostgresListenMode.PollOnly);
-        await store.AppendAsync(stream, [ContractEvent.Tick(), ContractEvent.Tick(), ContractEvent.Tick()]);
+        await store.AppendAsync(StreamId.Parse(stream), [ContractEvent.Tick(), ContractEvent.Tick(), ContractEvent.Tick()]);
         var received = await ReadExactlyAsync(handle, 3, TimeSpan.FromSeconds(15));
         Assert.Equal(new long[] { 1, 2, 3 }, received.Select(e => e.SequencePosition));
 

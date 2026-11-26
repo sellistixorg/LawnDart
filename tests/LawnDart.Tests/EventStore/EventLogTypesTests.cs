@@ -29,7 +29,7 @@ public class EventLogTypesTests
         var recorded = new RecordedEvent(
             eventType: "author-registered",
             payload: new byte[] { 1 },
-            streamId: "authors-1",
+            streamId: StreamId.Parse("test:authors-1"),
             streamVersion: 3,
             sequencePosition: 42,
             commitTimestamp: new DateTime(2026, 9, 16, 0, 0, 0, DateTimeKind.Utc),
@@ -37,7 +37,7 @@ public class EventLogTypesTests
 
         Assert.Equal(42, recorded.SequencePosition);
         Assert.Equal(3, recorded.StreamVersion);
-        Assert.Equal("authors-1", recorded.StreamId);
+        Assert.Equal("test:authors-1", recorded.StreamId.ToString());
         Assert.Equal(2, recorded.SchemaVersion);
         Assert.Equal(new DateTime(2026, 9, 16, 0, 0, 0, DateTimeKind.Utc), recorded.CommitTimestamp);
         Assert.Equal(typeof(ReadOnlyMemory<byte>), recorded.Metadata.GetType());
@@ -63,7 +63,7 @@ public class EventLogTypesTests
             new RecordedEvent(
                 "author-registered",
                 payload: new byte[] { 1 },
-                streamId: "s",
+                streamId: StreamId.Parse("test:s"),
                 streamVersion: 1,
                 sequencePosition: 1,
                 commitTimestamp: DateTime.UtcNow,
@@ -77,7 +77,7 @@ public class EventLogTypesTests
         var recorded = new RecordedEvent(
             "author-registered",
             payload: new byte[] { 1 },
-            streamId: "s",
+            streamId: StreamId.Parse("test:s"),
             streamVersion: 1,
             sequencePosition: 1,
             commitTimestamp: DateTime.UtcNow,
@@ -127,7 +127,7 @@ public class EventLogTypesTests
         var recorded = new RecordedEvent(
             "author-registered",
             payload,
-            "s",
+            StreamId.Parse("test:s"),
             streamVersion: 1,
             sequencePosition: 1,
             commitTimestamp: DateTime.UtcNow,
@@ -146,11 +146,11 @@ public class EventLogTypesTests
         var recorded = new RecordedEvent(
             "author-registered",
             payload: ReadOnlyMemory<byte>.Empty,
-            streamId: "s",
+            streamId: StreamId.Parse("test:s"),
             streamVersion: 1,
             sequencePosition: 1,
             commitTimestamp: DateTime.UtcNow,
-            tags: ["author:1"]);
+            tags: [Tag.Parse("author:1")]);
 
         Assert.True(EventQueryMatcher.Matches(
             recorded,

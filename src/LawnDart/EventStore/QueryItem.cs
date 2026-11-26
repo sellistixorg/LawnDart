@@ -13,7 +13,13 @@ public class QueryItem
     /// <summary>
     /// Tags that must all be present. An event matches if it contains all of these tags.
     /// </summary>
-    public IReadOnlyList<string>? Tags { get; init; }
+    public IReadOnlyList<Tag>? Tags
+    {
+        get => _tags;
+        init => _tags = value is null ? null : EventLogBuffers.RequireTags(value);
+    }
+
+    private readonly IReadOnlyList<Tag>? _tags;
 
     /// <summary>
     /// Partition filter for multi-node deployments. Filters events by StreamId hash to enable
@@ -29,12 +35,12 @@ public class QueryItem
     /// <summary>
     /// Creates a query item that matches events by tags.
     /// </summary>
-    public static QueryItem ByTags(params string[] tags) => new() { Tags = tags };
+    public static QueryItem ByTags(params Tag[] tags) => new() { Tags = tags };
 
     /// <summary>
     /// Creates a query item that matches events by both type and tags.
     /// </summary>
-    public static QueryItem ByTypeAndTags(string[] types, string[] tags) => new() { Types = types, Tags = tags };
+    public static QueryItem ByTypeAndTags(string[] types, Tag[] tags) => new() { Types = types, Tags = tags };
 
     /// <summary>
     /// Creates a query item that matches events by partition (for multi-node deployments).

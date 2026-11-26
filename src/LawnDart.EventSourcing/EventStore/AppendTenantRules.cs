@@ -10,12 +10,12 @@ namespace LawnDart.EventSourcing.EventStore;
 internal static class AppendTenantRules
 {
     public static void ValidateStreamAppend(
-        string streamId,
+        StreamId streamId,
         IReadOnlyList<AppendEvent> envelopes,
         bool requireTenantId,
         bool validateNames)
     {
-        var tenantIdFromStream = StreamIdParser.ExtractTenantId(streamId);
+        var tenantIdFromStream = streamId.TenantId;
         if (requireTenantId && tenantIdFromStream == null)
         {
             throw new ArgumentException(

@@ -63,7 +63,7 @@ public sealed class GlobalProjectionMultiNodeSqlTests
         var store = new InMemoryEventStore();
         var reg = MatrixBceSqlHost.MakeGlobalReg();
 
-        await store.AppendAsync("system:Tags:1", [
+        await store.AppendAsync(StreamId.Parse("system:Tags:1"), [
             new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, "alpha"),
             new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, "beta")
         ], metadata: Meta(), cancellationToken: cts.Token);
@@ -111,7 +111,7 @@ public sealed class GlobalProjectionMultiNodeSqlTests
         var store = new InMemoryEventStore();
         var reg = MatrixBceSqlHost.MakeGlobalReg();
 
-        await store.AppendAsync("system:Tags:1", [
+        await store.AppendAsync(StreamId.Parse("system:Tags:1"), [
             new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, "n0"),
             new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, "n1")
         ], metadata: Meta(), cancellationToken: cts.Token);
@@ -186,7 +186,7 @@ public sealed class GlobalProjectionMultiNodeSqlTests
         Assert.NotNull(streamId);
         var entityId = streamId!["tenant1:Counter:".Length..];
 
-        await store.AppendAsync(streamId!, [
+        await store.AppendAsync(StreamId.Parse(streamId!), [
             new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 7)
         ], metadata: Meta(), cancellationToken: cts.Token);
 
@@ -231,7 +231,7 @@ public sealed class GlobalProjectionMultiNodeSqlTests
         var store = new InMemoryEventStore();
         var reg = MatrixBceSqlHost.MakeGlobalReg();
 
-        await store.AppendAsync("system:Tags:1", [
+        await store.AppendAsync(StreamId.Parse("system:Tags:1"), [
             new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, "solo")
         ], metadata: Meta(), cancellationToken: cts.Token);
 

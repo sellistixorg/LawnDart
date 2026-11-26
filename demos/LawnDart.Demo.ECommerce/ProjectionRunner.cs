@@ -24,7 +24,7 @@ public class ProjectionRunner
 
     public async Task ProjectEventsAsync(string streamId, CancellationToken cancellationToken = default)
     {
-        var events = await _eventStore.ReadStreamAsync(streamId, cancellationToken: cancellationToken);
+        var events = await _eventStore.ReadStreamAsync(StreamId.Parse(streamId), cancellationToken: cancellationToken);
 
         // Support both plain "Cart:{id}" and tenant-prefixed "{tenant}:Cart:{id}" stream IDs
         if (streamId.StartsWith("Cart:") || streamId.Contains(":Cart:"))

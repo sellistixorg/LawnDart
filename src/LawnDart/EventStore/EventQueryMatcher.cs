@@ -43,9 +43,9 @@ public static class EventQueryMatcher
     }
 
     private static bool MatchesCore(
-        string streamId,
+        StreamId streamId,
         string eventTypeName,
-        IReadOnlyList<string> tags,
+        IReadOnlyList<Tag> tags,
         Query query)
     {
         if (query.Items.Count == 0)
@@ -61,15 +61,15 @@ public static class EventQueryMatcher
     }
 
     private static bool MatchesItem(
-        string streamId,
+        StreamId streamId,
         string eventTypeName,
-        IReadOnlyList<string> tags,
+        IReadOnlyList<Tag> tags,
         QueryItem item)
     {
         if (item.PartitionFilter != null)
         {
             var pf = item.PartitionFilter;
-            var hash = PartitionHashUtility.GetDeterministicHashCode(streamId);
+            var hash = PartitionHashUtility.GetDeterministicHashCode(streamId.ToString());
             var partition = hash % pf.TotalInstances;
             if (partition != pf.NodeInstance)
                 return false;
@@ -83,7 +83,7 @@ public static class EventQueryMatcher
         {
             foreach (var requiredTag in item.Tags)
             {
-                if (!tags.Any(t => string.Equals(t, requiredTag, StringComparison.Ordinal)))
+                if (!tags.Contains(requiredTag))
                     return false;
             }
         }

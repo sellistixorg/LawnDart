@@ -18,7 +18,7 @@ public interface IEventStore : IStreamRegistry
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>List of sequenced events in version order.</returns>
     Task<IReadOnlyList<SequencedEvent>> ReadStreamAsync(
-        string streamId,
+        StreamId streamId,
         long fromVersion = 0,
         long? toVersion = null,
         DateTime? toTimestamp = null,
@@ -35,7 +35,7 @@ public interface IEventStore : IStreamRegistry
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Async sequence of sequenced events in version order.</returns>
     IAsyncEnumerable<SequencedEvent> ReadStreamEnumerableAsync(
-        string streamId,
+        StreamId streamId,
         long fromVersion = 0,
         long? toVersion = null,
         DateTime? toTimestamp = null,
@@ -103,7 +103,7 @@ public interface IEventStore : IStreamRegistry
     /// </returns>
     [System.Diagnostics.CodeAnalysis.SuppressMessage("ApiDesign", "RS0026:Do not add multiple public overloads with optional parameters", Justification = "The two appends take different required parameters (a stream id or an append condition), so a call always picks one.")]
     Task<AppendResult> AppendAsync(
-        string streamId,
+        StreamId streamId,
         IEnumerable<TaggedEvent> events,
         long? expectedVersion = null,
         EventMetadata? metadata = null,

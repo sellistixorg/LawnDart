@@ -329,7 +329,7 @@ public sealed class ProjectionTimelineService(
         {
             AppliedIndex = appliedIndex,
             SequencePosition = se.SequencePosition,
-            StreamId = se.StreamId,
+            StreamId = se.StreamId.ToString(),
             Version = se.Version,
             Timestamp = se.Metadata.Timestamp,
             EventType = se.Event.GetType().Name,
@@ -342,7 +342,7 @@ public sealed class ProjectionTimelineService(
             CausationId = se.Metadata.CausationId,
             CommitTimestamp = se.Metadata.CommitTimestamp,
             IpAddress = se.Metadata.IpAddress,
-            Tags = se.Tags.ToArray()
+            Tags = se.Tags.Select(static t => t.ToString()).ToArray()
         };
 
     private static JsonElement? ToJsonElement(JsonNode? node)

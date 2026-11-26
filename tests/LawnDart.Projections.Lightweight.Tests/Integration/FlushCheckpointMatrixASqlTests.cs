@@ -73,7 +73,7 @@ public sealed class FlushCheckpointMatrixASqlTests
         for (var i = 0; i < count; i++)
         {
             await store.AppendAsync(
-                $"tenant1:Counter:{prefix}-{i}",
+                StreamId.Parse($"tenant1:Counter:{prefix}-{i}"),
                 [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, i + 1)],
                 metadata: Meta(),
                 cancellationToken: ct);

@@ -11,11 +11,11 @@ These live on `IAggregateRepository` in Core (not `Add*` extensions). Guid overl
 | Method | Primary use |
 |---|---|
 | `GetAsync<T>(Guid id)` | Load by aggregate id, or `null` if missing |
-| `GetAsync<T>(string streamId)` | Load when the stream is not `{type}:{guid}` |
+| `GetAsync<T>(StreamId streamId)` | Load when the stream is not `{type}:{guid}` |
 | `CreateAsync<T>(Guid id)` | New instance; does not check existence |
-| `CreateAsync<T>(string streamId)` | New instance with a custom stream id |
+| `CreateAsync<T>(StreamId streamId)` | New instance with a custom stream id |
 | `GetOrCreateAsync<T>(Guid id)` | Preferred load/create for `{type}:{guid}` streams |
-| `GetOrCreateAsync<T>(string streamId)` | Preferred load/create for custom stream ids |
+| `GetOrCreateAsync<T>(StreamId streamId)` | Preferred load/create for custom stream ids |
 | `HandleCommandAsync<T, TCommand>(...)` | Auth + `Handle(TCommand)` + persist |
 
 ## Host

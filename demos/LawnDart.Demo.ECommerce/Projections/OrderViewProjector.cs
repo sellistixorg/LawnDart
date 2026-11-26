@@ -26,10 +26,10 @@ public class OrderViewProjector : IProjector<OrderView>
         var @event = sequencedEvent.Event;
         var streamId = sequencedEvent.StreamId;
 
-        if (!_views.TryGetValue(streamId, out var view))
+        if (!_views.TryGetValue(streamId.ToString(), out var view))
         {
-            view = new OrderView { OrderId = ExtractOrderId(streamId) };
-            _views[streamId] = view;
+            view = new OrderView { OrderId = ExtractOrderId(streamId.ToString()) };
+            _views[streamId.ToString()] = view;
         }
 
         switch (@event)
@@ -88,7 +88,7 @@ public class OrderViewProjector : IProjector<OrderView>
         foreach (var stream in updatedStreams)
         {
             // Handle both tenant-prefixed and non-tenant formats
-            if (!stream.StreamId.Contains(":Order:") && !stream.StreamId.StartsWith("Order:"))
+            if (!stream.StreamId.ToString().Contains(":Order:") && !stream.StreamId.ToString().StartsWith("Order:"))
                 continue;
 
             var events = await _eventStore.ReadStreamAsync(

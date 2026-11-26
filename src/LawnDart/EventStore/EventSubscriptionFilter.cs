@@ -14,14 +14,14 @@ public sealed class EventSubscriptionFilter
     /// <summary>
     /// Stream identifier when <see cref="Kind"/> is <see cref="EventSubscriptionScope.Stream"/>; otherwise <see langword="null"/>.
     /// </summary>
-    public string? StreamId { get; }
+    public StreamId? StreamId { get; }
 
     /// <summary>
     /// DCB query when <see cref="Kind"/> is <see cref="EventSubscriptionScope.Query"/>; otherwise <see langword="null"/>.
     /// </summary>
     public Query? Query { get; }
 
-    private EventSubscriptionFilter(EventSubscriptionScope kind, string? streamId, Query? query)
+    private EventSubscriptionFilter(EventSubscriptionScope kind, StreamId? streamId, Query? query)
     {
         Kind = kind;
         StreamId = streamId;
@@ -38,11 +38,10 @@ public sealed class EventSubscriptionFilter
     /// Subscribes to events for a single stream, still ordered by global <see cref="SequencedEvent.SequencePosition"/>.
     /// </summary>
     /// <param name="streamId">The stream identifier.</param>
-    /// <exception cref="ArgumentException"><paramref name="streamId"/> is null or whitespace.</exception>
-    public static EventSubscriptionFilter ForStream(string streamId)
+    /// <exception cref="ArgumentException"><paramref name="streamId"/> is <see langword="default"/>.</exception>
+    public static EventSubscriptionFilter ForStream(StreamId streamId)
     {
-        if (string.IsNullOrWhiteSpace(streamId))
-            throw new ArgumentException("Stream id is required.", nameof(streamId));
+        EventLogBuffers.RequireStreamId(streamId);
 
         return new(EventSubscriptionScope.Stream, streamId, query: null);
     }
@@ -70,7 +69,7 @@ public sealed class EventSubscriptionFilter
         {
             EventSubscriptionScope.All => true,
             EventSubscriptionScope.Stream =>
-                string.Equals(sequencedEvent.StreamId, StreamId, StringComparison.Ordinal),
+                sequencedEvent.StreamId == StreamId,
             EventSubscriptionScope.Query =>
                 EventQueryMatcher.Matches(sequencedEvent, Query!, catalog),
             _ => false
@@ -89,7 +88,7 @@ public sealed class EventSubscriptionFilter
         {
             EventSubscriptionScope.All => true,
             EventSubscriptionScope.Stream =>
-                string.Equals(recordedEvent.StreamId, StreamId, StringComparison.Ordinal),
+                recordedEvent.StreamId == StreamId,
             EventSubscriptionScope.Query =>
                 EventQueryMatcher.Matches(recordedEvent, Query!),
             _ => false

@@ -472,12 +472,12 @@ public abstract class DcbAppendRaceContractTests : ContractSuite
         return await Task.WhenAll(tasks).ConfigureAwait(false);
     }
 
-    private static AppendEvent Event(string type, params string[] tags)
+    private static AppendEvent Event(string type, params LawnDart.EventStore.Tag[] tags)
         => new(type, Encoding.UTF8.GetBytes("{}"), tags: tags);
 
     private static string TypeName(string kind) => "race." + kind + "." + Guid.NewGuid().ToString("N");
 
-    private static string Stream() => "race:" + Guid.NewGuid().ToString("N");
+    private static StreamId Stream() => StreamId.For("race", Guid.NewGuid().ToString("N"));
 
-    private static string Tag(string kind) => kind + ":" + Guid.NewGuid().ToString("N");
+    private static LawnDart.EventStore.Tag Tag(string kind) => LawnDart.EventStore.Tag.Create(kind, Guid.NewGuid().ToString("N"));
 }

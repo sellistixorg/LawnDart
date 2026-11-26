@@ -45,7 +45,7 @@ public sealed class WorkingSetEvictionTests
         for (var i = 0; i < 5; i++)
         {
             await store.AppendAsync(
-                $"tenant1:Counter:seed-{i}",
+                StreamId.Parse($"tenant1:Counter:seed-{i}"),
                 [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 10 + i)],
                 metadata: Meta(),
                 cancellationToken: cts.Token);
@@ -90,7 +90,7 @@ public sealed class WorkingSetEvictionTests
 
         // New event → hydrate seed-0 (count 10) then apply +1 → 11.
         await store.AppendAsync(
-            "tenant1:Counter:seed-0",
+            StreamId.Parse("tenant1:Counter:seed-0"),
             [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)],
             metadata: Meta(),
             cancellationToken: cts.Token);
@@ -119,7 +119,7 @@ public sealed class WorkingSetEvictionTests
         for (var i = 0; i < n; i++)
         {
             await store.AppendAsync(
-                $"tenant1:Counter:ws-{i}",
+                StreamId.Parse($"tenant1:Counter:ws-{i}"),
                 [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, i + 1)],
                 metadata: Meta(),
                 cancellationToken: cts.Token);
@@ -162,12 +162,12 @@ public sealed class WorkingSetEvictionTests
 
         // Two instances; max=1 forces eviction of the colder one after flush.
         await store.AppendAsync(
-            "tenant1:Counter:keep",
+            StreamId.Parse("tenant1:Counter:keep"),
             [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)],
             metadata: Meta(),
             cancellationToken: cts.Token);
         await store.AppendAsync(
-            "tenant1:Counter:evict-me",
+            StreamId.Parse("tenant1:Counter:evict-me"),
             [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 2)],
             metadata: Meta(),
             cancellationToken: cts.Token);
@@ -196,7 +196,7 @@ public sealed class WorkingSetEvictionTests
         // Touch "keep" via TryGetView if present; append to the likely-evicted stream.
         // Regardless of which survived, appending to evict-me must hydrate + apply.
         await store.AppendAsync(
-            "tenant1:Counter:evict-me",
+            StreamId.Parse("tenant1:Counter:evict-me"),
             [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 3)],
             metadata: Meta(),
             cancellationToken: cts.Token);

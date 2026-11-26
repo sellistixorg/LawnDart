@@ -58,7 +58,7 @@ public class ProductCatalogProjector : IProjector<ProductCatalog>
     {
         var @event = sequencedEvent.Event;
         var streamId = sequencedEvent.StreamId;
-        var productId = ExtractProductId(streamId);
+        var productId = ExtractProductId(streamId.ToString());
 
         switch (@event)
         {
@@ -117,7 +117,7 @@ public class ProductCatalogProjector : IProjector<ProductCatalog>
         foreach (var stream in updatedStreams)
         {
             // Handle both tenant-prefixed and non-tenant formats
-            if (!stream.StreamId.Contains(":Product:") && !stream.StreamId.StartsWith("Product:"))
+            if (!stream.StreamId.ToString().Contains(":Product:") && !stream.StreamId.ToString().StartsWith("Product:"))
                 continue;
 
             var events = await _eventStore.ReadStreamAsync(

@@ -28,10 +28,10 @@ public abstract class TagContractTests : ContractSuite
         var tags = (await store.ReadStreamAsync(Stream(id)))[0].Tags;
         var clr = $"ProbeAggregate:{id:D}";
         var formatted = LowercaseTagFormat.Instance.Tag("ProbeAggregate", id);
-        Assert.Contains(clr, tags);
-        Assert.DoesNotContain(formatted, tags);
-        Assert.Single((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(clr)))).Events);
-        Assert.Empty((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(formatted)))).Events);
+        Assert.Contains(clr, tags.Select(static t => t.ToString()).ToArray());
+        Assert.DoesNotContain(formatted, tags.Select(static t => t.ToString()).ToArray());
+        Assert.Single((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(clr))))).Events);
+        Assert.Empty((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(formatted))))).Events);
     }
 
     [Fact]
@@ -45,12 +45,12 @@ public abstract class TagContractTests : ContractSuite
         var oldClr = $"ProbeAggregate:{oldId:D}";
         var formatted = LowercaseTagFormat.Instance.Tag("ProbeAggregate", newId);
         var newTags = (await store.ReadStreamAsync(Stream(newId)))[0].Tags;
-        Assert.Contains(formatted, newTags);
-        Assert.DoesNotContain($"ProbeAggregate:{newId:D}", newTags);
-        Assert.Single((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(oldClr)))).Events);
+        Assert.Contains(formatted, newTags.Select(static t => t.ToString()).ToArray());
+        Assert.DoesNotContain($"ProbeAggregate:{newId:D}", newTags.Select(static t => t.ToString()).ToArray());
+        Assert.Single((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(oldClr))))).Events);
         Assert.Empty((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(
-            LowercaseTagFormat.Instance.Tag("ProbeAggregate", oldId))))).Events);
-        Assert.Single((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(formatted)))).Events);
+            Tag.Parse(LowercaseTagFormat.Instance.Tag("ProbeAggregate", oldId)))))).Events);
+        Assert.Single((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(formatted))))).Events);
     }
 
     [Fact]
@@ -59,8 +59,8 @@ public abstract class TagContractTests : ContractSuite
         var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
         var logger = new TagListLogger();
         var id = Guid.NewGuid();
-        var bad = $"Student:{id:D}";
-        var good = LowercaseTagFormat.Instance.Tag("student", id);
+        var bad = LawnDart.EventStore.Tag.Parse($"Student:{id:D}");
+        var good = LawnDart.EventStore.Tag.Parse(LowercaseTagFormat.Instance.Tag("student", id));
         var loud = Dcb(store, logger, warn: true);
         await loud.AppendWithContextAsync([new TaggedEvent(new ProbeEvent(Guid.NewGuid(), DateTime.UtcNow), [bad])]);
         var first = await loud.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags([bad])));
@@ -69,16 +69,16 @@ public abstract class TagContractTests : ContractSuite
         Assert.Equal(1, first.Count);
         Assert.Equal(1, second.Count);
         Assert.Equal(0, formatted.Count);
-        Assert.Equal(1, logger.WarningsFor(bad));
-        Assert.Equal(0, logger.WarningsFor(good));
+        Assert.Equal(1, logger.WarningsFor(bad.ToString()));
+        Assert.Equal(0, logger.WarningsFor(good.ToString()));
 
-        var quietTag = $"Section:{Guid.NewGuid():D}";
+        var quietTag = LawnDart.EventStore.Tag.Parse($"Section:{Guid.NewGuid():D}");
         var quiet = Dcb(store, logger, warn: false);
         await quiet.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags([quietTag])));
         await quiet.AppendWithContextAsync(
-            [new TaggedEvent(new ProbeEvent(Guid.NewGuid(), DateTime.UtcNow), [LowercaseTagFormat.Instance.Tag("section", Guid.NewGuid())])],
+            [new TaggedEvent(new ProbeEvent(Guid.NewGuid(), DateTime.UtcNow), [LawnDart.EventStore.Tag.Parse(LowercaseTagFormat.Instance.Tag("section", Guid.NewGuid()))])],
             AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(quietTag))));
-        Assert.Equal(0, logger.WarningsFor(quietTag));
+        Assert.Equal(0, logger.WarningsFor(quietTag.ToString()));
     }
 
     [Fact]
@@ -87,8 +87,8 @@ public abstract class TagContractTests : ContractSuite
         var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
         var logger = new TagListLogger();
         var repo = Dcb(store, logger, warn: true);
-        var student = LowercaseTagFormat.Instance.Tag("student", Guid.NewGuid());
-        var tenant = LowercaseTagFormat.Instance.Tag("tenant", "academy-tenant");
+        var student = LawnDart.EventStore.Tag.Parse(LowercaseTagFormat.Instance.Tag("student", Guid.NewGuid()));
+        var tenant = LawnDart.EventStore.Tag.Parse(LowercaseTagFormat.Instance.Tag("tenant", "academy-tenant"));
         await repo.AppendWithContextAsync([new TaggedEvent(new ProbeEvent(Guid.NewGuid(), DateTime.UtcNow), [student, tenant])]);
         var state = await repo.GetStateAsync<CountingState>(Query.FromItems(QueryItem.ByTags([student, tenant])));
         Assert.Equal(1, state.Count);
@@ -113,7 +113,7 @@ public abstract class TagContractTests : ContractSuite
         await repository.SaveAsync(aggregate, new CommandMetadata());
     }
 
-    private static string Stream(Guid id) => $"acct:ProbeAggregate:{id:D}";
+    private static StreamId Stream(Guid id) => StreamId.For("acct", "ProbeAggregate", id.ToString("D"));
 
     private static IServiceProvider Services(IEventStore store, EventSourcingOptions eventSourcingOptions, TagListLogger? logger)
     {

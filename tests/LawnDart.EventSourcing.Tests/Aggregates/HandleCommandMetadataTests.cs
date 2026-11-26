@@ -26,7 +26,7 @@ public class HandleCommandMetadataTests
 
         await repository.HandleCommandAsync(aggregate, command);
 
-        var events = await store.ReadStreamAsync(aggregate.StreamId);
+        var events = await store.ReadStreamAsync(StreamId.Parse(aggregate.StreamId));
         Assert.Equal(2, events.Count);
         Assert.All(events, e => Assert.Equal(command.Id.ToString(), e.Metadata.CausationId));
     }
@@ -45,7 +45,7 @@ public class HandleCommandMetadataTests
             CausationId = "already-set"
         });
 
-        var events = await store.ReadStreamAsync(aggregate.StreamId);
+        var events = await store.ReadStreamAsync(StreamId.Parse(aggregate.StreamId));
         Assert.All(events, e => Assert.Equal("already-set", e.Metadata.CausationId));
         Assert.All(events, e => Assert.Equal("keep-corr", e.Metadata.CorrelationId));
     }
@@ -59,7 +59,7 @@ public class HandleCommandMetadataTests
 
         await repository.HandleCommandAsync(aggregate, new TwoTickCommand(Guid.NewGuid()));
 
-        var events = await store.ReadStreamAsync(aggregate.StreamId);
+        var events = await store.ReadStreamAsync(StreamId.Parse(aggregate.StreamId));
         Assert.Equal(2, events.Count);
         Assert.False(string.IsNullOrWhiteSpace(events[0].Metadata.CorrelationId));
         Assert.Equal(events[0].Metadata.CorrelationId, events[1].Metadata.CorrelationId);
@@ -76,7 +76,7 @@ public class HandleCommandMetadataTests
 
         await repository.HandleCommandAsync(aggregate, new DatedTickCommand(Guid.NewGuid(), business));
 
-        var stored = Assert.Single(await store.ReadStreamAsync(aggregate.StreamId));
+        var stored = Assert.Single(await store.ReadStreamAsync(StreamId.Parse(aggregate.StreamId)));
         Assert.Equal("handle-command-metadata-tests.dated-tick-applied", stored.Metadata.SchemaName);
         Assert.NotEqual(typeof(DatedTickApplied).FullName, stored.Metadata.SchemaName);
         Assert.Equal(business, stored.Metadata.Timestamp);

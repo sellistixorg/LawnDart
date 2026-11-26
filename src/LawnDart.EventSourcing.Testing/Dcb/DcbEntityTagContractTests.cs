@@ -28,16 +28,16 @@ public abstract class DcbEntityTagContractTests : ContractSuite
         var course = Tag("course");
         var student = Tag("student");
 
-        var entity = await repository.GetOrCreateEntityAsync<CourseDecision>(Query.FromItems(QueryItem.ByTags([course])));
+        var entity = await repository.GetOrCreateEntityAsync<CourseDecision>(Query.FromItems(QueryItem.ByTags([LawnDart.EventStore.Tag.Parse(course)])));
         await repository.HandleCommandAsync(entity, new OpenCourseAndSubscribe(course, student));
 
-        var events = (await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(course)))).Events;
+        var events = (await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(LawnDart.EventStore.Tag.Parse(course))))).Events;
         Assert.Equal(2, events.Count);
 
         var created = Assert.Single(events, e => e.Event is ContractCourseCreated);
         var subscribed = Assert.Single(events, e => e.Event is ContractStudentSubscribed);
-        Assert.Equal(new[] { course }, created.Tags.Order(StringComparer.Ordinal));
-        Assert.Equal(new[] { course, student }.Order(StringComparer.Ordinal), subscribed.Tags.Order(StringComparer.Ordinal));
+        Assert.Equal(new[] { course }, created.Tags.Select(static t => t.ToString()));
+        Assert.Equal(new[] { course, student }.Order(StringComparer.Ordinal), subscribed.Tags.Select(static t => t.ToString()).Order(StringComparer.Ordinal));
     }
 
     [Fact]
@@ -48,10 +48,10 @@ public abstract class DcbEntityTagContractTests : ContractSuite
         var course = Tag("course");
         var student = Tag("student");
 
-        var entity = await repository.GetOrCreateEntityAsync<CourseDecision>(Query.FromItems(QueryItem.ByTags([course])));
+        var entity = await repository.GetOrCreateEntityAsync<CourseDecision>(Query.FromItems(QueryItem.ByTags([LawnDart.EventStore.Tag.Parse(course)])));
         await repository.HandleCommandAsync(entity, new OpenCourseAndSubscribe(course, student));
 
-        var forStudent = (await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(student)))).Events;
+        var forStudent = (await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(LawnDart.EventStore.Tag.Parse(student))))).Events;
         var only = Assert.Single(forStudent);
         Assert.IsType<ContractStudentSubscribed>(only.Event);
     }
@@ -66,28 +66,28 @@ public abstract class DcbEntityTagContractTests : ContractSuite
         var earlierB = Tag("student");
         var student = Tag("student");
 
-        await repository.AppendWithContextAsync([new TaggedEvent(new ContractCourseCreated(Guid.NewGuid(), course), [course])]);
-        await repository.AppendWithContextAsync([new TaggedEvent(new ContractStudentSubscribed(Guid.NewGuid(), course, earlierA), [course, earlierA])]);
-        await repository.AppendWithContextAsync([new TaggedEvent(new ContractStudentSubscribed(Guid.NewGuid(), course, earlierB), [course, earlierB])]);
+        await repository.AppendWithContextAsync([new TaggedEvent(new ContractCourseCreated(Guid.NewGuid(), course), [LawnDart.EventStore.Tag.Parse(course)])]);
+        await repository.AppendWithContextAsync([new TaggedEvent(new ContractStudentSubscribed(Guid.NewGuid(), course, earlierA), [LawnDart.EventStore.Tag.Parse(course), LawnDart.EventStore.Tag.Parse(earlierA)])]);
+        await repository.AppendWithContextAsync([new TaggedEvent(new ContractStudentSubscribed(Guid.NewGuid(), course, earlierB), [LawnDart.EventStore.Tag.Parse(course), LawnDart.EventStore.Tag.Parse(earlierB)])]);
 
-        var entity = await repository.GetOrCreateEntityAsync<CourseDecision>(Query.FromItems(QueryItem.ByTags([course])));
+        var entity = await repository.GetOrCreateEntityAsync<CourseDecision>(Query.FromItems(QueryItem.ByTags([LawnDart.EventStore.Tag.Parse(course)])));
         Assert.Equal(2, entity.State.Students);
         var before = entity.LastSequencePosition;
 
         await repository.HandleCommandAsync(entity, new ChangeCapacityAndSubscribe(course, 30, student));
 
-        var written = (await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(course)), fromSequencePosition: before + 1)).Events;
+        var written = (await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(LawnDart.EventStore.Tag.Parse(course))), fromSequencePosition: before + 1)).Events;
         Assert.Equal(2, written.Count);
         Assert.All(written, e =>
         {
-            Assert.DoesNotContain(earlierA, e.Tags);
-            Assert.DoesNotContain(earlierB, e.Tags);
+            Assert.DoesNotContain(earlierA, e.Tags.Select(static t => t.ToString()).ToArray());
+            Assert.DoesNotContain(earlierB, e.Tags.Select(static t => t.ToString()).ToArray());
         });
 
         var capacity = Assert.Single(written, e => e.Event is ContractCourseCapacityChanged);
-        Assert.Equal(new[] { course }, capacity.Tags.Order(StringComparer.Ordinal));
+        Assert.Equal(new[] { course }, capacity.Tags.Select(static t => t.ToString()));
         var subscribed = Assert.Single(written, e => e.Event is ContractStudentSubscribed);
-        Assert.Equal(new[] { course, student }.Order(StringComparer.Ordinal), subscribed.Tags.Order(StringComparer.Ordinal));
+        Assert.Equal(new[] { course, student }.Order(StringComparer.Ordinal), subscribed.Tags.Select(static t => t.ToString()).Order(StringComparer.Ordinal));
     }
 
     [Fact]
@@ -98,21 +98,21 @@ public abstract class DcbEntityTagContractTests : ContractSuite
         var course = Tag("course");
         var earlier = Tag("student");
 
-        await repository.AppendWithContextAsync([new TaggedEvent(new ContractCourseCreated(Guid.NewGuid(), course), [course])]);
-        await repository.AppendWithContextAsync([new TaggedEvent(new ContractStudentSubscribed(Guid.NewGuid(), course, earlier), [course, earlier])]);
+        await repository.AppendWithContextAsync([new TaggedEvent(new ContractCourseCreated(Guid.NewGuid(), course), [LawnDart.EventStore.Tag.Parse(course)])]);
+        await repository.AppendWithContextAsync([new TaggedEvent(new ContractStudentSubscribed(Guid.NewGuid(), course, earlier), [LawnDart.EventStore.Tag.Parse(course), LawnDart.EventStore.Tag.Parse(earlier)])]);
 
         // A decision about the earlier student reads only that student's events.
-        var studentDecision = await repository.GetOrCreateEntityAsync<StudentDecision>(Query.FromItems(QueryItem.ByTags([earlier])));
+        var studentDecision = await repository.GetOrCreateEntityAsync<StudentDecision>(Query.FromItems(QueryItem.ByTags([LawnDart.EventStore.Tag.Parse(earlier)])));
 
         // Meanwhile the course decision replays the earlier student's subscription
         // and changes the course capacity. That event is about the course only.
-        var courseDecision = await repository.GetOrCreateEntityAsync<CourseDecision>(Query.FromItems(QueryItem.ByTags([course])));
+        var courseDecision = await repository.GetOrCreateEntityAsync<CourseDecision>(Query.FromItems(QueryItem.ByTags([LawnDart.EventStore.Tag.Parse(course)])));
         await repository.HandleCommandAsync(courseDecision, new ChangeCapacity(course, 40));
 
         // The student decision did not read anything the course decision wrote.
         await repository.HandleCommandAsync(studentDecision, new NoteStudent(earlier, "moved"));
 
-        var forStudent = (await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(earlier)))).Events;
+        var forStudent = (await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(LawnDart.EventStore.Tag.Parse(earlier))))).Events;
         Assert.Equal(2, forStudent.Count);
         Assert.DoesNotContain(forStudent, e => e.Event is ContractCourseCapacityChanged);
     }
@@ -126,12 +126,12 @@ public abstract class DcbEntityTagContractTests : ContractSuite
         var student = Tag("student");
 
         // The decision reads by course and student, but the note is about the student only.
-        var entity = await repository.GetOrCreateEntityAsync<StudentDecision>(Query.FromItems(QueryItem.ByTags([student, course])));
+        var entity = await repository.GetOrCreateEntityAsync<StudentDecision>(Query.FromItems(QueryItem.ByTags([LawnDart.EventStore.Tag.Parse(student), LawnDart.EventStore.Tag.Parse(course)])));
         await repository.HandleCommandAsync(entity, new NoteStudent(student, "hello"));
 
-        var written = Assert.Single((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(student)))).Events);
-        Assert.Equal(new[] { student }, written.Tags);
-        Assert.Empty((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(course)))).Events);
+        var written = Assert.Single((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(LawnDart.EventStore.Tag.Parse(student))))).Events);
+        Assert.Equal(new[] { student }, written.Tags.Select(static t => t.ToString()).ToArray());
+        Assert.Empty((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(LawnDart.EventStore.Tag.Parse(course))))).Events);
     }
 
     [Fact]
@@ -141,10 +141,10 @@ public abstract class DcbEntityTagContractTests : ContractSuite
         var repository = Repo(store);
         var course = Tag("course");
 
-        await repository.AppendWithContextAsync([new TaggedEvent(new ContractCourseCreated(Guid.NewGuid(), course), [course])]);
+        await repository.AppendWithContextAsync([new TaggedEvent(new ContractCourseCreated(Guid.NewGuid(), course), [LawnDart.EventStore.Tag.Parse(course)])]);
 
-        var first = await repository.GetOrCreateEntityAsync<CourseDecision>(Query.FromItems(QueryItem.ByTags([course])));
-        var second = await repository.GetOrCreateEntityAsync<CourseDecision>(Query.FromItems(QueryItem.ByTags([course])));
+        var first = await repository.GetOrCreateEntityAsync<CourseDecision>(Query.FromItems(QueryItem.ByTags([LawnDart.EventStore.Tag.Parse(course)])));
+        var second = await repository.GetOrCreateEntityAsync<CourseDecision>(Query.FromItems(QueryItem.ByTags([LawnDart.EventStore.Tag.Parse(course)])));
 
         await repository.HandleCommandAsync(first, new ChangeCapacity(course, 10));
         await Assert.ThrowsAsync<ConcurrencyException>(() =>

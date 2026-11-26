@@ -35,7 +35,7 @@ public class QueryTests
     {
         // Arrange
         var item1 = QueryItem.ByType("Event1");
-        var item2 = QueryItem.ByTags("tag1", "tag2");
+        var item2 = QueryItem.ByTags(Tag.Parse("tag:tag1"), Tag.Parse("tag:tag2"));
 
         // Act
         var query = Query.FromItems(item1, item2);
@@ -68,20 +68,20 @@ public class QueryTests
     public void QueryItem_ByTags_CreatesTagQuery()
     {
         // Act
-        var item = QueryItem.ByTags("tag1", "tag2");
+        var item = QueryItem.ByTags(Tag.Parse("tag:tag1"), Tag.Parse("tag:tag2"));
 
         // Assert
         Assert.NotNull(item.Tags);
         Assert.Equal(2, item.Tags.Count);
-        Assert.Contains("tag1", item.Tags);
-        Assert.Contains("tag2", item.Tags);
+        Assert.Contains(Tag.Parse("tag:tag1"), item.Tags);
+        Assert.Contains(Tag.Parse("tag:tag2"), item.Tags);
     }
 
     [Fact]
     public void QueryItem_ByTypeAndTags_CreatesCombinedQuery()
     {
         // Act
-        var item = QueryItem.ByTypeAndTags(new[] { "Event1" }, new[] { "tag1" });
+        var item = QueryItem.ByTypeAndTags(new[] { "Event1" }, new[] { Tag.Parse("tag:tag1") });
 
         // Assert
         Assert.NotNull(item.Types);

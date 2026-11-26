@@ -50,6 +50,6 @@ Academy is the copy-paste host: `demos/LawnDart.Demo.Academy` (console) and
 
 1. **App-facing dispatch** is `ICommandHandler<T>` (HTTP, jobs). The handler's `HandleAsync` loads the entity and calls the repository.
 2. **Aggregates / DCB** declare closed `Handle(TCommand)`. `HandleCommandAsync` is persistence + authorization. The obsolete entity `HandleAsync<TCommand>` switch is not the authoring form.
-3. **Load** with `GetOrCreateAsync<T>(id)` when the stream is `{type}:{guid}` (or `{tenant}:{type}:{guid}`). Use `GetAsync` / `CreateAsync` / `GetOrCreateAsync` with `string streamId` otherwise.
+3. **Load** with `GetOrCreateAsync<T>(id)` when the stream is `{type}:{guid}` (or `{tenant}:{type}:{guid}`). Use `GetAsync` / `CreateAsync` / `GetOrCreateAsync` with a `StreamId` otherwise.
 4. **Projections:** `ProjectionBase<TView>` plus attributes. Multi-stream views implement `IMultiStreamEntityResolver`.
 5. **Stores:** `AddBoundedContext(name).UseInMemory()` / `UseSqlServer(...)` / `UsePostgres(...)`. When `EnableOutbox` is true, call `PublishEvents` after `WithEventTypes`.

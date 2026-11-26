@@ -20,7 +20,7 @@ public sealed class AtomicFlushRoutingTests
         var store = new MemoryProjectionStore();
         var events = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         await events.AppendAsync(
-            "tenant1:Counter:same",
+            StreamId.Parse("tenant1:Counter:same"),
             [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)],
             metadata: Meta());
         var runner = Runner(events, store, store);
@@ -45,7 +45,7 @@ public sealed class AtomicFlushRoutingTests
         await store.SaveViewAsync("CounterSummary:v1", streamId, """{"count":40}""", 9);
         var events = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         await events.AppendAsync(
-            streamId,
+            StreamId.Parse(streamId),
             [
                 new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1),
                 new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)
@@ -72,7 +72,7 @@ public sealed class AtomicFlushRoutingTests
         const string streamId = "tenant1:Counter:warm";
         var events = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         await events.AppendAsync(
-            streamId,
+            StreamId.Parse(streamId),
             [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)],
             metadata: Meta());
         var head = await events.GetCurrentSequenceAsync();
@@ -86,7 +86,7 @@ public sealed class AtomicFlushRoutingTests
         });
         await store.SaveViewAsync("CounterSummary:v1", streamId, """{"count":10}""", head);
         await events.AppendAsync(
-            streamId,
+            StreamId.Parse(streamId),
             [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)],
             metadata: Meta());
         var runner = Runner(events, store, store);
@@ -110,7 +110,7 @@ public sealed class AtomicFlushRoutingTests
         var checkpoints = new MemoryProjectionStore();
         var events = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
         await events.AppendAsync(
-            "tenant1:Counter:split",
+            StreamId.Parse("tenant1:Counter:split"),
             [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)],
             metadata: Meta());
         var runner = Runner(events, views, checkpoints);

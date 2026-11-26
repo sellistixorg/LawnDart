@@ -909,14 +909,14 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
     private async Task<bool> DispatchToSingleStreamInstanceAsync(SequencedEvent se, CancellationToken ct)
     {
         // Filter to streams matching the configured stream type
-        if (!IsMatchingStreamType(se.StreamId))
+        if (!IsMatchingStreamType(se.StreamId.ToString()))
             return true;
 
         // Partition check — skip streams owned by other nodes
-        if (!_partitioningService.OwnsStream(se.StreamId))
+        if (!_partitioningService.OwnsStream(se.StreamId.ToString()))
             return true;
 
-        var instanceId = BuildInstanceId(se.StreamId);
+        var instanceId = BuildInstanceId(se.StreamId.ToString());
         var instance = await GetOrHydrateInstanceAsync(instanceId, ct).ConfigureAwait(false);
         return ApplyEvent(instance, instanceId, se);
     }
@@ -1078,7 +1078,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
         if (string.IsNullOrEmpty(entityId))
             return true;
 
-        var instanceId = BuildMultiStreamInstanceId(se.StreamId, entityId);
+        var instanceId = BuildMultiStreamInstanceId(se.StreamId.ToString(), entityId);
 
         // Partition by instance id so each entity has a single writer node (aligned with restore).
         if (!_partitioningService.OwnsStream(instanceId))
@@ -1572,7 +1572,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
             return true;
 
         // Handles both "Type:id" (legacy) and "tenant:Type:id" (multi-tenant) formats
-        return StreamIdParser.ExtractAggregateType(streamId)
+        return StreamIdText.AggregateType(streamId)
             .Equals(_registration.StreamType, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -1584,8 +1584,8 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
         return _registration.TenantScope switch
         {
             TenantScope.TenantScoped => streamId, // full stream ID is the instance key
-            TenantScope.TenantGlobal => StreamIdParser.ExtractAggregateIdString(streamId) ?? streamId,
-            TenantScope.SystemGlobal => StreamIdParser.ExtractAggregateIdString(streamId) ?? streamId,
+            TenantScope.TenantGlobal => StreamIdText.AggregateIdString(streamId) ?? streamId,
+            TenantScope.SystemGlobal => StreamIdText.AggregateIdString(streamId) ?? streamId,
             _ => streamId
         };
     }
@@ -1599,7 +1599,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
         return _registration.TenantScope switch
         {
             TenantScope.TenantScoped =>
-                StreamIdParser.ExtractTenantId(streamId) is { } tenantId
+                StreamIdText.TenantId(streamId) is { } tenantId
                     ? $"{tenantId}:{entityId}"
                     : entityId,
             _ => entityId

@@ -25,7 +25,7 @@ public class DcbCartService
     public async Task<CartState> GetCartStateAsync(Guid cartId)
     {
         // Query by tag instead of reading stream
-        var query = Query.FromItems(QueryItem.ByTags($"cart:{cartId}"));
+        var query = Query.FromItems(QueryItem.ByTags(Tag.Parse($"cart:{cartId}")));
         var events = new List<SequencedEvent>();
         await foreach (var evt in _eventStore.ReadByQueryStreamAsync(query))
             events.Add(evt);
@@ -40,7 +40,7 @@ public class DcbCartService
         
         // Create append condition
         var condition = AppendCondition.FailIfMatches(
-            Query.FromItems(QueryItem.ByTags($"cart:{cartId}")),
+            Query.FromItems(QueryItem.ByTags(Tag.Parse($"cart:{cartId}"))),
             after: lastPosition);
 
         var @event = new CartCreated(Guid.NewGuid(), DateTime.UtcNow, cartId, customerId);
@@ -51,7 +51,7 @@ public class DcbCartService
         var operationTag = $"operation:{operationId}";
 
         await _eventStore.AppendAsync(
-            [new TaggedEvent(@event, operationTag, $"cart:{cartId}", $"customer:{customerId}")],
+            [new TaggedEvent(@event, Tag.Parse(operationTag), Tag.Parse($"cart:{cartId}"), Tag.Parse($"customer:{customerId}"))],
             condition,
             metadata);
     }
@@ -62,7 +62,7 @@ public class DcbCartService
         
         // Create append condition
         var condition = AppendCondition.FailIfMatches(
-            Query.FromItems(QueryItem.ByTags($"cart:{cartId}")),
+            Query.FromItems(QueryItem.ByTags(Tag.Parse($"cart:{cartId}"))),
             after: lastPosition);
 
         var @event = new ItemAddedToCart(Guid.NewGuid(), DateTime.UtcNow, productId, quantity);
@@ -73,7 +73,7 @@ public class DcbCartService
         var operationTag = $"operation:{operationId}";
 
         await _eventStore.AppendAsync(
-            [new TaggedEvent(@event, operationTag, $"cart:{cartId}", $"product:{productId}")],
+            [new TaggedEvent(@event, Tag.Parse(operationTag), Tag.Parse($"cart:{cartId}"), Tag.Parse($"product:{productId}"))],
             condition,
             metadata);
     }
@@ -84,7 +84,7 @@ public class DcbCartService
         
         // Create append condition
         var condition = AppendCondition.FailIfMatches(
-            Query.FromItems(QueryItem.ByTags($"cart:{cartId}")),
+            Query.FromItems(QueryItem.ByTags(Tag.Parse($"cart:{cartId}"))),
             after: lastPosition);
 
         var @event = new ItemRemovedFromCart(Guid.NewGuid(), DateTime.UtcNow, productId);
@@ -95,7 +95,7 @@ public class DcbCartService
         var operationTag = $"operation:{operationId}";
 
         await _eventStore.AppendAsync(
-            [new TaggedEvent(@event, operationTag, $"cart:{cartId}", $"product:{productId}")],
+            [new TaggedEvent(@event, Tag.Parse(operationTag), Tag.Parse($"cart:{cartId}"), Tag.Parse($"product:{productId}"))],
             condition,
             metadata);
     }
@@ -106,7 +106,7 @@ public class DcbCartService
         
         // Create append condition
         var condition = AppendCondition.FailIfMatches(
-            Query.FromItems(QueryItem.ByTags($"cart:{cartId}")),
+            Query.FromItems(QueryItem.ByTags(Tag.Parse($"cart:{cartId}"))),
             after: lastPosition);
 
         var orderId = Guid.NewGuid();
@@ -118,14 +118,14 @@ public class DcbCartService
         var operationTag = $"operation:{operationId}";
 
         await _eventStore.AppendAsync(
-            [new TaggedEvent(@event, operationTag, $"cart:{cartId}", $"order:{orderId}")],
+            [new TaggedEvent(@event, Tag.Parse(operationTag), Tag.Parse($"cart:{cartId}"), Tag.Parse($"order:{orderId}"))],
             condition,
             metadata);
     }
 
     private async Task<long> GetLastSequencePositionAsync(string tag)
     {
-        var query = Query.FromItems(QueryItem.ByTags(tag));
+        var query = Query.FromItems(QueryItem.ByTags(Tag.Parse(tag)));
         var maxSeq = 0L;
         await foreach (var evt in _eventStore.ReadByQueryStreamAsync(query))
         {

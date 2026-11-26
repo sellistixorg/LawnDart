@@ -62,7 +62,7 @@ public sealed class FailClosedBackoffTests
             => ReadAndThrow();
 
         public Task<IReadOnlyList<SequencedEvent>> ReadStreamAsync(
-            string streamId,
+            StreamId streamId,
             long fromVersion = 0,
             long? toVersion = null,
             DateTime? toTimestamp = null,
@@ -70,7 +70,7 @@ public sealed class FailClosedBackoffTests
             => throw new NotSupportedException();
 
         public IAsyncEnumerable<SequencedEvent> ReadStreamEnumerableAsync(
-            string streamId,
+            StreamId streamId,
             long fromVersion = 0,
             long? toVersion = null,
             DateTime? toTimestamp = null,
@@ -90,7 +90,7 @@ public sealed class FailClosedBackoffTests
         }
 
         public Task<AppendResult> AppendAsync(
-            string streamId,
+            StreamId streamId,
             IEnumerable<TaggedEvent> events,
             long? expectedVersion = null,
             EventMetadata? metadata = null,
@@ -113,7 +113,7 @@ public sealed class FailClosedBackoffTests
             => Task.FromResult(0L);
 
         public Task<StreamMetadata?> GetStreamAsync(
-            string streamId,
+            StreamId streamId,
             CancellationToken cancellationToken = default)
             => Task.FromResult<StreamMetadata?>(null);
 
@@ -123,14 +123,14 @@ public sealed class FailClosedBackoffTests
             => Task.FromResult<IReadOnlyList<StreamMetadata>>(Array.Empty<StreamMetadata>());
 
         public Task<IReadOnlyList<StreamMetadata>> GetStreamsByTagAsync(
-            string tag,
+            Tag tag,
             CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<StreamMetadata>>(Array.Empty<StreamMetadata>());
 
-        public Task<IReadOnlyList<string>> EnumerateStreamIdsAsync(
+        public Task<IReadOnlyList<StreamId>> EnumerateStreamIdsAsync(
             string? prefix = null,
             CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
+            => Task.FromResult<IReadOnlyList<StreamId>>(Array.Empty<StreamId>());
 
         public Task<IReadOnlyList<StreamMetadata>> GetStreamsUpdatedAfterAsync(
             long afterSequencePosition,

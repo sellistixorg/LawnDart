@@ -38,7 +38,7 @@ public class DcbRepositoryKeyedSnapshotStoreTests
 
         var repo = sp.GetRequiredKeyedService<IDcbRepository>("ordering");
 
-        var entity = await repo.CreateEntityAsync<TestDcbEntity>(Query.FromItems(QueryItem.ByTags(["product:sku-keyed"])));
+        var entity = await repo.CreateEntityAsync<TestDcbEntity>(Query.FromItems(QueryItem.ByTags([Tag.Parse("product:sku-keyed")])));
         await repo.HandleCommandAsync(
             entity,
             new TestCommand { Value = "one" },
@@ -48,7 +48,7 @@ public class DcbRepositoryKeyedSnapshotStoreTests
         await pump.StopAsync(CancellationToken.None);
         Assert.Equal(1, recording.SaveCount);
         Assert.Equal(
-            DcbSnapshotId.FromQuery(Query.FromItems(QueryItem.ByTags("product:sku-keyed"))),
+            DcbSnapshotId.FromQuery(Query.FromItems(QueryItem.ByTags(Tag.Parse("product:sku-keyed")))),
             recording.LastDcbId);
     }
 

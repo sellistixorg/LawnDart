@@ -9,7 +9,7 @@ public class SqlServerTagConditionSqlTests
     public void Empty_after_tag_condition_reads_the_tags_table()
     {
         var (sql, _) = Store().PreviewAppendCondition(
-            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags("course:1"))));
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(Tag.Parse("course:1")))));
 
         Assert.Contains("EventTags", sql, StringComparison.Ordinal);
         Assert.Contains("TagId", sql, StringComparison.Ordinal);
@@ -22,7 +22,7 @@ public class SqlServerTagConditionSqlTests
     {
         var (sql, _) = Store().PreviewAppendCondition(
             AppendCondition.FailIfMatches(Query.FromItems(
-                QueryItem.ByTypeAndTags(["note-added"], ["course:1"]))));
+                QueryItem.ByTypeAndTags(["note-added"], [Tag.Parse("course:1")]))));
 
         Assert.Contains("et0.EventTypeId IN", sql, StringComparison.Ordinal);
         Assert.Contains("TagRegistry", sql, StringComparison.Ordinal);
@@ -34,8 +34,8 @@ public class SqlServerTagConditionSqlTests
     {
         var (sql, _) = Store().PreviewAppendCondition(
             AppendCondition.FailIfMatches(Query.FromItems(
-                QueryItem.ByTags("course:1", "student:1"),
-                QueryItem.ByTags("course:2"))));
+                QueryItem.ByTags(Tag.Parse("course:1"), Tag.Parse("student:1")),
+                QueryItem.ByTags(Tag.Parse("course:2")))));
 
         Assert.Contains("et1.TagId", sql, StringComparison.Ordinal);
         Assert.Contains(" OR ", sql, StringComparison.Ordinal);
@@ -46,7 +46,7 @@ public class SqlServerTagConditionSqlTests
     public void Recent_after_still_bounds_the_tag_position()
     {
         var (sql, _) = Store().PreviewAppendCondition(
-            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags("course:1")), after: 40));
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(Tag.Parse("course:1"))), after: 40));
 
         Assert.Contains("et0.GlobalSequencePosition > @After", sql, StringComparison.Ordinal);
         Assert.DoesNotContain("[Events]", sql, StringComparison.Ordinal);

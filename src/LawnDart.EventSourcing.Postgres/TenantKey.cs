@@ -4,11 +4,10 @@ namespace LawnDart.EventSourcing.Postgres;
 /// Storage tenant key. The same rule on every write and every read.
 /// </summary>
 /// <remarks>
-/// An empty string is never stored. When the stream id has 3 or more
-/// colon-separated parts and the first part is not empty, the key is that
-/// first part. Otherwise the key is <c>default</c>. The public stream
-/// metadata still derives its tenant from the stream id, so a stream
-/// without a tenant prefix does not report <c>default</c>.
+/// An empty string is never stored. The tenant comes from <see cref="LawnDart.EventStore.StreamIdText.TenantId"/>
+/// so <c>{tenant}:dcb</c> and <c>{tenant}:{type}:{id}</c> use that tenant, and <c>dcb</c> or
+/// <c>{type}:{id}</c> use <c>default</c>. The public stream metadata still derives its tenant from
+/// the stream id, so a stream without a tenant prefix does not report <c>default</c>.
 /// </remarks>
 internal static class TenantKey
 {
@@ -17,12 +16,7 @@ internal static class TenantKey
 
     /// <summary>Storage key for <paramref name="streamId"/>.</summary>
     internal static string ForStream(string streamId)
-    {
-        var parts = streamId.Split(':');
-        if (parts.Length >= 3 && parts[0].Length > 0)
-            return parts[0];
-        return DefaultTenant;
-    }
+        => LawnDart.EventStore.StreamIdText.TenantId(streamId) ?? DefaultTenant;
 
     /// <summary>
     /// Tenant fixed by a stream id prefix, when every match must share it.

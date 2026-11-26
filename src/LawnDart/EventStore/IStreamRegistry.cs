@@ -12,7 +12,7 @@ public interface IStreamRegistry
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Stream metadata, or null if stream doesn't exist.</returns>
     Task<StreamMetadata?> GetStreamAsync(
-        string streamId,
+        StreamId streamId,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -32,7 +32,7 @@ public interface IStreamRegistry
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Matching streams. The order is undefined.</returns>
     Task<IReadOnlyList<StreamMetadata>> GetStreamsByTagAsync(
-        string tag,
+        Tag tag,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -46,7 +46,7 @@ public interface IStreamRegistry
     /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Matching stream ids. The order is undefined.</returns>
-    Task<IReadOnlyList<string>> EnumerateStreamIdsAsync(
+    Task<IReadOnlyList<StreamId>> EnumerateStreamIdsAsync(
         string? prefix = null,
         CancellationToken cancellationToken = default);
 

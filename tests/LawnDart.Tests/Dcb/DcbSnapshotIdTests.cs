@@ -11,11 +11,11 @@ public class DcbSnapshotIdTests
     public void FromQuery_ItemOrderDoesNotChangeTheId()
     {
         var a = DcbSnapshotId.FromQuery(Query.FromItems(
-            QueryItem.ByTags("product:sku-1"),
-            QueryItem.ByTypeAndTags(["book-borrowed"], ["member:1"])));
+            QueryItem.ByTags(Tag.Parse("product:sku-1")),
+            QueryItem.ByTypeAndTags(["book-borrowed"], [Tag.Parse("member:1")])));
         var b = DcbSnapshotId.FromQuery(Query.FromItems(
-            QueryItem.ByTypeAndTags(["book-borrowed"], ["member:1"]),
-            QueryItem.ByTags("product:sku-1")));
+            QueryItem.ByTypeAndTags(["book-borrowed"], [Tag.Parse("member:1")]),
+            QueryItem.ByTags(Tag.Parse("product:sku-1"))));
 
         Assert.Equal(a, b);
     }
@@ -23,8 +23,8 @@ public class DcbSnapshotIdTests
     [Fact]
     public void FromQuery_TagOrderInsideAnItemDoesNotChangeTheId()
     {
-        var a = DcbSnapshotId.FromQuery(Query.FromItems(QueryItem.ByTags("product:sku-1", "warehouse:east")));
-        var b = DcbSnapshotId.FromQuery(Query.FromItems(QueryItem.ByTags("warehouse:east", "product:sku-1")));
+        var a = DcbSnapshotId.FromQuery(Query.FromItems(QueryItem.ByTags(Tag.Parse("product:sku-1"), Tag.Parse("warehouse:east"))));
+        var b = DcbSnapshotId.FromQuery(Query.FromItems(QueryItem.ByTags(Tag.Parse("warehouse:east"), Tag.Parse("product:sku-1"))));
 
         Assert.Equal(a, b);
     }
@@ -41,9 +41,9 @@ public class DcbSnapshotIdTests
     [Fact]
     public void FromQuery_TypeListChangesTheHash()
     {
-        var tagsOnly = DcbSnapshotId.FromQuery(Query.FromItems(QueryItem.ByTags("member:1")));
+        var tagsOnly = DcbSnapshotId.FromQuery(Query.FromItems(QueryItem.ByTags(Tag.Parse("member:1"))));
         var typed = DcbSnapshotId.FromQuery(Query.FromItems(
-            QueryItem.ByTypeAndTags(["book-borrowed"], ["member:1"])));
+            QueryItem.ByTypeAndTags(["book-borrowed"], [Tag.Parse("member:1")])));
 
         Assert.NotEqual(tagsOnly, typed);
     }
@@ -51,8 +51,8 @@ public class DcbSnapshotIdTests
     [Fact]
     public void FromQuery_PipeInSingleTag_IsNotTwoTags()
     {
-        var joined = DcbSnapshotId.FromQuery(Query.FromItems(QueryItem.ByTags("a|b")));
-        var two = DcbSnapshotId.FromQuery(Query.FromItems(QueryItem.ByTags("a", "b")));
+        var joined = DcbSnapshotId.FromQuery(Query.FromItems(QueryItem.ByTags(Tag.Parse("tag:a|b"))));
+        var two = DcbSnapshotId.FromQuery(Query.FromItems(QueryItem.ByTags(Tag.Parse("tag:a"), Tag.Parse("tag:b"))));
 
         Assert.NotEqual(joined, two);
         Assert.Equal(DcbSnapshotId.HexLength, joined.Length);
@@ -61,11 +61,11 @@ public class DcbSnapshotIdTests
     [Fact]
     public void FromQuery_RepeatedTagAndIdenticalItems_HashAsOne()
     {
-        var repeated = DcbSnapshotId.FromQuery(Query.FromItems(QueryItem.ByTags("a", "a")));
-        var once = DcbSnapshotId.FromQuery(Query.FromItems(QueryItem.ByTags("a")));
+        var repeated = DcbSnapshotId.FromQuery(Query.FromItems(QueryItem.ByTags(Tag.Parse("tag:a"), Tag.Parse("tag:a"))));
+        var once = DcbSnapshotId.FromQuery(Query.FromItems(QueryItem.ByTags(Tag.Parse("tag:a"))));
         var twoItems = DcbSnapshotId.FromQuery(Query.FromItems(
-            QueryItem.ByTags("a"),
-            QueryItem.ByTags("a")));
+            QueryItem.ByTags(Tag.Parse("tag:a")),
+            QueryItem.ByTags(Tag.Parse("tag:a"))));
 
         Assert.Equal(once, repeated);
         Assert.Equal(once, twoItems);
@@ -76,9 +76,9 @@ public class DcbSnapshotIdTests
     {
         var tags = new string[32];
         for (var i = 0; i < tags.Length; i++)
-            tags[i] = new string('x', 400) + i;
+            tags[i] = "k:" + new string('x', 240) + i;
 
-        var id = DcbSnapshotId.FromQuery(Query.FromItems(QueryItem.ByTags(tags)));
+        var id = DcbSnapshotId.FromQuery(Query.FromItems(QueryItem.ByTags(tags.Select(Tag.Parse).ToArray())));
 
         Assert.Equal(DcbSnapshotId.HexLength, id.Length);
         Assert.Matches("^[0-9a-f]{64}$", id);
@@ -88,7 +88,7 @@ public class DcbSnapshotIdTests
     public void FromQuery_OneItemTagQuery_DoesNotReuseTheOldTagDigest()
     {
         var tags = new[] { "product:sku-1", "warehouse:east" };
-        var current = DcbSnapshotId.FromQuery(Query.FromItems(QueryItem.ByTags(tags)));
+        var current = DcbSnapshotId.FromQuery(Query.FromItems(QueryItem.ByTags(tags.Select(Tag.Parse).ToArray())));
 
         Assert.NotEqual(OldTagDigest(tags), current);
         Assert.Equal(DcbSnapshotId.HexLength, current.Length);
@@ -99,9 +99,9 @@ public class DcbSnapshotIdTests
         => Assert.Throws<ArgumentNullException>(() => DcbSnapshotId.FromQuery(null!));
 
     [Fact]
-    public void FromQuery_ThrowsOnNullTag()
-        => Assert.Throws<ArgumentNullException>(() =>
-            DcbSnapshotId.FromQuery(Query.FromItems(new QueryItem { Tags = new string?[] { "ok", null! }! })));
+    public void QueryItem_RejectsDefaultTag()
+        => Assert.Throws<ArgumentException>(() =>
+            Query.FromItems(new QueryItem { Tags = new Tag[] { Tag.Parse("ok:1"), default } }));
 
     /// <summary>
     /// The previous identity hashed a sorted tag list with no version byte and no items.

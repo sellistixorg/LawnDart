@@ -41,7 +41,7 @@ public sealed class PlaceOrderHandler : ICommandHandler<PlaceOrderCommand>
         var streamId = $"Order:{command.Id}";
         var evt = new OrderPlaced(Guid.NewGuid(), DateTime.UtcNow, command.CustomerId, command.Items);
 
-        await _eventStore.AppendAsync(streamId, [evt], cancellationToken: cancellationToken);
+        await _eventStore.AppendAsync(StreamId.Parse(streamId), [evt], cancellationToken: cancellationToken);
 
         _logger.LogInformation(
             "  [ordering] Order {OrderId} placed for customer {CustomerId} with {Count} item(s)",
@@ -71,7 +71,7 @@ public sealed class FulfillOrderHandler : ICommandHandler<FulfillOrderCommand>
         var streamId = $"Order:{command.Id}";
         var evt = new OrderFulfilled(Guid.NewGuid(), DateTime.UtcNow);
 
-        await _eventStore.AppendAsync(streamId, [evt], cancellationToken: cancellationToken);
+        await _eventStore.AppendAsync(StreamId.Parse(streamId), [evt], cancellationToken: cancellationToken);
 
         _logger.LogInformation("  [ordering] Order {OrderId} fulfilled", command.Id);
     }

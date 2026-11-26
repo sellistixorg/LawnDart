@@ -473,8 +473,8 @@ public abstract class OutboxContractTests : BackendContractSuite
         var opened = await OpenPublishingAsync();
         var streamId = "test-tenant:TestAggregate:" + Guid.NewGuid().ToString("N");
         var @event = new ContractOutboxEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow, Value = "test" };
-        await opened.Store.AppendAsync(streamId, [new TaggedEvent(@event, ["test-tag"])], metadata: new EventMetadata());
-        Assert.Equal(@event.Id, Assert.Single(await opened.Store.ReadStreamAsync(streamId)).Event.Id);
+        await opened.Store.AppendAsync(StreamId.Parse(streamId), [new TaggedEvent(@event, [Tag.Parse("tag:test-tag")])], metadata: new EventMetadata());
+        Assert.Equal(@event.Id, Assert.Single(await opened.Store.ReadStreamAsync(StreamId.Parse(streamId))).Event.Id);
         Assert.Equal(streamId, Assert.Single(await opened.RequireOutbox().GetUnprocessedAsync(10)).StreamId);
     }
 
@@ -487,10 +487,10 @@ public abstract class OutboxContractTests : BackendContractSuite
         var streamId = "test-tenant:TestAggregate:" + Guid.NewGuid().ToString("N");
         var @event = new ContractOutboxEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow, Value = "frame-copy" };
         await opened.Store.AppendAsync(
-            streamId,
-            [new TaggedEvent(@event, ["test-tag"])],
+            StreamId.Parse(streamId),
+            [new TaggedEvent(@event, [Tag.Parse("tag:test-tag")])],
             metadata: new EventMetadata { UserId = "outbox-user" });
-        var recorded = Assert.Single(await opened.Log.ReadStreamAsync(streamId));
+        var recorded = Assert.Single(await opened.Log.ReadStreamAsync(StreamId.Parse(streamId)));
         var outbox = Assert.Single(await opened.RequireOutbox().GetUnprocessedAsync(10));
         Assert.Equal(recorded.EventType, outbox.EventType);
         Assert.Equal(recorded.SchemaVersion, outbox.SchemaVersion);
@@ -509,8 +509,8 @@ public abstract class OutboxContractTests : BackendContractSuite
         SkipUnless(Cap.AppendWritesOutboxRows, "This backend does not write outbox rows when an event is appended.");
         var opened = await OpenPublishingAsync(enableOutbox: false);
         var streamId = "test-tenant:TestAggregate:" + Guid.NewGuid().ToString("N");
-        await opened.Store.AppendAsync(streamId, [new ContractOutboxEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow, Value = "off" }]);
-        Assert.Single(await opened.Store.ReadStreamAsync(streamId));
+        await opened.Store.AppendAsync(StreamId.Parse(streamId), [new ContractOutboxEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow, Value = "off" }]);
+        Assert.Single(await opened.Store.ReadStreamAsync(StreamId.Parse(streamId)));
         Assert.Empty(await opened.RequireOutbox().GetUnprocessedAsync(10));
     }
 
@@ -522,12 +522,12 @@ public abstract class OutboxContractTests : BackendContractSuite
         var opened = await OpenPublishingAsync();
         var streamId = "test-tenant:TestAggregate:" + Guid.NewGuid().ToString("N");
         var event1 = new ContractOutboxEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow, Value = "one" };
-        await opened.Store.AppendAsync(streamId, [event1]);
+        await opened.Store.AppendAsync(StreamId.Parse(streamId), [event1]);
         await Assert.ThrowsAsync<ConcurrencyException>(() => opened.Store.AppendAsync(
-            streamId,
+            StreamId.Parse(streamId),
             [new ContractOutboxEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow, Value = "two" }],
             expectedVersion: 5));
-        var stored = Assert.Single(await opened.Store.ReadStreamAsync(streamId));
+        var stored = Assert.Single(await opened.Store.ReadStreamAsync(StreamId.Parse(streamId)));
         Assert.Equal(event1.Id, stored.Event.Id);
         Assert.Single(await opened.RequireOutbox().GetUnprocessedAsync(10));
     }
@@ -539,12 +539,12 @@ public abstract class OutboxContractTests : BackendContractSuite
         SkipUnless(Cap.AppendWritesOutboxRows, "This backend does not write outbox rows when an event is appended.");
         var opened = await OpenPublishingAsync();
         var streamId = "test-tenant:TestAggregate:" + Guid.NewGuid().ToString("N");
-        await opened.Store.AppendAsync(streamId, [
+        await opened.Store.AppendAsync(StreamId.Parse(streamId), [
             new ContractOutboxEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow, Value = "a" },
             new ContractOutboxEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow, Value = "b" },
             new ContractOutboxEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow, Value = "c" }
         ]);
-        Assert.Equal(3, (await opened.Store.ReadStreamAsync(streamId)).Count);
+        Assert.Equal(3, (await opened.Store.ReadStreamAsync(StreamId.Parse(streamId))).Count);
         var outboxMessages = await opened.RequireOutbox().GetUnprocessedAsync(10);
         Assert.Equal(3, outboxMessages.Count);
         Assert.All(outboxMessages, message => Assert.Equal(streamId, message.StreamId));
@@ -557,7 +557,7 @@ public abstract class OutboxContractTests : BackendContractSuite
         SkipUnless(Cap.AppendWritesOutboxRows, "This backend does not write outbox rows when an event is appended.");
         var opened = await OpenPublishingAsync(lease: TimeSpan.Zero);
         var streamId = "test-tenant:TestAggregate:" + Guid.NewGuid().ToString("N");
-        await opened.Store.AppendAsync(streamId, [new ContractOutboxEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow, Value = "p" }]);
+        await opened.Store.AppendAsync(StreamId.Parse(streamId), [new ContractOutboxEvent { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow, Value = "p" }]);
         var message = Assert.Single(await opened.RequireOutbox().GetUnprocessedAsync(10));
         await opened.RequireOutbox().MarkAsProcessedAsync(message.Id);
         Assert.Empty(await opened.RequireOutbox().GetUnprocessedAsync(10));
@@ -623,7 +623,7 @@ public abstract class OutboxContractTests : BackendContractSuite
             payload,
             schemaVersion: 2,
             codecId: EventCodec.Json,
-            tags: ["env"])]);
+            tags: [Tag.Parse("tag:env")])]);
         Assert.Empty(await opened.RequireOutbox().GetUnprocessedAsync(10));
 
         var noticed = Stream();
@@ -638,7 +638,7 @@ public abstract class OutboxContractTests : BackendContractSuite
             payload,
             schemaVersion: 2,
             codecId: EventCodec.Json,
-            tags: ["env"],
+            tags: [Tag.Parse("tag:env")],
             outbound: notice)]);
         var row = Assert.Single(await opened.RequireOutbox().GetUnprocessedAsync(10));
         Assert.Equal("contract.outbox.notice", row.EventType);
@@ -655,7 +655,7 @@ public abstract class OutboxContractTests : BackendContractSuite
             eventTypes: [typeof(ContractOutboxEvent)],
             publishedEvents: ContractPublication.DeclarePassThrough));
 
-    private static string Stream() => "test-tenant:TestAggregate:" + Guid.NewGuid().ToString("N");
+    private static StreamId Stream() => StreamId.For("test-tenant", "TestAggregate", Guid.NewGuid().ToString("N"));
 
     private static OutboxMessage NewMessage(string stream, long sequence, int schemaVersion = 1, byte codecId = 1, int attempts = 0)
         => new()

@@ -46,7 +46,7 @@ public class MultiStreamLivePollStressTests
                     : $"acme:ListingInventory:{Guid.NewGuid()}";
 
                 await store.AppendAsync(
-                    stream,
+                    StreamId.Parse(stream),
                     [new CatalogItemAdded(Guid.NewGuid(), DateTime.UtcNow, listingId, itemIds[i])],
                     metadata: ProjectionRunnerTestHarness.MakeMeta(),
                     cancellationToken: CancellationToken.None);
@@ -55,7 +55,7 @@ public class MultiStreamLivePollStressTests
                 {
                     var removeId = itemIds[i - 1];
                     await store.AppendAsync(
-                        $"acme:ListingAggregate:{listingId}",
+                        StreamId.Parse($"acme:ListingAggregate:{listingId}"),
                         [new CatalogItemRemoved(Guid.NewGuid(), DateTime.UtcNow, listingId, removeId)],
                         metadata: ProjectionRunnerTestHarness.MakeMeta(),
                         cancellationToken: CancellationToken.None);

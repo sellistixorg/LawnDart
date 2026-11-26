@@ -30,7 +30,7 @@ public abstract class ReadHorizonContractTests : ContractSuite
             "In-memory appends commit in the same call and have no read horizon.");
 
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(readCommittedSnapshot: readCommittedSnapshot));
-        await opened.Store.AppendAsync("s1", [ContractEvent.Tick()]);
+        await opened.Store.AppendAsync(StreamId.Parse("test:s1"), [ContractEvent.Tick()]);
         await using var handle = SubscriptionsOf(opened).Subscribe("ord-sub", fromSequence: 1);
         var first = await ReadExactlyAsync(handle, 1, TimeSpan.FromSeconds(15));
         Assert.Equal(1, first[0].SequencePosition);
@@ -38,9 +38,9 @@ public abstract class ReadHorizonContractTests : ContractSuite
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         opened.Hooks.PauseNextAppendBeforeCommit(entered, release);
-        var slow = opened.Store.AppendAsync("slow", [ContractEvent.Tick()]);
+        var slow = opened.Store.AppendAsync(StreamId.Parse("test:slow"), [ContractEvent.Tick()]);
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
-        var fast = await opened.Store.AppendAsync("fast", [ContractEvent.Tick()]);
+        var fast = await opened.Store.AppendAsync(StreamId.Parse("test:fast"), [ContractEvent.Tick()]);
         var during = await DrainAsync(handle, TimeSpan.FromSeconds(1));
         Assert.DoesNotContain(during, e => e.SequencePosition == fast.SequencePositions[0]);
         if (readCommittedSnapshot)
@@ -72,19 +72,19 @@ public abstract class ReadHorizonContractTests : ContractSuite
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(
             readHorizonGracePeriod: TimeSpan.FromMilliseconds(250),
             readCommittedSnapshot: readCommittedSnapshot));
-        var first = await opened.Store.AppendAsync("s1", [ContractEvent.Tick()]);
+        var first = await opened.Store.AppendAsync(StreamId.Parse("test:s1"), [ContractEvent.Tick()]);
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         opened.Hooks.PauseNextAppendBeforeCommit(entered, release);
-        var slow = opened.Store.AppendAsync("slow", [ContractEvent.Tick()]);
+        var slow = opened.Store.AppendAsync(StreamId.Parse("test:slow"), [ContractEvent.Tick()]);
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
-        var fast = await opened.Store.AppendAsync("fast", [ContractEvent.Tick()]);
+        var fast = await opened.Store.AppendAsync(StreamId.Parse("test:fast"), [ContractEvent.Tick()]);
 
         var head = await WaitForHeadAsync(opened.Store, fast.SequencePositions[0], TimeSpan.FromSeconds(5));
         Assert.Equal(fast.SequencePositions[0], head);
         var during = await opened.Log.ReadByQueryAsync(Query.All());
         Assert.Contains(during.Events, e => e.SequencePosition == fast.SequencePositions[0]);
-        Assert.DoesNotContain(during.Events, e => e.StreamId == "slow");
+        Assert.DoesNotContain(during.Events, e => e.StreamId.ToString() == "slow");
         Assert.Contains(during.Events, e => e.SequencePosition == first.SequencePositions[0]);
 
         var warning = opened.ReadLogEntries().Single(e => e.Level == LogLevel.Warning && e.Message.Contains("Read horizon advanced", StringComparison.Ordinal));
@@ -118,13 +118,13 @@ public abstract class ReadHorizonContractTests : ContractSuite
 
         var grace = waitForever ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(10);
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(readHorizonGracePeriod: grace));
-        var first = await opened.Store.AppendAsync("s1", [ContractEvent.Tick()]);
+        var first = await opened.Store.AppendAsync(StreamId.Parse("test:s1"), [ContractEvent.Tick()]);
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         opened.Hooks.PauseNextAppendBeforeCommit(entered, release);
-        var slow = opened.Store.AppendAsync("slow", [ContractEvent.Tick()]);
+        var slow = opened.Store.AppendAsync(StreamId.Parse("test:slow"), [ContractEvent.Tick()]);
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
-        var fast = await opened.Store.AppendAsync("fast", [ContractEvent.Tick()]);
+        var fast = await opened.Store.AppendAsync(StreamId.Parse("test:fast"), [ContractEvent.Tick()]);
         await Task.Delay(400);
         Assert.Equal(first.SequencePositions[0], await opened.Store.GetCurrentSequenceAsync());
         Assert.DoesNotContain(
@@ -148,10 +148,10 @@ public abstract class ReadHorizonContractTests : ContractSuite
         SkipUnless(Cap.CanDropCommitReply, "In-memory append does not have a commit reply that can be dropped.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
         opened.Hooks.DropNextCommitReply();
-        var result = await opened.Store.AppendAsync("s1", [ContractEvent.Tick()]);
+        var result = await opened.Store.AppendAsync(StreamId.Parse("test:s1"), [ContractEvent.Tick()]);
         Assert.Equal(1, opened.Hooks.CommitAttempts);
         Assert.Equal(1, result.SequencePositions[0]);
-        Assert.Single(await opened.Store.ReadStreamAsync("s1"));
+        Assert.Single(await opened.Store.ReadStreamAsync(StreamId.Parse("test:s1")));
     }
 
     [ContractFact]
@@ -159,11 +159,11 @@ public abstract class ReadHorizonContractTests : ContractSuite
     {
         SkipUnless(Cap.CanFailCommit, "In-memory append does not attempt a separate commit that can fail.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
-        await opened.Store.AppendAsync("s1", [ContractEvent.Tick()]);
+        await opened.Store.AppendAsync(StreamId.Parse("test:s1"), [ContractEvent.Tick()]);
         opened.Hooks.FailNextCommit();
-        await Assert.ThrowsAsync<InvalidOperationException>(() => opened.Store.AppendAsync("s2", [ContractEvent.Tick()]));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => opened.Store.AppendAsync(StreamId.Parse("test:s2"), [ContractEvent.Tick()]));
         Assert.Equal(1, opened.Hooks.CommitAttempts);
-        Assert.Empty(await opened.Store.ReadStreamAsync("s2"));
+        Assert.Empty(await opened.Store.ReadStreamAsync(StreamId.Parse("test:s2")));
     }
 
     [ContractFact]
@@ -176,13 +176,13 @@ public abstract class ReadHorizonContractTests : ContractSuite
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         opened.Hooks.PauseNextAppendBeforeCommit(entered, release);
-        var slow = opened.Store.AppendAsync("slow", [ContractEvent.Tick()]);
+        var slow = opened.Store.AppendAsync(StreamId.Parse("test:slow"), [ContractEvent.Tick()]);
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
         await opened.Hooks.KillOpenConnectionAsync();
         release.TrySetResult();
         await Assert.ThrowsAnyAsync<Exception>(() => slow.WaitAsync(TimeSpan.FromSeconds(15)));
-        await opened.Store.AppendAsync("next", [ContractEvent.Tick()]);
-        Assert.Single(await opened.Store.ReadStreamAsync("next"));
+        await opened.Store.AppendAsync(StreamId.Parse("test:next"), [ContractEvent.Tick()]);
+        Assert.Single(await opened.Store.ReadStreamAsync(StreamId.Parse("test:next")));
     }
 
     private static async Task<long> WaitForHeadAsync(IEventStore store, long expected, TimeSpan timeout)

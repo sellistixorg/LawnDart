@@ -68,8 +68,8 @@ public partial class SqlServerEventStore
                     continue;
                 foreach (var tag in item.Tags)
                 {
-                    if (!string.IsNullOrEmpty(tag))
-                        exclusive.Add(tag);
+                    if (!tag.IsDefault)
+                        exclusive.Add(tag.ToString());
                 }
             }
         }
@@ -79,8 +79,8 @@ public partial class SqlServerEventStore
         {
             foreach (var tag in envelope.Tags)
             {
-                if (!string.IsNullOrEmpty(tag) && !exclusive.Contains(tag))
-                    shared.Add(tag);
+                if (!tag.IsDefault && !exclusive.Contains(tag.ToString()))
+                    shared.Add(tag.ToString());
             }
         }
 
@@ -117,7 +117,7 @@ public partial class SqlServerEventStore
 
         foreach (var item in condition.FailIfEventsMatch.Items)
         {
-            if (item.Tags is not { Count: > 0 } || item.Tags.All(string.IsNullOrEmpty))
+            if (item.Tags is not { Count: > 0 } || item.Tags.All(static t => t.IsDefault))
                 return true;
         }
 

@@ -96,7 +96,7 @@ public sealed class ProjectionRebuildSqlTests : IAsyncLifetime
 
         // 1. Seed 5 events
         for (var i = 1; i <= 5; i++)
-            await eventStore.AppendAsync(streamId,
+            await eventStore.AppendAsync(StreamId.Parse(streamId),
                 [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, i)],
                 metadata: Meta(), cancellationToken: cts.Token);
 

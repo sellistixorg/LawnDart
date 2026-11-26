@@ -44,7 +44,7 @@ public class ShowcaseD_Performance
         foreach (var chunk in chunks)
         {
             await _eventStore.AppendAsync(
-                streamId,
+                StreamId.Parse(streamId),
                 chunk,
                 expectedVersion: null,
                 metadata: new EventMetadata { Timestamp = DateTime.UtcNow });

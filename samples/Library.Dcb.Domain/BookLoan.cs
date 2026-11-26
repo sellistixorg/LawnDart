@@ -9,13 +9,13 @@ public sealed class BookLoan : DcbEntity<BookLoanState>
     public const int MaxLoansPerMember = 3;
 
     public static Query ForBook(Guid bookId) =>
-        Query.FromItems(QueryItem.ByTags($"book:{bookId}"));
+        Query.FromItems(QueryItem.ByTags(Tag.Create("book", bookId.ToString())));
 
     public static Query ForLoan(Guid bookId, Guid memberId) => Query.FromItems(
-        QueryItem.ByTags($"book:{bookId}"),
+        QueryItem.ByTags(Tag.Create("book", bookId.ToString())),
         QueryItem.ByTypeAndTags(
             ["book-borrowed", "book-returned"],
-            [$"member:{memberId}"]));
+            [Tag.Create("member", memberId.ToString())]));
 
     public void Handle(AddBookCommand cmd)
     {

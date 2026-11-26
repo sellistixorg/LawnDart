@@ -45,7 +45,7 @@ public sealed class AppendEvent
     public ReadOnlyMemory<byte> Metadata { get; }
 
     /// <summary>Tags for this event, each one once.</summary>
-    public IReadOnlyList<string> Tags { get; }
+    public IReadOnlyList<Tag> Tags { get; }
 
     /// <summary>
     /// The integration event to put in the outbox row for this event, or <c>null</c>
@@ -68,7 +68,7 @@ public sealed class AppendEvent
         ReadOnlyMemory<byte> metadata = default,
         int schemaVersion = 1,
         byte codecId = EventCodec.Json,
-        IEnumerable<string>? tags = null,
+        IEnumerable<Tag>? tags = null,
         OutboundEvent? outbound = null)
     {
         EventType = EventLogBuffers.RequireEventType(eventType);

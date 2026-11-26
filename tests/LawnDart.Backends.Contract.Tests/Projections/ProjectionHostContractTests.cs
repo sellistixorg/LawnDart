@@ -29,7 +29,7 @@ public abstract class ProjectionHostContractTests : BackendContractSuite
         var events = NewEventStore();
         var streamId = "acct:Counter:" + Guid.NewGuid().ToString("N");
         for (var amount = 1; amount <= 5; amount++)
-            await events.AppendAsync(streamId, [Increment(amount)], metadata: Meta());
+            await events.AppendAsync(StreamId.Parse(streamId), [Increment(amount)], metadata: Meta());
 
         var head = await events.GetCurrentSequenceAsync();
         var reg = CounterRegistration();
@@ -57,7 +57,7 @@ public abstract class ProjectionHostContractTests : BackendContractSuite
         var events = NewEventStore();
         var streamId = "acct:Counter:" + Guid.NewGuid().ToString("N");
         for (var amount = 1; amount <= 5; amount++)
-            await events.AppendAsync(streamId, [Increment(amount)], metadata: Meta());
+            await events.AppendAsync(StreamId.Parse(streamId), [Increment(amount)], metadata: Meta());
 
         var reg = CounterRegistration();
         var options = Options();
@@ -104,7 +104,7 @@ public abstract class ProjectionHostContractTests : BackendContractSuite
             .Select(_ => "acct:Counter:" + Guid.NewGuid().ToString("N"))
             .ToArray();
         foreach (var streamId in streams)
-            await events.AppendAsync(streamId, [Increment(4)], metadata: Meta());
+            await events.AppendAsync(StreamId.Parse(streamId), [Increment(4)], metadata: Meta());
 
         var reg = CounterRegistration();
         var eager = NewRunner(reg, events, stores, Options(ProjectionWorkingSetMode.EagerRestore));
@@ -118,7 +118,7 @@ public abstract class ProjectionHostContractTests : BackendContractSuite
         try
         {
             Assert.Equal(0, lazy.WorkingSetCount);
-            await events.AppendAsync(streams[0], [Increment(1)], metadata: Meta());
+            await events.AppendAsync(StreamId.Parse(streams[0]), [Increment(1)], metadata: Meta());
             await WaitForCheckpointAsync(stores.Checkpoints, reg.StorageKey, await events.GetCurrentSequenceAsync());
             Assert.Equal(1, lazy.WorkingSetCount);
             Assert.True(lazy.TryGetView(streams[0], out var json, out _));

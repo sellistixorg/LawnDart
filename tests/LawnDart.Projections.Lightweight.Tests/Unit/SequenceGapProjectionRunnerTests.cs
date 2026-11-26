@@ -37,7 +37,7 @@ public class SequenceGapProjectionRunnerTests
             events.Add(new SequencedEvent(
                 new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, $"early-{seq}"),
                 seq,
-                streamId,
+                StreamId.Parse(streamId),
                 seq,
                 meta));
         }
@@ -47,7 +47,7 @@ public class SequenceGapProjectionRunnerTests
             events.Add(new SequencedEvent(
                 new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, $"after-gap-{seq}"),
                 seq,
-                streamId,
+                StreamId.Parse(streamId),
                 seq,
                 meta));
         }

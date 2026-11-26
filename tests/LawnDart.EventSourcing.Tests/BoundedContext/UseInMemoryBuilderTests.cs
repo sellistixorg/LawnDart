@@ -96,8 +96,8 @@ public class UseInMemoryBuilderTests
         var catalog  = sp.GetRequiredKeyedService<IEventStore>("catalog");
 
         // Append to ordering only
-        await ordering.AppendAsync("acme:Order:1", [new StubEvent(Guid.NewGuid(), DateTime.UtcNow)]);
-        await ordering.AppendAsync("acme:Order:2", [new StubEvent(Guid.NewGuid(), DateTime.UtcNow)]);
+        await ordering.AppendAsync(StreamId.Parse("acme:Order:1"), [new StubEvent(Guid.NewGuid(), DateTime.UtcNow)]);
+        await ordering.AppendAsync(StreamId.Parse("acme:Order:2"), [new StubEvent(Guid.NewGuid(), DateTime.UtcNow)]);
 
         var orderingSeq = await ordering.GetCurrentSequenceAsync();
         var catalogSeq  = await catalog.GetCurrentSequenceAsync();
@@ -172,7 +172,7 @@ public class UseInMemoryBuilderTests
         var store = sp.GetRequiredService<IEventStore>();
 
         var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
-            store.AppendAsync($"default:Order:{Guid.NewGuid()}", [new StubEvent(Guid.NewGuid(), DateTime.UtcNow)]));
+            store.AppendAsync(StreamId.Parse($"default:Order:{Guid.NewGuid()}"), [new StubEvent(Guid.NewGuid(), DateTime.UtcNow)]));
         Assert.Contains("reserved", ex.Message);
     }
 
@@ -191,11 +191,11 @@ public class UseInMemoryBuilderTests
         var streamId = $"default:Order:{Guid.NewGuid()}";
 
         await store.AppendAsync(
-            streamId,
+            StreamId.Parse(streamId),
             [new StubEvent(Guid.NewGuid(), DateTime.UtcNow)],
             metadata: new EventMetadata { TenantId = "default" });
 
-        Assert.Single(await store.ReadStreamAsync(streamId));
+        Assert.Single(await store.ReadStreamAsync(StreamId.Parse(streamId)));
     }
 
     [Fact]
@@ -207,9 +207,9 @@ public class UseInMemoryBuilderTests
         await using var sp = services.BuildServiceProvider();
         var store = sp.GetRequiredService<IEventStore>();
 
-        await store.AppendAsync("Order:1", [new StubEvent(Guid.NewGuid(), DateTime.UtcNow)]);
+        await store.AppendAsync(StreamId.Parse("Order:1"), [new StubEvent(Guid.NewGuid(), DateTime.UtcNow)]);
 
-        Assert.Single(await store.ReadStreamAsync("Order:1"));
+        Assert.Single(await store.ReadStreamAsync(StreamId.Parse("Order:1")));
     }
 
     [Fact]
@@ -245,7 +245,7 @@ public class UseInMemoryBuilderTests
         var store = provider.GetRequiredKeyedService<IEventStore>("academy");
         var writer = provider.GetRequiredKeyedService<IOutboxWriter>("academy");
         var declared = new StubEvent(Guid.NewGuid(), DateTime.UtcNow);
-        await store.AppendAsync("Order:1", [declared, new QuietEvent(Guid.NewGuid(), DateTime.UtcNow)]);
+        await store.AppendAsync(StreamId.Parse("Order:1"), [declared, new QuietEvent(Guid.NewGuid(), DateTime.UtcNow)]);
 
         var pending = Assert.Single(await writer.GetUnprocessedAsync(10));
         Assert.Equal(declared.Id, pending.Id);
@@ -278,9 +278,9 @@ public class UseInMemoryBuilderTests
         var store = provider.GetRequiredKeyedService<IEventStore>("academy");
         var id = Guid.NewGuid();
 
-        await store.AppendAsync("Order:1", [new StubEvent(id, DateTime.UtcNow)]);
+        await store.AppendAsync(StreamId.Parse("Order:1"), [new StubEvent(id, DateTime.UtcNow)]);
 
-        Assert.Equal(id, Assert.Single(await store.ReadStreamAsync("Order:1")).Event.Id);
+        Assert.Equal(id, Assert.Single(await store.ReadStreamAsync(StreamId.Parse("Order:1"))).Event.Id);
     }
 
     // ── Stubs ──────────────────────────────────────────────────────────────────

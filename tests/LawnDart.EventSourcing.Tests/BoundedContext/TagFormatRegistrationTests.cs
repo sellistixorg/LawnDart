@@ -71,12 +71,12 @@ public class TagFormatRegistrationTests
 
         var alphaStore = sp.GetRequiredKeyedService<IEventStore>("alpha");
         var betaStore = sp.GetRequiredKeyedService<IEventStore>("beta");
-        var alphaTags = (await alphaStore.ReadStreamAsync($"acct:ProbeAggregate:{alphaId}"))[0].Tags;
-        var betaTags = (await betaStore.ReadStreamAsync($"acct:ProbeAggregate:{betaId}"))[0].Tags;
+        var alphaTags = (await alphaStore.ReadStreamAsync(StreamId.Parse($"acct:ProbeAggregate:{alphaId}")))[0].Tags;
+        var betaTags = (await betaStore.ReadStreamAsync(StreamId.Parse($"acct:ProbeAggregate:{betaId}")))[0].Tags;
 
-        Assert.Contains($"alpha:probeaggregate:{alphaId:D}", alphaTags);
-        Assert.Contains($"global:probeaggregate:{betaId:D}", betaTags);
-        Assert.DoesNotContain($"ProbeAggregate:{alphaId:D}", alphaTags);
+        Assert.Contains($"alpha:probeaggregate:{alphaId:D}", alphaTags.Select(static t => t.ToString()).ToArray());
+        Assert.Contains($"global:probeaggregate:{betaId:D}", betaTags.Select(static t => t.ToString()).ToArray());
+        Assert.DoesNotContain($"ProbeAggregate:{alphaId:D}", alphaTags.Select(static t => t.ToString()).ToArray());
     }
 
     [Fact]
@@ -116,16 +116,16 @@ public class TagFormatRegistrationTests
         var sp = services.BuildServiceProvider();
         var alpha = sp.GetRequiredKeyedService<IDcbRepository>("alpha");
         var beta = sp.GetRequiredKeyedService<IDcbRepository>("beta");
-        var first = $"Student:{Guid.NewGuid():D}";
-        var second = $"Student:{Guid.NewGuid():D}";
+        var first = LawnDart.EventStore.Tag.Parse($"Student:{Guid.NewGuid():D}");
+        var second = LawnDart.EventStore.Tag.Parse($"Student:{Guid.NewGuid():D}");
 
         await alpha.GetStateAsync<EmptyState>(Query.FromItems(QueryItem.ByTags([first])));
         await alpha.GetStateAsync<EmptyState>(Query.FromItems(QueryItem.ByTags([second])));
         await beta.GetStateAsync<EmptyState>(Query.FromItems(QueryItem.ByTags([first])));
         await beta.GetStateAsync<EmptyState>(Query.FromItems(QueryItem.ByTags([second])));
 
-        Assert.Equal(2, logger.Warnings.Count(message => message.Contains(first, StringComparison.Ordinal)));
-        Assert.Equal(0, logger.Warnings.Count(message => message.Contains(second, StringComparison.Ordinal)));
+        Assert.Equal(2, logger.Warnings.Count(message => message.Contains(first.ToString(), StringComparison.Ordinal)));
+        Assert.Equal(0, logger.Warnings.Count(message => message.Contains(second.ToString(), StringComparison.Ordinal)));
     }
 
     [Fact]
@@ -141,7 +141,7 @@ public class TagFormatRegistrationTests
             .WithEventTypes(typeof(CatalogPlaceholderEvent));
 
         var repo = services.BuildServiceProvider().GetRequiredService<IDcbRepository>();
-        var bad = $"Student:{Guid.NewGuid():D}";
+        var bad = LawnDart.EventStore.Tag.Parse($"Student:{Guid.NewGuid():D}");
 
         await repo.GetStateAsync<EmptyState>(Query.FromItems(QueryItem.ByTags([bad])));
 

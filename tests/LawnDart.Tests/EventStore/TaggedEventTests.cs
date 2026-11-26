@@ -13,13 +13,13 @@ public class TaggedEventTests
     [Fact]
     public void Null_event_is_rejected()
     {
-        Assert.Throws<ArgumentNullException>(() => new TaggedEvent(null!, "a:1"));
+        Assert.Throws<ArgumentNullException>(() => new TaggedEvent(null!, Tag.Parse("a:1")));
     }
 
     [Fact]
     public void Null_tags_mean_no_tags()
     {
-        var tagged = new TaggedEvent(NewPing(), (IReadOnlyList<string>)null!);
+        var tagged = new TaggedEvent(NewPing(), (IReadOnlyList<Tag>)null!);
         Assert.Empty(tagged.Tags);
     }
 
@@ -32,25 +32,25 @@ public class TaggedEventTests
     [Fact]
     public void Repeated_tags_are_kept_once_first_copy_in_order()
     {
-        var tagged = new TaggedEvent(NewPing(), "c:1", "a:1", "c:1", "b:1", "a:1");
-        Assert.Equal(["c:1", "a:1", "b:1"], tagged.Tags);
+        var tagged = new TaggedEvent(NewPing(), Tag.Parse("c:1"), Tag.Parse("a:1"), Tag.Parse("c:1"), Tag.Parse("b:1"), Tag.Parse("a:1"));
+        Assert.Equal(["c:1", "a:1", "b:1"], tagged.Tags.Select(static t => t.ToString()).ToArray());
     }
 
     [Fact]
     public void Tags_compare_exactly()
     {
-        var tagged = new TaggedEvent(NewPing(), "Course:1", "course:1", "Course:1");
-        Assert.Equal(["Course:1", "course:1"], tagged.Tags);
+        var tagged = new TaggedEvent(NewPing(), Tag.Parse("Course:1"), Tag.Parse("course:1"), Tag.Parse("Course:1"));
+        Assert.Equal(["Course:1", "course:1"], tagged.Tags.Select(static t => t.ToString()).ToArray());
     }
 
     [Fact]
     public void Tags_are_copied_when_created()
     {
         var source = new List<string> { "a:1", "b:1" };
-        var tagged = new TaggedEvent(NewPing(), source);
+        var tagged = new TaggedEvent(NewPing(), source.Select(Tag.Parse).ToArray());
         source.Add("c:1");
         source[0] = "changed";
-        Assert.Equal(["a:1", "b:1"], tagged.Tags);
+        Assert.Equal(["a:1", "b:1"], tagged.Tags.Select(static t => t.ToString()).ToArray());
     }
 
     [Fact]
@@ -58,18 +58,18 @@ public class TaggedEventTests
     {
         var store = Substitute.For<IEventStore>();
         IEnumerable<TaggedEvent>? captured = null;
-        store.AppendAsync("s-1", Arg.Do<IEnumerable<TaggedEvent>>(e => captured = e.ToList()), 3, Arg.Any<EventMetadata?>(), Arg.Any<CancellationToken>())
+        store.AppendAsync(StreamId.Parse("test:s-1"), Arg.Do<IEnumerable<TaggedEvent>>(e => captured = e.ToList()), 3, Arg.Any<EventMetadata?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new AppendResult([1, 2])));
         var (first, second) = (NewPing(), NewPing());
         var metadata = new EventMetadata();
 
-        await store.AppendAsync("s-1", [first, second], expectedVersion: 3, metadata: metadata);
+        await store.AppendAsync(StreamId.Parse("test:s-1"), [first, second], expectedVersion: 3, metadata: metadata);
 
         Assert.NotNull(captured);
         var list = captured!.ToList();
         Assert.Equal([first, second], list.Select(t => t.Event));
         Assert.All(list, t => Assert.Empty(t.Tags));
-        await store.Received(1).AppendAsync("s-1", Arg.Any<IEnumerable<TaggedEvent>>(), 3, metadata, Arg.Any<CancellationToken>());
+        await store.Received(1).AppendAsync(StreamId.Parse("test:s-1"), Arg.Any<IEnumerable<TaggedEvent>>(), 3, metadata, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -77,7 +77,7 @@ public class TaggedEventTests
     {
         var store = Substitute.For<IEventStore>();
         IEnumerable<TaggedEvent>? captured = null;
-        var condition = AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags("a:1")));
+        var condition = AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(Tag.Parse("a:1"))));
         store.AppendAsync(Arg.Do<IEnumerable<TaggedEvent>>(e => captured = e.ToList()), condition, Arg.Any<EventMetadata?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new AppendResult([1])));
         var evt = NewPing();
@@ -93,7 +93,7 @@ public class TaggedEventTests
     public async Task Extensions_reject_null_arguments()
     {
         var store = Substitute.For<IEventStore>();
-        await Assert.ThrowsAsync<ArgumentNullException>(() => EventStoreAppendExtensions.AppendAsync(null!, "s", [NewPing()]));
-        await Assert.ThrowsAsync<ArgumentNullException>(() => store.AppendAsync("s", (IEnumerable<IEvent>)null!));
+        await Assert.ThrowsAsync<ArgumentNullException>(() => EventStoreAppendExtensions.AppendAsync(null!, StreamId.Parse("test:s"), [NewPing()]));
+        await Assert.ThrowsAsync<ArgumentNullException>(() => store.AppendAsync(StreamId.Parse("test:s"), (IEnumerable<IEvent>)null!));
     }
 }

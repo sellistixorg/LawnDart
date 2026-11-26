@@ -244,11 +244,11 @@ public abstract class PerEventTagContractTests : ContractSuite
         Assert.Empty((await handle.Store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(a, b)))).Events);
     }
 
-    private static async Task AssertOwnTagsAsync(ContractEventStore handle, string? stream, string a, string b, string shared)
+    private static async Task AssertOwnTagsAsync(ContractEventStore handle, StreamId? stream, LawnDart.EventStore.Tag a, LawnDart.EventStore.Tag b, LawnDart.EventStore.Tag shared)
     {
         IReadOnlyList<SequencedEvent> byStream = stream is null
             ? (await handle.Store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(shared)))).Events
-            : await handle.Store.ReadStreamAsync(stream);
+            : await handle.Store.ReadStreamAsync(stream.Value);
         Assert.Equal(2, byStream.Count);
         Assert.Equal([a, shared], byStream[0].Tags);
         Assert.Equal([b, shared], byStream[1].Tags);
@@ -262,7 +262,7 @@ public abstract class PerEventTagContractTests : ContractSuite
 
         IReadOnlyList<RecordedEvent> logRead = stream is null
             ? (await handle.Log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(shared)))).Events
-            : await handle.Log.ReadStreamAsync(stream);
+            : await handle.Log.ReadStreamAsync(stream.Value);
         Assert.Equal(2, logRead.Count);
         Assert.Equal([a, shared], logRead[0].Tags);
         Assert.Equal([b, shared], logRead[1].Tags);
@@ -273,10 +273,10 @@ public abstract class PerEventTagContractTests : ContractSuite
     private async Task<ContractEventStore> OpenAsync()
         => await Backend.OpenEventStoreAsync(ContractStores.Isolated());
 
-    private static AppendEvent LogEvent(params string[] tags)
+    private static AppendEvent LogEvent(params LawnDart.EventStore.Tag[] tags)
         => new("per-event-tag.event", Encoding.UTF8.GetBytes("{}"), tags: tags);
 
-    private static string Stream() => "per-event-tag:" + Guid.NewGuid().ToString("N");
+    private static StreamId Stream() => StreamId.For("per-event-tag", Guid.NewGuid().ToString("N"));
 
-    private static string Tag(string kind) => kind + ":" + Guid.NewGuid().ToString("N");
+    private static LawnDart.EventStore.Tag Tag(string kind) => LawnDart.EventStore.Tag.Create(kind, Guid.NewGuid().ToString("N"));
 }

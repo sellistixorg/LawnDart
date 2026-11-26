@@ -18,6 +18,26 @@ public abstract class DcbContractTests : ContractSuite
     }
 
     [Fact]
+    public async Task AppendAsync_WithDCBCondition_BadMetadataTenantWhenValidationOff_ThrowsArgumentException()
+    {
+        var store = (await Backend.OpenEventStoreAsync(
+            ContractStores.Isolated(requireTenantId: false, validateNames: false))).Store;
+        var condition = AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByType("SomeOtherEvent")));
+
+        await Assert.ThrowsAsync<ArgumentException>(() => store.AppendAsync(
+            [ContractEvent.Tick()],
+            condition,
+            metadata: new EventMetadata { TenantId = "a:b" }));
+
+        await Assert.ThrowsAsync<ArgumentException>(() => store.AppendAsync(
+            [ContractEvent.Tick()],
+            condition,
+            metadata: new EventMetadata { TenantId = " acme" }));
+
+        Assert.Equal(0, await store.GetCurrentSequenceAsync());
+    }
+
+    [Fact]
     public async Task AppendAsync_WithDCBCondition_ValidatesCondition()
     {
         var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
@@ -145,12 +165,12 @@ public abstract class DcbContractTests : ContractSuite
     {
         var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
         var append = await store.AppendAsync(
-            [new TaggedEvent(ContractEvent.Tick(), ["order:opaque"])],
-            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags("order:opaque"))),
+            [new TaggedEvent(ContractEvent.Tick(), [LawnDart.EventStore.Tag.Parse("order:opaque")])],
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(LawnDart.EventStore.Tag.Parse("order:opaque")))),
             metadata: new EventMetadata { TenantId = "tenant-opaque" });
         var read = await store.ReadByQueryAsync(Query.All(), fromSequencePosition: append.SequencePositions[0], limit: 1);
         var evt = Assert.Single(read.Events);
-        Assert.StartsWith("tenant-opaque:dcb:", evt.StreamId);
+        Assert.StartsWith("tenant-opaque:dcb:", evt.StreamId.ToString());
     }
 
     [Fact]
@@ -159,7 +179,7 @@ public abstract class DcbContractTests : ContractSuite
         var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(requireTenantId: true))).Store;
         var ex = await Assert.ThrowsAsync<ArgumentException>(() => store.AppendAsync(
             [ContractEvent.Tick()],
-            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags("order:absent"))),
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(LawnDart.EventStore.Tag.Parse("order:absent")))),
             metadata: new EventMetadata { TenantId = "default" }));
         Assert.Contains("reserved", ex.Message);
     }
@@ -170,11 +190,11 @@ public abstract class DcbContractTests : ContractSuite
         var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(requireTenantId: true, validateNames: false))).Store;
         var append = await store.AppendAsync(
             [ContractEvent.Tick()],
-            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags("order:absent"))),
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(LawnDart.EventStore.Tag.Parse("order:absent")))),
             metadata: new EventMetadata { TenantId = "default" });
         var read = await store.ReadByQueryAsync(Query.All(), fromSequencePosition: append.SequencePositions[0], limit: 1);
         var evt = Assert.Single(read.Events);
-        Assert.StartsWith("default:dcb:", evt.StreamId);
+        Assert.StartsWith("default:dcb:", evt.StreamId.ToString());
     }
 
     [Fact]
@@ -183,7 +203,7 @@ public abstract class DcbContractTests : ContractSuite
         var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(requireTenantId: true))).Store;
         var ex = await Assert.ThrowsAsync<ArgumentException>(() => store.AppendAsync(
             [ContractEvent.Tick()],
-            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags("order:absent")))));
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(LawnDart.EventStore.Tag.Parse("order:absent"))))));
         Assert.Contains("TenantId is required in event metadata", ex.Message);
     }
 
@@ -348,8 +368,8 @@ public abstract class DcbContractTests : ContractSuite
         var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
         var repository = Repo(store, "tenant-1");
         var order = Tag("order");
-        var tenant1 = "tenant:tenant-1-" + Guid.NewGuid().ToString("N");
-        var tenant2 = "tenant:tenant-2-" + Guid.NewGuid().ToString("N");
+        var tenant1 = LawnDart.EventStore.Tag.Parse("tenant:tenant-1-" + Guid.NewGuid().ToString("N"));
+        var tenant2 = LawnDart.EventStore.Tag.Parse("tenant:tenant-2-" + Guid.NewGuid().ToString("N"));
         await repository.AppendWithContextAsync([new TaggedEvent(new ContractDcbEvent(Guid.NewGuid(), DateTime.UtcNow, 100), [tenant1, order])]);
         await repository.AppendWithContextAsync([new TaggedEvent(new ContractDcbEvent(Guid.NewGuid(), DateTime.UtcNow, 200), [tenant2, order])]);
         Assert.Equal(100, (await repository.GetStateAsync<ContractDcbState>(Query.FromItems(QueryItem.ByTags([tenant1, order])))).TotalValue);
@@ -402,9 +422,9 @@ public abstract class DcbContractTests : ContractSuite
         return await Task.WhenAll(tasks).ConfigureAwait(false);
     }
 
-    private static string Stream() => "test-tenant:Order:" + Guid.NewGuid().ToString("N");
+    private static StreamId Stream() => StreamId.For("test-tenant", "Order", Guid.NewGuid().ToString("N"));
 
-    private static string Tag(string kind) => kind + ":" + Guid.NewGuid().ToString("N");
+    private static LawnDart.EventStore.Tag Tag(string kind) => LawnDart.EventStore.Tag.Create(kind, Guid.NewGuid().ToString("N"));
 }
 
 public sealed class ContractDcbState : IState

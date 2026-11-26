@@ -20,19 +20,19 @@ public sealed class PostgresAppendClosureTests
         var logger = new ListLogger<PostgresEventStore>();
         var store = (await OpenStoreAsync(postgres.ConnectionString, logger)).Store;
         var warmed = "Order:" + Guid.NewGuid().ToString("N");
-        await store.AppendAsync(warmed, [ContractEvent.Tick()]);
-        Assert.Single(await store.ReadStreamAsync(warmed));
+        await store.AppendAsync(StreamId.Parse(warmed), [ContractEvent.Tick()]);
+        Assert.Single(await store.ReadStreamAsync(StreamId.Parse(warmed)));
 
         await postgres.Container.StopAsync();
         await postgres.Container.StartAsync();
         await WaitUntilAcceptsConnectionsAsync(postgres.ConnectionString);
 
         var stream = "Order:" + Guid.NewGuid().ToString("N");
-        var appended = await store.AppendAsync(stream, [ContractEvent.Tick()]);
-        var read = await store.ReadStreamAsync(stream);
+        var appended = await store.AppendAsync(StreamId.Parse(stream), [ContractEvent.Tick()]);
+        var read = await store.ReadStreamAsync(StreamId.Parse(stream));
         Assert.Single(read);
         Assert.Equal(appended.SequencePositions[0], read[0].SequencePosition);
-        Assert.Single(await store.ReadStreamAsync(warmed));
+        Assert.Single(await store.ReadStreamAsync(StreamId.Parse(warmed)));
         var warnings = logger.Entries.Where(entry =>
             entry.Level == LogLevel.Warning
             && entry.Message.Contains("tried once more", StringComparison.Ordinal)).ToArray();
@@ -56,10 +56,10 @@ public sealed class PostgresAppendClosureTests
         };
 
         var stream = "Order:" + Guid.NewGuid().ToString("N");
-        var ex = await Assert.ThrowsAsync<AppendOutcomeUnknownException>(() => store.AppendAsync(stream, [ContractEvent.Tick()]));
+        var ex = await Assert.ThrowsAsync<AppendOutcomeUnknownException>(() => store.AppendAsync(StreamId.Parse(stream), [ContractEvent.Tick()]));
         Assert.Equal(1, attempts);
         Assert.NotNull(ex.InnerException);
-        Assert.Empty(await store.ReadStreamAsync(stream));
+        Assert.Empty(await store.ReadStreamAsync(StreamId.Parse(stream)));
         Assert.DoesNotContain(
             logger.Entries,
             entry => entry.Message.Contains("tried once more", StringComparison.Ordinal));
@@ -71,16 +71,16 @@ public sealed class PostgresAppendClosureTests
         await using var postgres = await StartPostgresAsync();
         var store = (await OpenStoreAsync(postgres.ConnectionString, logger: null)).Store;
         var stream = "Order:" + Guid.NewGuid().ToString("N");
-        await store.AppendAsync(stream, [ContractEvent.Tick()]);
+        await store.AppendAsync(StreamId.Parse(stream), [ContractEvent.Tick()]);
 
         await postgres.Container.StopAsync();
         await postgres.Container.StartAsync();
         await WaitUntilAcceptsConnectionsAsync(postgres.ConnectionString);
 
         var ex = await Assert.ThrowsAsync<ConcurrencyException>(() =>
-            store.AppendAsync(stream, [ContractEvent.Tick()], expectedVersion: 0));
+            store.AppendAsync(StreamId.Parse(stream), [ContractEvent.Tick()], expectedVersion: 0));
         Assert.Contains("Expected version 0", ex.Message, StringComparison.Ordinal);
-        Assert.Single(await store.ReadStreamAsync(stream));
+        Assert.Single(await store.ReadStreamAsync(StreamId.Parse(stream)));
     }
 
     [Fact]
@@ -92,8 +92,8 @@ public sealed class PostgresAppendClosureTests
         harness.Proxy.Arm();
 
         var stream = "Order:" + Guid.NewGuid().ToString("N");
-        var appended = await opened.Store.AppendAsync(stream, [ContractEvent.Tick()]);
-        var read = await opened.Store.ReadStreamAsync(stream);
+        var appended = await opened.Store.AppendAsync(StreamId.Parse(stream), [ContractEvent.Tick()]);
+        var read = await opened.Store.ReadStreamAsync(StreamId.Parse(stream));
         Assert.Single(read);
         Assert.Equal(appended.SequencePositions[0], read[0].SequencePosition);
         Assert.Equal(1, await CountRowsAsync(harness.DirectConnectionString, opened.SchemaName, stream));
@@ -111,8 +111,8 @@ public sealed class PostgresAppendClosureTests
         harness.Proxy.Arm();
 
         var stream = "Order:" + Guid.NewGuid().ToString("N");
-        var appended = await opened.Store.AppendAsync(stream, [ContractEvent.Tick()]);
-        var read = await opened.Store.ReadStreamAsync(stream);
+        var appended = await opened.Store.AppendAsync(StreamId.Parse(stream), [ContractEvent.Tick()]);
+        var read = await opened.Store.ReadStreamAsync(StreamId.Parse(stream));
         Assert.Single(read);
         Assert.Equal(appended.SequencePositions[0], read[0].SequencePosition);
         Assert.True(harness.Proxy.DidPoison);
@@ -129,10 +129,10 @@ public sealed class PostgresAppendClosureTests
         var opened = await OpenStoreAsync(harness.ProxyConnectionString, logger: null);
         var stream = "Order:" + Guid.NewGuid().ToString("N");
         harness.Proxy.Arm(appendsToForwardFirst: 1);
-        await opened.Store.AppendAsync(stream, [ContractEvent.Tick()]);
+        await opened.Store.AppendAsync(StreamId.Parse(stream), [ContractEvent.Tick()]);
 
-        var appended = await opened.Store.AppendAsync(stream, [ContractEvent.Tick()], expectedVersion: 1);
-        var read = await opened.Store.ReadStreamAsync(stream);
+        var appended = await opened.Store.AppendAsync(StreamId.Parse(stream), [ContractEvent.Tick()], expectedVersion: 1);
+        var read = await opened.Store.ReadStreamAsync(StreamId.Parse(stream));
         Assert.Equal(2, read.Count);
         Assert.Equal(appended.SequencePositions[0], read[1].SequencePosition);
         Assert.Equal(2, appended.LastStreamVersion);
@@ -147,8 +147,8 @@ public sealed class PostgresAppendClosureTests
         harness.Proxy.Arm();
 
         var stream = "Order:" + Guid.NewGuid().ToString("N");
-        var appended = await opened.Store.AppendAsync(stream, [ContractEvent.Tick()]);
-        var read = await opened.Store.ReadStreamAsync(stream);
+        var appended = await opened.Store.AppendAsync(StreamId.Parse(stream), [ContractEvent.Tick()]);
+        var read = await opened.Store.ReadStreamAsync(StreamId.Parse(stream));
         Assert.Single(read);
         Assert.Equal(appended.SequencePositions[0], read[0].SequencePosition);
         Assert.Equal(1, await CountRowsAsync(harness.DirectConnectionString, opened.SchemaName, stream));
@@ -162,8 +162,8 @@ public sealed class PostgresAppendClosureTests
         harness.Proxy.Arm();
 
         var stream = "Order:" + Guid.NewGuid().ToString("N");
-        var appended = await opened.Store.AppendAsync(stream, [ContractEvent.Tick()]);
-        var read = await opened.Store.ReadStreamAsync(stream);
+        var appended = await opened.Store.AppendAsync(StreamId.Parse(stream), [ContractEvent.Tick()]);
+        var read = await opened.Store.ReadStreamAsync(StreamId.Parse(stream));
         Assert.Single(read);
         Assert.Equal(appended.SequencePositions[0], read[0].SequencePosition);
         Assert.True(harness.Proxy.DidPoison);
@@ -178,8 +178,8 @@ public sealed class PostgresAppendClosureTests
         harness.Proxy.Arm();
 
         var stream = "Order:" + Guid.NewGuid().ToString("N");
-        var appended = await opened.Store.AppendAsync(stream, [ContractEvent.Tick()]);
-        var read = await opened.Store.ReadStreamAsync(stream);
+        var appended = await opened.Store.AppendAsync(StreamId.Parse(stream), [ContractEvent.Tick()]);
+        var read = await opened.Store.ReadStreamAsync(StreamId.Parse(stream));
         Assert.Single(read);
         Assert.Equal(appended.SequencePositions[0], read[0].SequencePosition);
         Assert.True(harness.Proxy.DidPoison);
@@ -193,7 +193,7 @@ public sealed class PostgresAppendClosureTests
         var opened = await OpenStoreAsync(harness.ProxyConnectionString, logger: null);
         harness.Proxy.Arm();
 
-        var tag = "own-" + Guid.NewGuid().ToString("N");
+        var tag = LawnDart.EventStore.Tag.Parse("own:" + Guid.NewGuid().ToString("N"));
         var appended = await opened.Store.AppendAsync(
             [new TaggedEvent(ContractEvent.Tick(), [tag])],
             AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(tag))));
@@ -201,7 +201,7 @@ public sealed class PostgresAppendClosureTests
         Assert.Single(read.Events);
         Assert.Equal(appended.SequencePositions[0], read.Events[0].SequencePosition);
         Assert.Equal(-1, appended.LastStreamVersion);
-        Assert.Equal(1, await CountTaggedRowsAsync(harness.DirectConnectionString, opened.SchemaName, tag));
+        Assert.Equal(1, await CountTaggedRowsAsync(harness.DirectConnectionString, opened.SchemaName, tag.ToString()));
     }
 
     [Theory]
@@ -215,10 +215,10 @@ public sealed class PostgresAppendClosureTests
         var envelope = Envelope(id);
         var held = "Order:" + Guid.NewGuid().ToString("N");
         var other = "Order:" + Guid.NewGuid().ToString("N");
-        await opened.Store.AppendAsync(held, [envelope]);
+        await opened.Store.AppendAsync(StreamId.Parse(held), [envelope]);
         harness.Proxy.Arm();
 
-        var ex = await Assert.ThrowsAsync<EventAlreadyAppendedException>(() => opened.Store.AppendAsync(other, [envelope]));
+        var ex = await Assert.ThrowsAsync<EventAlreadyAppendedException>(() => opened.Store.AppendAsync(StreamId.Parse(other), [envelope]));
         Assert.Equal(id, ex.EventId);
         Assert.Equal(1, await CountRowsAsync(harness.DirectConnectionString, opened.SchemaName, held));
         Assert.Equal(0, await CountRowsAsync(harness.DirectConnectionString, opened.SchemaName, other));
@@ -233,10 +233,10 @@ public sealed class PostgresAppendClosureTests
         var envelope = Envelope(id);
         var held = "Order:" + Guid.NewGuid().ToString("N");
         var other = "Order:" + Guid.NewGuid().ToString("N");
-        await opened.Store.AppendAsync(held, [envelope]);
+        await opened.Store.AppendAsync(StreamId.Parse(held), [envelope]);
         harness.Proxy.Arm();
 
-        var ex = await Assert.ThrowsAsync<EventAlreadyAppendedException>(() => opened.Store.AppendAsync(other, [envelope]));
+        var ex = await Assert.ThrowsAsync<EventAlreadyAppendedException>(() => opened.Store.AppendAsync(StreamId.Parse(other), [envelope]));
         Assert.Equal(id, ex.EventId);
         Assert.Equal(1, await CountRowsAsync(harness.DirectConnectionString, opened.SchemaName, held));
         Assert.Equal(0, await CountRowsAsync(harness.DirectConnectionString, opened.SchemaName, other));
@@ -254,11 +254,11 @@ public sealed class PostgresAppendClosureTests
         var freshId = Guid.NewGuid();
         var held = "Order:" + Guid.NewGuid().ToString("N");
         var other = "Order:" + Guid.NewGuid().ToString("N");
-        await opened.Store.AppendAsync(held, [Envelope(heldId)]);
+        await opened.Store.AppendAsync(StreamId.Parse(held), [Envelope(heldId)]);
         harness.Proxy.Arm();
 
         var ex = await Assert.ThrowsAsync<EventAlreadyAppendedException>(() =>
-            opened.Store.AppendAsync(other, [Envelope(heldId), Envelope(freshId)]));
+            opened.Store.AppendAsync(StreamId.Parse(other), [Envelope(heldId), Envelope(freshId)]));
         Assert.Equal(heldId, ex.EventId);
         Assert.Equal(1, await CountRowsAsync(harness.DirectConnectionString, opened.SchemaName, held));
         Assert.Equal(0, await CountRowsAsync(harness.DirectConnectionString, opened.SchemaName, other));
@@ -329,7 +329,7 @@ public sealed class PostgresAppendClosureTests
         await using var command = new NpgsqlCommand(
             $"SELECT count(*) FROM {Quote(schema)}.outbox WHERE stream_id = @id",
             connection);
-        command.Parameters.AddWithValue("id", streamId);
+        command.Parameters.AddWithValue("id", streamId.ToString());
         return Convert.ToInt32(await command.ExecuteScalarAsync());
     }
 
@@ -369,7 +369,7 @@ public sealed class PostgresAppendClosureTests
         await using var command = new NpgsqlCommand(
             $"SELECT count(*) FROM {Quote(schema)}.events WHERE stream_id = @id",
             connection);
-        command.Parameters.AddWithValue("id", streamId);
+        command.Parameters.AddWithValue("id", streamId.ToString());
         return Convert.ToInt32(await command.ExecuteScalarAsync());
     }
 
@@ -380,7 +380,7 @@ public sealed class PostgresAppendClosureTests
         await using var command = new NpgsqlCommand(
             $"SELECT count(*) FROM {Quote(schema)}.events WHERE @tag = ANY(tags)",
             connection);
-        command.Parameters.AddWithValue("tag", tag);
+        command.Parameters.AddWithValue("tag", tag.ToString());
         return Convert.ToInt32(await command.ExecuteScalarAsync());
     }
 

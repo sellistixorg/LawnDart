@@ -34,7 +34,7 @@ public sealed class CompiledHandleNoteAppliedTests
         };
 
         var unmatched = new OrderCreatedLocal(Guid.NewGuid(), DateTime.UtcNow, Guid.NewGuid(), "noise");
-        await store.AppendAsync("system:Other:1", [unmatched], metadata: Meta());
+        await store.AppendAsync(StreamId.Parse("system:Other:1"), [unmatched], metadata: Meta());
         var unmatchedSeq = await store.GetCurrentSequenceAsync();
 
         var reg = ProjectionScanner.TryBuildRegistration(typeof(GlobalTagIndexProjection))!;
@@ -48,7 +48,7 @@ public sealed class CompiledHandleNoteAppliedTests
         Assert.Null(viewAfterNoise);
 
         var matched = new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, "alpha");
-        await store.AppendAsync("system:Tags:1", [matched], metadata: Meta());
+        await store.AppendAsync(StreamId.Parse("system:Tags:1"), [matched], metadata: Meta());
         var matchedSeq = await store.GetCurrentSequenceAsync();
 
         var viewJson = await ProjectionRunnerTestHarness.WaitForViewAsync(

@@ -27,7 +27,7 @@ public interface IEventLog : IStreamRegistry
 {
     /// <summary>Reads stored records from a stream in version order.</summary>
     Task<IReadOnlyList<RecordedEvent>> ReadStreamAsync(
-        string streamId,
+        StreamId streamId,
         long fromVersion = 0,
         long? toVersion = null,
         DateTime? toCommitTimestamp = null,
@@ -35,7 +35,7 @@ public interface IEventLog : IStreamRegistry
 
     /// <summary>Streams stored records from a stream in version order.</summary>
     IAsyncEnumerable<RecordedEvent> ReadStreamEnumerableAsync(
-        string streamId,
+        StreamId streamId,
         long fromVersion = 0,
         long? toVersion = null,
         DateTime? toCommitTimestamp = null,
@@ -62,8 +62,9 @@ public interface IEventLog : IStreamRegistry
         CancellationToken cancellationToken = default);
 
     /// <summary>Appends records to a stream. Store assigns sequence, version, and commit time.</summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("ApiDesign", "RS0026:Do not add multiple public overloads with optional parameters", Justification = "The two appends take different required parameters (a stream id or an append condition), so a call always picks one.")]
     Task<AppendResult> AppendAsync(
-        string streamId,
+        StreamId streamId,
         IEnumerable<AppendEvent> events,
         long? expectedVersion = null,
         CancellationToken cancellationToken = default);

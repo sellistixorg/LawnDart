@@ -54,9 +54,9 @@ public class DcbOrderFulfillmentWorkflow
         // Create a query that matches events for any of our related entities
         // This query uses OR logic - it matches if ANY query item matches
         var query = Query.FromItems(
-            QueryItem.ByTags(orderTag),
-            QueryItem.ByTags(paymentTag),
-            QueryItem.ByTags(productTag)
+            QueryItem.ByTags(Tag.Parse(orderTag)),
+            QueryItem.ByTags(Tag.Parse(paymentTag)),
+            QueryItem.ByTags(Tag.Parse(productTag))
         );
 
         // Read existing events to determine the last known sequence position
@@ -114,7 +114,7 @@ public class DcbOrderFulfillmentWorkflow
         {
             // One append: all three events, or none.
             var appendResult = await _eventStore.AppendAsync(
-                workflowEvents.Select(e => new TaggedEvent(e, workflowTag, orderTag, paymentTag, productTag)).ToList(),
+                workflowEvents.Select(e => new TaggedEvent(e, Tag.Parse(workflowTag), Tag.Parse(orderTag), Tag.Parse(paymentTag), Tag.Parse(productTag))).ToList(),
                 condition,
                 eventMetadata);
 
@@ -127,7 +127,7 @@ public class DcbOrderFulfillmentWorkflow
             // Step 5: Verify cross-entity query
             // Query all events related to the order, regardless of which stream they're in
             // This demonstrates DCB's ability to query across entity boundaries
-            var verificationQuery = Query.FromItems(QueryItem.ByTags(orderTag));
+            var verificationQuery = Query.FromItems(QueryItem.ByTags(Tag.Parse(orderTag)));
             var allOrderEvents = (await _eventStore.ReadByQueryAsync(verificationQuery)).Events;
             
             Console.WriteLine();
@@ -175,7 +175,7 @@ public class DcbOrderFulfillmentWorkflow
         var workflow2Tag = $"workflow:{workflow2Id}";
 
         // First workflow starts - reads state and finds no existing events
-        var query1 = Query.FromItems(QueryItem.ByTags(orderTag));
+        var query1 = Query.FromItems(QueryItem.ByTags(Tag.Parse(orderTag)));
         var condition1 = AppendCondition.FailIfMatches(query1, after: 0);
         
         var events1 = new IEvent[] 
@@ -185,14 +185,14 @@ public class DcbOrderFulfillmentWorkflow
 
         Console.WriteLine("\nWorkflow 1: Appending fulfillment started event...");
         // Use workflow tag first to avoid streamId conflicts
-        var appendResult1 = await _eventStore.AppendAsync(events1.Select(e => new TaggedEvent(e, workflow1Tag, orderTag)).ToList(), condition1);
+        var appendResult1 = await _eventStore.AppendAsync(events1.Select(e => new TaggedEvent(e, Tag.Parse(workflow1Tag), Tag.Parse(orderTag))).ToList(), condition1);
         Console.WriteLine($"[ok] Workflow 1 succeeded at position {appendResult1.SequencePositions[0]}");
 
         // Second workflow tries to start (should fail)
         // It reads state from position 0, but Workflow 1 already appended an event
         // The condition will detect the conflict and fail (even though they use different streamIds)
         // because the query matches events by tags, not by streamId
-        var query2 = Query.FromItems(QueryItem.ByTags(orderTag));
+        var query2 = Query.FromItems(QueryItem.ByTags(Tag.Parse(orderTag)));
         var condition2 = AppendCondition.FailIfMatches(query2, after: 0); // Still checking from position 0
         
         var events2 = new IEvent[] 
@@ -206,7 +206,7 @@ public class DcbOrderFulfillmentWorkflow
         Console.WriteLine("The condition matches the order tag, so the second append fails.");
         try
         {
-            await _eventStore.AppendAsync(events2.Select(e => new TaggedEvent(e, workflow2Tag, orderTag)).ToList(), condition2);
+            await _eventStore.AppendAsync(events2.Select(e => new TaggedEvent(e, Tag.Parse(workflow2Tag), Tag.Parse(orderTag))).ToList(), condition2);
             throw new InvalidOperationException("Workflow 2 should have failed the append condition.");
         }
         catch (ConcurrencyException)

@@ -26,11 +26,11 @@ public abstract class StreamTagTableContractTests : BackendContractSuite
         SkipUnless(Cap.HasStreamTagTable, "This store has no stream tag table.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
         var streamId = "acme:Order:" + Guid.NewGuid().ToString("N");
-        await AppendAsync(opened.Store, streamId, "alpha");
-        Assert.Equal(["alpha"], TagsFor(await ReadStreamTagsAsync(opened), streamId));
+        await AppendAsync(opened.Store, streamId, "tag:alpha");
+        Assert.Equal(["tag:alpha"], TagsFor(await ReadStreamTagsAsync(opened), streamId));
 
-        await AppendAsync(opened.Store, streamId, "beta");
-        Assert.Equal(["alpha", "beta"], TagsFor(await ReadStreamTagsAsync(opened), streamId));
+        await AppendAsync(opened.Store, streamId, "tag:beta");
+        Assert.Equal(["tag:alpha", "tag:beta"], TagsFor(await ReadStreamTagsAsync(opened), streamId));
     }
 
     [ContractFact]
@@ -39,12 +39,12 @@ public abstract class StreamTagTableContractTests : BackendContractSuite
         SkipUnless(Cap.HasStreamTagTable, "This store has no stream tag table.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
         var streamId = "acme:Order:Ab" + Guid.NewGuid().ToString("N");
-        await AppendAsync(opened.Store, streamId, "alpha");
+        await AppendAsync(opened.Store, streamId, "tag:alpha");
 
-        await ReplaceTagsAsync(opened, streamId, "beta");
-        Assert.Equal(["beta"], TagsFor(await ReadStreamTagsAsync(opened), streamId));
-        Assert.Equal(streamId, Assert.Single((await opened.Store.ListStreamsAsync(new StreamListFilter { Tag = "beta" })).Streams).StreamId);
-        Assert.Empty((await opened.Store.ListStreamsAsync(new StreamListFilter { Tag = "alpha" })).Streams);
+        await ReplaceTagsAsync(opened, streamId, "tag:beta");
+        Assert.Equal(["tag:beta"], TagsFor(await ReadStreamTagsAsync(opened), streamId));
+        Assert.Equal(streamId, Assert.Single((await opened.Store.ListStreamsAsync(new StreamListFilter { Tag = Tag.Parse("tag:beta") })).Streams).StreamId.ToString());
+        Assert.Empty((await opened.Store.ListStreamsAsync(new StreamListFilter { Tag = Tag.Parse("tag:alpha") })).Streams);
 
         if (!Cap.StreamIdsCaseInsensitive)
             return;
@@ -52,7 +52,7 @@ public abstract class StreamTagTableContractTests : BackendContractSuite
         var otherCase = streamId.Replace(":Ab", ":aB", StringComparison.Ordinal);
         await SetStreamIdAsync(opened, streamId, otherCase);
         var rows = await ReadStreamTagsAsync(opened);
-        Assert.Equal(["beta"], TagsFor(rows, otherCase));
+        Assert.Equal(["tag:beta"], TagsFor(rows, otherCase));
         Assert.DoesNotContain(rows, row => row.StreamId == streamId);
     }
 
@@ -63,16 +63,16 @@ public abstract class StreamTagTableContractTests : BackendContractSuite
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
         var first = "acme:Order:" + Guid.NewGuid().ToString("N");
         var second = "acme:Order:" + Guid.NewGuid().ToString("N");
-        await AppendAsync(opened.Store, first, "red", "blue");
-        await AppendAsync(opened.Store, second, "red");
+        await AppendAsync(opened.Store, first, "tag:red", "tag:blue");
+        await AppendAsync(opened.Store, second, "tag:red");
 
         await DropStreamTagTableAsync(opened);
         await InitializeAsync(opened);
 
         var rows = await ReadStreamTagsAsync(opened);
-        Assert.Equal(["blue", "red"], TagsFor(rows, first));
-        Assert.Equal(["red"], TagsFor(rows, second));
-        Assert.Equal(2, (await opened.Store.ListStreamsAsync(new StreamListFilter { Tag = "red" })).Streams.Count);
+        Assert.Equal(["tag:blue", "tag:red"], TagsFor(rows, first));
+        Assert.Equal(["tag:red"], TagsFor(rows, second));
+        Assert.Equal(2, (await opened.Store.ListStreamsAsync(new StreamListFilter { Tag = Tag.Parse("tag:red") })).Streams.Count);
         Assert.Equal(CurrentFormat(opened), await ReadFormatAsync(opened));
 
         await DeleteStreamTagsAsync(opened);
@@ -82,10 +82,11 @@ public abstract class StreamTagTableContractTests : BackendContractSuite
 
     private static async Task AppendAsync(IEventStore store, string streamId, params string[] tags)
     {
-        var tenant = StreamIdParser.ExtractTenantId(streamId);
+        var id = StreamId.Parse(streamId);
+        var tenant = id.TenantId;
         await store.AppendAsync(
-            streamId,
-            [new TaggedEvent(ContractEvent.Tick(), tags)],
+            id,
+            [new TaggedEvent(ContractEvent.Tick(), tags.Select(Tag.Parse).ToArray())],
             metadata: tenant is null ? null : new EventMetadata { TenantId = tenant });
     }
 
@@ -136,7 +137,7 @@ public abstract class StreamTagTableContractTests : BackendContractSuite
                 $"UPDATE {sql.QualifiedRegistryTable} SET Tags = @Tags WHERE StreamId = @StreamId",
                 connection);
             command.Parameters.AddWithValue("@Tags", json);
-            command.Parameters.AddWithValue("@StreamId", streamId);
+            command.Parameters.AddWithValue("@StreamId", streamId.ToString());
             Assert.Equal(1, await command.ExecuteNonQueryAsync());
             return;
         }
@@ -148,7 +149,7 @@ public abstract class StreamTagTableContractTests : BackendContractSuite
             $"UPDATE {postgres.QualifiedStreamsTable} SET tags = @tags WHERE stream_id = @stream",
             pg);
         query.Parameters.Add(new NpgsqlParameter("tags", NpgsqlTypes.NpgsqlDbType.Array | NpgsqlTypes.NpgsqlDbType.Text) { Value = tags });
-        query.Parameters.AddWithValue("stream", streamId);
+        query.Parameters.AddWithValue("stream", streamId.ToString());
         Assert.Equal(1, await query.ExecuteNonQueryAsync());
     }
 

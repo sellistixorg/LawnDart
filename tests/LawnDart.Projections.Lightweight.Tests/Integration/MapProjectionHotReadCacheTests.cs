@@ -196,7 +196,7 @@ public sealed class MapProjectionHotReadCacheTests
                 readCache: cache));
 
         await store.AppendAsync(
-            "tenant1:Counter:live",
+            StreamId.Parse("tenant1:Counter:live"),
             [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 5)],
             metadata: new EventMetadata { Timestamp = DateTime.UtcNow, UserId = "test" },
             cancellationToken: cts.Token);

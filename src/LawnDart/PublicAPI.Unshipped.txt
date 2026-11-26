@@ -62,7 +62,6 @@ override LawnDart.EventStore.StreamListFilter.Equals(object? obj) -> bool
 override LawnDart.EventStore.StreamListFilter.GetHashCode() -> int
 LawnDart.EventStore.StreamListFilter.Prefix.get -> string?
 LawnDart.EventStore.StreamListFilter.Prefix.init -> void
-LawnDart.EventStore.StreamListFilter.Tag.get -> string?
 LawnDart.EventStore.StreamListFilter.Tag.init -> void
 override LawnDart.EventStore.StreamListFilter.ToString() -> string!
 LawnDart.EventStore.StreamListFilter.<Clone>$() -> LawnDart.EventStore.StreamListFilter!
@@ -117,20 +116,14 @@ static LawnDart.Dcb.DcbSnapshotId.FromQuery(LawnDart.EventStore.Query! query) ->
 *REMOVED*LawnDart.EventStore.IEventStore.AppendAsync(string! streamId, System.Collections.Generic.IEnumerable<LawnDart.IEvent!>! events, long? expectedVersion = null, LawnDart.Metadata.EventMetadata? metadata = null, System.Collections.Generic.IEnumerable<string!>? tags = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<LawnDart.EventStore.AppendResult!>!
 *REMOVED*LawnDart.EventStore.IEventStore.AppendAsync(System.Collections.Generic.IEnumerable<LawnDart.IEvent!>! events, LawnDart.EventStore.AppendCondition! condition, LawnDart.Metadata.EventMetadata? metadata = null, System.Collections.Generic.IEnumerable<string!>? tags = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<LawnDart.EventStore.AppendResult!>!
 LawnDart.Dcb.IDcbRepository.AppendWithContextAsync(System.Collections.Generic.IEnumerable<LawnDart.EventStore.TaggedEvent!>! events, LawnDart.EventStore.AppendCondition? condition = null, LawnDart.Metadata.CommandMetadata? commandMetadata = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<long>!>!
-LawnDart.EventStore.EventStoreAdapter.AppendAsync(string! streamId, System.Collections.Generic.IEnumerable<LawnDart.EventStore.TaggedEvent!>! events, long? expectedVersion = null, LawnDart.Metadata.EventMetadata? metadata = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<LawnDart.EventStore.AppendResult!>!
 LawnDart.EventStore.EventStoreAdapter.AppendAsync(System.Collections.Generic.IEnumerable<LawnDart.EventStore.TaggedEvent!>! events, LawnDart.EventStore.AppendCondition! condition, LawnDart.Metadata.EventMetadata? metadata = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<LawnDart.EventStore.AppendResult!>!
 LawnDart.EventStore.EventStoreAppendExtensions
-static LawnDart.EventStore.EventStoreAppendExtensions.AppendAsync(this LawnDart.EventStore.IEventStore! store, string! streamId, System.Collections.Generic.IEnumerable<LawnDart.IEvent!>! events, long? expectedVersion = null, LawnDart.Metadata.EventMetadata? metadata = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<LawnDart.EventStore.AppendResult!>!
 static LawnDart.EventStore.EventStoreAppendExtensions.AppendAsync(this LawnDart.EventStore.IEventStore! store, System.Collections.Generic.IEnumerable<LawnDart.IEvent!>! events, LawnDart.EventStore.AppendCondition! condition, LawnDart.Metadata.EventMetadata? metadata = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<LawnDart.EventStore.AppendResult!>!
-LawnDart.EventStore.IEventStore.AppendAsync(string! streamId, System.Collections.Generic.IEnumerable<LawnDart.EventStore.TaggedEvent!>! events, long? expectedVersion = null, LawnDart.Metadata.EventMetadata? metadata = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<LawnDart.EventStore.AppendResult!>!
 LawnDart.EventStore.IEventStore.AppendAsync(System.Collections.Generic.IEnumerable<LawnDart.EventStore.TaggedEvent!>! events, LawnDart.EventStore.AppendCondition! condition, LawnDart.Metadata.EventMetadata? metadata = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<LawnDart.EventStore.AppendResult!>!
 LawnDart.EventStore.TaggedEvent
 LawnDart.EventStore.TaggedEvent.<Clone>$() -> LawnDart.EventStore.TaggedEvent!
-LawnDart.EventStore.TaggedEvent.Deconstruct(out LawnDart.IEvent! Event, out System.Collections.Generic.IReadOnlyList<string!>! Tags) -> void
 LawnDart.EventStore.TaggedEvent.Equals(LawnDart.EventStore.TaggedEvent? other) -> bool
 LawnDart.EventStore.TaggedEvent.Event.get -> LawnDart.IEvent!
-LawnDart.EventStore.TaggedEvent.TaggedEvent(LawnDart.IEvent! Event, params System.Collections.Generic.IReadOnlyList<string!>! Tags) -> void
-LawnDart.EventStore.TaggedEvent.Tags.get -> System.Collections.Generic.IReadOnlyList<string!>!
 override LawnDart.EventStore.TaggedEvent.Equals(object? obj) -> bool
 override LawnDart.EventStore.TaggedEvent.GetHashCode() -> int
 override LawnDart.EventStore.TaggedEvent.ToString() -> string!
@@ -138,7 +131,6 @@ static LawnDart.EventStore.TaggedEvent.operator !=(LawnDart.EventStore.TaggedEve
 static LawnDart.EventStore.TaggedEvent.operator ==(LawnDart.EventStore.TaggedEvent? left, LawnDart.EventStore.TaggedEvent? right) -> bool
 *REMOVED*LawnDart.EventStore.AppendEvent.AppendEvent(string! eventType, System.ReadOnlyMemory<byte> payload, System.ReadOnlyMemory<byte> metadata = default(System.ReadOnlyMemory<byte>), int schemaVersion = 1, byte codecId = 1, System.Collections.Generic.IEnumerable<string!>? tags = null) -> void
 *REMOVED*LawnDart.EventStore.EventStoreAdapter.EventStoreAdapter(LawnDart.EventStore.IEventLog! log, LawnDart.EventStore.EventSession! session, LawnDart.EventStore.IEventLogSubscriptions? logSubscriptions = null, int subscriptionChannelCapacity = 10000) -> void
-LawnDart.EventStore.AppendEvent.AppendEvent(string! eventType, System.ReadOnlyMemory<byte> payload, System.ReadOnlyMemory<byte> metadata = default(System.ReadOnlyMemory<byte>), int schemaVersion = 1, byte codecId = 1, System.Collections.Generic.IEnumerable<string!>? tags = null, LawnDart.Publishing.OutboundEvent? outbound = null) -> void
 LawnDart.EventStore.AppendEvent.Outbound.get -> LawnDart.Publishing.OutboundEvent?
 LawnDart.EventStore.EventSession.ToOutboundEvent(LawnDart.IEvent! notice, in LawnDart.Publishing.PublishContext context, LawnDart.Metadata.EventMetadata? sourceMetadata = null) -> LawnDart.Publishing.OutboundEvent!
 LawnDart.EventStore.EventStoreAdapter.EventStoreAdapter(LawnDart.EventStore.IEventLog! log, LawnDart.EventStore.EventSession! session, LawnDart.EventStore.IEventLogSubscriptions? logSubscriptions = null, int subscriptionChannelCapacity = 10000, LawnDart.Publishing.PublishedEventMap? publishedEvents = null) -> void
@@ -205,3 +197,120 @@ static LawnDart.Publishing.PublishedEventMap.NothingDeclaredMessage(string! cont
 LawnDart.Outbox.IOutboxWriter.RecordFailureAsync(System.Guid messageId, string! error, long publishedTo = 0, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 LawnDart.Outbox.OutboxMessage.PublishedTo.get -> long
 LawnDart.Outbox.OutboxMessage.PublishedTo.set -> void
+LawnDart.Aggregates.IAggregateRepository.CreateAsync<T>(LawnDart.EventStore.StreamId streamId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<T!>!
+*REMOVED*LawnDart.Aggregates.IAggregateRepository.CreateAsync<T>(string! streamId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<T!>!
+LawnDart.Aggregates.IAggregateRepository.GetAsync<T>(LawnDart.EventStore.StreamId streamId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<T?>!
+*REMOVED*LawnDart.Aggregates.IAggregateRepository.GetAsync<T>(string! streamId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<T?>!
+LawnDart.Aggregates.IAggregateRepository.GetOrCreateAsync<T>(LawnDart.EventStore.StreamId streamId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<T!>!
+*REMOVED*LawnDart.Aggregates.IAggregateRepository.GetOrCreateAsync<T>(string! streamId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<T!>!
+LawnDart.EventStore.AppendEvent.AppendEvent(string! eventType, System.ReadOnlyMemory<byte> payload, System.ReadOnlyMemory<byte> metadata = default(System.ReadOnlyMemory<byte>), int schemaVersion = 1, byte codecId = 1, System.Collections.Generic.IEnumerable<LawnDart.EventStore.Tag>? tags = null, LawnDart.Publishing.OutboundEvent? outbound = null) -> void
+LawnDart.EventStore.AppendEvent.Tags.get -> System.Collections.Generic.IReadOnlyList<LawnDart.EventStore.Tag>!
+*REMOVED*LawnDart.EventStore.AppendEvent.Tags.get -> System.Collections.Generic.IReadOnlyList<string!>!
+LawnDart.EventStore.EventSession.ToAppendEvent(LawnDart.IEvent! event, LawnDart.Metadata.EventMetadata? metadata = null, System.Collections.Generic.IEnumerable<LawnDart.EventStore.Tag>? tags = null) -> LawnDart.EventStore.AppendEvent!
+*REMOVED*LawnDart.EventStore.EventSession.ToAppendEvent(LawnDart.IEvent! event, LawnDart.Metadata.EventMetadata? metadata = null, System.Collections.Generic.IEnumerable<string!>? tags = null) -> LawnDart.EventStore.AppendEvent!
+LawnDart.EventStore.EventStoreAdapter.AppendAsync(LawnDart.EventStore.StreamId streamId, System.Collections.Generic.IEnumerable<LawnDart.EventStore.TaggedEvent!>! events, long? expectedVersion = null, LawnDart.Metadata.EventMetadata? metadata = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<LawnDart.EventStore.AppendResult!>!
+LawnDart.EventStore.EventStoreAdapter.EnumerateStreamIdsAsync(string? prefix = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<LawnDart.EventStore.StreamId>!>!
+*REMOVED*LawnDart.EventStore.EventStoreAdapter.EnumerateStreamIdsAsync(string? prefix = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<string!>!>!
+LawnDart.EventStore.EventStoreAdapter.GetStreamAsync(LawnDart.EventStore.StreamId streamId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<LawnDart.EventStore.StreamMetadata?>!
+*REMOVED*LawnDart.EventStore.EventStoreAdapter.GetStreamAsync(string! streamId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<LawnDart.EventStore.StreamMetadata?>!
+LawnDart.EventStore.EventStoreAdapter.GetStreamsByTagAsync(LawnDart.EventStore.Tag tag, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<LawnDart.EventStore.StreamMetadata!>!>!
+*REMOVED*LawnDart.EventStore.EventStoreAdapter.GetStreamsByTagAsync(string! tag, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<LawnDart.EventStore.StreamMetadata!>!>!
+LawnDart.EventStore.EventStoreAdapter.ReadStreamAsync(LawnDart.EventStore.StreamId streamId, long fromVersion = 0, long? toVersion = null, System.DateTime? toTimestamp = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<LawnDart.EventStore.SequencedEvent!>!>!
+*REMOVED*LawnDart.EventStore.EventStoreAdapter.ReadStreamAsync(string! streamId, long fromVersion = 0, long? toVersion = null, System.DateTime? toTimestamp = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<LawnDart.EventStore.SequencedEvent!>!>!
+LawnDart.EventStore.EventStoreAdapter.ReadStreamEnumerableAsync(LawnDart.EventStore.StreamId streamId, long fromVersion = 0, long? toVersion = null, System.DateTime? toTimestamp = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<LawnDart.EventStore.SequencedEvent!>!
+*REMOVED*LawnDart.EventStore.EventStoreAdapter.ReadStreamEnumerableAsync(string! streamId, long fromVersion = 0, long? toVersion = null, System.DateTime? toTimestamp = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<LawnDart.EventStore.SequencedEvent!>!
+LawnDart.EventStore.EventSubscriptionFilter.StreamId.get -> LawnDart.EventStore.StreamId?
+*REMOVED*LawnDart.EventStore.EventSubscriptionFilter.StreamId.get -> string?
+LawnDart.EventStore.IEventLog.AppendAsync(LawnDart.EventStore.StreamId streamId, System.Collections.Generic.IEnumerable<LawnDart.EventStore.AppendEvent!>! events, long? expectedVersion = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<LawnDart.EventStore.AppendResult!>!
+*REMOVED*LawnDart.EventStore.IEventLog.AppendAsync(string! streamId, System.Collections.Generic.IEnumerable<LawnDart.EventStore.AppendEvent!>! events, long? expectedVersion = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<LawnDart.EventStore.AppendResult!>!
+LawnDart.EventStore.IEventLog.ReadStreamAsync(LawnDart.EventStore.StreamId streamId, long fromVersion = 0, long? toVersion = null, System.DateTime? toCommitTimestamp = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<LawnDart.EventStore.RecordedEvent!>!>!
+*REMOVED*LawnDart.EventStore.IEventLog.ReadStreamAsync(string! streamId, long fromVersion = 0, long? toVersion = null, System.DateTime? toCommitTimestamp = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<LawnDart.EventStore.RecordedEvent!>!>!
+LawnDart.EventStore.IEventLog.ReadStreamEnumerableAsync(LawnDart.EventStore.StreamId streamId, long fromVersion = 0, long? toVersion = null, System.DateTime? toCommitTimestamp = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<LawnDart.EventStore.RecordedEvent!>!
+*REMOVED*LawnDart.EventStore.IEventLog.ReadStreamEnumerableAsync(string! streamId, long fromVersion = 0, long? toVersion = null, System.DateTime? toCommitTimestamp = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<LawnDart.EventStore.RecordedEvent!>!
+LawnDart.EventStore.IEventStore.AppendAsync(LawnDart.EventStore.StreamId streamId, System.Collections.Generic.IEnumerable<LawnDart.EventStore.TaggedEvent!>! events, long? expectedVersion = null, LawnDart.Metadata.EventMetadata? metadata = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<LawnDart.EventStore.AppendResult!>!
+LawnDart.EventStore.IEventStore.ReadStreamAsync(LawnDart.EventStore.StreamId streamId, long fromVersion = 0, long? toVersion = null, System.DateTime? toTimestamp = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<LawnDart.EventStore.SequencedEvent!>!>!
+*REMOVED*LawnDart.EventStore.IEventStore.ReadStreamAsync(string! streamId, long fromVersion = 0, long? toVersion = null, System.DateTime? toTimestamp = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<LawnDart.EventStore.SequencedEvent!>!>!
+LawnDart.EventStore.IEventStore.ReadStreamEnumerableAsync(LawnDart.EventStore.StreamId streamId, long fromVersion = 0, long? toVersion = null, System.DateTime? toTimestamp = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<LawnDart.EventStore.SequencedEvent!>!
+*REMOVED*LawnDart.EventStore.IEventStore.ReadStreamEnumerableAsync(string! streamId, long fromVersion = 0, long? toVersion = null, System.DateTime? toTimestamp = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<LawnDart.EventStore.SequencedEvent!>!
+LawnDart.EventStore.IStreamRegistry.EnumerateStreamIdsAsync(string? prefix = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<LawnDart.EventStore.StreamId>!>!
+*REMOVED*LawnDart.EventStore.IStreamRegistry.EnumerateStreamIdsAsync(string? prefix = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<string!>!>!
+LawnDart.EventStore.IStreamRegistry.GetStreamAsync(LawnDart.EventStore.StreamId streamId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<LawnDart.EventStore.StreamMetadata?>!
+*REMOVED*LawnDart.EventStore.IStreamRegistry.GetStreamAsync(string! streamId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<LawnDart.EventStore.StreamMetadata?>!
+LawnDart.EventStore.IStreamRegistry.GetStreamsByTagAsync(LawnDart.EventStore.Tag tag, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<LawnDart.EventStore.StreamMetadata!>!>!
+*REMOVED*LawnDart.EventStore.IStreamRegistry.GetStreamsByTagAsync(string! tag, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<LawnDart.EventStore.StreamMetadata!>!>!
+LawnDart.EventStore.QueryItem.Tags.get -> System.Collections.Generic.IReadOnlyList<LawnDart.EventStore.Tag>?
+*REMOVED*LawnDart.EventStore.QueryItem.Tags.get -> System.Collections.Generic.IReadOnlyList<string!>?
+LawnDart.EventStore.RecordedEvent.RecordedEvent(string! eventType, System.ReadOnlyMemory<byte> payload, LawnDart.EventStore.StreamId streamId, long streamVersion, long sequencePosition, System.DateTime commitTimestamp, System.ReadOnlyMemory<byte> metadata = default(System.ReadOnlyMemory<byte>), int schemaVersion = 1, byte codecId = 1, System.Collections.Generic.IEnumerable<LawnDart.EventStore.Tag>? tags = null) -> void
+*REMOVED*LawnDart.EventStore.RecordedEvent.RecordedEvent(string! eventType, System.ReadOnlyMemory<byte> payload, string! streamId, long streamVersion, long sequencePosition, System.DateTime commitTimestamp, System.ReadOnlyMemory<byte> metadata = default(System.ReadOnlyMemory<byte>), int schemaVersion = 1, byte codecId = 1, System.Collections.Generic.IEnumerable<string!>? tags = null) -> void
+LawnDart.EventStore.RecordedEvent.StreamId.get -> LawnDart.EventStore.StreamId
+*REMOVED*LawnDart.EventStore.RecordedEvent.StreamId.get -> string!
+LawnDart.EventStore.RecordedEvent.Tags.get -> System.Collections.Generic.IReadOnlyList<LawnDart.EventStore.Tag>!
+*REMOVED*LawnDart.EventStore.RecordedEvent.Tags.get -> System.Collections.Generic.IReadOnlyList<string!>!
+LawnDart.EventStore.SequencedEvent.SequencedEvent(LawnDart.IEvent! event, long sequencePosition, LawnDart.EventStore.StreamId streamId, long version, LawnDart.Metadata.EventMetadata! metadata, System.Collections.Generic.IReadOnlyList<LawnDart.EventStore.Tag>? tags = null) -> void
+*REMOVED*LawnDart.EventStore.SequencedEvent.SequencedEvent(LawnDart.IEvent! event, long sequencePosition, string! streamId, long version, LawnDart.Metadata.EventMetadata! metadata, System.Collections.Generic.IReadOnlyList<string!>? tags = null) -> void
+LawnDart.EventStore.SequencedEvent.StreamId.get -> LawnDart.EventStore.StreamId
+*REMOVED*LawnDart.EventStore.SequencedEvent.StreamId.get -> string!
+LawnDart.EventStore.SequencedEvent.Tags.get -> System.Collections.Generic.IReadOnlyList<LawnDart.EventStore.Tag>!
+*REMOVED*LawnDart.EventStore.SequencedEvent.Tags.get -> System.Collections.Generic.IReadOnlyList<string!>!
+LawnDart.EventStore.StreamId
+LawnDart.EventStore.StreamId.CompareTo(LawnDart.EventStore.StreamId other) -> int
+LawnDart.EventStore.StreamId.Equals(LawnDart.EventStore.StreamId other) -> bool
+LawnDart.EventStore.StreamId.Id.get -> string!
+LawnDart.EventStore.StreamId.IsDcb.get -> bool
+LawnDart.EventStore.StreamId.StreamId() -> void
+LawnDart.EventStore.StreamId.TenantId.get -> string?
+LawnDart.EventStore.StreamId.Type.get -> string!
+*REMOVED*LawnDart.EventStore.StreamIdParser
+LawnDart.EventStore.StreamListFilter.Tag.get -> LawnDart.EventStore.Tag?
+LawnDart.EventStore.StreamMetadata.StreamId.get -> LawnDart.EventStore.StreamId
+*REMOVED*LawnDart.EventStore.StreamMetadata.StreamId.get -> string!
+LawnDart.EventStore.StreamMetadata.Tags.get -> System.Collections.Generic.IReadOnlyList<LawnDart.EventStore.Tag>!
+*REMOVED*LawnDart.EventStore.StreamMetadata.Tags.get -> System.Collections.Generic.IReadOnlyList<string!>!
+LawnDart.EventStore.Tag
+LawnDart.EventStore.Tag.CompareTo(LawnDart.EventStore.Tag other) -> int
+LawnDart.EventStore.Tag.Equals(LawnDart.EventStore.Tag other) -> bool
+LawnDart.EventStore.Tag.Key.get -> string!
+LawnDart.EventStore.Tag.Tag() -> void
+LawnDart.EventStore.Tag.Value.get -> string!
+LawnDart.EventStore.TaggedEvent.Deconstruct(out LawnDart.IEvent! Event, out System.Collections.Generic.IReadOnlyList<LawnDart.EventStore.Tag>! Tags) -> void
+LawnDart.EventStore.TaggedEvent.TaggedEvent(LawnDart.IEvent! Event, params System.Collections.Generic.IReadOnlyList<LawnDart.EventStore.Tag>! Tags) -> void
+LawnDart.EventStore.TaggedEvent.Tags.get -> System.Collections.Generic.IReadOnlyList<LawnDart.EventStore.Tag>!
+const LawnDart.EventStore.StreamId.MaxLength = 255 -> int
+const LawnDart.EventStore.Tag.MaxLength = 256 -> int
+override LawnDart.EventStore.StreamId.Equals(object? obj) -> bool
+override LawnDart.EventStore.StreamId.GetHashCode() -> int
+override LawnDart.EventStore.StreamId.ToString() -> string!
+override LawnDart.EventStore.Tag.Equals(object? obj) -> bool
+override LawnDart.EventStore.Tag.GetHashCode() -> int
+override LawnDart.EventStore.Tag.ToString() -> string!
+static LawnDart.EventStore.EventStoreAppendExtensions.AppendAsync(this LawnDart.EventStore.IEventStore! store, LawnDart.EventStore.StreamId streamId, System.Collections.Generic.IEnumerable<LawnDart.IEvent!>! events, long? expectedVersion = null, LawnDart.Metadata.EventMetadata? metadata = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<LawnDart.EventStore.AppendResult!>!
+static LawnDart.EventStore.EventSubscriptionFilter.ForStream(LawnDart.EventStore.StreamId streamId) -> LawnDart.EventStore.EventSubscriptionFilter!
+*REMOVED*static LawnDart.EventStore.EventSubscriptionFilter.ForStream(string! streamId) -> LawnDart.EventStore.EventSubscriptionFilter!
+static LawnDart.EventStore.QueryItem.ByTags(params LawnDart.EventStore.Tag[]! tags) -> LawnDart.EventStore.QueryItem!
+*REMOVED*static LawnDart.EventStore.QueryItem.ByTags(params string![]! tags) -> LawnDart.EventStore.QueryItem!
+static LawnDart.EventStore.QueryItem.ByTypeAndTags(string![]! types, LawnDart.EventStore.Tag[]! tags) -> LawnDart.EventStore.QueryItem!
+*REMOVED*static LawnDart.EventStore.QueryItem.ByTypeAndTags(string![]! types, string![]! tags) -> LawnDart.EventStore.QueryItem!
+static LawnDart.EventStore.StreamId.Dcb(string? tenantId = null) -> LawnDart.EventStore.StreamId
+static LawnDart.EventStore.StreamId.For(string! tenantId, string! type, string! id) -> LawnDart.EventStore.StreamId
+static LawnDart.EventStore.StreamId.For(string! type, string! id) -> LawnDart.EventStore.StreamId
+static LawnDart.EventStore.StreamId.Parse(string! value) -> LawnDart.EventStore.StreamId
+static LawnDart.EventStore.StreamId.TryParse(string? value, out LawnDart.EventStore.StreamId streamId) -> bool
+static LawnDart.EventStore.StreamId.operator !=(LawnDart.EventStore.StreamId left, LawnDart.EventStore.StreamId right) -> bool
+static LawnDart.EventStore.StreamId.operator <(LawnDart.EventStore.StreamId left, LawnDart.EventStore.StreamId right) -> bool
+static LawnDart.EventStore.StreamId.operator <=(LawnDart.EventStore.StreamId left, LawnDart.EventStore.StreamId right) -> bool
+static LawnDart.EventStore.StreamId.operator ==(LawnDart.EventStore.StreamId left, LawnDart.EventStore.StreamId right) -> bool
+static LawnDart.EventStore.StreamId.operator >(LawnDart.EventStore.StreamId left, LawnDart.EventStore.StreamId right) -> bool
+static LawnDart.EventStore.StreamId.operator >=(LawnDart.EventStore.StreamId left, LawnDart.EventStore.StreamId right) -> bool
+*REMOVED*static LawnDart.EventStore.StreamIdParser.ExtractAggregateId(string! streamId) -> System.Guid?
+*REMOVED*static LawnDart.EventStore.StreamIdParser.ExtractAggregateIdString(string! streamId) -> string?
+*REMOVED*static LawnDart.EventStore.StreamIdParser.ExtractAggregateType(string! streamId) -> string!
+*REMOVED*static LawnDart.EventStore.StreamIdParser.ExtractTenantId(string! streamId) -> string?
+static LawnDart.EventStore.Tag.Create(string! key, string! value) -> LawnDart.EventStore.Tag
+static LawnDart.EventStore.Tag.Parse(string! value) -> LawnDart.EventStore.Tag
+static LawnDart.EventStore.Tag.TryParse(string? value, out LawnDart.EventStore.Tag tag) -> bool
+static LawnDart.EventStore.Tag.operator !=(LawnDart.EventStore.Tag left, LawnDart.EventStore.Tag right) -> bool
+static LawnDart.EventStore.Tag.operator <(LawnDart.EventStore.Tag left, LawnDart.EventStore.Tag right) -> bool
+static LawnDart.EventStore.Tag.operator <=(LawnDart.EventStore.Tag left, LawnDart.EventStore.Tag right) -> bool
+static LawnDart.EventStore.Tag.operator ==(LawnDart.EventStore.Tag left, LawnDart.EventStore.Tag right) -> bool
+static LawnDart.EventStore.Tag.operator >(LawnDart.EventStore.Tag left, LawnDart.EventStore.Tag right) -> bool
+static LawnDart.EventStore.Tag.operator >=(LawnDart.EventStore.Tag left, LawnDart.EventStore.Tag right) -> bool

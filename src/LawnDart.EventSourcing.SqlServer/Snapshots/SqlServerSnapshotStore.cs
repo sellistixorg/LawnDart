@@ -464,9 +464,9 @@ public sealed class SqlServerSnapshotStore : ISnapshotStore, IDcbSnapshotStore, 
         var key = await ReadStreamKeyAsync(connection, transaction, streamId, lockRow: true, cancellationToken).ConfigureAwait(false);
         if (key is null)
         {
-            var tenantId = StreamIdParser.ExtractTenantId(streamId);
-            var aggregateType = StreamIdParser.ExtractAggregateType(streamId);
-            var aggregateId = StreamIdParser.ExtractAggregateId(streamId);
+            var tenantId = StreamIdText.TenantId(streamId);
+            var aggregateType = StreamIdText.AggregateType(streamId);
+            var aggregateId = StreamIdText.AggregateId(streamId);
             var now = DateTime.UtcNow;
             var insert = new SqlCommand(
                 $"""

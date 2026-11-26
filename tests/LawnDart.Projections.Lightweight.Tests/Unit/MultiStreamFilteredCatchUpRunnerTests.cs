@@ -33,7 +33,7 @@ public class MultiStreamFilteredCatchUpRunnerTests
         var itemId    = Guid.NewGuid();
 
         var append = await store.AppendAsync(
-            "acme:ListingAggregate:listing-a",
+            StreamId.Parse("acme:ListingAggregate:listing-a"),
             [new CatalogItemAdded(Guid.NewGuid(), DateTime.UtcNow, listingId, itemId)],
             metadata: ProjectionRunnerTestHarness.MakeMeta(),
             cancellationToken: cts.Token);

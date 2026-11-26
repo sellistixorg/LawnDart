@@ -32,7 +32,7 @@ public sealed class LoggingEventStore : IEventStore, IEventLog, IEventStoreSubsc
 
     /// <inheritdoc />
     public async Task<AppendResult> AppendAsync(
-        string streamId,
+        StreamId streamId,
         IEnumerable<TaggedEvent> events,
         long? expectedVersion = null,
         EventMetadata? metadata = null,
@@ -41,7 +41,7 @@ public sealed class LoggingEventStore : IEventStore, IEventLog, IEventStoreSubsc
         var list = events.ToList();
         var result = await _store.AppendAsync(streamId, list, expectedVersion, metadata, cancellationToken)
             .ConfigureAwait(false);
-        Record(streamId, list.ConvertAll(t => t.Event), result.SequencePositions, metadata);
+        Record(streamId.ToString(), list.ConvertAll(t => t.Event), result.SequencePositions, metadata);
         return result;
     }
 
@@ -74,13 +74,13 @@ public sealed class LoggingEventStore : IEventStore, IEventLog, IEventStoreSubsc
 
     /// <inheritdoc />
     public Task<IReadOnlyList<SequencedEvent>> ReadStreamAsync(
-        string streamId, long fromVersion = 0, long? toVersion = null,
+        StreamId streamId, long fromVersion = 0, long? toVersion = null,
         DateTime? toTimestamp = null, CancellationToken cancellationToken = default)
         => _store.ReadStreamAsync(streamId, fromVersion, toVersion, toTimestamp, cancellationToken);
 
     /// <inheritdoc />
     public IAsyncEnumerable<SequencedEvent> ReadStreamEnumerableAsync(
-        string streamId, long fromVersion = 0, long? toVersion = null,
+        StreamId streamId, long fromVersion = 0, long? toVersion = null,
         DateTime? toTimestamp = null, CancellationToken cancellationToken = default)
         => _store.ReadStreamEnumerableAsync(streamId, fromVersion, toVersion, toTimestamp, cancellationToken);
 
@@ -111,7 +111,7 @@ public sealed class LoggingEventStore : IEventStore, IEventLog, IEventStoreSubsc
         => _store.GetMaxSequencePositionAsync(query, fromSequencePosition, toSequencePosition, toTimestamp, cancellationToken);
 
     /// <inheritdoc />
-    public Task<StreamMetadata?> GetStreamAsync(string streamId, CancellationToken cancellationToken = default)
+    public Task<StreamMetadata?> GetStreamAsync(StreamId streamId, CancellationToken cancellationToken = default)
         => _store.GetStreamAsync(streamId, cancellationToken);
 
     /// <inheritdoc />
@@ -121,11 +121,11 @@ public sealed class LoggingEventStore : IEventStore, IEventLog, IEventStoreSubsc
 
     /// <inheritdoc />
     public Task<IReadOnlyList<StreamMetadata>> GetStreamsByTagAsync(
-        string tag, CancellationToken cancellationToken = default)
+        Tag tag, CancellationToken cancellationToken = default)
         => _store.GetStreamsByTagAsync(tag, cancellationToken);
 
     /// <inheritdoc />
-    public Task<IReadOnlyList<string>> EnumerateStreamIdsAsync(
+    public Task<IReadOnlyList<StreamId>> EnumerateStreamIdsAsync(
         string? prefix = null, CancellationToken cancellationToken = default)
         => _store.EnumerateStreamIdsAsync(prefix, cancellationToken);
 
@@ -155,11 +155,11 @@ public sealed class LoggingEventStore : IEventStore, IEventLog, IEventStoreSubsc
         => _subscriptions.Subscribe(subscriberId, fromSequence, filter, cancellationToken);
 
     Task<IReadOnlyList<RecordedEvent>> IEventLog.ReadStreamAsync(
-        string streamId, long fromVersion, long? toVersion, DateTime? toCommitTimestamp, CancellationToken cancellationToken)
+        StreamId streamId, long fromVersion, long? toVersion, DateTime? toCommitTimestamp, CancellationToken cancellationToken)
         => _log.ReadStreamAsync(streamId, fromVersion, toVersion, toCommitTimestamp, cancellationToken);
 
     IAsyncEnumerable<RecordedEvent> IEventLog.ReadStreamEnumerableAsync(
-        string streamId, long fromVersion, long? toVersion, DateTime? toCommitTimestamp, CancellationToken cancellationToken)
+        StreamId streamId, long fromVersion, long? toVersion, DateTime? toCommitTimestamp, CancellationToken cancellationToken)
         => _log.ReadStreamEnumerableAsync(streamId, fromVersion, toVersion, toCommitTimestamp, cancellationToken);
 
     Task<EventLogQueryResult> IEventLog.ReadByQueryAsync(
@@ -171,7 +171,7 @@ public sealed class LoggingEventStore : IEventStore, IEventLog, IEventStoreSubsc
         => _log.ReadByQueryStreamAsync(query, fromSequencePosition, toSequencePosition, toCommitTimestamp, cancellationToken);
 
     Task<AppendResult> IEventLog.AppendAsync(
-        string streamId, IEnumerable<AppendEvent> events, long? expectedVersion, CancellationToken cancellationToken)
+        StreamId streamId, IEnumerable<AppendEvent> events, long? expectedVersion, CancellationToken cancellationToken)
         => _log.AppendAsync(streamId, events, expectedVersion, cancellationToken);
 
     Task<AppendResult> IEventLog.AppendAsync(

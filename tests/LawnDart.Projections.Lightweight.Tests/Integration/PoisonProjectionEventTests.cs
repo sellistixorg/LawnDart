@@ -36,7 +36,7 @@ public sealed class PoisonProjectionEventTests
         };
 
         var good = new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, "kept");
-        await store.AppendAsync("system:Tags:1", [good], metadata: Meta());
+        await store.AppendAsync(StreamId.Parse("system:Tags:1"), [good], metadata: Meta());
         var goodSeq = await store.GetCurrentSequenceAsync();
 
         var reg = ProjectionScanner.TryBuildRegistration(typeof(PoisonTagIndexProjection))!;
@@ -56,11 +56,11 @@ public sealed class PoisonProjectionEventTests
             checkpoints, StorageKey, goodSeq, TimeSpan.FromSeconds(10));
 
         var poison = new PoisonPill(Guid.NewGuid(), DateTime.UtcNow);
-        await store.AppendAsync("system:Tags:1", [poison], metadata: Meta());
+        await store.AppendAsync(StreamId.Parse("system:Tags:1"), [poison], metadata: Meta());
         var poisonSeq = await store.GetCurrentSequenceAsync();
 
         var later = new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, "skipped");
-        await store.AppendAsync("system:Tags:1", [later], metadata: Meta());
+        await store.AppendAsync(StreamId.Parse("system:Tags:1"), [later], metadata: Meta());
 
         await WaitForFaultedAsync(runner, TimeSpan.FromSeconds(10));
 

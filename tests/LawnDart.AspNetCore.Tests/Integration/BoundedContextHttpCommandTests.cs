@@ -46,7 +46,7 @@ namespace LawnDart.AspNetCore.Tests.Integration
             Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
 
             var store = host.Services.GetRequiredService<IEventStore>();
-            var events = await store.ReadStreamAsync($"note-{id:N}");
+            var events = await store.ReadStreamAsync(StreamId.Parse($"note:{id:N}"));
             Assert.Single(events);
         }
 
@@ -82,7 +82,7 @@ namespace LawnDart.AspNetCore.Tests.Integration
             Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
 
             var store = host.Services.GetRequiredService<IEventStore>();
-            var events = await store.ReadStreamAsync($"trace-note-{id:N}");
+            var events = await store.ReadStreamAsync(StreamId.Parse($"trace-note:{id:N}"));
             var evt = Assert.Single(events);
             Assert.Equal("0af7651916cd43dd8448eb211c80319c", evt.Metadata.TraceId);
             Assert.Equal("http-default-trace-note-appended", evt.Metadata.SchemaName);
@@ -120,7 +120,7 @@ namespace LawnDart.AspNetCore.Tests.Integration
             Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
 
             var store = host.Services.GetRequiredKeyedService<IEventStore>("ordering");
-            var events = await store.ReadStreamAsync($"note-{id:N}");
+            var events = await store.ReadStreamAsync(StreamId.Parse($"note:{id:N}"));
             Assert.Single(events);
         }
 
@@ -227,7 +227,7 @@ namespace LawnDart.AspNetCore.Tests.DefaultContext
         public async Task HandleAsync(AppendNoteCommand command, CancellationToken cancellationToken = default)
         {
             await store.AppendAsync(
-                $"note-{command.Id:N}",
+                StreamId.Parse($"note:{command.Id:N}"),
                 [new NoteAppended(Guid.NewGuid(), DateTime.UtcNow, command.Text)],
                 cancellationToken: cancellationToken);
         }
@@ -247,7 +247,7 @@ namespace LawnDart.AspNetCore.Tests.DefaultContext
             var @event = new TraceNoteAppended(Guid.NewGuid(), DateTime.UtcNow, command.Text);
             var envelope = metadata.EnrichEventMetadata(new EventMetadata(), commandMetadata, @event);
             await store.AppendAsync(
-                $"trace-note-{command.Id:N}",
+                StreamId.Parse($"trace-note:{command.Id:N}"),
                 [@event],
                 metadata: envelope,
                 cancellationToken: cancellationToken);
@@ -267,7 +267,7 @@ namespace LawnDart.AspNetCore.Tests.OrderingContext
         public async Task HandleAsync(AppendNoteCommand command, CancellationToken cancellationToken = default)
         {
             await store.AppendAsync(
-                $"note-{command.Id:N}",
+                StreamId.Parse($"note:{command.Id:N}"),
                 [new NoteAppended(Guid.NewGuid(), DateTime.UtcNow, command.Text)],
                 cancellationToken: cancellationToken);
         }

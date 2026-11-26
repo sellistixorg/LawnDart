@@ -50,7 +50,7 @@ public sealed class EnrollmentDecisionTests
 
         Assert.Equal(2, query.Items.Count);
         Assert.Null(query.Items[0].Types);
-        Assert.Equal(new[] { $"section:{sectionId}" }, query.Items[0].Tags);
+        Assert.Equal(new[] { Tag.Parse($"section:{sectionId}") }, query.Items[0].Tags!);
         Assert.Equal(
             new[]
             {
@@ -60,7 +60,7 @@ public sealed class EnrollmentDecisionTests
                 "RegistrationCancelled",
             },
             query.Items[1].Types);
-        Assert.Equal(new[] { $"student:{studentId}" }, query.Items[1].Tags);
+        Assert.Equal(new[] { Tag.Parse($"student:{studentId}") }, query.Items[1].Tags!);
         Assert.DoesNotContain("SeatReserved", query.Items[1].Types!);
         Assert.DoesNotContain("SeatReleased", query.Items[1].Types!);
         Assert.DoesNotContain("StudentPaymentProcessed", query.Items[1].Types!);
@@ -114,7 +114,7 @@ public sealed class EnrollmentDecisionTests
         var registrationA = Assert.Single(
             stored,
             e => e.Event is StudentRegistered registered && registered.StudentId == studentA);
-        Assert.Equal(new[] { $"student:{studentA}" }, registrationA.Tags);
+        Assert.Equal(new[] { Tag.Parse($"student:{studentA}") }, registrationA.Tags);
         Assert.True(EventQueryMatcher.Matches(registrationA, decisionA, Catalog));
         Assert.False(EventQueryMatcher.Matches(registrationA, decisionB, Catalog));
     }
@@ -179,8 +179,8 @@ public sealed class EnrollmentDecisionTests
         Assert.False(second.State.IsCancelled);
 
         var reserved = Assert.Single((await AllAsync(ctx)), e => e.Event is SeatReserved);
-        Assert.Contains($"section:{sectionId}", reserved.Tags);
-        Assert.DoesNotContain($"student:{studentB}", reserved.Tags);
+        Assert.Contains($"section:{sectionId}", reserved.Tags.Select(static t => t.ToString()).ToArray());
+        Assert.DoesNotContain($"student:{studentB}", reserved.Tags.Select(static t => t.ToString()).ToArray());
         Assert.True(EventQueryMatcher.Matches(
             reserved,
             EnrollmentEntity.EnrollmentDecision(studentB, sectionId),
@@ -198,20 +198,20 @@ public sealed class EnrollmentDecisionTests
         await SeedSectionAsync(ctx, sectionId, courseId, seats: 2);
         await SeedStudentAsync(ctx, studentId, "Ada");
         await ctx.EventStore.AppendAsync(
-            $"seat:{Guid.NewGuid():N}",
+            StreamId.Parse($"seat:{Guid.NewGuid():N}"),
             [new TaggedEvent(
                 new SeatReserved(Guid.NewGuid(), DateTime.UtcNow, sectionId, studentId),
-                [$"student:{studentId}", $"section:{sectionId}"])]);
+                [Tag.Parse($"student:{studentId}"), Tag.Parse($"section:{sectionId}")])]);
         await ctx.EventStore.AppendAsync(
-            $"seat:{Guid.NewGuid():N}",
+            StreamId.Parse($"seat:{Guid.NewGuid():N}"),
             [new TaggedEvent(
                 new SeatReleased(Guid.NewGuid(), DateTime.UtcNow, sectionId, otherId),
-                [$"student:{otherId}", $"section:{sectionId}"])]);
+                [Tag.Parse($"student:{otherId}"), Tag.Parse($"section:{sectionId}")])]);
         await ctx.EventStore.AppendAsync(
-            $"seat:{Guid.NewGuid():N}",
+            StreamId.Parse($"seat:{Guid.NewGuid():N}"),
             [new TaggedEvent(
                 new StudentEnrolled(Guid.NewGuid(), DateTime.UtcNow, otherId, courseId),
-                [$"student:{otherId}", $"section:{sectionId}", $"course:{courseId}"])]);
+                [Tag.Parse($"student:{otherId}"), Tag.Parse($"section:{sectionId}"), Tag.Parse($"course:{courseId}")])]);
 
         var entity = await LoadAsync(ctx.DcbRepository, studentId, sectionId);
         Assert.Equal(2, entity.State.SeatsAvailable);
@@ -240,20 +240,20 @@ public sealed class EnrollmentDecisionTests
         Assert.Equal(4, result.SeatsRemaining);
 
         var stored = await AllAsync(ctx);
-        var sectionSeed = Assert.Single(stored, e => e.StreamId == $"dcb-bootstrap:{sectionId}");
+        var sectionSeed = Assert.Single(stored, e => e.StreamId.ToString() == $"dcb-bootstrap:{sectionId}");
         Assert.IsType<SectionCreated>(sectionSeed.Event);
-        Assert.Equal(new[] { $"section:{sectionId}", $"course:{courseId}" }, sectionSeed.Tags);
+        Assert.Equal(new[] { Tag.Parse($"section:{sectionId}"), Tag.Parse($"course:{courseId}") }, sectionSeed.Tags);
 
-        var studentSeed = Assert.Single(stored, e => e.StreamId == $"dcb-bootstrap:{studentId}");
+        var studentSeed = Assert.Single(stored, e => e.StreamId.ToString() == $"dcb-bootstrap:{studentId}");
         var registered = Assert.IsType<StudentRegistered>(studentSeed.Event);
         Assert.Equal(studentId, registered.StudentId);
-        Assert.Equal(new[] { $"student:{studentId}" }, studentSeed.Tags);
+        Assert.Equal(new[] { Tag.Parse($"student:{studentId}") }, studentSeed.Tags);
 
         var decision = EnrollmentEntity.EnrollmentDecision(studentId, sectionId);
         Assert.True(EventQueryMatcher.Matches(sectionSeed, decision, Catalog));
         Assert.True(EventQueryMatcher.Matches(studentSeed, decision, Catalog));
         Assert.All(
-            stored.Where(e => e.StreamId.StartsWith("dcb:", StringComparison.Ordinal)),
+            stored.Where(e => e.StreamId.ToString().StartsWith("dcb:", StringComparison.Ordinal)),
             e => Assert.True(EventQueryMatcher.Matches(e, decision, Catalog), e.Event.GetType().Name));
     }
 
@@ -262,19 +262,19 @@ public sealed class EnrollmentDecisionTests
     private static async Task SeedSectionAsync(BddTestContext ctx, Guid sectionId, Guid courseId, int seats)
     {
         await ctx.EventStore.AppendAsync(
-            $"dcb-bootstrap:{sectionId}",
+            StreamId.Parse($"dcb-bootstrap:{sectionId}"),
             [new TaggedEvent(
                 new SectionCreated(Guid.NewGuid(), DateTime.UtcNow, sectionId, courseId, "Morning Cohort", seats),
-                [$"section:{sectionId}", $"course:{courseId}"])]);
+                [Tag.Parse($"section:{sectionId}"), Tag.Parse($"course:{courseId}")])]);
     }
 
     private static async Task SeedStudentAsync(BddTestContext ctx, Guid studentId, string name)
     {
         await ctx.EventStore.AppendAsync(
-            $"dcb-bootstrap:{studentId}",
+            StreamId.Parse($"dcb-bootstrap:{studentId}"),
             [new TaggedEvent(
                 new StudentRegistered(Guid.NewGuid(), DateTime.UtcNow, studentId, name, "student@academy.example"),
-                [$"student:{studentId}"])]);
+                [Tag.Parse($"student:{studentId}")])]);
     }
 
     private static Task<EnrollmentEntity> LoadAsync(IDcbRepository repository, Guid studentId, Guid sectionId) =>

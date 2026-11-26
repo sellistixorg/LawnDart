@@ -84,17 +84,17 @@ public class MultiStreamProjectionRunnerTests
             for (var j = 0; j < batchSize; j++)
                 batch[j] = new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1);
 
-            await store.AppendAsync(noiseStream, batch, metadata: MakeMeta(), cancellationToken: cts.Token);
+            await store.AppendAsync(StreamId.Parse(noiseStream), batch, metadata: MakeMeta(), cancellationToken: cts.Token);
         }
 
         await store.AppendAsync(
-            $"acme:OrderAggregate:{orderId}",
+            StreamId.Parse($"acme:OrderAggregate:{orderId}"),
             [new OrderCreatedLocal(Guid.NewGuid(), DateTime.UtcNow, orderId, "alice")],
             metadata: MakeMeta(),
             cancellationToken: cts.Token);
 
         await store.AppendAsync(
-            $"acme:ShipmentAggregate:{Guid.NewGuid()}",
+            StreamId.Parse($"acme:ShipmentAggregate:{Guid.NewGuid()}"),
             [new ShipmentDispatchedLocal(Guid.NewGuid(), DateTime.UtcNow, orderId, "FedEx")],
             metadata: MakeMeta(),
             cancellationToken: cts.Token);
@@ -134,12 +134,12 @@ public class MultiStreamProjectionRunnerTests
         var orderId = Guid.NewGuid();
 
         // OrderCreatedLocal comes from OrderAggregate stream
-        await store.AppendAsync($"acme:OrderAggregate:{orderId}", [
+        await store.AppendAsync(StreamId.Parse($"acme:OrderAggregate:{orderId}"), [
             new OrderCreatedLocal(Guid.NewGuid(), DateTime.UtcNow, orderId, "alice")
         ], metadata: MakeMeta(), cancellationToken: cts.Token);
 
         // ShipmentDispatchedLocal comes from a different ShipmentAggregate stream
-        await store.AppendAsync($"acme:ShipmentAggregate:{Guid.NewGuid()}", [
+        await store.AppendAsync(StreamId.Parse($"acme:ShipmentAggregate:{Guid.NewGuid()}"), [
             new ShipmentDispatchedLocal(Guid.NewGuid(), DateTime.UtcNow, orderId, "FedEx")
         ], metadata: MakeMeta(), cancellationToken: cts.Token);
 
@@ -180,17 +180,17 @@ public class MultiStreamProjectionRunnerTests
         var mariaOrderId = Guid.NewGuid();
 
         // Alice places an order in tenant "acme"
-        await store.AppendAsync($"acme:OrderAggregate:{aliceOrderId}", [
+        await store.AppendAsync(StreamId.Parse($"acme:OrderAggregate:{aliceOrderId}"), [
             new OrderCreatedLocal(Guid.NewGuid(), DateTime.UtcNow, aliceOrderId, "alice")
         ], metadata: MakeMeta(), cancellationToken: cts.Token);
 
         // Maria places an order in tenant "globex"
-        await store.AppendAsync($"globex:OrderAggregate:{mariaOrderId}", [
+        await store.AppendAsync(StreamId.Parse($"globex:OrderAggregate:{mariaOrderId}"), [
             new OrderCreatedLocal(Guid.NewGuid(), DateTime.UtcNow, mariaOrderId, "maria")
         ], metadata: MakeMeta(), cancellationToken: cts.Token);
 
         // Only Alice's order gets shipped
-        await store.AppendAsync($"acme:ShipmentAggregate:{Guid.NewGuid()}", [
+        await store.AppendAsync(StreamId.Parse($"acme:ShipmentAggregate:{Guid.NewGuid()}"), [
             new ShipmentDispatchedLocal(Guid.NewGuid(), DateTime.UtcNow, aliceOrderId, "UPS")
         ], metadata: MakeMeta(), cancellationToken: cts.Token);
 
@@ -243,7 +243,7 @@ public class MultiStreamProjectionRunnerTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         // This event type is not handled by the resolver → returns null → should be skipped
-        await store.AppendAsync("acme:Counter:xyz", [
+        await store.AppendAsync(StreamId.Parse("acme:Counter:xyz"), [
             new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 42)
         ], metadata: MakeMeta(), cancellationToken: cts.Token);
 
@@ -268,7 +268,7 @@ public class MultiStreamProjectionRunnerTests
         var reg = MakeMultiStreamRegistration();
 
         // First run: only OrderCreated event
-        await store.AppendAsync($"acme:OrderAggregate:{orderId}", [
+        await store.AppendAsync(StreamId.Parse($"acme:OrderAggregate:{orderId}"), [
             new OrderCreatedLocal(Guid.NewGuid(), DateTime.UtcNow, orderId, "alice")
         ], metadata: MakeMeta(), cancellationToken: cts.Token);
 
@@ -283,7 +283,7 @@ public class MultiStreamProjectionRunnerTests
         await runner1.StopAsync(CancellationToken.None);
 
         // Second run: add ShipmentDispatched event; runner should restore saved view
-        await store.AppendAsync($"acme:ShipmentAggregate:{Guid.NewGuid()}", [
+        await store.AppendAsync(StreamId.Parse($"acme:ShipmentAggregate:{Guid.NewGuid()}"), [
             new ShipmentDispatchedLocal(Guid.NewGuid(), DateTime.UtcNow, orderId, "DHL")
         ], metadata: MakeMeta(), cancellationToken: cts.Token);
 

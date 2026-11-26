@@ -28,7 +28,7 @@ public class EventStoreAdapterTests
         logHandle.Write(new RecordedEvent(
             envelope.EventType,
             envelope.Payload,
-            "authors-1",
+            StreamId.Parse("test:authors-1"),
             streamVersion: 1,
             sequencePosition: 1,
             commitTimestamp: new DateTime(2026, 9, 16, 12, 0, 0, DateTimeKind.Utc),
@@ -65,7 +65,7 @@ public class EventStoreAdapterTests
         logHandle.Write(new RecordedEvent(
             envelope.EventType,
             envelope.Payload,
-            "authors-1",
+            StreamId.Parse("test:authors-1"),
             streamVersion: 1,
             sequencePosition: 1,
             commitTimestamp: DateTime.UtcNow,
@@ -76,7 +76,7 @@ public class EventStoreAdapterTests
         logHandle.Write(new RecordedEvent(
             "no-such-family",
             Encoding.UTF8.GetBytes("""{"Id":"00000000-0000-0000-0000-000000000000"}"""),
-            "authors-1",
+            StreamId.Parse("test:authors-1"),
             streamVersion: 2,
             sequencePosition: 2,
             commitTimestamp: DateTime.UtcNow,
@@ -120,7 +120,7 @@ public class EventStoreAdapterTests
         var log = Substitute.For<IEventLog>();
         var marker = new byte[] { 9, 8, 7 };
         log.AppendAsync(
-                Arg.Any<string>(),
+                Arg.Any<StreamId>(),
                 Arg.Any<IEnumerable<AppendEvent>>(),
                 Arg.Any<long?>(),
                 Arg.Any<CancellationToken>())
@@ -128,7 +128,7 @@ public class EventStoreAdapterTests
 
         var adapter = new EventStoreAdapter(log, session);
         var result = await adapter.AppendAsync(
-            "authors-1",
+            StreamId.Parse("test:authors-1"),
             [new AuthorRegistered(Guid.NewGuid(), DateTime.UtcNow, "Ada")]);
 
         Assert.Same(marker, result.ConsistencyMarker);
@@ -141,11 +141,11 @@ public class EventStoreAdapterTests
     {
         var session = new EventSession(new StjEventSerializer(), MapCatalog.For<AuthorRegistered>("author-registered"));
         var log = Substitute.For<IEventLog>();
-        var metadata = new StreamMetadata { StreamId = "authors-1" };
-        log.GetStreamAsync("authors-1", Arg.Any<CancellationToken>()).Returns(metadata);
+        var metadata = new StreamMetadata { StreamId = StreamId.Parse("test:authors-1") };
+        log.GetStreamAsync(StreamId.Parse("test:authors-1"), Arg.Any<CancellationToken>()).Returns(metadata);
 
         var adapter = new EventStoreAdapter(log, session);
-        var actual = await adapter.GetStreamAsync("authors-1");
+        var actual = await adapter.GetStreamAsync(StreamId.Parse("test:authors-1"));
 
         Assert.Same(metadata, actual);
     }

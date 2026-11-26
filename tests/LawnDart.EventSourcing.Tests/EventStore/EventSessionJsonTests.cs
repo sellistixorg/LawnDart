@@ -19,7 +19,7 @@ public class EventSessionJsonTests
         var recorded = new RecordedEvent(
             append.EventType,
             append.Payload,
-            "books-1",
+            StreamId.Parse("test:books-1"),
             streamVersion: 1,
             sequencePosition: 9,
             commitTimestamp: commit,

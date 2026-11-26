@@ -69,7 +69,7 @@ internal sealed class PlaceOrderHandler : ICommandHandler<PlaceOrderCommand>
     {
         var streamId = $"Order:{command.OrderId}";
         var evt = new OrderPlacedEvent(Guid.NewGuid(), DateTime.UtcNow, command.OrderId, command.CustomerId, command.Total);
-        await _eventStore.AppendAsync(streamId, [evt], expectedVersion: null, cancellationToken: ct);
+        await _eventStore.AppendAsync(StreamId.Parse(streamId), [evt], expectedVersion: null, cancellationToken: ct);
         _logger.LogInformation("  [ordering] Order {OrderId} placed for {Customer}", command.Id, command.CustomerId);
     }
 }
@@ -88,11 +88,11 @@ internal sealed class ShipOrderHandler : ICommandHandler<ShipOrderCommand>
     public async Task HandleAsync(ShipOrderCommand command, CancellationToken ct = default)
     {
         var streamId = $"Order:{command.OrderId}";
-        var existing = await _eventStore.ReadStreamAsync(streamId, cancellationToken: ct);
+        var existing = await _eventStore.ReadStreamAsync(StreamId.Parse(streamId), cancellationToken: ct);
         if (existing.Count == 0)
             throw new InvalidOperationException($"No order stream {streamId}. Place the order before shipping.");
         var evt = new OrderShippedEvent(Guid.NewGuid(), DateTime.UtcNow, command.OrderId, command.TrackingNumber);
-        await _eventStore.AppendAsync(streamId, [evt], existing[^1].Version, cancellationToken: ct);
+        await _eventStore.AppendAsync(StreamId.Parse(streamId), [evt], existing[^1].Version, cancellationToken: ct);
         _logger.LogInformation("  [ordering] Order {OrderId} shipped - tracking: {Tracking}", command.OrderId, command.TrackingNumber);
     }
 }
@@ -116,7 +116,7 @@ internal sealed class ListProductHandler : ICommandHandler<ListProductCommand>
     {
         var streamId = $"Product:{command.ProductId}";
         var evt = new ProductListedEvent(Guid.NewGuid(), DateTime.UtcNow, command.ProductId, command.Name, command.Price);
-        await _eventStore.AppendAsync(streamId, [evt], expectedVersion: null, cancellationToken: ct);
+        await _eventStore.AppendAsync(StreamId.Parse(streamId), [evt], expectedVersion: null, cancellationToken: ct);
         _logger.LogInformation("  [catalog] Product '{Name}' listed at ${Price}", command.Name, command.Price);
     }
 }
@@ -135,11 +135,11 @@ internal sealed class DiscontinueProductHandler : ICommandHandler<DiscontinuePro
     public async Task HandleAsync(DiscontinueProductCommand command, CancellationToken ct = default)
     {
         var streamId = $"Product:{command.ProductId}";
-        var existing = await _eventStore.ReadStreamAsync(streamId, cancellationToken: ct);
+        var existing = await _eventStore.ReadStreamAsync(StreamId.Parse(streamId), cancellationToken: ct);
         if (existing.Count == 0)
             throw new InvalidOperationException($"No product stream {streamId}. List the product before discontinuing it.");
         var evt = new ProductDiscontinuedEvent(Guid.NewGuid(), DateTime.UtcNow, command.ProductId, command.Reason);
-        await _eventStore.AppendAsync(streamId, [evt], existing[^1].Version, cancellationToken: ct);
+        await _eventStore.AppendAsync(StreamId.Parse(streamId), [evt], existing[^1].Version, cancellationToken: ct);
         _logger.LogInformation("  [catalog] Product {ProductId} discontinued", command.Id);
     }
 }
@@ -216,11 +216,11 @@ internal sealed class SqlServerMultiContextDemoRunner : IHostedService
         if (ReferenceEquals(orderingStore, catalogStore))
             throw new InvalidOperationException("ordering and catalog resolved the same event store.");
 
-        var shipped = await orderingStore.ReadStreamAsync($"Order:{orderId1}", cancellationToken: ct);
+        var shipped = await orderingStore.ReadStreamAsync(StreamId.Parse($"Order:{orderId1}"), cancellationToken: ct);
         if (shipped.Count != 2)
             throw new InvalidOperationException($"Place and ship did not share Order:{orderId1}. Count was {shipped.Count}.");
 
-        var discontinued = await catalogStore.ReadStreamAsync($"Product:{productId2}", cancellationToken: ct);
+        var discontinued = await catalogStore.ReadStreamAsync(StreamId.Parse($"Product:{productId2}"), cancellationToken: ct);
         if (discontinued.Count != 2)
             throw new InvalidOperationException($"List and discontinue did not share Product:{productId2}. Count was {discontinued.Count}.");
 

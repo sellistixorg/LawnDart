@@ -232,7 +232,7 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
     }
 
     public Task<IReadOnlyList<SequencedEvent>> ReadStreamAsync(
-        string streamId,
+        StreamId streamId,
         long fromVersion = 0,
         long? toVersion = null,
         DateTime? toTimestamp = null,
@@ -240,7 +240,7 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         => _adapter.ReadStreamAsync(streamId, fromVersion, toVersion, toTimestamp, cancellationToken);
 
     public IAsyncEnumerable<SequencedEvent> ReadStreamEnumerableAsync(
-        string streamId,
+        StreamId streamId,
         long fromVersion = 0,
         long? toVersion = null,
         DateTime? toTimestamp = null,
@@ -265,7 +265,7 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         => _adapter.ReadByQueryStreamAsync(query, fromSequencePosition, toSequencePosition, toTimestamp, cancellationToken);
 
     public Task<AppendResult> AppendAsync(
-        string streamId,
+        StreamId streamId,
         IEnumerable<TaggedEvent> events,
         long? expectedVersion = null,
         EventMetadata? metadata = null,
@@ -337,18 +337,18 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         return new RecordedEvent(
             eventType,
             row.Payload,
-            row.StreamId,
+            StreamId.Parse(row.StreamId),
             row.Version,
             row.SequencePosition,
             row.Timestamp,
             metadataBytes,
             row.SchemaVersion,
             row.CodecId,
-            tags);
+            tags.Select(Tag.Parse).ToArray());
     }
 
     private static IReadOnlyList<string> UnionTags(IReadOnlyList<AppendEvent> envelopes)
-        => envelopes.SelectMany(e => e.Tags).Distinct(StringComparer.Ordinal).ToList();
+        => envelopes.SelectMany(e => e.Tags).Select(static t => t.ToString()).Distinct(StringComparer.Ordinal).ToList();
 
 
     private static string? DetermineStreamIdFromTags(IReadOnlyList<string> tags)
@@ -1137,14 +1137,13 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
     // Stream Registry Implementation
 
     public async Task<StreamMetadata?> GetStreamAsync(
-        string streamId,
+        StreamId streamId,
         CancellationToken cancellationToken = default)
     {
         if (!_enableRegistry)
             throw new InvalidOperationException("Stream registry is not enabled");
 
-        if (string.IsNullOrWhiteSpace(streamId))
-            throw new ArgumentException("Stream ID cannot be null or empty", nameof(streamId));
+        EventLogBuffers.RequireStreamId(streamId);
 
         var connection = new SqlConnection(_connectionString);
         await using var connectionDisposal = connection.ConfigureAwait(false);
@@ -1158,7 +1157,7 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
 
         var command = new SqlCommand(sql, connection);
         await using var commandDisposal = command.ConfigureAwait(false);
-        command.Parameters.AddWithValue("@StreamId", streamId);
+        command.Parameters.AddWithValue("@StreamId", streamId.ToString());
 
         var reader = (await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false));
         await using var readerDisposal = reader.ConfigureAwait(false);
@@ -1207,14 +1206,13 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
     }
 
     public async Task<IReadOnlyList<StreamMetadata>> GetStreamsByTagAsync(
-        string tag,
+        Tag tag,
         CancellationToken cancellationToken = default)
     {
         if (!_enableRegistry)
             throw new InvalidOperationException("Stream registry is not enabled");
 
-        if (string.IsNullOrWhiteSpace(tag))
-            throw new ArgumentException("Tag cannot be null or empty", nameof(tag));
+        EventLogBuffers.RequireTag(tag);
 
         var connection = new SqlConnection(_connectionString);
         await using var connectionDisposal = connection.ConfigureAwait(false);
@@ -1230,7 +1228,7 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
 
         var command = new SqlCommand(sql, connection);
         await using var commandDisposal = command.ConfigureAwait(false);
-        command.Parameters.AddWithValue("@Tag", tag);
+        command.Parameters.AddWithValue("@Tag", tag.ToString());
 
         var streams = new List<StreamMetadata>();
         var reader = (await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false));
@@ -1243,7 +1241,7 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         return streams.AsReadOnly();
     }
 
-    public async Task<IReadOnlyList<string>> EnumerateStreamIdsAsync(
+    public async Task<IReadOnlyList<StreamId>> EnumerateStreamIdsAsync(
         string? prefix = null,
         CancellationToken cancellationToken = default)
     {
@@ -1273,12 +1271,12 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
             command.Parameters.AddWithValue("@Prefix", StreamIdPrefixSql.LikeParameter(prefix));
         }
 
-        var streamIds = new List<string>();
+        var streamIds = new List<StreamId>();
         var reader = (await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false));
         await using var readerDisposal = reader.ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            streamIds.Add(reader.GetString("StreamId"));
+            streamIds.Add(StreamId.Parse(reader.GetString("StreamId")));
         }
 
         return streamIds.AsReadOnly();
@@ -1393,7 +1391,7 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
 
         var streamMetadata = new StreamMetadata
         {
-            StreamId = reader.GetString("StreamId"),
+            StreamId = StreamId.Parse(reader.GetString("StreamId")),
             AggregateType = reader.GetString("AggregateType"),
             AggregateId = reader.IsDBNull("AggregateId") ? null : reader.GetGuid("AggregateId"),
             CurrentVersion = reader.GetInt64("CurrentVersion"),
@@ -1401,7 +1399,7 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
             CreatedAt = reader.GetDateTime("CreatedAt"),
             LastEventAt = reader.GetDateTime("LastEventAt"),
             EventCount = reader.GetInt64("EventCount"),
-            Tags = tags,
+            Tags = tags.Select(Tag.Parse).ToArray(),
             Status = Enum.Parse<StreamStatus>(reader.GetString("Status"))
         };
         
@@ -1415,30 +1413,30 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
             else
             {
                 // Extract from stream ID if column is null
-                streamMetadata.TenantId = ExtractTenantId(streamMetadata.StreamId);
+                streamMetadata.TenantId = ExtractTenantId(streamMetadata.StreamId.ToString());
             }
         }
         catch
         {
             // Column doesn't exist, extract from stream ID
-            streamMetadata.TenantId = ExtractTenantId(streamMetadata.StreamId);
+            streamMetadata.TenantId = ExtractTenantId(streamMetadata.StreamId.ToString());
         }
         
         return streamMetadata;
     }
 
     private static string ExtractAggregateType(string streamId)
-        => StreamIdParser.ExtractAggregateType(streamId);
+        => StreamIdText.AggregateType(streamId);
 
     private static Guid? ExtractAggregateId(string streamId)
-        => StreamIdParser.ExtractAggregateId(streamId);
+        => StreamIdText.AggregateId(streamId);
     
     private static string? ExtractTenantId(string streamId)
-        => StreamIdParser.ExtractTenantId(streamId);
+        => StreamIdText.TenantId(streamId);
 
     private void ValidateStreamTenant(string streamId, IReadOnlyList<AppendEvent> envelopes)
         => AppendTenantRules.ValidateStreamAppend(
-            streamId,
+            StreamId.Parse(streamId),
             envelopes,
             _options.RequireTenantId,
             _options.ValidateNames);
@@ -1621,39 +1619,37 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         };
 
     async Task<IReadOnlyList<RecordedEvent>> IEventLog.ReadStreamAsync(
-        string streamId,
+        StreamId streamId,
         long fromVersion,
         long? toVersion,
         DateTime? toCommitTimestamp,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(streamId))
-            throw new ArgumentException("Stream ID cannot be null or empty", nameof(streamId));
+        EventLogBuffers.RequireStreamId(streamId);
 
         var connection = new SqlConnection(_connectionString);
         await using var connectionDisposal = connection.ConfigureAwait(false);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         return await ReadRecordedStreamCoreAsync(
-            connection, streamId, fromVersion, toVersion, toCommitTimestamp, cancellationToken)
+            connection, streamId.ToString(), fromVersion, toVersion, toCommitTimestamp, cancellationToken)
             .ConfigureAwait(false);
     }
 
     async IAsyncEnumerable<RecordedEvent> IEventLog.ReadStreamEnumerableAsync(
-        string streamId,
+        StreamId streamId,
         long fromVersion,
         long? toVersion,
         DateTime? toCommitTimestamp,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(streamId))
-            throw new ArgumentException("Stream ID cannot be null or empty", nameof(streamId));
+        EventLogBuffers.RequireStreamId(streamId);
 
         var connection = new SqlConnection(_connectionString);
         await using var connectionDisposal = connection.ConfigureAwait(false);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         foreach (var frame in await ReadRecordedStreamCoreAsync(
-            connection, streamId, fromVersion, toVersion, toCommitTimestamp, cancellationToken)
+            connection, streamId.ToString(), fromVersion, toVersion, toCommitTimestamp, cancellationToken)
             .ConfigureAwait(false))
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -1701,21 +1697,20 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
     }
 
     public async Task<AppendResult> AppendAsync(
-        string streamId,
+        StreamId streamId,
         IEnumerable<AppendEvent> events,
         long? expectedVersion = null,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(streamId))
-            throw new ArgumentException("Stream ID cannot be null or empty", nameof(streamId));
+        EventLogBuffers.RequireStreamId(streamId);
 
-        SqlServerColumnLimits.EnsureStreamId(streamId, nameof(streamId));
+        SqlServerColumnLimits.EnsureStreamId(streamId.ToString(), nameof(streamId));
 
         var envelopes = events?.ToList() ?? throw new ArgumentNullException(nameof(events));
         if (envelopes.Count == 0)
             throw new ArgumentException("At least one event is required", nameof(events));
 
-        ValidateStreamTenant(streamId, envelopes);
+        ValidateStreamTenant(streamId.ToString(), envelopes);
         LogConnectionOnce();
         var eventIds = ResolveEventIds(envelopes);
 
@@ -1723,7 +1718,7 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         {
             await EnsureEventTypeIdsAsync(envelopes, ct).ConfigureAwait(false);
             return await AppendInTransactionAsync(
-                streamId, envelopes, eventIds, expectedVersion, condition: null, isDcb: false, ct)
+                streamId.ToString(), envelopes, eventIds, expectedVersion, condition: null, isDcb: false, ct)
                 .ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
     }
@@ -1746,9 +1741,9 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
             var tenantId = AppendTenantRules.TryReadTenantId(envelopes);
             AppendTenantRules.ValidateDcbAppend(tenantId, _options.RequireTenantId, _options.ValidateNames);
 
-            var streamId = !string.IsNullOrWhiteSpace(tenantId)
-                ? $"{tenantId}:dcb:{Guid.NewGuid()}"
-                : $"dcb:{Guid.NewGuid()}";
+            var streamId = (!string.IsNullOrWhiteSpace(tenantId)
+                ? StreamId.For(tenantId, StreamId.DcbType, Guid.NewGuid().ToString())
+                : StreamId.For(StreamId.DcbType, Guid.NewGuid().ToString())).ToString();
             SqlServerColumnLimits.EnsureStreamId(streamId, "streamId");
 
             await EnsureEventTypeIdsAsync(envelopes, ct).ConfigureAwait(false);
@@ -2089,9 +2084,9 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
                 continue;
             foreach (var tag in item.Tags)
             {
-                if (string.IsNullOrEmpty(tag) || _tagIds.TryGetId(tag, out _) || !seen.Add(tag))
+                if (tag.IsDefault || _tagIds.TryGetId(tag.ToString(), out _) || !seen.Add(tag.ToString()))
                     continue;
-                missing.Add(tag);
+                missing.Add(tag.ToString());
             }
         }
 

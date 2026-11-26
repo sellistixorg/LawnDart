@@ -73,18 +73,18 @@ public class ShowcaseB_DcbInProcess
         var meta = new LawnDart.Metadata.EventMetadata { Timestamp = DateTime.UtcNow };
 
         await _eventStore.AppendAsync(
-            $"dcb-bootstrap:{sectionId}",
+            StreamId.Parse($"dcb-bootstrap:{sectionId}"),
             [new TaggedEvent(
                 new SectionCreated(Guid.NewGuid(), DateTime.UtcNow, sectionId, courseId, "Morning Cohort", 5),
-                [$"section:{sectionId}", $"course:{courseId}"])],
+                [Tag.Parse($"section:{sectionId}"), Tag.Parse($"course:{courseId}")])],
             expectedVersion: null,
             metadata: meta);
 
         await _eventStore.AppendAsync(
-            $"dcb-bootstrap:{studentId}",
+            StreamId.Parse($"dcb-bootstrap:{studentId}"),
             [new TaggedEvent(
                 new StudentRegistered(Guid.NewGuid(), DateTime.UtcNow, studentId, studentName, studentEmail),
-                [$"student:{studentId}"])],
+                [Tag.Parse($"student:{studentId}")])],
             expectedVersion: null,
             metadata: meta);
 

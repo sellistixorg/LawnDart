@@ -28,35 +28,35 @@ public class CachedStreamRegistryTests
     public async Task GetStreamAsync_FirstCall_HitsInnerRegistry()
     {
         // Arrange
-        var streamId = "test-stream";
+        var streamId = "test:test-stream";
         await _innerRegistry.AppendAsync(
-            streamId,
+            StreamId.Parse(streamId),
             [new TaggedEvent(new TestCacheEvent())],
             null,
             new Metadata.EventMetadata());
 
         // Act
-        var result = await _cachedRegistry.GetStreamAsync(streamId);
+        var result = await _cachedRegistry.GetStreamAsync(StreamId.Parse(streamId));
 
         // Assert
         Assert.NotNull(result);
-        Assert.Equal(streamId, result.StreamId);
+        Assert.Equal(streamId, result.StreamId.ToString());
     }
 
     [Fact]
     public async Task GetStreamAsync_SecondCall_UsesCachedValue()
     {
         // Arrange
-        var streamId = "test-stream";
+        var streamId = "test:test-stream";
         await _innerRegistry.AppendAsync(
-            streamId,
+            StreamId.Parse(streamId),
             [new TaggedEvent(new TestCacheEvent())],
             null,
             new Metadata.EventMetadata());
 
         // Act
-        var result1 = await _cachedRegistry.GetStreamAsync(streamId);
-        var result2 = await _cachedRegistry.GetStreamAsync(streamId);
+        var result1 = await _cachedRegistry.GetStreamAsync(StreamId.Parse(streamId));
+        var result2 = await _cachedRegistry.GetStreamAsync(StreamId.Parse(streamId));
 
         // Assert
         Assert.NotNull(result1);
@@ -69,7 +69,7 @@ public class CachedStreamRegistryTests
     {
         // Arrange
         await _innerRegistry.AppendAsync(
-            "Order:1",
+            StreamId.Parse("Order:1"),
             [new TaggedEvent(new TestCacheEvent())],
             null,
             new Metadata.EventMetadata());
@@ -88,14 +88,14 @@ public class CachedStreamRegistryTests
     {
         // Arrange
         await _innerRegistry.AppendAsync(
-            "stream1",
-            [new TaggedEvent(new TestCacheEvent(), "test-tag")],
+            StreamId.Parse("test:stream1"),
+            [new TaggedEvent(new TestCacheEvent(), Tag.Parse("tag:test-tag"))],
             null,
             new Metadata.EventMetadata());
 
         // Act
-        var result1 = await _cachedRegistry.GetStreamsByTagAsync("test-tag");
-        var result2 = await _cachedRegistry.GetStreamsByTagAsync("test-tag");
+        var result1 = await _cachedRegistry.GetStreamsByTagAsync(Tag.Parse("tag:test-tag"));
+        var result2 = await _cachedRegistry.GetStreamsByTagAsync(Tag.Parse("tag:test-tag"));
 
         // Assert
         Assert.NotEmpty(result1);
@@ -130,16 +130,16 @@ public class CachedStreamRegistryTests
             return Task.FromResult(new StreamPage { Streams = [] });
         }
 
-        public Task<StreamMetadata?> GetStreamAsync(string streamId, CancellationToken cancellationToken = default)
+        public Task<StreamMetadata?> GetStreamAsync(StreamId streamId, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
         public Task<IReadOnlyList<StreamMetadata>> GetStreamsByAggregateTypeAsync(string aggregateType, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
-        public Task<IReadOnlyList<StreamMetadata>> GetStreamsByTagAsync(string tag, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<StreamMetadata>> GetStreamsByTagAsync(Tag tag, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
-        public Task<IReadOnlyList<string>> EnumerateStreamIdsAsync(string? prefix = null, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<StreamId>> EnumerateStreamIdsAsync(string? prefix = null, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
         public Task<IReadOnlyList<StreamMetadata>> GetStreamsUpdatedAfterAsync(long afterSequencePosition, int? limit = null, CancellationToken cancellationToken = default)
@@ -154,7 +154,7 @@ public class CachedStreamRegistryTests
     {
         // Arrange
         await _innerRegistry.AppendAsync(
-            "Order:1",
+            StreamId.Parse("Order:1"),
             [new TaggedEvent(new TestCacheEvent())],
             null,
             new Metadata.EventMetadata());
@@ -173,7 +173,7 @@ public class CachedStreamRegistryTests
     {
         // Arrange
         await _innerRegistry.AppendAsync(
-            "stream1",
+            StreamId.Parse("test:stream1"),
             [new TaggedEvent(new TestCacheEvent())],
             null,
             new Metadata.EventMetadata());

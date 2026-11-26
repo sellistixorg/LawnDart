@@ -199,7 +199,7 @@ public sealed class MapProjectionAdminApiTests : IAsyncLifetime
         for (var i = 0; i < 3; i++)
         {
             await eventStore.AppendAsync(
-                streamId,
+                StreamId.Parse(streamId),
                 [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)],
                 metadata: Meta(),
                 cancellationToken: cts.Token);
@@ -250,12 +250,12 @@ public sealed class MapProjectionAdminApiTests : IAsyncLifetime
         for (var i = 0; i < 3; i++)
         {
             await listingEs.AppendAsync(
-                listingStream,
+                StreamId.Parse(listingStream),
                 [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)],
                 metadata: Meta(),
                 cancellationToken: cts.Token);
             await inboundEs.AppendAsync(
-                inboundStream,
+                StreamId.Parse(inboundStream),
                 [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)],
                 metadata: Meta(),
                 cancellationToken: cts.Token);

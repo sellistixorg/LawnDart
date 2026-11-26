@@ -18,6 +18,9 @@ internal static class StreamPageToken
 
     internal static string? ReadAfter(string? pageToken, StreamListFilter? filter)
     {
+        if (filter?.Tag is { } filterTag)
+            EventLogBuffers.RequireTag(filterTag);
+
         if (string.IsNullOrEmpty(pageToken))
             return null;
 
@@ -89,7 +92,7 @@ internal static class StreamPageToken
         return new StreamPage
         {
             Streams = page,
-            NextPageToken = Encode(page[pageSize - 1].StreamId, filter)
+            NextPageToken = Encode(page[pageSize - 1].StreamId.ToString(), filter)
         };
     }
 
@@ -101,7 +104,7 @@ internal static class StreamPageToken
         using var buffer = new MemoryStream();
         buffer.WriteByte(1);
         Write(buffer, Normalize(filter?.Prefix));
-        Write(buffer, Normalize(filter?.Tag));
+        Write(buffer, filter?.Tag?.ToString());
         Write(buffer, Normalize(filter?.AggregateType));
         var digest = SHA256.HashData(buffer.GetBuffer().AsSpan(0, (int)buffer.Length));
         return digest.AsSpan(0, HashLength).ToArray();

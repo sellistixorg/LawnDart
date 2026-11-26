@@ -73,7 +73,7 @@ public sealed class PostgresOutboxInboxTests
             new AppendEvent("contract.outbox.rollback", payload, metadata: "{}"u8.ToArray(), outbound: notice)
         ]);
 
-        Assert.Empty(await store.ReadStreamAsync(streamId));
+        Assert.Empty(await store.ReadStreamAsync(StreamId.Parse(streamId)));
         Assert.Empty(await opened.RequireOutbox().GetUnprocessedAsync(10));
     }
 
@@ -125,8 +125,8 @@ public sealed class PostgresOutboxInboxTests
         }
 
         var first = "acme:Order:" + Guid.NewGuid().ToString("N");
-        await store.AppendAsync(first, [ContractEvent.Tick()]);
-        Assert.Single(await store.ReadStreamAsync(first));
+        await store.AppendAsync(StreamId.Parse(first), [ContractEvent.Tick()]);
+        Assert.Single(await store.ReadStreamAsync(StreamId.Parse(first)));
 
         await store.InitializeSchemaAsync();
 
@@ -171,12 +171,12 @@ public sealed class PostgresOutboxInboxTests
         }
 
         var second = "acme:Order:" + Guid.NewGuid().ToString("N");
-        await store.AppendAsync(second, [ContractEvent.Tick()]);
+        await store.AppendAsync(StreamId.Parse(second), [ContractEvent.Tick()]);
         Assert.Empty(await opened.RequireOutbox().GetUnprocessedAsync(10));
 
         var enabled = await _fixture.Backend.OpenEventStoreAsync(Publishing(schema, claimLease: TimeSpan.Zero));
         var third = "acme:Order:" + Guid.NewGuid().ToString("N");
-        await enabled.Store.AppendAsync(third, [ContractEvent.Tick()]);
+        await enabled.Store.AppendAsync(StreamId.Parse(third), [ContractEvent.Tick()]);
         Assert.Equal(third, Assert.Single(await enabled.RequireOutbox().GetUnprocessedAsync(10)).StreamId);
     }
 
@@ -241,8 +241,8 @@ public sealed class PostgresOutboxInboxTests
         Assert.Equal(new[] { 34 }, await AppendFunctionArgumentCountsAsync(connection, schema));
 
         var streamId = "acme:Order:" + Guid.NewGuid().ToString("N");
-        await store.AppendAsync(streamId, [ContractEvent.Tick()]);
-        Assert.Single(await store.ReadStreamAsync(streamId));
+        await store.AppendAsync(StreamId.Parse(streamId), [ContractEvent.Tick()]);
+        Assert.Single(await store.ReadStreamAsync(StreamId.Parse(streamId)));
         Assert.Equal(streamId, Assert.Single(await opened.RequireOutbox().GetUnprocessedAsync(10)).StreamId);
     }
 
@@ -272,7 +272,7 @@ public sealed class PostgresOutboxInboxTests
         Assert.Equal(new[] { 34 }, await AppendFunctionArgumentCountsAsync(check, store.SchemaName));
 
         var streamId = "acme:Order:" + Guid.NewGuid().ToString("N");
-        await store.AppendAsync(streamId, [ContractEvent.Tick()]);
+        await store.AppendAsync(StreamId.Parse(streamId), [ContractEvent.Tick()]);
         Assert.Equal(streamId, Assert.Single(await opened.RequireOutbox().GetUnprocessedAsync(10)).StreamId);
     }
 
@@ -283,8 +283,8 @@ public sealed class PostgresOutboxInboxTests
         await _fixture.Backend.OpenInboxAsync(new ContractStoreOptions { SchemaName = schema, RequireTenantId = false });
         var opened = await _fixture.Backend.OpenEventStoreAsync(Publishing(schema));
         var streamId = "acme:Order:" + Guid.NewGuid().ToString("N");
-        await opened.Store.AppendAsync(streamId, [ContractEvent.Tick()]);
-        Assert.Single(await opened.Store.ReadStreamAsync(streamId));
+        await opened.Store.AppendAsync(StreamId.Parse(streamId), [ContractEvent.Tick()]);
+        Assert.Single(await opened.Store.ReadStreamAsync(StreamId.Parse(streamId)));
         Assert.Equal(streamId, Assert.Single(await opened.RequireOutbox().GetUnprocessedAsync(10)).StreamId);
     }
 
@@ -295,7 +295,7 @@ public sealed class PostgresOutboxInboxTests
         await _fixture.Backend.OpenOutboxAsync(new ContractStoreOptions { SchemaName = schema, RequireTenantId = false });
         var opened = await _fixture.Backend.OpenEventStoreAsync(Publishing(schema));
         var streamId = "acme:Order:" + Guid.NewGuid().ToString("N");
-        await opened.Store.AppendAsync(streamId, [ContractEvent.Tick()]);
+        await opened.Store.AppendAsync(StreamId.Parse(streamId), [ContractEvent.Tick()]);
         Assert.Equal(streamId, Assert.Single(await opened.RequireOutbox().GetUnprocessedAsync(10)).StreamId);
     }
 
@@ -312,7 +312,7 @@ public sealed class PostgresOutboxInboxTests
         Assert.True(await inbox.Store.IsProcessedAsync("after-events"));
         await writer.WriteAsync(Message(1));
         var streamId = "acme:Order:" + Guid.NewGuid().ToString("N");
-        await opened.Store.AppendAsync(streamId, [ContractEvent.Tick()]);
+        await opened.Store.AppendAsync(StreamId.Parse(streamId), [ContractEvent.Tick()]);
         var rows = await opened.RequireOutbox().GetUnprocessedAsync(10);
         Assert.Contains(rows, row => row.StreamId == streamId);
     }
@@ -391,14 +391,14 @@ public sealed class PostgresOutboxInboxTests
         var first = "alpha:Order:" + Guid.NewGuid().ToString("N");
         var second = "beta:Order:" + Guid.NewGuid().ToString("N");
         var notice = new OutboundEvent("contract.outbox.same-id", payload, metadata);
-        await opened.Log.AppendAsync(first, [new AppendEvent("contract.outbox.same-id", payload, metadata, outbound: notice)]);
+        await opened.Log.AppendAsync(StreamId.Parse(first), [new AppendEvent("contract.outbox.same-id", payload, metadata, outbound: notice)]);
 
         var ex = await Assert.ThrowsAsync<EventAlreadyAppendedException>(() =>
-            opened.Log.AppendAsync(second, [new AppendEvent("contract.outbox.same-id", payload, metadata, outbound: notice)]));
+            opened.Log.AppendAsync(StreamId.Parse(second), [new AppendEvent("contract.outbox.same-id", payload, metadata, outbound: notice)]));
 
         Assert.Equal(id, ex.EventId);
-        Assert.Single(await opened.Log.ReadStreamAsync(first));
-        Assert.Empty(await opened.Log.ReadStreamAsync(second));
+        Assert.Single(await opened.Log.ReadStreamAsync(StreamId.Parse(first)));
+        Assert.Empty(await opened.Log.ReadStreamAsync(StreamId.Parse(second)));
         Assert.Single(await opened.RequireOutbox().GetUnprocessedAsync(10));
     }
 

@@ -16,13 +16,13 @@ The Library borrow decision is `BookLoan.ForLoan`. Add book is
 
 ```csharp
 public static Query ForBook(Guid bookId) =>
-    Query.FromItems(QueryItem.ByTags($"book:{bookId}"));
+    Query.FromItems(QueryItem.ByTags(Tag.Create("book", bookId.ToString())));
 
 public static Query ForLoan(Guid bookId, Guid memberId) => Query.FromItems(
-    QueryItem.ByTags($"book:{bookId}"),
+    QueryItem.ByTags(Tag.Create("book", bookId.ToString())),
     QueryItem.ByTypeAndTags(
         ["book-borrowed", "book-returned"],
-        [$"member:{memberId}"]));
+        [Tag.Create("member", memberId.ToString())]));
 ```
 
 `AddBookHandler` loads `ForBook`. `BorrowBookHandler` and

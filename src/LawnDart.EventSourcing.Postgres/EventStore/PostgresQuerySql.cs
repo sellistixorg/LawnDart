@@ -154,13 +154,13 @@ internal static class PostgresQuerySql
             var tags = item.Tags!;
             builder.Append(names.Tags).Append(" t0");
             var tag0 = "tag_" + index + "_0";
-            parameters.Add(new NpgsqlParameter(tag0, NpgsqlDbType.Text) { Value = tags[0] });
+            parameters.Add(new NpgsqlParameter(tag0, NpgsqlDbType.Text) { Value = tags[0].ToString() });
             builder.Append(" WHERE t0.tag = @").Append(tag0);
             for (var j = 1; j < tags.Count; j++)
             {
                 var alias = "t" + j;
                 var name = "tag_" + index + "_" + j;
-                parameters.Add(new NpgsqlParameter(name, NpgsqlDbType.Text) { Value = tags[j] });
+                parameters.Add(new NpgsqlParameter(name, NpgsqlDbType.Text) { Value = tags[j].ToString() });
                 builder.Append(" AND EXISTS (SELECT 1 FROM ").Append(names.Tags).Append(' ').Append(alias)
                     .Append(" WHERE ").Append(alias).Append(".global_position = t0.global_position AND ")
                     .Append(alias).Append(".tenant_id = t0.tenant_id AND ")

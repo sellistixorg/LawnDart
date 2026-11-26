@@ -38,25 +38,25 @@ public class ShowcaseE_TemporalQueries
 
         // Append all events directly with explicit timestamps for deterministic temporal demo
         await _eventStore.AppendAsync(
-            streamId,
+            StreamId.Parse(streamId),
             [new CourseCreated(Guid.NewGuid(), t0, courseId, "Temporal Queries 101", "Learn point-in-time state", 299m)],
             expectedVersion: null,
             metadata: new EventMetadata { Timestamp = t0 });
 
         await _eventStore.AppendAsync(
-            streamId,
+            StreamId.Parse(streamId),
             [new CoursePriceUpdated(Guid.NewGuid(), t1, courseId, 349m)],
             expectedVersion: 1,
             metadata: new EventMetadata { Timestamp = t1 });
 
         await _eventStore.AppendAsync(
-            streamId,
+            StreamId.Parse(streamId),
             [new CoursePriceUpdated(Guid.NewGuid(), t2, courseId, 399m)],
             expectedVersion: 2,
             metadata: new EventMetadata { Timestamp = t2 });
 
         await _eventStore.AppendAsync(
-            streamId,
+            StreamId.Parse(streamId),
             [new CoursePriceUpdated(Guid.NewGuid(), t3, courseId, 449m)],
             expectedVersion: 3,
             metadata: new EventMetadata { Timestamp = t3 });
@@ -82,7 +82,7 @@ public class ShowcaseE_TemporalQueries
         // Step 3: Demonstrate ReadStreamEnumerableAsync
         Console.WriteLine(" Stream events via ReadStreamEnumerableAsync (await foreach):");
         var count = 0;
-        await foreach (var evt in _eventStore.ReadStreamEnumerableAsync(streamId))
+        await foreach (var evt in _eventStore.ReadStreamEnumerableAsync(StreamId.Parse(streamId)))
         {
             count++;
             var priceInfo = evt.Event is CoursePriceUpdated pu ? $" → £{pu.NewPrice}" : "";
@@ -97,7 +97,7 @@ public class ShowcaseE_TemporalQueries
 
     private async Task<CourseState> RebuildStateAtAsync(string streamId, DateTime asOf)
     {
-        var events = await _eventStore.ReadStreamAsync(streamId, fromVersion: 0, toTimestamp: asOf);
+        var events = await _eventStore.ReadStreamAsync(StreamId.Parse(streamId), fromVersion: 0, toTimestamp: asOf);
         var state = new CourseState();
 
         foreach (var se in events.OrderBy(e => e.Version))

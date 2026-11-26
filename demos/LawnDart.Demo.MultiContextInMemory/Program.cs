@@ -143,7 +143,7 @@ internal sealed class DemoRunner : IHostedService
         _logger.LogInformation("");
         _logger.LogInformation("--- Reading Ordering Events for Order {OrderId} ---", order1Id);
         var orderStream = $"Order:{order1Id}";
-        var orderEvents = await _orderingStore.ReadStreamAsync(orderStream, cancellationToken: cancellationToken);
+        var orderEvents = await _orderingStore.ReadStreamAsync(StreamId.Parse(orderStream), cancellationToken: cancellationToken);
         foreach (var e in orderEvents)
             _logger.LogInformation("  [{Seq}] v{Version} {EventType}", e.SequencePosition, e.Version, e.Event.GetType().Name);
 

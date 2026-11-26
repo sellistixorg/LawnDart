@@ -48,7 +48,7 @@ public sealed class SqlServerEventStoreCorrectnessTests : IAsyncLifetime
         var logger = new ListLogger();
         var store = CreateStore(_connectionString, "gaproll", TimeSpan.FromMilliseconds(200), logger);
         await store.InitializeSchemaAsync();
-        await store.AppendAsync("s1", [Evt()]);
+        await store.AppendAsync(StreamId.Parse("test:s1"), [Evt()]);
 
         await using (var connection = new SqlConnection(_connectionString))
         {
@@ -73,7 +73,7 @@ public sealed class SqlServerEventStoreCorrectnessTests : IAsyncLifetime
             await transaction.RollbackAsync();
         }
 
-        var fast = await store.AppendAsync("s2", [Evt()]);
+        var fast = await store.AppendAsync(StreamId.Parse("test:s2"), [Evt()]);
         Assert.Equal(fast.SequencePositions[0], await store.GetCurrentSequenceAsync());
         Assert.DoesNotContain(
             logger.Entries,

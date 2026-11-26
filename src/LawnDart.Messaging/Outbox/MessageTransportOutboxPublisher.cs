@@ -94,7 +94,7 @@ public sealed class MessageTransportOutboxPublisher : IOutboxPublisher
         var recorded = new RecordedEvent(
             message.EventType,
             message.Payload,
-            message.StreamId,
+            StreamId.Parse(message.StreamId),
             streamVersion: 0,
             sequencePosition: message.SequencePosition,
             commitTimestamp: message.CreatedAt,

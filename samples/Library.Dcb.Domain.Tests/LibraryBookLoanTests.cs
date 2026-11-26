@@ -106,7 +106,7 @@ public sealed class LibraryBookLoanTests
 
         Assert.Equal(2, query.Items.Count);
         Assert.Null(query.Items[0].Types);
-        Assert.Equal(new[] { $"book:{bookId}" }, query.Items[0].Tags);
+        Assert.Equal(new[] { Tag.Create("book", bookId.ToString()) }, query.Items[0].Tags!);
         Assert.Equal(
             new[]
             {
@@ -114,12 +114,12 @@ public sealed class LibraryBookLoanTests
                 EventTypeCatalog.TryGetDeclaredName(typeof(BookReturned))!,
             },
             query.Items[1].Types);
-        Assert.Equal(new[] { $"member:{memberId}" }, query.Items[1].Tags);
+        Assert.Equal(new[] { Tag.Create("member", memberId.ToString()) }, query.Items[1].Tags!);
 
         var book = BookLoan.ForBook(bookId);
         Assert.Single(book.Items);
         Assert.Null(book.Items[0].Types);
-        Assert.Equal(new[] { $"book:{bookId}" }, book.Items[0].Tags);
+        Assert.Equal(new[] { Tag.Create("book", bookId.ToString()) }, book.Items[0].Tags!);
     }
 
     [Fact]
@@ -145,12 +145,12 @@ public sealed class LibraryBookLoanTests
             .ReadByQueryAsync(BookLoan.ForLoan(bookId, memberId))).Events;
         Assert.Equal(2, events.Count);
         Assert.IsType<BookAdded>(events[0].Event);
-        Assert.Equal(new[] { $"book:{bookId}" }, events[0].Tags);
+        Assert.Equal(new[] { Tag.Create("book", bookId.ToString()) }, events[0].Tags);
         var borrowed = Assert.IsType<BookBorrowed>(events[1].Event);
         Assert.Equal(bookId, borrowed.BookId);
         Assert.Equal(memberId, borrowed.MemberId);
         Assert.Equal("Jeremy", borrowed.MemberName);
-        Assert.Equal(new[] { $"book:{bookId}", $"member:{memberId}" }, events[1].Tags);
+        Assert.Equal(new[] { Tag.Create("book", bookId.ToString()), Tag.Create("member", memberId.ToString()) }, events[1].Tags);
     }
 
     [Fact]
@@ -183,14 +183,14 @@ public sealed class LibraryBookLoanTests
         for (var i = 0; i < 4; i++)
         {
             Assert.IsType<BookAdded>(stored[i].Event);
-            Assert.Equal(new[] { $"book:{bookIds[i]}" }, stored[i].Tags);
+            Assert.Equal(new[] { Tag.Create("book", bookIds[i].ToString()) }, stored[i].Tags);
         }
 
         for (var i = 0; i < 3; i++)
         {
             var borrowed = Assert.IsType<BookBorrowed>(stored[i + 4].Event);
             Assert.Equal(bookIds[i], borrowed.BookId);
-            Assert.Equal(new[] { $"book:{bookIds[i]}", $"member:{memberId}" }, stored[i + 4].Tags);
+            Assert.Equal(new[] { Tag.Create("book", bookIds[i].ToString()), Tag.Create("member", memberId.ToString()) }, stored[i + 4].Tags);
         }
     }
 

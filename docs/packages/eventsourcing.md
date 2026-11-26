@@ -64,7 +64,7 @@ envelope `CausationId` to the command id when the caller left it unset.
 Envelope fields: [Metadata](../METADATA.md).
 
 `IAggregateRepository` loads by `Guid` (`{type}:{id}` / `{tenant}:{type}:{id}`)
-or by `string streamId` when the stream is a custom identity. Prefer
+or by `StreamId` when the stream is a custom identity. Prefer
 `GetOrCreateAsync<T>(streamId)` over setting `StreamId` yourself.
 
 `WithCommandHandlers` scans handler assemblies and registers

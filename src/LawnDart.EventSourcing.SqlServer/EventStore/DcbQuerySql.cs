@@ -195,7 +195,7 @@ internal static class DcbQuerySql
             var ids = new int[item.Tags.Count];
             for (var j = 0; j < item.Tags.Count; j++)
             {
-                var id = resolveTagId(item.Tags[j]);
+                var id = resolveTagId(item.Tags[j].ToString());
                 if (id is null)
                     return null;
 

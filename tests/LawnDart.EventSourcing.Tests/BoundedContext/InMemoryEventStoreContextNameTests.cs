@@ -43,9 +43,9 @@ public class InMemoryEventStoreContextNameTests
             contextName: "catalog",
             options: new InMemoryEventStoreOptions { RequireTenantId = false });
 
-        await storeA.AppendAsync("Order:1", [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);
-        await storeA.AppendAsync("Order:2", [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);
-        await storeB.AppendAsync("Product:1", [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);
+        await storeA.AppendAsync(StreamId.Parse("Order:1"), [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);
+        await storeA.AppendAsync(StreamId.Parse("Order:2"), [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);
+        await storeB.AppendAsync(StreamId.Parse("Product:1"), [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);
 
         Assert.Equal(2, await storeA.GetCurrentSequenceAsync());
         Assert.Equal(1, await storeB.GetCurrentSequenceAsync());

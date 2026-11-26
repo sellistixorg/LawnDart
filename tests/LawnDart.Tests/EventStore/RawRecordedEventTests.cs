@@ -12,7 +12,7 @@ public class RawRecordedEventTests
         var recorded = new RecordedEvent(
             "foreign-family",
             payload,
-            "s",
+            StreamId.Parse("test:s"),
             streamVersion: 1,
             sequencePosition: 7,
             commitTimestamp: new DateTime(2026, 9, 16, 12, 0, 0, DateTimeKind.Utc));
@@ -36,7 +36,7 @@ public class RawRecordedEventTests
         var recorded = new RecordedEvent(
             "named.tick",
             Encoding.UTF8.GetBytes("{}"),
-            "s",
+            StreamId.Parse("test:s"),
             streamVersion: 1,
             sequencePosition: 1,
             commitTimestamp: new DateTime(2026, 9, 16, 0, 0, 0, DateTimeKind.Utc),
@@ -55,7 +55,7 @@ public class RawRecordedEventTests
         var recorded = new RecordedEvent(
             "named.tick",
             new byte[] { 1, 2, 3 },
-            "s",
+            StreamId.Parse("test:s"),
             streamVersion: 1,
             sequencePosition: 1,
             commitTimestamp: DateTime.UtcNow);

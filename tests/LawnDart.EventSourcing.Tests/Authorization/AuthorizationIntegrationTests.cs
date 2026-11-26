@@ -56,7 +56,7 @@ public class AuthorizationIntegrationTests
 
         // Assert - events should be flushed to store
         Assert.Empty(aggregate.PendingEvents); // Already flushed
-        var events = await eventStore.ReadStreamAsync(aggregate.StreamId);
+        var events = await eventStore.ReadStreamAsync(StreamId.Parse(aggregate.StreamId));
         Assert.Single(events);
     }
 
@@ -141,7 +141,7 @@ public class AuthorizationIntegrationTests
 
         // Assert - events should be flushed to store
         Assert.Empty(aggregate.PendingEvents); // Already flushed
-        var events = await eventStore.ReadStreamAsync(aggregate.StreamId);
+        var events = await eventStore.ReadStreamAsync(StreamId.Parse(aggregate.StreamId));
         Assert.Single(events);
     }
 
@@ -185,7 +185,7 @@ public class AuthorizationIntegrationTests
 
         // Assert - events should be flushed to store
         Assert.Empty(aggregate.PendingEvents); // Already flushed
-        var events = await eventStore.ReadStreamAsync(aggregate.StreamId);
+        var events = await eventStore.ReadStreamAsync(StreamId.Parse(aggregate.StreamId));
         Assert.Single(events);
     }
 
@@ -270,7 +270,7 @@ public class AuthorizationIntegrationTests
 
         // Assert - Metadata should be captured and events flushed
         Assert.Empty(aggregate.PendingEvents); // Already flushed
-        var events = await eventStore.ReadStreamAsync(aggregate.StreamId);
+        var events = await eventStore.ReadStreamAsync(StreamId.Parse(aggregate.StreamId));
         Assert.Single(events);
         Assert.Equal("user-123", events[0].Metadata.UserId);
     }

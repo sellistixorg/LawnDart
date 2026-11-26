@@ -37,13 +37,13 @@ public sealed class SqlServerAppendBatchTests : IAsyncLifetime
     public async Task StreamAppend_IsOneBatch_AndKeepsEachEventsTags()
     {
         var store = await OpenAsync("batchstream");
-        var streamId = "s-" + Guid.NewGuid().ToString("N");
-        await store.AppendAsync(streamId, [Event("warmup")]);
+        var streamId = "s:" + Guid.NewGuid().ToString("N");
+        await store.AppendAsync(StreamId.Parse(streamId), [Event("warmup")]);
 
         var commands = new List<string>();
         using (Capture(commands))
         {
-            await store.AppendAsync(streamId, [Event("warmup", "only-a"), Event("warmup", "only-b")], expectedVersion: 1);
+            await store.AppendAsync(StreamId.Parse(streamId), [Event("warmup", "only:a"), Event("warmup", "only:b")], expectedVersion: 1);
         }
 
         var batch = Assert.Single(commands);
@@ -55,10 +55,10 @@ public sealed class SqlServerAppendBatchTests : IAsyncLifetime
             batch.IndexOf("THROW " + SqlServerEventStore.AppendVersionConflictError, StringComparison.Ordinal)
             < batch.IndexOf("sp_sequence_get_range", StringComparison.OrdinalIgnoreCase));
 
-        var stored = await ((IEventLog)store).ReadStreamAsync(streamId);
+        var stored = await ((IEventLog)store).ReadStreamAsync(StreamId.Parse(streamId));
         Assert.Equal(3, stored.Count);
-        Assert.Equal(["only-a"], stored[1].Tags);
-        Assert.Equal(["only-b"], stored[2].Tags);
+        Assert.Equal(["only:a"], stored[1].Tags.Select(static t => t.ToString()).ToArray());
+        Assert.Equal(["only:b"], stored[2].Tags.Select(static t => t.ToString()).ToArray());
         Assert.Equal(stored[1].SequencePosition + 1, stored[2].SequencePosition);
         Assert.Equal(2, stored[1].StreamVersion);
         Assert.Equal(3, stored[2].StreamVersion);
@@ -68,7 +68,7 @@ public sealed class SqlServerAppendBatchTests : IAsyncLifetime
     public async Task DcbAppend_IsOneBatch_WithLocksBeforeTheCondition()
     {
         var store = await OpenAsync("batchdcb");
-        await store.AppendAsync("warm-" + Guid.NewGuid().ToString("N"), [Event("warmup")]);
+        await store.AppendAsync(StreamId.For("warm", Guid.NewGuid().ToString("N")), [Event("warmup")]);
         var tag = "course:" + Guid.NewGuid().ToString("N");
 
         var commands = new List<string>();
@@ -76,7 +76,7 @@ public sealed class SqlServerAppendBatchTests : IAsyncLifetime
         {
             await store.AppendAsync(
                 [Event("warmup", tag)],
-                AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(tag + "-absent"))));
+                AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(LawnDart.EventStore.Tag.Parse(tag + "-absent")))));
         }
 
         var batch = Assert.Single(commands);
@@ -101,7 +101,7 @@ public sealed class SqlServerAppendBatchTests : IAsyncLifetime
                 WHERE r.Tag = @Tag
                 """,
                 connection);
-            command.Parameters.AddWithValue("@Tag", tag);
+            command.Parameters.AddWithValue("@Tag", tag.ToString());
             Assert.Equal(1, Convert.ToInt32(await command.ExecuteScalarAsync()));
         }
 
@@ -110,7 +110,7 @@ public sealed class SqlServerAppendBatchTests : IAsyncLifetime
         {
             var conflict = await Assert.ThrowsAsync<ConcurrencyException>(() => store.AppendAsync(
                 [Event("warmup", tag)],
-                AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(tag)))));
+                AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(Tag.Parse(tag))))));
             Assert.Null(conflict.ActualPosition);
         }
 
@@ -124,13 +124,13 @@ public sealed class SqlServerAppendBatchTests : IAsyncLifetime
         var tag = "course:" + Guid.NewGuid().ToString("N");
         var other = "student:" + Guid.NewGuid().ToString("N");
         await store.AppendAsync(
-            "s-" + Guid.NewGuid().ToString("N"),
+            StreamId.For("s", Guid.NewGuid().ToString("N")),
             [Event("warmup", tag), Event("warmup", tag, other)]);
 
         var (text, parameters) = store.PreviewAppendCondition(
             AppendCondition.FailIfMatches(Query.FromItems(
-                QueryItem.ByTags(tag),
-                QueryItem.ByTypeAndTags(["warmup"], [tag, other]))));
+                QueryItem.ByTags(Tag.Parse(tag)),
+                QueryItem.ByTypeAndTags(["warmup"], [Tag.Parse(tag), Tag.Parse(other)]))));
 
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -166,24 +166,24 @@ public sealed class SqlServerAppendBatchTests : IAsyncLifetime
     public async Task TagMatch_CaseAndAccent_StayDistinct()
     {
         var store = await OpenAsync("tagmatch");
-        var streamId = "s-" + Guid.NewGuid().ToString("N");
-        await store.AppendAsync(streamId, [
+        var streamId = "s:" + Guid.NewGuid().ToString("N");
+        await store.AppendAsync(StreamId.Parse(streamId), [
             Event("warmup", "Student:1"),
             Event("warmup", "student:1"),
-            Event("warmup", "café"),
-            Event("warmup", "cafe")
+            Event("warmup", "name:café"),
+            Event("warmup", "name:cafe")
         ]);
 
         var log = (IEventLog)store;
         Assert.Equal(1, await CountAsync(log, "Student:1"));
         Assert.Equal(1, await CountAsync(log, "student:1"));
-        Assert.Equal(1, await CountAsync(log, "café"));
-        Assert.Equal(1, await CountAsync(log, "cafe"));
+        Assert.Equal(1, await CountAsync(log, "name:café"));
+        Assert.Equal(1, await CountAsync(log, "name:cafe"));
     }
 
     private static async Task<int> CountAsync(IEventLog log, string tag)
     {
-        var page = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(tag)), limit: 10);
+        var page = await log.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(tag))), limit: 10);
         return page.Events.Count;
     }
 
@@ -191,16 +191,16 @@ public sealed class SqlServerAppendBatchTests : IAsyncLifetime
     public async Task WrongExpectedVersion_ConflictsWithoutASecondVersionRead()
     {
         var store = await OpenAsync("batchver");
-        var streamId = "s-" + Guid.NewGuid().ToString("N");
-        await store.AppendAsync(streamId, [Event("first")]);
+        var streamId = "s:" + Guid.NewGuid().ToString("N");
+        await store.AppendAsync(StreamId.Parse(streamId), [Event("first")]);
 
         var conflict = await Assert.ThrowsAsync<ConcurrencyException>(() =>
-            store.AppendAsync(streamId, [Event("second")], expectedVersion: 0));
+            store.AppendAsync(StreamId.Parse(streamId), [Event("second")], expectedVersion: 0));
         Assert.Equal(0, conflict.ExpectedPosition);
         Assert.Equal(1, conflict.ActualPosition);
         Assert.Null(conflict.InnerException);
 
-        var stored = await ((IEventLog)store).ReadStreamAsync(streamId);
+        var stored = await ((IEventLog)store).ReadStreamAsync(StreamId.Parse(streamId));
         Assert.Single(stored);
     }
 
@@ -212,12 +212,12 @@ public sealed class SqlServerAppendBatchTests : IAsyncLifetime
         var writer = new LawnDart.EventSourcing.SqlServer.Outbox.SqlServerOutboxWriter(
             _connectionString, schemaName: schema);
         await writer.InitializeSchemaAsync();
-        await store.AppendAsync("warm-" + Guid.NewGuid().ToString("N"), [Event("warmup")]);
+        await store.AppendAsync(StreamId.For("warm", Guid.NewGuid().ToString("N")), [Event("warmup")]);
 
         var commands = new List<string>();
         using (Capture(commands))
         {
-            await store.AppendAsync("out-" + Guid.NewGuid().ToString("N"), [
+            await store.AppendAsync(StreamId.For("out", Guid.NewGuid().ToString("N")), [
                 Event("warmup").WithOutbound(new OutboundEvent("notice", "{}"u8.ToArray())),
                 Event("warmup")
             ]);
@@ -249,7 +249,7 @@ public sealed class SqlServerAppendBatchTests : IAsyncLifetime
     }
 
     private static AppendEvent Event(string type, params string[] tags)
-        => new(type, "{}"u8.ToArray(), tags: tags);
+        => new(type, "{}"u8.ToArray(), tags: tags.Select(Tag.Parse).ToArray());
 
     private static IDisposable Capture(List<string> commands)
         => new CommandCapture(commands);

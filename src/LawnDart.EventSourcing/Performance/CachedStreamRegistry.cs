@@ -34,7 +34,7 @@ public class CachedStreamRegistry : IStreamRegistry
     }
     
     /// <inheritdoc/>
-    public async Task<StreamMetadata?> GetStreamAsync(string streamId, CancellationToken cancellationToken = default)
+    public async Task<StreamMetadata?> GetStreamAsync(StreamId streamId, CancellationToken cancellationToken = default)
     {
         var cacheKey = $"StreamRegistry:Stream:{streamId}";
         
@@ -84,7 +84,7 @@ public class CachedStreamRegistry : IStreamRegistry
     
     /// <inheritdoc/>
     public async Task<IReadOnlyList<StreamMetadata>> GetStreamsByTagAsync(
-        string tag,
+        Tag tag,
         CancellationToken cancellationToken = default)
     {
         var cacheKey = $"StreamRegistry:Tag:{tag}";
@@ -108,13 +108,13 @@ public class CachedStreamRegistry : IStreamRegistry
     }
     
     /// <inheritdoc/>
-    public async Task<IReadOnlyList<string>> EnumerateStreamIdsAsync(
+    public async Task<IReadOnlyList<StreamId>> EnumerateStreamIdsAsync(
         string? prefix = null,
         CancellationToken cancellationToken = default)
     {
         var cacheKey = $"StreamRegistry:Enumerate:{prefix}";
         
-        if (_cache.TryGetValue(cacheKey, out IReadOnlyList<string>? cachedResult))
+        if (_cache.TryGetValue(cacheKey, out IReadOnlyList<StreamId>? cachedResult))
         {
             _logger?.LogDebug("Stream registry cache hit for enumerate with prefix: {Prefix}", prefix);
             return cachedResult!;

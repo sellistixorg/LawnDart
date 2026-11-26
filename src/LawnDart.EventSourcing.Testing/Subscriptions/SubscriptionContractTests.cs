@@ -15,11 +15,11 @@ public abstract class SubscriptionContractTests : ContractSuite
     {
         SkipUnless(Cap.RunsLiveSubscriptionTests, "This backend does not run the live subscription suite yet.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
-        await opened.Store.AppendAsync("s1", [ContractEvent.Tick()]);
-        await opened.Store.AppendAsync("s1", [ContractEvent.Tick()]);
+        await opened.Store.AppendAsync(StreamId.Parse("test:s1"), [ContractEvent.Tick()]);
+        await opened.Store.AppendAsync(StreamId.Parse("test:s1"), [ContractEvent.Tick()]);
         await using var handle = SubscriptionsOf(opened).Subscribe("sub-global", fromSequence: 1);
         var readTask = ReadExactlyAsync(handle, 3, TimeSpan.FromSeconds(15));
-        await opened.Store.AppendAsync("s1", [ContractEvent.Tick()]);
+        await opened.Store.AppendAsync(StreamId.Parse("test:s1"), [ContractEvent.Tick()]);
         var received = await readTask;
         Assert.Equal(new long[] { 1, 2, 3 }, received.Select(e => e.SequencePosition));
     }
@@ -29,15 +29,15 @@ public abstract class SubscriptionContractTests : ContractSuite
     {
         SkipUnless(Cap.RunsLiveSubscriptionTests, "This backend does not run the live subscription suite yet.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
-        await opened.Store.AppendAsync("a", [ContractEvent.Tick()]);
-        await opened.Store.AppendAsync("b", [ContractEvent.Tick()]);
-        await opened.Store.AppendAsync("a", [ContractEvent.Tick()]);
+        await opened.Store.AppendAsync(StreamId.Parse("test:a"), [ContractEvent.Tick()]);
+        await opened.Store.AppendAsync(StreamId.Parse("test:b"), [ContractEvent.Tick()]);
+        await opened.Store.AppendAsync(StreamId.Parse("test:a"), [ContractEvent.Tick()]);
         await using var handle = SubscriptionsOf(opened).Subscribe(
             "sub-stream",
             fromSequence: 1,
-            EventSubscriptionFilter.ForStream("a"));
+            EventSubscriptionFilter.ForStream(StreamId.Parse("test:a")));
         var received = await ReadExactlyAsync(handle, 2, TimeSpan.FromSeconds(15));
-        Assert.All(received, e => Assert.Equal("a", e.StreamId));
+        Assert.All(received, e => Assert.Equal(StreamId.Parse("test:a"), e.StreamId));
         Assert.Equal(new long[] { 1, 3 }, received.Select(e => e.SequencePosition));
     }
 
@@ -46,10 +46,10 @@ public abstract class SubscriptionContractTests : ContractSuite
     {
         SkipUnless(Cap.RunsLiveSubscriptionTests, "This backend does not run the live subscription suite yet.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
-        await opened.Store.AppendAsync("s1", [new TaggedEvent(ContractEvent.Tick(), ["order:1"])]);
-        await opened.Store.AppendAsync("s1", [new TaggedEvent(ContractEvent.Tick(), ["other"])]);
-        await opened.Store.AppendAsync("s1", [new TaggedEvent(ContractEvent.Tick(), ["order:1"])]);
-        var query = Query.FromItems(QueryItem.ByTags("order:1"));
+        await opened.Store.AppendAsync(StreamId.Parse("test:s1"), [new TaggedEvent(ContractEvent.Tick(), [Tag.Parse("order:1")])]);
+        await opened.Store.AppendAsync(StreamId.Parse("test:s1"), [new TaggedEvent(ContractEvent.Tick(), [Tag.Parse("tag:other")])]);
+        await opened.Store.AppendAsync(StreamId.Parse("test:s1"), [new TaggedEvent(ContractEvent.Tick(), [Tag.Parse("order:1")])]);
+        var query = Query.FromItems(QueryItem.ByTags(Tag.Parse("order:1")));
         var expected = (await opened.Store.ReadByQueryAsync(query)).Events.Select(e => e.SequencePosition).ToArray();
         await using var handle = SubscriptionsOf(opened).Subscribe(
             "sub-query",
@@ -64,7 +64,7 @@ public abstract class SubscriptionContractTests : ContractSuite
     {
         SkipUnless(Cap.RunsLiveSubscriptionTests, "This backend does not run the live subscription suite yet.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
-        await opened.Store.AppendAsync("s1", [ContractEvent.Tick(), ContractEvent.Tick(), ContractEvent.Tick()]);
+        await opened.Store.AppendAsync(StreamId.Parse("test:s1"), [ContractEvent.Tick(), ContractEvent.Tick(), ContractEvent.Tick()]);
         await using var handle = SubscriptionsOf(opened).Subscribe("sub-inclusive", fromSequence: 2);
         var received = await ReadExactlyAsync(handle, 2, TimeSpan.FromSeconds(15));
         Assert.Equal(new long[] { 2, 3 }, received.Select(e => e.SequencePosition));
@@ -78,7 +78,7 @@ public abstract class SubscriptionContractTests : ContractSuite
         await using var handle = SubscriptionsOf(opened).Subscribe("sub-idle", fromSequence: 1);
         await Task.Delay(80);
         var readTask = ReadExactlyAsync(handle, 1, TimeSpan.FromSeconds(10));
-        await opened.Store.AppendAsync("s1", [ContractEvent.Tick()]);
+        await opened.Store.AppendAsync(StreamId.Parse("test:s1"), [ContractEvent.Tick()]);
         var received = await readTask;
         Assert.Equal(1, received[0].SequencePosition);
     }
@@ -88,7 +88,7 @@ public abstract class SubscriptionContractTests : ContractSuite
     {
         SkipUnless(Cap.RunsLiveSubscriptionTests, "This backend does not run the live subscription suite yet.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
-        await opened.Store.AppendAsync("s1", [ContractEvent.Tick(), ContractEvent.Tick(), ContractEvent.Tick()]);
+        await opened.Store.AppendAsync(StreamId.Parse("test:s1"), [ContractEvent.Tick(), ContractEvent.Tick(), ContractEvent.Tick()]);
         await using (var first = SubscriptionsOf(opened).Subscribe("sub-reconnect", fromSequence: 1))
         {
             var batch = await ReadExactlyAsync(first, 2, TimeSpan.FromSeconds(15));
@@ -105,11 +105,11 @@ public abstract class SubscriptionContractTests : ContractSuite
     {
         SkipUnless(Cap.RunsLiveSubscriptionTests, "This backend does not run the live subscription suite yet.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
-        await opened.Store.AppendAsync("s1", [ContractEvent.Tick()]);
+        await opened.Store.AppendAsync(StreamId.Parse("test:s1"), [ContractEvent.Tick()]);
         var handle = SubscriptionsOf(opened).Subscribe("sub-dispose", fromSequence: 1);
         _ = await ReadExactlyAsync(handle, 1, TimeSpan.FromSeconds(15));
         await handle.DisposeAsync();
-        await opened.Store.AppendAsync("s1", [ContractEvent.Tick()]);
+        await opened.Store.AppendAsync(StreamId.Parse("test:s1"), [ContractEvent.Tick()]);
         await Task.Delay(150);
         Assert.True(handle.Events.Completion.IsCompleted);
         Assert.False(await handle.Events.WaitToReadAsync());
@@ -122,7 +122,7 @@ public abstract class SubscriptionContractTests : ContractSuite
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(subscriptionChannelCapacity: 1));
         await using var handle = SubscriptionsOf(opened).Subscribe("sub-slow", fromSequence: 1);
         for (var i = 0; i < 5; i++)
-            await opened.Store.AppendAsync("s1", [ContractEvent.Tick()]);
+            await opened.Store.AppendAsync(StreamId.Parse("test:s1"), [ContractEvent.Tick()]);
         var received = await ReadExactlyAsync(handle, 5, TimeSpan.FromSeconds(30));
         Assert.Equal(new long[] { 1, 2, 3, 4, 5 }, received.Select(e => e.SequencePosition));
     }
@@ -135,12 +135,12 @@ public abstract class SubscriptionContractTests : ContractSuite
         var catalog = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
         await using var oh = SubscriptionsOf(ordering).Subscribe("o", fromSequence: 1);
         await using var ch = SubscriptionsOf(catalog).Subscribe("c", fromSequence: 1);
-        await ordering.Store.AppendAsync("Order:1", [ContractEvent.Tick()]);
-        await catalog.Store.AppendAsync("Product:1", [ContractEvent.Tick()]);
+        await ordering.Store.AppendAsync(StreamId.Parse("Order:1"), [ContractEvent.Tick()]);
+        await catalog.Store.AppendAsync(StreamId.Parse("Product:1"), [ContractEvent.Tick()]);
         var o = await ReadExactlyAsync(oh, 1, TimeSpan.FromSeconds(15));
         var c = await ReadExactlyAsync(ch, 1, TimeSpan.FromSeconds(15));
-        Assert.Equal("Order:1", o[0].StreamId);
-        Assert.Equal("Product:1", c[0].StreamId);
+        Assert.Equal("Order:1", o[0].StreamId.ToString());
+        Assert.Equal("Product:1", c[0].StreamId.ToString());
     }
 
     [ContractFact]
@@ -151,7 +151,7 @@ public abstract class SubscriptionContractTests : ContractSuite
         await using var handle = SubscriptionsOf(opened).Subscribe("sub-load", fromSequence: 1);
         var readTask = ReadExactlyAsync(handle, 40, TimeSpan.FromSeconds(60));
         for (var i = 0; i < 40; i++)
-            await opened.Store.AppendAsync("load", [ContractEvent.Tick()]);
+            await opened.Store.AppendAsync(StreamId.Parse("test:load"), [ContractEvent.Tick()]);
         var received = await readTask;
         Assert.Equal(40, received.Count);
         Assert.Equal(Enumerable.Range(1, 40).Select(i => (long)i), received.Select(e => e.SequencePosition));
@@ -169,7 +169,7 @@ public abstract class SubscriptionContractTests : ContractSuite
         var read = ReadExactlyAsync(handle, 1, TimeSpan.FromSeconds(5));
         await WaitForWaitersAsync(counters, 1);
         var started = Stopwatch.StartNew();
-        await opened.Store.AppendAsync("s1", [ContractEvent.Tick()]);
+        await opened.Store.AppendAsync(StreamId.Parse("test:s1"), [ContractEvent.Tick()]);
         var received = await read;
         Assert.True(started.Elapsed < TimeSpan.FromSeconds(2), $"woke after {started.Elapsed}");
         Assert.Equal(1, received[0].SequencePosition);
@@ -184,15 +184,15 @@ public abstract class SubscriptionContractTests : ContractSuite
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
         var signal = SignalsOf(opened).NewEvents;
         var counters = opened.SignalCounters;
-        await opened.Store.AppendAsync("s1", [ContractEvent.Tick()]);
+        await opened.Store.AppendAsync(StreamId.Parse("test:s1"), [ContractEvent.Tick()]);
         var count = counters?.NotifyCount;
         var position = signal.Position;
         await Assert.ThrowsAsync<ConcurrencyException>(() =>
-            opened.Store.AppendAsync("s1", [ContractEvent.Tick()], expectedVersion: 0));
+            opened.Store.AppendAsync(StreamId.Parse("test:s1"), [ContractEvent.Tick()], expectedVersion: 0));
         if (counters is not null)
             Assert.Equal(count, counters.NotifyCount);
         Assert.Equal(position, signal.Position);
-        Assert.Single(await opened.Store.ReadStreamAsync("s1"));
+        Assert.Single(await opened.Store.ReadStreamAsync(StreamId.Parse("test:s1")));
     }
 
     [ContractFact]
@@ -208,7 +208,7 @@ public abstract class SubscriptionContractTests : ContractSuite
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         opened.Hooks.PauseNextAppendBeforeCommit(entered, release);
-        var append = opened.Store.AppendAsync("s1", [ContractEvent.Tick()]);
+        var append = opened.Store.AppendAsync(StreamId.Parse("test:s1"), [ContractEvent.Tick()]);
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
         if (counters is not null)
             Assert.Equal(0, counters.NotifyCount);
@@ -235,7 +235,7 @@ public abstract class SubscriptionContractTests : ContractSuite
         var read = ReadExactlyAsync(handle, 2, TimeSpan.FromSeconds(5));
         if (counters is not null)
             await WaitForWaitersAsync(counters, 1);
-        await opened.Store.AppendAsync("s1", [ContractEvent.Tick(), ContractEvent.Tick()]);
+        await opened.Store.AppendAsync(StreamId.Parse("test:s1"), [ContractEvent.Tick(), ContractEvent.Tick()]);
         var received = await read;
         if (counters is not null)
             Assert.Equal(0, counters.NotifyCount);
@@ -249,7 +249,7 @@ public abstract class SubscriptionContractTests : ContractSuite
         SkipUnless(Cap.RunsLiveSubscriptionTests, "This backend does not run the live subscription suite yet.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(subscriptionBatchSize: 2));
         for (var i = 0; i < 5; i++)
-            await opened.Store.AppendAsync("s1", [ContractEvent.Tick()]);
+            await opened.Store.AppendAsync(StreamId.Parse("test:s1"), [ContractEvent.Tick()]);
         await using var handle = SubscriptionsOf(opened).Subscribe("paged", fromSequence: 1);
         var received = await ReadExactlyAsync(handle, 5, TimeSpan.FromSeconds(15));
         Assert.Equal(new long[] { 1, 2, 3, 4, 5 }, received.Select(e => e.SequencePosition));
@@ -263,7 +263,7 @@ public abstract class SubscriptionContractTests : ContractSuite
             Cap.CanBreakLiveReads,
             "In-memory has no table to rename while a subscription is reading.");
         var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated());
-        await opened.Store.AppendAsync("s1", [ContractEvent.Tick()]);
+        await opened.Store.AppendAsync(StreamId.Parse("test:s1"), [ContractEvent.Tick()]);
         await using var handle = SubscriptionsOf(opened).Subscribe("failsub", fromSequence: 1);
         await ReadExactlyAsync(handle, 1, TimeSpan.FromSeconds(15));
         await opened.Hooks.BreakLiveReadsAsync();

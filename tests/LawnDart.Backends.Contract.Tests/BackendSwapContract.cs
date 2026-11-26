@@ -32,7 +32,7 @@ internal static class BackendSwapContract
 
         await dispatcher.DispatchAsync(command, new MessageContext());
 
-        var events = await store.ReadStreamAsync(streamId);
+        var events = await store.ReadStreamAsync(StreamId.Parse(streamId));
         Assert.Single(events);
         var enrolled = Assert.IsType<StudentEnrolled>(events[0].Event);
         Assert.Equal("Ada Lovelace", enrolled.Name);
