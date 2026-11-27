@@ -13,6 +13,14 @@ namespace LawnDart.EventSourcing.Testing;
 /// </summary>
 public sealed class ContractCapabilities
 {
+    /// <summary>
+    /// The store saves the same event id again on a second stream of the same tenant.
+    /// False (the default) means the second append is rejected with
+    /// <see cref="EventAlreadyAppendedException"/>, which is what a store that keeps
+    /// event ids unique does. The Postgres store sets this.
+    /// </summary>
+    public bool AllowsDuplicateEventIds { get; init; }
+
     /// <summary>The same event id is rejected on a second tenant in the same store.</summary>
     public bool EnforcesEventIdAcrossTenants { get; init; }
 

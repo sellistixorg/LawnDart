@@ -139,8 +139,20 @@ public sealed class PostgresInboxStore : IInboxStore
                 format int NOT NULL,
                 partition_count int NOT NULL,
                 partitioning boolean NOT NULL,
-                updated_at timestamptz NOT NULL
-            )
+                updated_at timestamptz NOT NULL,
+                partition_size bigint NULL
+            );
+            DO $add$
+            BEGIN
+                -- Only an older table lacks the column. Checking first means a role that
+                -- does not own the table, and the table lock, are only needed then.
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_catalog.pg_attribute
+                    WHERE attrelid = '{schemaInfo.Replace("'", "''", StringComparison.Ordinal)}'::regclass AND attname = 'partition_size' AND NOT attisdropped
+                ) THEN
+                    ALTER TABLE {schemaInfo} ADD COLUMN IF NOT EXISTS partition_size bigint NULL;
+                END IF;
+            END $add$
             """, cancellationToken).ConfigureAwait(false);
 
         var exists = await RegclassExistsAsync(connection, transaction, cancellationToken).ConfigureAwait(false);

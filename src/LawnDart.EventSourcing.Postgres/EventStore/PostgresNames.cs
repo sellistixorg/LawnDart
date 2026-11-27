@@ -23,18 +23,15 @@ internal sealed class PostgresNames
         _streamTagsTable = StreamTagsName(_streamsTable);
         StreamTagsTable = _streamTagsTable;
         Events = PgIdentifier.Qualify(Schema, _eventsTable);
-        EventsShared = PgIdentifier.Qualify(Schema, _eventsTable + "_shared");
         Streams = PgIdentifier.Qualify(Schema, _streamsTable);
-        StreamsShared = PgIdentifier.Qualify(Schema, _streamsTable + "_shared");
         StreamTags = PgIdentifier.Qualify(Schema, _streamTagsTable);
-        StreamTagsShared = PgIdentifier.Qualify(Schema, _streamTagsTable + "_shared");
         Tags = PgIdentifier.Qualify(Schema, _tagsTable);
-        TagsShared = PgIdentifier.Qualify(Schema, _tagsTable + "_shared");
         Types = PgIdentifier.Qualify(Schema, options.EventTypesTableName);
         SchemaInfo = PgIdentifier.Qualify(Schema, options.SchemaInfoTableName);
         Outbox = PgIdentifier.Qualify(Schema, options.OutboxTableName);
         Sequence = PgIdentifier.Qualify(Schema, "event_position");
         Append = PgIdentifier.Qualify(Schema, "append_to_stream");
+        EnsurePartitions = PgIdentifier.Qualify(Schema, EnsurePartitionsFunction);
         ExactText = PgIdentifier.Qualify(Schema, "exact_text");
         NotifyChannel = NotifyChannelFor(Schema);
     }
@@ -80,11 +77,7 @@ internal sealed class PostgresNames
 
     public string Events { get; }
 
-    public string EventsShared { get; }
-
     public string Streams { get; }
-
-    public string StreamsShared { get; }
 
     /// <summary>One row per stream tag. The primary key is (tenant_id, tag, stream_id).</summary>
     public string StreamTags { get; }
@@ -92,11 +85,7 @@ internal sealed class PostgresNames
     /// <summary>Unqualified stream tag table name.</summary>
     internal string StreamTagsTable { get; }
 
-    public string StreamTagsShared { get; }
-
     public string Tags { get; }
-
-    public string TagsShared { get; }
 
     public string Types { get; }
 
@@ -109,24 +98,31 @@ internal sealed class PostgresNames
 
     public string Append { get; }
 
+    /// <summary>Function that creates position ranges up to a target.</summary>
+    public string EnsurePartitions { get; }
+
+    /// <summary>Unqualified name of the range function.</summary>
+    internal const string EnsurePartitionsFunction = "ensure_event_partitions";
+
+    /// <summary>Unquoted events table name. Range tables are this name plus <c>_p</c> and the range number.</summary>
+    internal string EventsTable => _eventsTable;
+
+    /// <summary>Unquoted tag table name. Range tables are this name plus <c>_p</c> and the range number.</summary>
+    internal string TagsTable => _tagsTable;
+
+    /// <summary>Quoted range table of the events table for range <paramref name="range"/>.</summary>
+    public string EventsRange(long range) => PgIdentifier.Qualify(Schema, _eventsTable + "_p" + range.ToString(CultureInfo.InvariantCulture));
+
+    /// <summary>Quoted range table of the tag table for range <paramref name="range"/>.</summary>
+    public string TagsRange(long range) => PgIdentifier.Qualify(Schema, _tagsTable + "_p" + range.ToString(CultureInfo.InvariantCulture));
+
     public string ExactText { get; }
 
     /// <summary>NOTIFY channel. The payload is the newest position, never an event.</summary>
     public string NotifyChannel { get; }
 
-    public string EventsHash(int remainder) => Hash(_eventsTable, remainder);
-
-    public string StreamsHash(int remainder) => Hash(_streamsTable, remainder);
-
-    public string StreamTagsHash(int remainder) => Hash(_streamTagsTable, remainder);
-
-    public string TagsHash(int remainder) => Hash(_tagsTable, remainder);
-
     private static string StreamTagsName(string streamsTable)
         => string.Equals(streamsTable, "streams", StringComparison.Ordinal)
             ? "stream_tags"
             : streamsTable + "_tags";
-
-    private string Hash(string table, int remainder)
-        => PgIdentifier.Qualify(Schema, table + "_shared_h" + remainder.ToString(CultureInfo.InvariantCulture));
 }

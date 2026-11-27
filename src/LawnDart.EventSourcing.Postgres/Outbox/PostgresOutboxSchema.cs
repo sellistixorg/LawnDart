@@ -43,15 +43,8 @@ internal static class PostgresOutboxSchema
 
         await ExecuteAsync(connection, transaction, $"CREATE SCHEMA IF NOT EXISTS {PgIdentifier.Quote(schema)}", cancellationToken)
             .ConfigureAwait(false);
-        await ExecuteAsync(connection, transaction, $"""
-            CREATE TABLE IF NOT EXISTS {schemaInfo} (
-                component text PRIMARY KEY,
-                format int NOT NULL,
-                partition_count int NOT NULL,
-                partitioning boolean NOT NULL,
-                updated_at timestamptz NOT NULL
-            )
-            """, cancellationToken).ConfigureAwait(false);
+        await ExecuteAsync(connection, transaction, EventStore.PostgresSchema.SchemaInfoTable(schemaInfo), cancellationToken)
+            .ConfigureAwait(false);
 
         var exists = await RegclassExistsAsync(connection, transaction, qualified, cancellationToken).ConfigureAwait(false);
         if (exists)

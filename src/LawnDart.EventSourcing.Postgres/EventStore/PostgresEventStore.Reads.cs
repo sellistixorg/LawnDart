@@ -443,6 +443,9 @@ public sealed partial class PostgresEventStore
         CancellationToken cancellationToken)
     {
         var tenant = TenantKey.ForStream(streamId, _options.Tenancy, _options.SingleTenantId);
+        // Each position range has its own stream index, so this reads one small
+        // index per range. Bounding the read by the stream's positions from the
+        // streams row cost more than it saved while the number of ranges is small.
         var sql = $"""
             SELECT {PostgresQuerySql.EventColumns}
             FROM {_names.Events} e

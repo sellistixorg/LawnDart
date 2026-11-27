@@ -31,6 +31,7 @@ public sealed class PostgresContractBackend : IFullContractBackend
         Capabilities = new ContractCapabilities
         {
             CanTurnOffNewEventsSignal = true,
+            AllowsDuplicateEventIds = true,
             EnforcesEventIdAcrossTenants = false,
             StreamIdsCaseInsensitive = false,
             StreamIdPrefixCaseInsensitive = false,
@@ -65,10 +66,26 @@ public sealed class PostgresContractBackend : IFullContractBackend
 
     public string Name => "Postgres";
 
+    /// <summary>
+    /// Events range size for every store this backend opens. <c>LAWNDART_TEST_PG_PARTITION_SIZE</c>
+    /// sets a small size so the whole suite crosses ranges; the default is the store default.
+    /// </summary>
+    internal static long TestPartitionSize { get; } =
+        long.TryParse(Environment.GetEnvironmentVariable("LAWNDART_TEST_PG_PARTITION_SIZE"), out var size) && size > 0
+            ? size
+            : PostgresEventStoreOptions.DefaultPartitionSize;
+
     public ContractCapabilities Capabilities { get; }
 
+    public Task<ContractEventStore> OpenEventStoreAsync(
+        ContractStoreOptions options,
+        CancellationToken cancellationToken = default)
+        => OpenEventStoreAsync(options, configure: null, cancellationToken);
+
+    /// <summary>Opens a store with Postgres options changed by <paramref name="configure"/>.</summary>
     public async Task<ContractEventStore> OpenEventStoreAsync(
         ContractStoreOptions options,
+        Action<PostgresEventStoreOptions>? configure,
         CancellationToken cancellationToken = default)
     {
         var published = options.EnableOutbox ? ContractOutboxMaps.For(options) : null;
@@ -88,12 +105,15 @@ public sealed class PostgresContractBackend : IFullContractBackend
                 ?? (_pollOnly ? TimeSpan.FromMilliseconds(50) : TimeSpan.FromSeconds(30)),
             PollOnlyInterval = options.SubscriptionPollInterval ?? TimeSpan.FromMilliseconds(50),
             SubscriptionBatchSize = options.SubscriptionBatchSize ?? 500,
-            SubscriptionChannelCapacity = options.SubscriptionChannelCapacity ?? 10_000
+            SubscriptionChannelCapacity = options.SubscriptionChannelCapacity ?? 10_000,
+            PartitionSize = TestPartitionSize,
+            AllowTinyPartitionsForTests = true
         };
         if (options.ReadHorizonGracePeriod is { } grace)
             storeOptions.ReadHorizonGracePeriod = grace;
         if (options.OutboxClaimLease is { } lease)
             storeOptions.OutboxClaimLease = lease;
+        configure?.Invoke(storeOptions);
 
         var store = new PostgresEventStore(
             _connectionString,

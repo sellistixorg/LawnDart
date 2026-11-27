@@ -107,17 +107,53 @@ public class PostgresEventStoreOptions : EventSourcingOptions
     public string OutboxTableName { get; set; } = "outbox";
 
     /// <summary>
-    /// How many hash buckets the shared tenant partition uses.
-    /// Default 8. Allowed range is 1 to 64. Chosen when the schema is created.
-    /// A later open with a different count is rejected.
+    /// The default number of positions in one events range. 100 million.
     /// </summary>
-    public int PartitionCount { get; set; } = 8;
+    public const long DefaultPartitionSize = 100_000_000;
 
     /// <summary>
-    /// When true, events, streams, and tags use the two-level tenant partition layout.
-    /// Default true. Turning it off after the schema exists is rejected.
+    /// When true, the events and event_tags tables are split into ranges of
+    /// <see cref="PartitionSize"/> positions, one child table per range.
+    /// When null (the default), ranges are on. <see cref="LawnDart.Tenancy.Isolated"/> is
+    /// refused at startup in this release, so in practice ranges are on for
+    /// <see cref="LawnDart.Tenancy.Single"/> and <see cref="LawnDart.Tenancy.Shared"/>.
+    /// Chosen when the schema is created. A later open with a different choice is rejected.
     /// </summary>
-    public bool Partitioning { get; set; } = true;
+    /// <remarks>
+    /// The store creates the next ranges ahead of time and keeps two empty ranges
+    /// above the newest position. An append never waits on that work, and an append
+    /// whose position has no range yet creates the one it needs first.
+    /// These ranges are only a storage layout. They are not the projection work split by
+    /// partition hash (<c>PartitionFilter</c>, <c>QueryItem.ForPartition</c>,
+    /// <c>ConsistentHashPartitioningService</c>), which works the same with ranges on or off.
+    /// </remarks>
+    public bool? PositionPartitioning { get; set; }
+
+    /// <summary>
+    /// How many positions one events range holds. Default 100 million.
+    /// Must be from 10,000 to 10^15. Chosen when the schema is created and stamped in <c>schema_info</c>.
+    /// A later open with a different size is rejected. Ignored when position ranges are off.
+    /// </summary>
+    /// <remarks>
+    /// A storage layout only. It does not change the projection work split by partition hash
+    /// (<c>PartitionFilter</c>, <c>QueryItem.ForPartition</c>, <c>ConsistentHashPartitioningService</c>).
+    /// </remarks>
+    public long PartitionSize { get; set; } = DefaultPartitionSize;
+
+    /// <summary>Smallest <see cref="PartitionSize"/> allowed.</summary>
+    internal const long MinimumPartitionSize = 10_000;
+
+    /// <summary>Largest <see cref="PartitionSize"/> allowed.</summary>
+    internal const long MaximumPartitionSize = 1_000_000_000_000_000;
+
+    /// <summary>
+    /// Test seam. Allows a <see cref="PartitionSize"/> below <see cref="MinimumPartitionSize"/>,
+    /// so tests cross many ranges with few events.
+    /// </summary>
+    internal bool AllowTinyPartitionsForTests { get; set; }
+
+    /// <summary>True when this store uses position ranges, after the tenancy default is applied.</summary>
+    internal bool UsesPositionPartitions => PositionPartitioning ?? Tenancy != Tenancy.Isolated;
 
     /// <summary>
     /// Send a wake-up after a committed append. Default true.
@@ -177,12 +213,19 @@ public class PostgresEventStoreOptions : EventSourcingOptions
 
         PgIdentifier.RequireSchema(SchemaName);
 
-        if (PartitionCount < 1 || PartitionCount > 64)
+        var minimumSize = AllowTinyPartitionsForTests ? 1 : MinimumPartitionSize;
+        if (PartitionSize < minimumSize || PartitionSize > MaximumPartitionSize)
         {
             throw new ArgumentOutOfRangeException(
-                nameof(PartitionCount),
-                PartitionCount,
-                "PartitionCount must be from 1 to 64.");
+                nameof(PartitionSize),
+                PartitionSize,
+                "PartitionSize must be from 10,000 to 1,000,000,000,000,000.");
+        }
+
+        if (UsesPositionPartitions)
+        {
+            RequireRangeTableName(EventsTableName, nameof(EventsTableName));
+            RequireRangeTableName(EventTagsTableName, nameof(EventTagsTableName));
         }
 
         if (AdvisoryLockTagThreshold < 1)
@@ -212,4 +255,20 @@ public class PostgresEventStoreOptions : EventSourcingOptions
         if (string.IsNullOrWhiteSpace(OutboxTableName))
             throw new ArgumentException("OutboxTableName is required.", nameof(OutboxTableName));
     }
+
+    /// <summary>Range tables are named <c>{table}_p{n}</c>. Postgres cuts names longer than 63 bytes.</summary>
+    private static void RequireRangeTableName(string table, string name)
+    {
+        if (string.IsNullOrWhiteSpace(table))
+            throw new ArgumentException(name + " is required.", name);
+        if (System.Text.Encoding.UTF8.GetByteCount(table) > MaxRangeTableNameBytes)
+        {
+            throw new ArgumentException(
+                $"{name} must be at most {MaxRangeTableNameBytes} bytes when position ranges are on, so each range table name fits.",
+                name);
+        }
+    }
+
+    /// <summary>Longest events or event_tags table name allowed with position ranges.</summary>
+    internal const int MaxRangeTableNameBytes = 40;
 }

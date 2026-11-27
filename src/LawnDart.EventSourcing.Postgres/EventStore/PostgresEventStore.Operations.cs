@@ -13,7 +13,42 @@ public sealed partial class PostgresEventStore
 {
     private readonly record struct AppendWrite(IReadOnlyList<long> Positions, long LastVersion);
 
-    private readonly record struct Stamp(int Format, int PartitionCount, bool Partitioning);
+    private readonly record struct Stamp(int Format, bool Partitioning, long? PartitionSize);
+
+    /// <summary>
+    /// Fixed for every attempt of one append. Every attempt writes the same time,
+    /// so a read-back after a closed connection finds the rows an earlier attempt saved.
+    /// Every position this append can get is above <see cref="Floor"/>, the newest
+    /// position this store had seen before the first attempt.
+    /// The time is taken when the first attempt builds its statement, as late as it
+    /// can be while still being the same for every attempt.
+    /// </summary>
+    private sealed class AppendStamp(long floor, DateTime? recordedAt = null)
+    {
+        private DateTime? _recordedAt = recordedAt;
+
+        public long Floor { get; } = floor;
+
+        /// <summary>True once an attempt took the time. Before that nothing was sent.</summary>
+        public bool IsFixed => _recordedAt.HasValue;
+
+        /// <summary>The time every attempt writes. Only valid after <see cref="Fix"/>.</summary>
+        public DateTime RecordedAt => _recordedAt ?? throw new InvalidOperationException("The append time was not taken yet.");
+
+        /// <summary>
+        /// Takes the time on the first call and returns the same value after that. It is cut
+        /// to whole microseconds, which is what Postgres stores, so a lookup matches it exactly.
+        /// </summary>
+        public DateTime Fix()
+        {
+            if (_recordedAt is { } fixedAt)
+                return fixedAt;
+            var now = DateTime.UtcNow;
+            var recorded = new DateTime(now.Ticks - (now.Ticks % 10), DateTimeKind.Utc);
+            _recordedAt = recorded;
+            return recorded;
+        }
+    }
 
     internal static NpgsqlDataSource Source(string connectionString)
     {
@@ -30,15 +65,20 @@ public sealed partial class PostgresEventStore
         IReadOnlyList<Guid> eventIds,
         IReadOnlyList<string> eventTypes,
         bool isDcb,
+        AppendStamp stamp,
         CancellationToken cancellationToken)
     {
-        // Retry a closed connection only when no result row was read. That is
-        // the case where the append was not saved. Postgres commits an
-        // autocommit statement when it handles the end of the request, after
-        // the rows are sent, so a closure after a row can follow a real commit.
-        // A transaction pooler can report that closure itself. The second try
-        // reuses these event ids. If that try looks like a conflict, read the
-        // ids back before telling the caller the append failed.
+        // Retry a closed connection only when no result row was read. Postgres
+        // commits an autocommit statement when it handles the end of the request,
+        // after the rows are sent, so a closure after a row can follow a real
+        // commit. A transaction pooler can report a closure itself, after the
+        // commit and before any row. Event ids are not unique, so a second try
+        // would not fail on its own: read this append back first and return it
+        // when it was saved. A first try that commits after that read is saved
+        // twice unless the append has an expected version or a condition, which
+        // the second try then fails. The second try reuses these event ids and
+        // this stamp. If that try looks like a conflict, read the ids back again
+        // before telling the caller the append failed.
         var max = _options.MaxRetryCount;
         var closedConnectionRetried = false;
         for (var attempt = 0; ; attempt++)
@@ -51,9 +91,18 @@ public sealed partial class PostgresEventStore
             {
                 await DelayRetryAsync(attempt, ex.SqlState, ex.MessageText, cancellationToken).ConfigureAwait(false);
             }
+            catch (PostgresException ex) when (attempt < max && IsRangeAttachedMeanwhile(ex))
+            {
+                // Defensive. If an insert ever uses a list of ranges read before another
+                // session attached the range it needs, it fails here having written
+                // nothing, and a new transaction reads the current list. No test reaches
+                // this path today; the filter has its own unit test.
+                await DelayRetryAsync(attempt, ex.SqlState, ex.MessageText, cancellationToken).ConfigureAwait(false);
+            }
             catch (ClosedConnectionBeforeCommitException ex) when (!closedConnectionRetried && !cancellationToken.IsCancellationRequested)
             {
                 closedConnectionRetried = true;
+                // COMMIT was not sent, so the attempt cannot commit.
                 await PrepareClosedConnectionRetryAsync(ex.InnerException ?? ex, cancellationToken).ConfigureAwait(false);
                 attempt--;
             }
@@ -66,12 +115,16 @@ public sealed partial class PostgresEventStore
                 && PostgresConnectionClosure.HasRetryableClosureSqlState(ex))
             {
                 closedConnectionRetried = true;
+                // An autocommit attempt can still commit after the closure was reported.
                 await PrepareClosedConnectionRetryAsync(ex, cancellationToken).ConfigureAwait(false);
+                var read = await ReadBackOrUnknownAsync(streamId, eventIds, eventTypes, stamp, cancellationToken).ConfigureAwait(false);
+                if (read.Kind is AppendReadKind.Match or AppendReadKind.Partial)
+                    return ResolveReadBack(read, isDcb, ex, missingIsUnknown: true);
                 attempt--;
             }
             catch (Exception ex) when (closedConnectionRetried && IsConflictAfterRetry(ex))
             {
-                return await ReturnSavedOrRethrowAsync(streamId, eventIds, eventTypes, isDcb, ex, cancellationToken).ConfigureAwait(false);
+                return await ReturnSavedOrRethrowAsync(streamId, eventIds, eventTypes, isDcb, stamp, ex, cancellationToken).ConfigureAwait(false);
             }
             catch (NpgsqlException ex) when (ex is not PostgresException
                 && attempt < max
@@ -85,6 +138,25 @@ public sealed partial class PostgresEventStore
         }
     }
 
+    /// <summary>
+    /// "No partition of relation ... found for row" on the events or tag table. A check
+    /// constraint failure has the same code but names its constraint.
+    /// </summary>
+    private bool IsRangeAttachedMeanwhile(PostgresException exception)
+        => IsRangeAttachedMeanwhile(exception, _options.UsesPositionPartitions, _options.EventsTableName, _options.EventTagsTableName);
+
+    /// <summary>
+    /// True only for "no partition of relation found for row" (23514 with no constraint
+    /// name) on the events or event tags table while position ranges are on. That error is
+    /// raised during the statement, so the try wrote nothing and a new transaction is safe.
+    /// </summary>
+    internal static bool IsRangeAttachedMeanwhile(PostgresException exception, bool ranges, string eventsTable, string tagsTable)
+        => ranges
+            && exception.SqlState == "23514"
+            && exception.ConstraintName is null
+            && (string.Equals(exception.TableName, eventsTable, StringComparison.Ordinal)
+                || string.Equals(exception.TableName, tagsTable, StringComparison.Ordinal));
+
     private static bool IsConflictAfterRetry(Exception exception)
         => exception is ConcurrencyException or EventAlreadyAppendedException;
 
@@ -93,10 +165,11 @@ public sealed partial class PostgresEventStore
         IReadOnlyList<Guid> eventIds,
         IReadOnlyList<string> eventTypes,
         bool isDcb,
+        AppendStamp stamp,
         Exception conflict,
         CancellationToken cancellationToken)
     {
-        var read = await ReadBackOrUnknownAsync(streamId, eventIds, eventTypes, cancellationToken).ConfigureAwait(false);
+        var read = await ReadBackOrUnknownAsync(streamId, eventIds, eventTypes, stamp, cancellationToken).ConfigureAwait(false);
         return ResolveReadBack(read, isDcb, conflict, missingIsUnknown: false);
     }
 
@@ -138,6 +211,7 @@ public sealed partial class PostgresEventStore
         AppendCondition? condition,
         string? conditionTenant,
         bool isDcb,
+        AppendStamp stamp,
         CancellationToken cancellationToken)
     {
         var tenant = TenantKey.ForStream(streamId, _options.Tenancy, _options.SingleTenantId);
@@ -150,6 +224,7 @@ public sealed partial class PostgresEventStore
         var tagOrds = new List<int>();
         var tagValues = new List<string>();
         var streamTags = new HashSet<string>(StringComparer.Ordinal);
+        var eventTags = new HashSet<Tag>();
 
         for (var i = 0; i < envelopes.Count; i++)
         {
@@ -163,9 +238,10 @@ public sealed partial class PostgresEventStore
             payloads[i] = json;
             binaries[i] = binary;
             metadata[i] = MetadataJson(envelope.Metadata);
+            eventTags.Clear();
             foreach (var tag in envelope.Tags)
             {
-                if (tag.IsDefault)
+                if (tag.IsDefault || !eventTags.Add(tag))
                     continue;
                 tagOrds.Add(i + 1);
                 tagValues.Add(tag.ToString());
@@ -231,7 +307,7 @@ public sealed partial class PostgresEventStore
                 @tag_ords, @tag_values, @stream_tags, @partition_hash, @recorded_at, @notify, @notify_channel,
                 @lock_tags, @lock_modes, @lock_store, @store_lock_key,
                 @check_condition, @condition_all, @condition_tenant, @condition_after, @item_count,
-                @type_items, @type_ids_cond, @tag_items, @tag_values_cond, @items_with_types, @items_with_tags)
+                @type_items, @type_ids_cond, @tag_items, @tag_values_cond, @items_with_types, @items_with_tags, @partition_limit)
             """;
         // One statement. MATERIALIZED runs the original function once. The outbox
         // insert is in that same statement, so a rollback removes both. An older
@@ -294,7 +370,7 @@ public sealed partial class PostgresEventStore
         command.Parameters.Add(new NpgsqlParameter("tag_values", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = tagValues.ToArray() });
         command.Parameters.Add(new NpgsqlParameter("stream_tags", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = streamTags.ToArray() });
         command.Parameters.Add(new NpgsqlParameter("partition_hash", PartitionHashUtility.GetDeterministicHashCode(streamId)));
-        command.Parameters.Add(new NpgsqlParameter("recorded_at", NpgsqlDbType.TimestampTz) { Value = DateTime.UtcNow });
+        command.Parameters.Add(new NpgsqlParameter("recorded_at", NpgsqlDbType.TimestampTz) { Value = stamp.Fix() });
         command.Parameters.Add(new NpgsqlParameter("notify", _options.NotifyOnAppend));
         command.Parameters.Add(new NpgsqlParameter("notify_channel", _names.NotifyChannel));
         command.Parameters.Add(new NpgsqlParameter("lock_tags", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = lockTags });
@@ -312,6 +388,7 @@ public sealed partial class PostgresEventStore
         command.Parameters.Add(new NpgsqlParameter("tag_values_cond", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = tagCond });
         command.Parameters.Add(new NpgsqlParameter("items_with_types", NpgsqlDbType.Array | NpgsqlDbType.Integer) { Value = itemsWithTypes });
         command.Parameters.Add(new NpgsqlParameter("items_with_tags", NpgsqlDbType.Array | NpgsqlDbType.Integer) { Value = itemsWithTags });
+        command.Parameters.Add(new NpgsqlParameter("partition_limit", NpgsqlDbType.Bigint) { Value = PartitionLimitParameter() });
         if (writeOutbox)
         {
             command.Parameters.Add(new NpgsqlParameter("outbox_ords", NpgsqlDbType.Array | NpgsqlDbType.Integer) { Value = outboxOrds });
@@ -402,9 +479,6 @@ public sealed partial class PostgresEventStore
         long? conditionAfter,
         string outboxTable)
     {
-        if (exception.Hint == "event_already_appended" && Guid.TryParse(exception.Detail, out var eventId))
-            return new EventAlreadyAppendedException(eventId);
-
         if (exception.SqlState == "23505"
             && OutboxKeyViolation(exception, outboxTable)
             && TryReadDuplicateKey(exception.Detail, out var duplicateId))
@@ -692,7 +766,10 @@ public sealed partial class PostgresEventStore
         }
 
         if (newest >= 0)
+        {
             PublishSignal(newest);
+            KeepRangesAhead(newest);
+        }
     }
 
     /// <summary>
@@ -701,6 +778,7 @@ public sealed partial class PostgresEventStore
     /// </summary>
     internal void PublishSignal(long position)
     {
+        NoteHead(position);
         if (!PublishNewEventsSignal || position < 0)
             return;
 
@@ -759,30 +837,38 @@ public sealed partial class PostgresEventStore
         string streamId,
         IReadOnlyList<Guid> eventIds,
         IReadOnlyList<string> eventTypes,
+        AppendStamp stamp,
         CancellationToken cancellationToken)
     {
         if (FailAppendReadBack)
             throw new NpgsqlException("read-back failed");
 
-        if (eventIds.Count == 0)
+        // No attempt took the time yet, so no statement was sent.
+        if (eventIds.Count == 0 || !stamp.IsFixed)
             return new CommittedAppendRead(AppendReadKind.None, null, Guid.Empty);
 
-        // The event id is unique for a tenant, so the row is that id's only row.
-        // A match also requires this stream and this event name. An id saved on
-        // another stream is a different append. JSON is stored as jsonb, so the
-        // stored text can differ from the bytes that were sent. A hash of those
-        // bytes would not match the stored value.
+        // Event ids are not unique. Every attempt of this append wrote the same time
+        // and got positions above the floor, so the primary key on position and the
+        // time index find its rows without reading older ranges. A match also requires
+        // this stream and this event name. JSON is stored as jsonb, so the stored text
+        // can differ from the bytes that were sent. A hash of those bytes would not
+        // match the stored value.
         var tenant = TenantKey.ForStream(streamId, _options.Tenancy, _options.SingleTenantId);
         var sql = $"""
             SELECT e.event_id, e.stream_id, e.global_position, e.version, t.token
             FROM {_names.Events} e
             JOIN {_names.Types} t ON t.id = e.event_type_id
-            WHERE e.tenant_id = @tenant AND e.event_id = ANY(@ids)
+            WHERE e.recorded_at = @recorded_at
+              AND e.global_position > @floor
+              AND e.tenant_id = @tenant
+              AND e.event_id = ANY(@ids)
             """;
         var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var connectionDisposal = connection.ConfigureAwait(false);
         var command = new NpgsqlCommand(sql, connection);
         await using var commandDisposal = command.ConfigureAwait(false);
+        command.Parameters.Add(new NpgsqlParameter("recorded_at", NpgsqlDbType.TimestampTz) { Value = stamp.RecordedAt });
+        command.Parameters.Add(new NpgsqlParameter("floor", NpgsqlDbType.Bigint) { Value = stamp.Floor });
         command.Parameters.Add(new NpgsqlParameter("tenant", tenant));
         command.Parameters.Add(new NpgsqlParameter("ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid) { Value = eventIds.ToArray() });
         var rows = new Dictionary<Guid, StoredAppendRow>();
@@ -826,7 +912,7 @@ public sealed partial class PostgresEventStore
         var missing = eventIds.Count - matches - elsewhere;
         if (matches == eventIds.Count)
             return new CommittedAppendRead(AppendReadKind.Match, new AppendResult(positions, null, version), Guid.Empty);
-        // One statement writes the whole batch. An id already stored on another
+        // One statement writes the whole batch. An id stored at this time on another
         // stream, or under another event name, means none of this call was saved.
         // Unknown is only when some ids are on this stream and the others are absent.
         if (elsewhere > 0)
@@ -1005,14 +1091,16 @@ public sealed partial class PostgresEventStore
         NpgsqlTransaction transaction,
         CancellationToken cancellationToken)
     {
-        var sql = $"SELECT format, partition_count, partitioning FROM {_names.SchemaInfo} WHERE component = 'events'";
+        // partition_size came with format 7. Read it through the row so an older
+        // stamp table without the column is still read and refused cleanly.
+        var sql = $"SELECT s.format, s.partitioning, (to_jsonb(s) ->> 'partition_size')::bigint FROM {_names.SchemaInfo} AS s WHERE s.component = 'events'";
         var command = new NpgsqlCommand(sql, connection, transaction);
         await using var commandDisposal = command.ConfigureAwait(false);
         var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         await using var readerDisposal = reader.ConfigureAwait(false);
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             return null;
-        return new Stamp(reader.GetInt32(0), reader.GetInt32(1), reader.GetBoolean(2));
+        return new Stamp(reader.GetInt32(0), reader.GetBoolean(1), reader.IsDBNull(2) ? null : reader.GetInt64(2));
     }
 
     private static async Task<bool> RegclassExistsAsync(
