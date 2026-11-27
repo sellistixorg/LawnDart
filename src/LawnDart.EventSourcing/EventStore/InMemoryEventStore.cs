@@ -23,6 +23,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
     private readonly Dictionary<StreamId, List<RecordedEvent>> _streams = new();
     private readonly List<RecordedEvent> _allEvents = new();
     private readonly HashSet<Guid> _eventIds = [];
+    private readonly List<Guid> _eventIdsInOrder = [];
     private readonly Dictionary<StreamId, StreamMetadata> _streamRegistry = new();
     private readonly ConcurrentDictionary<InMemorySubscriptionHandle, byte> _subscriptions = new();
     private readonly int _subscriptionChannelCapacity;
@@ -424,6 +425,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         {
             _streams.Clear();
             _eventIds.Clear();
+            _eventIdsInOrder.Clear();
             _allEvents.Clear();
             _streamRegistry.Clear();
             _nextSequencePosition = 1;
@@ -815,7 +817,15 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
 
         foreach (var id in ids)
             _eventIds.Add(id);
+        _eventIdsInOrder.AddRange(ids);
         return ids;
+    }
+
+    /// <summary>The event id stored for each event, in position order. For tests.</summary>
+    internal IReadOnlyList<Guid> StoredEventIds()
+    {
+        lock (_lock)
+            return _eventIdsInOrder.ToArray();
     }
 
     /// <summary>

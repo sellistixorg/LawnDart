@@ -4,7 +4,8 @@ namespace LawnDart.EventStore;
 
 /// <summary>
 /// Reads <c>EventId</c> from append metadata. A missing or unreadable id is minted once
-/// by the caller so a retried commit uses the same value.
+/// by the caller so a retried commit uses the same value. Minted ids are UUID version 7,
+/// so they start with the time they were made and newer ids sort after older ones.
 /// </summary>
 internal static class EventIdResolver
 {
@@ -12,13 +13,15 @@ internal static class EventIdResolver
     {
         if (TryRead(metadata, out var id))
             return id;
-        return (mint ?? Guid.NewGuid)();
+        return mint is null ? Guid.CreateVersion7() : mint();
     }
 
     /// <summary>
     /// One id per envelope. A repeated metadata <c>EventId</c> in the same batch
     /// (one command metadata copied onto each event) is made distinct and stable
-    /// for that batch. An id already stored is left unchanged so the caller can reject it.
+    /// for that batch: the first event keeps the id, and each repeat gets an id with the
+    /// same version, variant and (for version 7) time, and different random bits.
+    /// An id already stored is left unchanged so the caller can reject it.
     /// </summary>
     public static List<Guid> ResolveBatch(IReadOnlyList<ReadOnlyMemory<byte>> metadata)
     {
@@ -29,10 +32,11 @@ internal static class EventIdResolver
             var id = Resolve(metadata[i]);
             if (!seen.Add(id))
             {
+                var original = id;
                 var salt = i + 1;
                 do
                 {
-                    id = Derive(id, salt);
+                    id = Derive(original, salt);
                     salt++;
                 }
                 while (!seen.Add(id));
@@ -44,12 +48,21 @@ internal static class EventIdResolver
         return ids;
     }
 
-    private static Guid Derive(Guid id, int salt)
+    /// <summary>
+    /// Changes only the last four bytes, which are random bits in both version 4 and
+    /// version 7 ids. The version, the variant and the version 7 time prefix stay the same,
+    /// so a derived version 7 id still sorts by time. The same id and salt always give
+    /// the same result, and different salts give different results.
+    /// </summary>
+    internal static Guid Derive(Guid id, int salt)
     {
-        var bytes = id.ToByteArray();
-        bytes[0] = (byte)(bytes[0] + salt);
-        bytes[1] ^= (byte)salt;
-        return new Guid(bytes);
+        Span<byte> bytes = stackalloc byte[16];
+        id.TryWriteBytes(bytes, bigEndian: true, out _);
+        bytes[12] ^= (byte)(salt >> 24);
+        bytes[13] ^= (byte)(salt >> 16);
+        bytes[14] ^= (byte)(salt >> 8);
+        bytes[15] ^= (byte)salt;
+        return new Guid(bytes, bigEndian: true);
     }
 
     public static bool TryRead(ReadOnlyMemory<byte> metadata, out Guid eventId)

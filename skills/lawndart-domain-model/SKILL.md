@@ -52,7 +52,7 @@ public sealed class Book : AggregateRoot<BookState>
         if (State.OnLoan)
             throw new DomainException("Book is already on loan.");
 
-        Apply(new BookBorrowed(Guid.NewGuid(), DateTime.UtcNow, cmd.BookId, cmd.MemberName));
+        Apply(new BookBorrowed(Guid.CreateVersion7(), DateTime.UtcNow, cmd.BookId, cmd.MemberName));
     }
 
     protected override void ApplyEventToState(IEvent @event)
@@ -124,7 +124,7 @@ public sealed class BookLoan : DcbEntity<BookLoanState>
         if (State.MemberActiveLoans >= MaxLoansPerMember)
             throw new DomainException("Member is at the loan limit.");
 
-        Emit(new BookBorrowed(Guid.NewGuid(), DateTime.UtcNow, cmd.BookId, cmd.MemberId, cmd.MemberName),
+        Emit(new BookBorrowed(Guid.CreateVersion7(), DateTime.UtcNow, cmd.BookId, cmd.MemberId, cmd.MemberName),
             $"book:{cmd.BookId}", $"member:{cmd.MemberId}");
     }
 }

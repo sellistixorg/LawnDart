@@ -44,6 +44,21 @@ enrich (a direct `EnrichEventMetadata` call), it falls back to
 Read the stored envelope on `SequencedEvent.Metadata` after
 `ReadStreamAsync`.
 
+## Event ids
+
+A typed append stores `IEvent.Id` as the event id. Create it with
+`Guid.CreateVersion7()`. A version 7 UUID starts with the time it was made, to
+the millisecond, so in text form an id made later sorts after one made earlier.
+
+A raw `IEventLog` append reads `EventId` from the metadata JSON. When the
+metadata has no `EventId`, or the value is not a GUID, the store makes a new
+version 7 id. `new EventMetadata()` also starts with a new version 7 id.
+
+When one metadata `EventId` is copied onto every event in one append, the first
+event keeps it and each later event gets a different id. That id keeps the
+version, the variant and, for version 7, the time of the original, and changes
+the last four bytes. Sending the same metadata again gives the same ids.
+
 ## HTTP headers
 
 `MapLawnDartCommands` builds the inbound `MessageContext` from:

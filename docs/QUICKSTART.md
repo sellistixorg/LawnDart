@@ -88,10 +88,10 @@ public sealed class CounterState : IState
 public sealed class Counter : AggregateRoot<CounterState>
 {
     public void Handle(CreateCounterCommand create) =>
-        Apply(new CounterCreated(Guid.NewGuid(), DateTime.UtcNow, create.CounterId));
+        Apply(new CounterCreated(Guid.CreateVersion7(), DateTime.UtcNow, create.CounterId));
 
     public void Handle(IncrementCommand increment) =>
-        Apply(new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, increment.CounterId));
+        Apply(new CounterIncremented(Guid.CreateVersion7(), DateTime.UtcNow, increment.CounterId));
 
     protected override void ApplyEventToState(IEvent @event)
     {

@@ -17,6 +17,7 @@ public class EventMetadataTests
         Assert.NotNull(metadata.Custom);
         Assert.NotNull(metadata.EventId);
         Assert.NotEqual(Guid.Empty, Guid.Parse(metadata.EventId));
+        Assert.Equal(7, Guid.Parse(metadata.EventId).Version);
         Assert.Equal(1, metadata.SchemaVersion);
         Assert.True(metadata.Timestamp <= DateTime.UtcNow);
     }

@@ -11,6 +11,7 @@ LawnDart API, so a store outside this repository runs it the same way.
 |---|---|
 | `EventStoreContractTests` | Stream appends and reads, expected versions, metadata, tenant checks |
 | `EventLogContractTests` | Raw event log appends, reads and queries |
+| `EventIdContractTests` | Stored event ids: a missing id is a new UUID version 7, a caller id is kept, and one id copied onto every event of an append gives distinct ids. Needs `ReadStoredEventIdsAsync` |
 | `PerEventTagContractTests` | Each event keeps only its own tags, on stream appends, conditional appends, tag queries and log reads |
 | `RepeatedTagContractTests` | A tag repeated on one event is stored once, in the order given |
 | `TagContractTests` | The aggregate fallback tag format and the unknown tag warning |
@@ -113,9 +114,14 @@ Add one class like the last two for each suite in the table. Run them with
   is your `IEventLog`. Both must read and write the same data. Several tests
   write through one and read through the other, and expect the same tags.
 
-`Subscriptions`, `Signals`, `SignalCounters`, `Hooks` and
-`MarkStreamArchivedAsync` are optional. Leave one out and the tests that need
-it are reported as skipped, with the reason. A skipped test is not a pass.
+`Subscriptions`, `Signals`, `SignalCounters`, `Hooks`,
+`ReadStoredEventIdsAsync` and `MarkStreamArchivedAsync` are optional. Leave
+one out and the tests that need it are reported as skipped, with the reason.
+A skipped test is not a pass.
+
+`ReadStoredEventIdsAsync` returns the event id your store wrote for each event,
+in position order. It is the id your store keeps for the event, not the
+`EventId` in the metadata JSON.
 
 `SignalCounters` reports how many times the new-events signal fired and how
 many readers wait on it. With it, the subscription tests also check that a
