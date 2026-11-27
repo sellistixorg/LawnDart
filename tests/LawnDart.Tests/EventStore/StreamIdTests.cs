@@ -73,6 +73,9 @@ public sealed class StreamIdTests
     [InlineData(":Order:42")]
     [InlineData("acme:Order: 42")]
     [InlineData(" acme:dcb")]
+    [InlineData("dcb:42")]
+    [InlineData("acme:dcb:42")]
+    [InlineData("acme:dcb:dcb")]
     public void Parse_RejectsTextThatBreaksTheRules(string text)
     {
         Assert.Throws<FormatException>(() => StreamId.Parse(text));
@@ -104,6 +107,7 @@ public sealed class StreamIdTests
     [InlineData("Order", "42 ")]
     [InlineData("Order", "a:b")]
     [InlineData("Order", "dcb")]
+    [InlineData("dcb", "42")]
     public void For_TypeAndId_RejectsBadParts(string type, string id)
         => Assert.Throws<ArgumentException>(() => StreamId.For(type, id));
 
@@ -113,8 +117,18 @@ public sealed class StreamIdTests
     [InlineData("acme", "Or:der", "42")]
     [InlineData("acme", "Order", "")]
     [InlineData("acme ", "Order", "42")]
+    [InlineData("acme", "dcb", "42")]
     public void For_TenantTypeAndId_RejectsBadParts(string tenant, string type, string id)
         => Assert.Throws<ArgumentException>(() => StreamId.For(tenant, type, id));
+
+    [Fact]
+    public void ThreePartIdDcb_IsAnOrdinaryStream()
+    {
+        var parsed = StreamId.Parse("acme:Order:dcb");
+        Assert.False(parsed.IsDcb);
+        Assert.Equal("Order", parsed.Type);
+        Assert.Equal("dcb", parsed.Id);
+    }
 
     [Fact]
     public void Dcb_RejectsABadTenant_AndTreatsEmptyAsNoTenant()

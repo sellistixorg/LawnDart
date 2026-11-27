@@ -173,6 +173,18 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         if (envelopes.Count == 0)
             throw new ArgumentException("At least one event is required", nameof(events));
 
+        if (streamId.IsDcb)
+        {
+            var dcbTenant = AppendTenantRules.ValidateDcbStreamAppend(
+                streamId, envelopes, expectedVersion, _tenancy, _singleTenantId, _validateNames);
+            lock (_lock)
+            {
+                var dcbResult = AppendFramesDcb(envelopes, condition: null, dcbTenant, conditionTenant: null);
+                SignalCommitted(dcbResult);
+                return Task.FromResult(dcbResult);
+            }
+        }
+
         AppendTenantRules.ValidateStreamAppend(streamId, envelopes, _tenancy, _singleTenantId, _validateNames);
 
         lock (_lock)
@@ -213,7 +225,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         DateTime? toCommitTimestamp,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        EventLogBuffers.RequireStreamId(streamId);
+        EventLogBuffers.RequireReadableStreamId(streamId);
 
         foreach (var frame in SnapshotStream(streamId, fromVersion, toVersion, toCommitTimestamp))
         {
@@ -231,7 +243,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         DateTime? toCommitTimestamp,
         CancellationToken cancellationToken)
     {
-        EventLogBuffers.RequireStreamId(streamId);
+        EventLogBuffers.RequireReadableStreamId(streamId);
 
         return Task.FromResult<IReadOnlyList<RecordedEvent>>(
             SnapshotStream(streamId, fromVersion, toVersion, toCommitTimestamp));
@@ -405,13 +417,6 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         if (PublishNewEventsSignal)
             _newEvents.NotifyCommittedPositions(result.SequencePositions);
     }
-
-    // Each dynamic consistency boundary append still gets its own stream until the fixed
-    // dcb / {tenant}:dcb stream lands.
-    private static StreamId BuildDcbStreamId(string? tenantId)
-        => !string.IsNullOrWhiteSpace(tenantId)
-            ? StreamId.For(tenantId, StreamId.DcbType, Guid.NewGuid().ToString())
-            : StreamId.For(StreamId.DcbType, Guid.NewGuid().ToString());
 
     /// <summary>
     /// Clears all events (for testing). Active subscriptions are disposed.
@@ -741,41 +746,44 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         return query;
     }
 
+    /// <summary>
+    /// Writes a dynamic consistency boundary append to the tenant's fixed stream
+    /// (<c>dcb</c> or <c>{tenant}:dcb</c>). The version of each event is its global position,
+    /// so versions in that stream only increase. The stream registry is not touched.
+    /// </summary>
     private AppendResult AppendFramesDcb(
         IReadOnlyList<AppendEvent> envelopes,
-        AppendCondition condition,
+        AppendCondition? condition,
         string? storageTenant,
         string? conditionTenant)
     {
-        var matchingEvents = _allEvents.AsEnumerable();
-
-        if (condition.After.HasValue)
-            matchingEvents = matchingEvents.Where(e => e.SequencePosition > condition.After.Value);
-
-        var effectiveConditionQuery = PrepareMatchQuery(condition.FailIfEventsMatch, conditionTenant);
-        matchingEvents = matchingEvents.Where(e => EventQueryMatcher.Matches(e, effectiveConditionQuery));
-
-        if (matchingEvents.Any())
+        if (condition is not null)
         {
-            throw new ConcurrencyException(
-                $"Append condition failed: found {matchingEvents.Count()} matching events",
-                condition.After);
+            var matchingEvents = _allEvents.AsEnumerable();
+
+            if (condition.After.HasValue)
+                matchingEvents = matchingEvents.Where(e => e.SequencePosition > condition.After.Value);
+
+            var effectiveConditionQuery = PrepareMatchQuery(condition.FailIfEventsMatch, conditionTenant);
+            matchingEvents = matchingEvents.Where(e => EventQueryMatcher.Matches(e, effectiveConditionQuery));
+
+            if (matchingEvents.Any())
+            {
+                throw new ConcurrencyException(
+                    $"Append condition failed: found {matchingEvents.Count()} matching events",
+                    condition.After);
+            }
         }
 
-        var streamId = BuildDcbStreamId(storageTenant);
+        var streamId = StreamId.Dcb(storageTenant);
         var sequencePositions = new List<long>();
 
         var eventIds = ReserveEventIds(envelopes);
         foreach (var envelope in envelopes)
         {
-            var recorded = Record(envelope, streamId, streamVersion: 0);
+            var recorded = Record(envelope, streamId, streamVersion: _nextSequencePosition);
             _allEvents.Add(recorded);
             sequencePositions.Add(recorded.SequencePosition);
-        }
-
-        if (_enableRegistry)
-        {
-            UpdateStreamRegistry(streamId, 0, sequencePositions.Last(), envelopes.Count, UnionTags(envelopes));
         }
 
         WriteDeclaredOutbox(streamId, envelopes, sequencePositions, eventIds);

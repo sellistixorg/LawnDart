@@ -23,7 +23,9 @@ public class SequencedEvent
     public StreamId StreamId { get; init; }
 
     /// <summary>
-    /// Version within the stream (for traditional approach).
+    /// Version within the stream. For an event in the dynamic consistency boundary stream
+    /// (<see cref="StreamId.IsDcb"/>), versions only increase and are not contiguous; rely on
+    /// <see cref="SequencePosition"/> instead.
     /// </summary>
     public long Version { get; init; }
 

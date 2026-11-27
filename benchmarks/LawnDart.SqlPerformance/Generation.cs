@@ -477,8 +477,9 @@ internal sealed class EventGenerator
     {
         var tenantIndex = (int)(ordinal % _plan.Tenants);
         var tenant = Tenant(tenantIndex);
-        var aggregateId = GuidFor(2, unchecked((ulong)ordinal));
-        var streamId = tenant + ":dcb:" + aggregateId.ToString("D");
+        // Every dynamic consistency boundary event is in its tenant's fixed stream,
+        // and its version is its global position.
+        var streamId = LawnDart.EventStore.StreamId.Dcb(tenant).ToString();
         string eventType;
         string[] tags;
         if (ordinal % 500 == 250)
@@ -500,7 +501,7 @@ internal sealed class EventGenerator
         {
             Tenant = tenant,
             StreamId = streamId,
-            Version = 0,
+            Version = position,
             Position = position,
             EventId = eventId,
             EventType = eventType,
@@ -512,13 +513,13 @@ internal sealed class EventGenerator
             Timestamp = stamp,
             IsDcb = true,
             AggregateType = "dcb",
-            AggregateId = aggregateId,
-            ClosesStream = true,
-            StreamEventCount = 1,
-            StreamVersion = 0,
+            AggregateId = Guid.Empty,
+            ClosesStream = false,
+            StreamEventCount = 0,
+            StreamVersion = -1,
             StreamOpenedAt = stamp,
-            StreamTagsJson = TagsJson(tags),
-            StreamTags = tags,
+            StreamTagsJson = "[]",
+            StreamTags = [],
             WritesSnapshot = false,
             SnapshotVersion = 0
         };
@@ -663,11 +664,11 @@ internal static class GeneratorChecks
                 if (row.IsDcb)
                 {
                     dcb++;
-                    if (row.Version != 0)
-                        throw new InvalidOperationException("A dynamic consistency boundary event has a non zero version.");
+                    if (row.Version != row.Position)
+                        throw new InvalidOperationException("A dynamic consistency boundary event version is not its position.");
                     if (row.Tags.Length < 1 || (row.Tags.Length > 3 && row.Tags.Length != TagPicker.ManyTagCount))
                         throw new InvalidOperationException("A dynamic consistency boundary event has the wrong number of tags.");
-                    if (!row.StreamId.Contains(":dcb:", StringComparison.Ordinal))
+                    if (!LawnDart.EventStore.StreamId.Parse(row.StreamId).IsDcb)
                         throw new InvalidOperationException("A dynamic consistency boundary stream id has the wrong shape.");
                     if (row.EventType == "note-added" && row.Tags[0] != "sku:0")
                         throw new InvalidOperationException("A note event is missing its tag.");

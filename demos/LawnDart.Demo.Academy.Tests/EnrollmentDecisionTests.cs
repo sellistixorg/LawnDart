@@ -253,7 +253,7 @@ public sealed class EnrollmentDecisionTests
         Assert.True(EventQueryMatcher.Matches(sectionSeed, decision, Catalog));
         Assert.True(EventQueryMatcher.Matches(studentSeed, decision, Catalog));
         Assert.All(
-            stored.Where(e => e.StreamId.ToString().StartsWith("dcb:", StringComparison.Ordinal)),
+            stored.Where(e => e.StreamId.IsDcb),
             e => Assert.True(EventQueryMatcher.Matches(e, decision, Catalog), e.Event.GetType().Name));
     }
 

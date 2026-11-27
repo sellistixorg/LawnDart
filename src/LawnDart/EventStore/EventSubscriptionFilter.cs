@@ -38,10 +38,14 @@ public sealed class EventSubscriptionFilter
     /// Subscribes to events for a single stream, still ordered by global <see cref="SequencedEvent.SequencePosition"/>.
     /// </summary>
     /// <param name="streamId">The stream identifier.</param>
-    /// <exception cref="ArgumentException"><paramref name="streamId"/> is <see langword="default"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="streamId"/> is <see langword="default"/>, or it is the dynamic consistency
+    /// boundary stream (<see cref="StreamId.IsDcb"/>), which cannot be read directly. Subscribe to
+    /// its events with <see cref="ForQuery"/> and a tag or type query.
+    /// </exception>
     public static EventSubscriptionFilter ForStream(StreamId streamId)
     {
-        EventLogBuffers.RequireStreamId(streamId);
+        EventLogBuffers.RequireReadableStreamId(streamId);
 
         return new(EventSubscriptionScope.Stream, streamId, query: null);
     }

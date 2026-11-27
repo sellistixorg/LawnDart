@@ -156,7 +156,7 @@ public class TagQueryWarningTests
         var projectionTag = LawnDart.EventStore.Tag.Parse($"Order:{Guid.NewGuid():D}");
         var reactionTag = $"Payment:{Guid.NewGuid():D}";
         await store.AppendAsync(
-            StreamId.Parse($"dcb:{Guid.NewGuid():N}"),
+            StreamId.Dcb(),
             [new TaggedEvent(new NotedEvent(Guid.NewGuid(), DateTime.UtcNow, "seen"), [projectionTag])]);
 
         var projector = new NotedProjector(projectionTag.ToString());

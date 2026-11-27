@@ -323,24 +323,17 @@ public class DcbRepository : IDcbRepository
                 eventMetadata.TenantId ??= _options.SingleTenantId;
             }
 
-            StreamId? streamId = null;
-            if (condition == null)
-            {
-                // Use tenant-aware stream ID for DCB. Each append still gets its own stream
-                // until the fixed dcb / {tenant}:dcb stream lands.
-                var tenantId = _options.Tenancy == Tenancy.Shared
-                    ? metadata.TenantId ?? _tenantContextProvider.GetTenantId()
-                    : _options.SingleTenantId;
-                streamId = tenantId != null
-                    ? StreamId.For(tenantId, StreamId.DcbType, Guid.NewGuid().ToString())
-                    : StreamId.For(StreamId.DcbType, Guid.NewGuid().ToString());
-            }
-
-            // Append to event store
-            // One atomic append; each event carries only its own tags.
+            // One atomic append; each event carries only its own tags. With no condition the
+            // events go to the tenant's fixed stream (dcb or {tenant}:dcb), the same stream a
+            // conditional append writes to.
             var appendResult = condition != null
                 ? await _eventStore.AppendAsync(tagged, condition, eventMetadata, cancellationToken).ConfigureAwait(false)
-                : await _eventStore.AppendAsync(streamId!.Value, tagged, null, eventMetadata, cancellationToken).ConfigureAwait(false);
+                : await _eventStore.AppendAsync(
+                    StreamId.Dcb(_options.Tenancy == Tenancy.Shared ? eventMetadata.TenantId : _options.SingleTenantId),
+                    tagged,
+                    null,
+                    eventMetadata,
+                    cancellationToken).ConfigureAwait(false);
 
             var sequencePositions = appendResult.SequencePositions;
             

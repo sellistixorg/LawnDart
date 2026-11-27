@@ -107,7 +107,8 @@ internal static class ProjectionEventFilter
                 // If the caller supplied a full stream ID (contains ':') we still do the direct read.
                 if (IsFullStreamId(registration, instanceId))
                 {
-                    if (!StreamId.TryParse(instanceId, out var streamId))
+                    // The dynamic consistency boundary stream cannot be read directly.
+                    if (!StreamId.TryParse(instanceId, out var streamId) || streamId.IsDcb)
                         return EmptyAsyncEnumerable.Instance;
 
                     return (cutoff?.Kind) switch

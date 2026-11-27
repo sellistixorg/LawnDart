@@ -385,7 +385,7 @@ public class InMemoryEventStoreTests
     }
 
     [Fact]
-    public async Task AppendAsync_WithDCBCondition_UsesOpaqueDcbStreamId()
+    public async Task AppendAsync_WithDCBCondition_UsesTenantDcbStream()
     {
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Shared });
         var append = await store.AppendAsync(
@@ -396,7 +396,8 @@ public class InMemoryEventStoreTests
         var query = await store.ReadByQueryAsync(Query.All().ForTenant("tenant-x"), fromSequencePosition: append.SequencePositions[0], limit: 1);
         var evt = Assert.Single(query.Events);
 
-        Assert.StartsWith("tenant-x:dcb:", evt.StreamId.ToString());
+        Assert.Equal(StreamId.Dcb("tenant-x"), evt.StreamId);
+        Assert.Equal(evt.SequencePosition, evt.Version);
     }
 
     [Fact]

@@ -40,7 +40,11 @@ public sealed class RecordedEvent
     /// <summary>Stream this record belongs to.</summary>
     public StreamId StreamId { get; }
 
-    /// <summary>Stream-local version. <c>0</c> when the write was a DCB append.</summary>
+    /// <summary>
+    /// Stream-local version. For an event in the dynamic consistency boundary stream
+    /// (<see cref="StreamId.IsDcb"/>), versions only increase and are not contiguous; rely on
+    /// <see cref="SequencePosition"/> instead.
+    /// </summary>
     public long StreamVersion { get; }
 
     /// <summary>Store-assigned global sequence.</summary>
@@ -55,7 +59,7 @@ public sealed class RecordedEvent
     /// <param name="eventType">Event name.</param>
     /// <param name="payload">Serialized payload. Copied on construct.</param>
     /// <param name="streamId">Stream identifier assigned or chosen by the store.</param>
-    /// <param name="streamVersion">Stream-local version. <c>0</c> for DCB.</param>
+    /// <param name="streamVersion">Stream-local version. Only increasing for the dynamic consistency boundary stream.</param>
     /// <param name="sequencePosition">Global sequence assigned by the store.</param>
     /// <param name="commitTimestamp">Store-assigned commit time.</param>
     /// <param name="metadata">UTF-8 JSON metadata bytes. Copied on construct.</param>

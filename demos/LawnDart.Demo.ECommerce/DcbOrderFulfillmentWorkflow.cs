@@ -87,8 +87,8 @@ public class DcbOrderFulfillmentWorkflow
             new InventoryReserved(Guid.NewGuid(), DateTime.UtcNow, productId, quantity, orderId)
         };
 
-        // One append writes all three events. The store assigns the stream id
-        // (dcb:{guid}, or {tenant}:dcb:{guid} when metadata carries a tenant).
+        // One append writes all three events to the fixed dynamic consistency boundary
+        // stream (dcb, or {tenant}:dcb when metadata carries a tenant).
         // The workflow tag is for queries. It is not the stream id.
         var workflowId = Guid.NewGuid();
         var workflowTag = $"workflow:{workflowId}";

@@ -69,6 +69,11 @@ public sealed class SqlServerAppendBatchTests : IAsyncLifetime
     {
         var store = await OpenAsync("batchdcb");
         await store.AppendAsync(StreamId.For("warm", Guid.NewGuid().ToString("N")), [Event("warmup")]);
+        // The first dynamic consistency boundary append makes the stream's registry row
+        // in its own short command. Later appends are one batch.
+        await store.AppendAsync(
+            [Event("warmup", "warm:" + Guid.NewGuid().ToString("N"))],
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(LawnDart.EventStore.Tag.Parse("warm:absent")))));
         var tag = "course:" + Guid.NewGuid().ToString("N");
 
         var commands = new List<string>();
@@ -88,7 +93,9 @@ public sealed class SqlServerAppendBatchTests : IAsyncLifetime
         Assert.True(
             batch.IndexOf("THROW " + SqlServerEventStore.AppendConditionConflictError, StringComparison.Ordinal)
             < batch.IndexOf("sp_sequence_get_range", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains("INSERT INTO [batchdcb].[StreamTags]", batch, StringComparison.Ordinal);
+        // The dynamic consistency boundary stream is not in the registry, so its tags are not copied there.
+        Assert.DoesNotContain("INSERT INTO [batchdcb].[StreamTags]", batch, StringComparison.Ordinal);
+        Assert.DoesNotContain("UPDATE [batchdcb].[Streams]", batch, StringComparison.Ordinal);
 
         await using (var connection = new SqlConnection(_connectionString))
         {
@@ -102,7 +109,7 @@ public sealed class SqlServerAppendBatchTests : IAsyncLifetime
                 """,
                 connection);
             command.Parameters.AddWithValue("@Tag", tag.ToString());
-            Assert.Equal(1, Convert.ToInt32(await command.ExecuteScalarAsync()));
+            Assert.Equal(0, Convert.ToInt32(await command.ExecuteScalarAsync()));
         }
 
         var conflictCommands = new List<string>();
@@ -115,6 +122,36 @@ public sealed class SqlServerAppendBatchTests : IAsyncLifetime
         }
 
         Assert.Single(conflictCommands);
+    }
+
+    [Fact]
+    public async Task DcbAppend_MakesTheStreamRowOnce_AndMakesItAgainWhenItIsGone()
+    {
+        var store = await OpenAsync("batchdcbrow");
+        var condition = AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(Tag.Parse("row:absent"))));
+        await store.AppendAsync([Event("warmup", "row:a")], condition);
+        await store.AppendAsync([Event("warmup", "row:b")], condition);
+        Assert.Equal(1, await DcbRowCountAsync("batchdcbrow"));
+
+        await using (var connection = new SqlConnection(_connectionString))
+        {
+            await connection.OpenAsync();
+            await using var delete = new SqlCommand(
+                "DELETE FROM [batchdcbrow].[Streams] WHERE [Status] = N'Dcb'", connection);
+            await delete.ExecuteNonQueryAsync();
+        }
+
+        await store.AppendAsync([Event("warmup", "row:c")], condition);
+        Assert.Equal(1, await DcbRowCountAsync("batchdcbrow"));
+    }
+
+    private async Task<int> DcbRowCountAsync(string schema)
+    {
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = new SqlCommand(
+            $"SELECT COUNT(*) FROM [{schema}].[Streams] WHERE [StreamId] = N'dcb' AND [Status] = N'Dcb'", connection);
+        return Convert.ToInt32(await command.ExecuteScalarAsync());
     }
 
     [Fact]

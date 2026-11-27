@@ -69,7 +69,7 @@ public abstract class RepositoryTenantContractTests : ContractSuite
 
         var read = await store.ReadByQueryAsync(Query.All().ForTenant("default"), fromSequencePosition: positions[0], limit: 1);
         var evt = Assert.Single(read.Events);
-        Assert.StartsWith("default:dcb:", evt.StreamId.ToString());
+        Assert.Equal(StreamId.Dcb("default"), evt.StreamId);
     }
 
     [Fact]

@@ -118,10 +118,9 @@ public sealed class PostgresPhase1Tests
         Assert.Equal("acme", await TenantOfAsync(shared.SchemaName, withTenant.ToString()));
         Assert.Equal("default", await TenantOfAsync(single.SchemaName, withoutTenant.ToString()));
 
-        var withTenantMeta = await shared.Store.GetStreamAsync(withTenant);
-        var withoutTenantMeta = await single.Store.GetStreamAsync(withoutTenant);
-        Assert.Equal("acme", withTenantMeta!.TenantId);
-        Assert.Null(withoutTenantMeta!.TenantId);
+        // The dynamic consistency boundary stream has no registry row.
+        Assert.Null(await shared.Store.GetStreamAsync(withTenant));
+        Assert.Null(await single.Store.GetStreamAsync(withoutTenant));
     }
 
     [Fact]

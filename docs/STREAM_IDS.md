@@ -31,7 +31,7 @@ The rules are the same on every store:
 - Tenant, type, and id are not empty and do not start or end with whitespace.
 - Tenant and type do not contain a colon. With a tenant, the id is everything after the type, so it may contain colons.
 - Without a tenant, the id does not contain a colon, because the text would read back as `{tenantId}:{type}:{id}`. The id is not `dcb`.
-- Type `dcb` is still allowed for interim `dcb:{guid}` and `{tenant}:dcb:{guid}` streams until the fixed dynamic consistency boundary stream rules arrive in step 4.
+- Type `dcb` is reserved for the dynamic consistency boundary stream. `dcb:{id}` and `{tenantId}:dcb:{id}` are not valid stream ids.
 - The whole text is at most 255 characters (`StreamId.MaxLength`).
 
 `StreamId.Parse` throws `FormatException` when the text breaks a rule. `StreamId.For` throws `ArgumentException`. A store throws `ArgumentException` for a `default` stream id.
@@ -53,10 +53,27 @@ var shipment = await repo.GetOrCreateAsync<InboundShipmentAggregate>(streamId);
 
 ## DCB
 
-DCB reads a decision query. Appends still land in an event store stream. A tag
-is a lowercase type, a colon, and the id (`student:{id}`). Build that
-string with the context `ITagFormat`. Stream IDs stay
-`{tenant}:{Type}:{id}`. See [TAGGING.md](TAGGING.md).
+DCB reads a decision query. A tag is a lowercase type, a colon, and the id
+(`student:{id}`). Build that string with the context `ITagFormat`. Aggregate
+stream IDs stay `{tenant}:{Type}:{id}`. See [TAGGING.md](TAGGING.md).
+
+Every dynamic consistency boundary append lands in one fixed stream per tenant:
+`dcb` with no tenant, or `{tenantId}:dcb` (`StreamId.Dcb(tenantId)`). In
+`Tenancy.Single` with a `SingleTenantId`, that tenant names the stream.
+
+- Read those events with a tag or type query. `ReadStreamAsync`,
+  `ReadStreamEnumerableAsync`, and `EventSubscriptionFilter.ForStream` throw
+  `ArgumentException` for the DCB stream. Subscribe with
+  `EventSubscriptionFilter.ForQuery` instead.
+- Versions in the DCB stream only increase. They are not a count and have gaps
+  (LawnDart stores use the global position). Use `SequencePosition`, for example
+  as `AppendCondition.After`.
+- `AppendAsync(StreamId.Dcb(tenantId), events)` is a DCB append with no
+  condition. An expected version for it throws `ArgumentException`; use an
+  `AppendCondition` for concurrency.
+- The DCB stream is not in the stream registry. `GetStreamAsync` returns null
+  for it, stream listings and counts leave it out, and `GetStreamsByTagAsync`
+  does not return it.
 
 ## HTTP handlers
 

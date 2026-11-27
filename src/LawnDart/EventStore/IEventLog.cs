@@ -26,6 +26,10 @@ namespace LawnDart.EventStore;
 public interface IEventLog : IStreamRegistry
 {
     /// <summary>Reads stored records from a stream in version order.</summary>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="streamId"/> is the dynamic consistency boundary stream (<see cref="StreamId.IsDcb"/>).
+    /// Read those records with <see cref="ReadByQueryAsync"/>.
+    /// </exception>
     Task<IReadOnlyList<RecordedEvent>> ReadStreamAsync(
         StreamId streamId,
         long fromVersion = 0,
@@ -34,6 +38,10 @@ public interface IEventLog : IStreamRegistry
         CancellationToken cancellationToken = default);
 
     /// <summary>Streams stored records from a stream in version order.</summary>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="streamId"/> is the dynamic consistency boundary stream (<see cref="StreamId.IsDcb"/>).
+    /// Read those records with <see cref="ReadByQueryStreamAsync"/>.
+    /// </exception>
     IAsyncEnumerable<RecordedEvent> ReadStreamEnumerableAsync(
         StreamId streamId,
         long fromVersion = 0,
@@ -62,6 +70,11 @@ public interface IEventLog : IStreamRegistry
         CancellationToken cancellationToken = default);
 
     /// <summary>Appends records to a stream. Store assigns sequence, version, and commit time.</summary>
+    /// <remarks>
+    /// Appending to the dynamic consistency boundary stream (<see cref="StreamId.Dcb(string?)"/>)
+    /// is a dynamic consistency boundary append with no condition. <paramref name="expectedVersion"/>
+    /// must then be <see langword="null"/>. Versions in that stream only increase.
+    /// </remarks>
     [System.Diagnostics.CodeAnalysis.SuppressMessage("ApiDesign", "RS0026:Do not add multiple public overloads with optional parameters", Justification = "The two appends take different required parameters (a stream id or an append condition), so a call always picks one.")]
     Task<AppendResult> AppendAsync(
         StreamId streamId,

@@ -325,6 +325,13 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
         if (envelopes.Count == 0)
             throw new ArgumentException("At least one event is required", nameof(events));
 
+        if (streamId.IsDcb)
+        {
+            var dcbTenant = AppendTenantRules.ValidateDcbStreamAppend(
+                streamId, envelopes, expectedVersion, _options.Tenancy, _options.SingleTenantId, _options.ValidateNames);
+            return await AppendDcbAsync(envelopes, condition: null, dcbTenant, conditionTenant: null, cancellationToken).ConfigureAwait(false);
+        }
+
         AppendTenantRules.ValidateStreamAppend(
             streamId, envelopes, _options.Tenancy, _options.SingleTenantId, _options.ValidateNames);
         var eventIds = EventIdResolver.ResolveBatch(envelopes.Select(e => e.Metadata).ToList());
@@ -352,10 +359,22 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
         var metadataTenantId = AppendTenantRules.TryReadTenantId(envelopes);
         var (storageTenant, conditionTenant) = AppendTenantRules.ValidateDcbAppend(
             metadataTenantId, condition, _options.Tenancy, _options.SingleTenantId, _options.ValidateNames);
+        return await AppendDcbAsync(envelopes, condition, storageTenant, conditionTenant, cancellationToken).ConfigureAwait(false);
+    }
 
-        var streamId = (!string.IsNullOrWhiteSpace(storageTenant)
-            ? StreamId.For(storageTenant, StreamId.DcbType, Guid.NewGuid().ToString())
-            : StreamId.For(StreamId.DcbType, Guid.NewGuid().ToString())).ToString();
+    /// <summary>
+    /// Writes a dynamic consistency boundary append to the tenant's fixed stream
+    /// (<c>dcb</c> or <c>{tenant}:dcb</c>). Each event's version is its global position.
+    /// The streams table is not touched.
+    /// </summary>
+    private async Task<AppendResult> AppendDcbAsync(
+        IReadOnlyList<AppendEvent> envelopes,
+        AppendCondition? condition,
+        string? storageTenant,
+        string? conditionTenant,
+        CancellationToken cancellationToken)
+    {
+        var streamId = StreamId.Dcb(storageTenant).ToString();
         EnsureStreamLength(streamId, "streamId");
         var eventIds = EventIdResolver.ResolveBatch(envelopes.Select(e => e.Metadata).ToList());
         var eventTypes = envelopes.Select(static envelope => envelope.EventType).ToArray();

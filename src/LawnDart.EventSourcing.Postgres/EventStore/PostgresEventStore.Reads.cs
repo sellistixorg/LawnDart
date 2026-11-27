@@ -29,7 +29,7 @@ public sealed partial class PostgresEventStore
     async Task<IReadOnlyList<RecordedEvent>> IEventLog.ReadStreamAsync(
         StreamId streamId, long fromVersion, long? toVersion, DateTime? toCommitTimestamp, CancellationToken cancellationToken)
     {
-        EventLogBuffers.RequireStreamId(streamId);
+        EventLogBuffers.RequireReadableStreamId(streamId);
         var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var connectionDisposal = connection.ConfigureAwait(false);
         return await ReadStreamCoreAsync(connection, streamId.ToString(), fromVersion, toVersion, toCommitTimestamp, cancellationToken).ConfigureAwait(false);

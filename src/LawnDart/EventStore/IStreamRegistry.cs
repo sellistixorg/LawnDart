@@ -10,7 +10,10 @@ public interface IStreamRegistry
     /// </summary>
     /// <param name="streamId">The stream identifier.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Stream metadata, or null if stream doesn't exist.</returns>
+    /// <returns>
+    /// Stream metadata, or null if stream doesn't exist. Always null for the dynamic consistency
+    /// boundary stream (<see cref="StreamId.IsDcb"/>), which is not listed in the registry.
+    /// </returns>
     Task<StreamMetadata?> GetStreamAsync(
         StreamId streamId,
         CancellationToken cancellationToken = default);

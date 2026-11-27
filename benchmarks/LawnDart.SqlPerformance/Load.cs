@@ -299,6 +299,26 @@ internal static class Loader
             {
                 streamKey = nextStreamKey++;
                 streamKeys[row.StreamId] = streamKey;
+                if (row.IsDcb)
+                {
+                    // The store keeps one hidden row per dynamic consistency boundary stream
+                    // for its key. It is never updated by an append.
+                    streams.Add(
+                    [
+                        streamKey,
+                        row.StreamId,
+                        row.Tenant,
+                        row.AggregateType,
+                        null,
+                        -1L,
+                        0L,
+                        row.Timestamp,
+                        row.Timestamp,
+                        0L,
+                        "[]",
+                        "Dcb"
+                    ]);
+                }
             }
 
             events.Add(

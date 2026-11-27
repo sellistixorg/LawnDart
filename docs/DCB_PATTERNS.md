@@ -8,6 +8,11 @@ Each new event is stored with only its own tags.
 Use DCB when a rule spans more than one identity (book and member,
 student and section). Use an aggregate when one stream owns the rule.
 
+Every DCB append lands in the tenant's fixed `dcb` stream (`{tenantId}:dcb`).
+Read and subscribe to those events with a query, not with `ReadStreamAsync`
+or a stream subscription. See
+[STREAM_IDS.md](STREAM_IDS.md#dcb).
+
 Academy `EnrollmentEntity` is the runnable host. Its decision is one
 item, so that item requires both the student tag and the section tag.
 
