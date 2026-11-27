@@ -117,11 +117,28 @@ public sealed class PostgresContractBackend : IFullContractBackend
             Signals = store,
             SignalCounters = new NewEventsSignalCounters(store.NewEvents),
             Hooks = new PostgresContractHooks(store, _connectionString, _migrationConnectionString ?? _connectionString),
+            ReadStoredEventIdsAsync = ct => ReadStoredEventIdsAsync(store, ct),
             Outbox = CreateOutbox(options.SchemaName, options.OutboxClaimLease),
             ReadLogEntries = () => logger.Entries,
             SetPublishNewEventsSignal = value => store.PublishNewEventsSignal = value,
             MarkStreamArchivedAsync = (streamId, ct) => MarkArchivedAsync(store, streamId, ct)
         };
+    }
+
+    private static async Task<IReadOnlyList<Guid>> ReadStoredEventIdsAsync(
+        PostgresEventStore store,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new NpgsqlConnection(store.ConnectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(
+            $"SELECT event_id FROM {store.QualifiedEventsTable} ORDER BY global_position",
+            connection);
+        var ids = new List<Guid>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            ids.Add(reader.GetGuid(0));
+        return ids;
     }
 
     private static async Task MarkArchivedAsync(

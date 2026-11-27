@@ -22,7 +22,7 @@ public sealed class BookLoan : DcbEntity<BookLoanState>
         if (State.Exists)
             throw new DomainException("Book already exists.");
 
-        Emit(new BookAdded(Guid.NewGuid(), DateTime.UtcNow, cmd.BookId, cmd.Title, cmd.Isbn),
+        Emit(new BookAdded(Guid.CreateVersion7(), DateTime.UtcNow, cmd.BookId, cmd.Title, cmd.Isbn),
             $"book:{cmd.BookId}");
     }
 
@@ -35,7 +35,7 @@ public sealed class BookLoan : DcbEntity<BookLoanState>
         if (State.MemberActiveLoans >= MaxLoansPerMember)
             throw new DomainException("Member is at the loan limit.");
 
-        Emit(new BookBorrowed(Guid.NewGuid(), DateTime.UtcNow, cmd.BookId, cmd.MemberId, cmd.MemberName),
+        Emit(new BookBorrowed(Guid.CreateVersion7(), DateTime.UtcNow, cmd.BookId, cmd.MemberId, cmd.MemberName),
             $"book:{cmd.BookId}", $"member:{cmd.MemberId}");
     }
 
@@ -46,7 +46,7 @@ public sealed class BookLoan : DcbEntity<BookLoanState>
         if (!State.OnLoan)
             throw new DomainException("Book is not on loan.");
 
-        Emit(new BookReturned(Guid.NewGuid(), DateTime.UtcNow, cmd.BookId, cmd.MemberId),
+        Emit(new BookReturned(Guid.CreateVersion7(), DateTime.UtcNow, cmd.BookId, cmd.MemberId),
             $"book:{cmd.BookId}", $"member:{cmd.MemberId}");
     }
 

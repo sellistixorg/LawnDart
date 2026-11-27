@@ -73,6 +73,7 @@ public sealed class InMemoryContractBackend : IFullContractBackend
             Signals = store,
             SignalCounters = new NewEventsSignalCounters(store.NewEvents),
             Hooks = UnavailableHooks.Instance,
+            ReadStoredEventIdsAsync = _ => Task.FromResult(store.StoredEventIds()),
             Outbox = connected ?? new InMemoryOutboxWriter(options.OutboxClaimLease),
             ReadLogEntries = () => [],
             SetPublishNewEventsSignal = value => store.PublishNewEventsSignal = value,

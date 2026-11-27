@@ -62,9 +62,11 @@ public class EventMetadata
     public string? CausationId { get; set; }
 
     /// <summary>
-    /// Unique event ID.
+    /// Event id. The default is a new UUID version 7 (<see cref="Guid.CreateVersion7()"/>),
+    /// which starts with the current time so newer ids sort after older ones. A typed append
+    /// replaces it with <see cref="IEvent.Id"/>.
     /// </summary>
-    public string EventId { get; set; } = Guid.NewGuid().ToString();
+    public string EventId { get; set; } = Guid.CreateVersion7().ToString();
 
     // Authorization Context (inherited from command)
     /// <summary>

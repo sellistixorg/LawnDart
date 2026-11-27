@@ -53,7 +53,7 @@ public sealed class Book : AggregateRoot<BookState>
         if (State.Exists)
             throw new DomainException("Book already exists.");
 
-        Apply(new BookAdded(Guid.NewGuid(), DateTime.UtcNow, cmd.BookId, cmd.Title, cmd.Isbn));
+        Apply(new BookAdded(Guid.CreateVersion7(), DateTime.UtcNow, cmd.BookId, cmd.Title, cmd.Isbn));
     }
 
     public void Handle(BorrowBookCommand cmd)
@@ -63,7 +63,7 @@ public sealed class Book : AggregateRoot<BookState>
         if (State.OnLoan)
             throw new DomainException("Book is already on loan.");
 
-        Apply(new BookBorrowed(Guid.NewGuid(), DateTime.UtcNow, cmd.BookId, cmd.MemberName));
+        Apply(new BookBorrowed(Guid.CreateVersion7(), DateTime.UtcNow, cmd.BookId, cmd.MemberName));
     }
 
     public void Handle(ReturnBookCommand cmd)
@@ -73,7 +73,7 @@ public sealed class Book : AggregateRoot<BookState>
         if (!State.OnLoan)
             throw new DomainException("Book is not on loan.");
 
-        Apply(new BookReturned(Guid.NewGuid(), DateTime.UtcNow, cmd.BookId));
+        Apply(new BookReturned(Guid.CreateVersion7(), DateTime.UtcNow, cmd.BookId));
     }
 
     protected override void ApplyEventToState(IEvent @event)

@@ -277,6 +277,12 @@ public sealed class ContractEventStore
     /// <summary>Fault hooks. The default can do none of them.</summary>
     public IContractHooks Hooks { get; init; } = UnavailableHooks.Instance;
 
+    /// <summary>
+    /// Reads the event id the store wrote for each event, in position order. There is no
+    /// public call for this, so the backend supplies it. Null skips the event id tests.
+    /// </summary>
+    public Func<CancellationToken, Task<IReadOnlyList<Guid>>>? ReadStoredEventIdsAsync { get; init; }
+
     /// <summary>The outbox written with appends, when the store has one.</summary>
     public IOutboxWriter? Outbox { get; init; }
 

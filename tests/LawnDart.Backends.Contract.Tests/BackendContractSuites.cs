@@ -25,6 +25,29 @@ public sealed class PostgresEventStoreContractTests : EventStoreContractTests
 
 [Collection(InMemoryContractCollection.Name)]
 [Trait("Category", "Contract")]
+public sealed class InMemoryEventIdContractTests : EventIdContractTests
+{
+    public InMemoryEventIdContractTests(InMemoryContractFixture fixture) : base(fixture.Backend) { }
+}
+
+[Collection("SqlServerContract")]
+[Trait("Category", "Integration")]
+[Trait("Category", "Contract")]
+public sealed class SqlServerEventIdContractTests : EventIdContractTests
+{
+    public SqlServerEventIdContractTests(SqlServerContractFixture fixture) : base(fixture.Backend) { }
+}
+
+[Collection("PostgresContract")]
+[Trait("Category", "Integration")]
+[Trait("Category", "Contract")]
+public sealed class PostgresEventIdContractTests : EventIdContractTests
+{
+    public PostgresEventIdContractTests(PostgresContractFixture fixture) : base(fixture.Backend) { }
+}
+
+[Collection(InMemoryContractCollection.Name)]
+[Trait("Category", "Contract")]
 public sealed class InMemoryRepositoryTenantContractTests : RepositoryTenantContractTests
 {
     public InMemoryRepositoryTenantContractTests(InMemoryContractFixture fixture) : base(fixture.Backend) { }

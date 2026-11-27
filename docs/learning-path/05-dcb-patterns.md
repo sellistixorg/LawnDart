@@ -29,10 +29,10 @@ public class EnrollmentEntity : DcbEntity<EnrollmentState>
         if (State.IsCancelled)
             throw new InvalidOperationException("Enrollment has been cancelled.");
 
-        Emit(new SeatReserved(Guid.NewGuid(), DateTime.UtcNow, _sectionId, _studentId),
+        Emit(new SeatReserved(Guid.CreateVersion7(), DateTime.UtcNow, _sectionId, _studentId),
             $"student:{_studentId}", $"section:{_sectionId}", $"course:{cmd.CourseId}");
 
-        Emit(new StudentEnrolled(Guid.NewGuid(), DateTime.UtcNow, _studentId, cmd.CourseId),
+        Emit(new StudentEnrolled(Guid.CreateVersion7(), DateTime.UtcNow, _studentId, cmd.CourseId),
             $"student:{_studentId}", $"section:{_sectionId}", $"course:{cmd.CourseId}");
     }
 }
