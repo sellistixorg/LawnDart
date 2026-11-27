@@ -63,6 +63,9 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
     private readonly string _typesTableName;
     private readonly bool _enableRegistry;
     private readonly EventTypeIdCache _eventTypes = new();
+
+    /// <summary>Dynamic consistency boundary stream ids whose registry row this store has made or seen.</summary>
+    private readonly ConcurrentDictionary<string, byte> _dcbStreamRows = new(StringComparer.Ordinal);
     private readonly TagIdCache _tagIds = new();
     private readonly SemaphoreSlim _typeCacheRefresh = new(1, 1);
     private readonly SqlServerEventStoreOptions _options;
@@ -1139,6 +1142,10 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
 
         EventLogBuffers.RequireStreamId(streamId);
 
+        // The dynamic consistency boundary stream is not a registry stream. Its row only holds the key.
+        if (streamId.IsDcb)
+            return null;
+
         var connection = new SqlConnection(_connectionString);
         await using var connectionDisposal = connection.ConfigureAwait(false);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -1614,7 +1621,7 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         DateTime? toCommitTimestamp,
         CancellationToken cancellationToken)
     {
-        EventLogBuffers.RequireStreamId(streamId);
+        EventLogBuffers.RequireReadableStreamId(streamId);
 
         var connection = new SqlConnection(_connectionString);
         await using var connectionDisposal = connection.ConfigureAwait(false);
@@ -1631,7 +1638,7 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         DateTime? toCommitTimestamp,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        EventLogBuffers.RequireStreamId(streamId);
+        EventLogBuffers.RequireReadableStreamId(streamId);
 
         var connection = new SqlConnection(_connectionString);
         await using var connectionDisposal = connection.ConfigureAwait(false);
@@ -1699,6 +1706,14 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         if (envelopes.Count == 0)
             throw new ArgumentException("At least one event is required", nameof(events));
 
+        if (streamId.IsDcb)
+        {
+            var dcbTenant = AppendTenantRules.ValidateDcbStreamAppend(
+                streamId, envelopes, expectedVersion, _options.Tenancy, _options.SingleTenantId, _options.ValidateNames);
+            return await AppendDcbAsync(envelopes, condition: null, dcbTenant, conditionTenant: null, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         ValidateStreamTenant(streamId.ToString(), envelopes);
         LogConnectionOnce();
         var eventIds = ResolveEventIds(envelopes);
@@ -1722,28 +1737,57 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
             throw new ArgumentException("At least one event is required", nameof(events));
         ArgumentNullException.ThrowIfNull(condition);
 
+        var metadataTenantId = AppendTenantRules.TryReadTenantId(envelopes);
+        var (storageTenant, conditionTenant) = AppendTenantRules.ValidateDcbAppend(
+            metadataTenantId, condition, _options.Tenancy, _options.SingleTenantId, _options.ValidateNames);
+        return await AppendDcbAsync(envelopes, condition, storageTenant, conditionTenant, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Writes a dynamic consistency boundary append to the tenant's fixed stream
+    /// (<c>dcb</c> or <c>{tenant}:dcb</c>). Each event's version is its global position.
+    /// The stream's registry row is created once and never updated, so appends do not
+    /// queue on it.
+    /// </summary>
+    private async Task<AppendResult> AppendDcbAsync(
+        IReadOnlyList<AppendEvent> envelopes,
+        AppendCondition? condition,
+        string? storageTenant,
+        string? conditionTenant,
+        CancellationToken cancellationToken)
+    {
+        var streamId = StreamId.Dcb(storageTenant).ToString();
+        SqlServerColumnLimits.EnsureStreamId(streamId, "streamId");
+
         LogConnectionOnce();
         var eventIds = ResolveEventIds(envelopes);
 
         return await AppendWithRetryAsync(async ct =>
         {
-            var metadataTenantId = AppendTenantRules.TryReadTenantId(envelopes);
-            var (storageTenant, conditionTenant) = AppendTenantRules.ValidateDcbAppend(
-                metadataTenantId, condition, _options.Tenancy, _options.SingleTenantId, _options.ValidateNames);
-
-            var streamId = (!string.IsNullOrWhiteSpace(storageTenant)
-                ? StreamId.For(storageTenant, StreamId.DcbType, Guid.NewGuid().ToString())
-                : StreamId.For(StreamId.DcbType, Guid.NewGuid().ToString())).ToString();
-            SqlServerColumnLimits.EnsureStreamId(streamId, "streamId");
-
             await EnsureEventTypeIdsAsync(envelopes, ct).ConfigureAwait(false);
-            await EnsureQueryTypesResolvedAsync(condition.FailIfEventsMatch, ct).ConfigureAwait(false);
+            if (condition is not null)
+                await EnsureQueryTypesResolvedAsync(condition.FailIfEventsMatch, ct).ConfigureAwait(false);
+            await EnsureDcbStreamRowAsync(streamId, ct).ConfigureAwait(false);
             if (BeforeAppendLocks is { } beforeLocks)
                 await beforeLocks(ct).ConfigureAwait(false);
 
-            return await AppendInTransactionAsync(
-                streamId, envelopes, eventIds, expectedVersion: null, condition, conditionTenant, isDcb: true, ct)
-                .ConfigureAwait(false);
+            try
+            {
+                return await AppendInTransactionAsync(
+                    streamId, envelopes, eventIds, expectedVersion: null, condition, conditionTenant, isDcb: true, ct)
+                    .ConfigureAwait(false);
+            }
+            catch (SqlException ex) when (HasError(ex, DcbStreamRowMissingError))
+            {
+                // The row this store made earlier is gone, for example after the schema was
+                // made again. Make it and try once more.
+                _dcbStreamRows.TryRemove(streamId, out _);
+                await EnsureDcbStreamRowAsync(streamId, ct).ConfigureAwait(false);
+                return await AppendInTransactionAsync(
+                    streamId, envelopes, eventIds, expectedVersion: null, condition, conditionTenant, isDcb: true, ct)
+                    .ConfigureAwait(false);
+            }
         }, cancellationToken).ConfigureAwait(false);
     }
 

@@ -23,8 +23,20 @@ public partial class SqlServerEventStore
 
     private readonly record struct WrittenTag(string Text, string Expression, bool Learned);
 
+    /// <summary>
+    /// Status of the registry row that holds the key of a dynamic consistency boundary stream.
+    /// Listings read only <c>Active</c> rows, so this row stays out of them.
+    /// </summary>
+    internal const string DcbStreamStatus = "Dcb";
+
     /// <summary>Raised when a tag id cannot be stored. The append wrote nothing.</summary>
     internal const int AppendTagRegistrationError = 51209;
+
+    /// <summary>
+    /// Raised when the registry row of a dynamic consistency boundary stream is missing.
+    /// The append wrote nothing. The caller creates the row and tries again.
+    /// </summary>
+    internal const int DcbStreamRowMissingError = 51210;
 
     /// <summary>Clears the flag that tells the stream-tag trigger to return. Run before a batch abort.</summary>
     private const string ClearStreamTagSkipSql =
@@ -58,55 +70,13 @@ public partial class SqlServerEventStore
 
         var writtenTags = AppendWrittenTagRegistration(sql, parameters, envelopes);
 
+        if (isDcb)
+            AppendDcbStreamRow(sql);
+        else
+            AppendStreamRowLock(sql);
+
         sql.AppendLine(
             $"""
-            DECLARE @streamKey bigint;
-            DECLARE @current bigint;
-            DECLARE @eventTenant nvarchar(100);
-            DECLARE @existingTags nvarchar(max);
-
-            -- One read of the stream version. The check and the insert both use @current.
-            SELECT
-                @streamKey = StreamKey,
-                @current = CurrentVersion,
-                @eventTenant = TenantId,
-                @existingTags = Tags
-            FROM {_qRegistry} WITH (UPDLOCK, ROWLOCK)
-            WHERE StreamId = @StreamId;
-
-            IF @streamKey IS NULL
-            BEGIN
-                BEGIN TRY
-                    INSERT INTO {_qRegistry}
-                        (StreamKey, StreamId, TenantId, AggregateType, AggregateId, CurrentVersion, LastSequencePosition,
-                         CreatedAt, LastEventAt, EventCount, Tags, Status)
-                    VALUES
-                        (NEXT VALUE FOR {_qStreamKeySequence}, @StreamId, @TenantId, @AggregateType, @AggregateId, -1, 0,
-                         @Now, @Now, 0, N'[]', N'Active');
-                    SELECT
-                        @streamKey = StreamKey,
-                        @current = -1,
-                        @existingTags = N'[]',
-                        @eventTenant = @TenantId
-                    FROM {_qRegistry} WITH (UPDLOCK, ROWLOCK)
-                    WHERE StreamId = @StreamId;
-                END TRY
-                BEGIN CATCH
-                    IF ERROR_NUMBER() IN (2601, 2627)
-                    BEGIN
-                        SELECT
-                            @streamKey = StreamKey,
-                            @current = CurrentVersion,
-                            @eventTenant = TenantId,
-                            @existingTags = Tags
-                        FROM {_qRegistry} WITH (UPDLOCK, ROWLOCK)
-                        WHERE StreamId = @StreamId;
-                    END
-                    ELSE
-                        THROW;
-                END CATCH
-            END
-
             IF @streamKey IS NULL
             BEGIN
                 {ClearStreamTagSkipSql}
@@ -121,8 +91,8 @@ public partial class SqlServerEventStore
                 THROW {AppendVersionConflictError}, @versionMessage, 1;
             END
 
+            -- Stream appends only. A dynamic consistency boundary append uses positions as versions.
             DECLARE @start bigint = CASE
-                WHEN @IsDcb = 1 THEN 0
                 WHEN @current < 0 THEN 1
                 ELSE @current + 1
             END;
@@ -142,7 +112,7 @@ public partial class SqlServerEventStore
             DECLARE @increment bigint = CONVERT(bigint, @rangeIncrement);
             """);
 
-        AppendStoredEvents(sql, parameters, envelopes, eventIds, writtenTags);
+        AppendStoredEvents(sql, parameters, envelopes, eventIds, writtenTags, isDcb);
         var learnedTags = new List<WrittenTag>();
         foreach (var written in writtenTags)
         {
@@ -153,13 +123,118 @@ public partial class SqlServerEventStore
         if (_options.EnableOutbox && BatchHasOutbound(envelopes))
             AppendOutboxRows(sql, parameters, envelopes, eventIds);
 
-        // A dynamic consistency boundary append stores current version 0.
-        // Stream appends store the last event version.
+        // Stream appends store the last event version. A dynamic consistency boundary
+        // append leaves its stream row alone.
         // Tags are rewritten only when this append adds one. The stream-tag
         // trigger then stays out of the hot path.
+        if (!isDcb)
+            AppendStreamRowUpdate(sql, writtenTags);
+
         sql.AppendLine(
             $"""
-            DECLARE @registryVersion bigint = CASE WHEN @IsDcb = 1 THEN 0 ELSE @start + @EventCount - 1 END;
+            DELETE FROM {_qFence} WHERE Id = @fenceId;
+            EXEC sp_set_session_context @key = N'LawnDart.SkipStreamTags', @value = NULL;
+
+            SELECT
+                @first AS FirstPosition,
+                @increment AS Increment,
+                @start AS StartVersion,
+                @eventTenant AS EventTenant;
+            """);
+
+        if (learnedTags.Count > 0)
+        {
+            sql.AppendLine("SELECT Ord, TagId FROM (VALUES");
+            for (var i = 0; i < learnedTags.Count; i++)
+            {
+                if (i > 0)
+                    sql.AppendLine(",");
+                sql.Append('(').Append(i.ToString(CultureInfo.InvariantCulture))
+                    .Append(", ").Append(learnedTags[i].Expression).Append(')');
+            }
+
+            sql.AppendLine(") AS v(Ord, TagId) ORDER BY Ord;");
+        }
+
+        var tenantId = AppendTenantRules.ResolveStreamStorageTenant(streamId, _options.Tenancy, _options.SingleTenantId);
+        parameters.Add(new SqlParameter("@StreamId", SqlDbType.NVarChar, 255) { Value = streamId });
+        parameters.Add(new SqlParameter("@TenantId", SqlDbType.NVarChar, 100) { Value = (object?)tenantId ?? DBNull.Value });
+        parameters.Add(new SqlParameter("@AggregateType", SqlDbType.NVarChar, 100) { Value = ExtractAggregateType(streamId) });
+        parameters.Add(new SqlParameter("@AggregateId", SqlDbType.UniqueIdentifier)
+        {
+            Value = ExtractAggregateId(streamId) is { } aggregateId ? aggregateId : DBNull.Value
+        });
+        parameters.Add(new SqlParameter("@Now", SqlDbType.DateTime2) { Value = DateTime.UtcNow });
+        parameters.Add(new SqlParameter("@HasExpected", SqlDbType.Bit) { Value = expectedVersion.HasValue });
+        parameters.Add(new SqlParameter("@Expected", SqlDbType.BigInt) { Value = expectedVersion ?? 0L });
+        parameters.Add(new SqlParameter("@EventCount", SqlDbType.BigInt) { Value = envelopes.Count });
+        parameters.Add(new SqlParameter("@SequenceName", SqlDbType.NVarChar, 776) { Value = _qSequence });
+        parameters.Add(new SqlParameter("@PartitionHash", SqlDbType.Int)
+        {
+            Value = PartitionHashUtility.GetDeterministicHashCode(streamId)
+        });
+        if (!isDcb)
+        {
+            parameters.Add(new SqlParameter("@NewTags", SqlDbType.NVarChar, -1)
+            {
+                Value = JsonSerializer.Serialize(UnionTags(envelopes), _jsonOptions)
+            });
+        }
+
+        var command = new SqlCommand(sql.ToString(), connection, transaction);
+        await using var commandDisposal = command.ConfigureAwait(false);
+        command.Parameters.AddRange(parameters.ToArray());
+        var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var readerDisposal = reader.ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            throw new InvalidOperationException("The append batch returned no result.");
+
+        var first = reader.GetInt64(reader.GetOrdinal("FirstPosition"));
+        var increment = reader.GetInt64(reader.GetOrdinal("Increment"));
+        var start = reader.GetInt64(reader.GetOrdinal("StartVersion"));
+        var eventTenant = reader.IsDBNull(reader.GetOrdinal("EventTenant"))
+            ? null
+            : reader.GetString(reader.GetOrdinal("EventTenant"));
+        if (increment < 1)
+            throw new InvalidOperationException("The event sequence increment must be a positive whole number.");
+
+        var positions = new long[envelopes.Count];
+        for (var i = 0; i < positions.Length; i++)
+            positions[i] = first + (i * increment);
+
+        var learned = new List<(string Tag, int Id)>(learnedTags.Count);
+        if (learnedTags.Count > 0)
+        {
+            if (!await reader.NextResultAsync(cancellationToken).ConfigureAwait(false))
+                throw new InvalidOperationException("The append batch did not return tag ids.");
+
+            var index = 0;
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                if (index >= learnedTags.Count)
+                    break;
+                learned.Add((learnedTags[index].Text, reader.GetInt32(reader.GetOrdinal("TagId"))));
+                index++;
+            }
+
+            if (index != learnedTags.Count)
+                throw new InvalidOperationException("The append batch returned the wrong number of tag ids.");
+        }
+
+        var result = isDcb
+            ? new AppendResult(positions)
+            : new AppendResult(positions, null, start + envelopes.Count - 1);
+        return new AppendBatchOutcome(result, eventTenant, learned);
+    }
+
+    /// <summary>
+    /// Updates the stream row after a stream append: last version, last position, count,
+    /// and the tag list when this append adds a tag. Then writes the new stream tag rows.
+    /// </summary>
+    private void AppendStreamRowUpdate(StringBuilder sql, IReadOnlyList<WrittenTag> writtenTags)
+        => sql.AppendLine(
+            $"""
+            DECLARE @registryVersion bigint = @start + @EventCount - 1;
             DECLARE @lastPosition bigint = @first + (CONVERT(bigint, @EventCount) - 1) * @increment;
             IF EXISTS (
                 SELECT 1
@@ -213,97 +288,132 @@ public partial class SqlServerEventStore
             END
 
             {BuildStreamTagInsert(writtenTags)}
-            DELETE FROM {_qFence} WHERE Id = @fenceId;
-            EXEC sp_set_session_context @key = N'LawnDart.SkipStreamTags', @value = NULL;
-
-            SELECT
-                @first AS FirstPosition,
-                @increment AS Increment,
-                @start AS StartVersion,
-                @eventTenant AS EventTenant;
             """);
 
-        if (learnedTags.Count > 0)
-        {
-            sql.AppendLine("SELECT Ord, TagId FROM (VALUES");
-            for (var i = 0; i < learnedTags.Count; i++)
-            {
-                if (i > 0)
-                    sql.AppendLine(",");
-                sql.Append('(').Append(i.ToString(CultureInfo.InvariantCulture))
-                    .Append(", ").Append(learnedTags[i].Expression).Append(')');
-            }
+    /// <summary>
+    /// Reads and locks the stream row for a stream append, creating it when missing.
+    /// The version check and the insert both use <c>@current</c>.
+    /// </summary>
+    private void AppendStreamRowLock(StringBuilder sql)
+        => sql.AppendLine(
+            $"""
+            DECLARE @streamKey bigint;
+            DECLARE @current bigint;
+            DECLARE @eventTenant nvarchar(100);
+            DECLARE @existingTags nvarchar(max);
 
-            sql.AppendLine(") AS v(Ord, TagId) ORDER BY Ord;");
-        }
+            -- One read of the stream version. The check and the insert both use @current.
+            SELECT
+                @streamKey = StreamKey,
+                @current = CurrentVersion,
+                @eventTenant = TenantId,
+                @existingTags = Tags
+            FROM {_qRegistry} WITH (UPDLOCK, ROWLOCK)
+            WHERE StreamId = @StreamId;
+
+            IF @streamKey IS NULL
+            BEGIN
+                BEGIN TRY
+                    INSERT INTO {_qRegistry}
+                        (StreamKey, StreamId, TenantId, AggregateType, AggregateId, CurrentVersion, LastSequencePosition,
+                         CreatedAt, LastEventAt, EventCount, Tags, Status)
+                    VALUES
+                        (NEXT VALUE FOR {_qStreamKeySequence}, @StreamId, @TenantId, @AggregateType, @AggregateId, -1, 0,
+                         @Now, @Now, 0, N'[]', N'Active');
+                    SELECT
+                        @streamKey = StreamKey,
+                        @current = -1,
+                        @existingTags = N'[]',
+                        @eventTenant = @TenantId
+                    FROM {_qRegistry} WITH (UPDLOCK, ROWLOCK)
+                    WHERE StreamId = @StreamId;
+                END TRY
+                BEGIN CATCH
+                    IF ERROR_NUMBER() IN (2601, 2627)
+                    BEGIN
+                        SELECT
+                            @streamKey = StreamKey,
+                            @current = CurrentVersion,
+                            @eventTenant = TenantId,
+                            @existingTags = Tags
+                        FROM {_qRegistry} WITH (UPDLOCK, ROWLOCK)
+                        WHERE StreamId = @StreamId;
+                    END
+                    ELSE
+                        THROW;
+                END CATCH
+            END
+            """);
+
+    /// <summary>
+    /// Finds the row of the dynamic consistency boundary stream, creating it once. The row is
+    /// not locked and not updated by the append, so concurrent appends do not queue on it.
+    /// Its status keeps it out of stream listings.
+    /// </summary>
+    /// <summary>
+    /// Reads the key of the dynamic consistency boundary stream. The row is made before the
+    /// append transaction (<see cref="EnsureDcbStreamRowAsync"/>) and is never locked or
+    /// updated here, so concurrent appends do not wait on it.
+    /// </summary>
+    private void AppendDcbStreamRow(StringBuilder sql)
+        => sql.AppendLine(
+            $"""
+            DECLARE @streamKey bigint;
+            DECLARE @current bigint = -1;
+            DECLARE @eventTenant nvarchar(100) = @TenantId;
+
+            SELECT @streamKey = StreamKey
+            FROM {_qRegistry}
+            WHERE StreamId = @StreamId;
+
+            IF @streamKey IS NULL
+            BEGIN
+                {ClearStreamTagSkipSql}
+                THROW {DcbStreamRowMissingError}, N'The dynamic consistency boundary stream row is missing.', 1;
+            END
+            """);
+
+    /// <summary>
+    /// Makes the registry row of a dynamic consistency boundary stream in its own short
+    /// transaction, before an append opens its transaction. The row has status
+    /// <see cref="DcbStreamStatus"/> and only holds the stream key.
+    /// </summary>
+    private async Task EnsureDcbStreamRowAsync(string streamId, CancellationToken cancellationToken)
+    {
+        if (_dcbStreamRows.ContainsKey(streamId))
+            return;
 
         var tenantId = AppendTenantRules.ResolveStreamStorageTenant(streamId, _options.Tenancy, _options.SingleTenantId);
-        parameters.Add(new SqlParameter("@StreamId", SqlDbType.NVarChar, 255) { Value = streamId });
-        parameters.Add(new SqlParameter("@TenantId", SqlDbType.NVarChar, 100) { Value = (object?)tenantId ?? DBNull.Value });
-        parameters.Add(new SqlParameter("@AggregateType", SqlDbType.NVarChar, 100) { Value = ExtractAggregateType(streamId) });
-        parameters.Add(new SqlParameter("@AggregateId", SqlDbType.UniqueIdentifier)
-        {
-            Value = ExtractAggregateId(streamId) is { } aggregateId ? aggregateId : DBNull.Value
-        });
-        parameters.Add(new SqlParameter("@Now", SqlDbType.DateTime2) { Value = DateTime.UtcNow });
-        parameters.Add(new SqlParameter("@HasExpected", SqlDbType.Bit) { Value = expectedVersion.HasValue });
-        parameters.Add(new SqlParameter("@Expected", SqlDbType.BigInt) { Value = expectedVersion ?? 0L });
-        parameters.Add(new SqlParameter("@IsDcb", SqlDbType.Bit) { Value = isDcb });
-        parameters.Add(new SqlParameter("@EventCount", SqlDbType.BigInt) { Value = envelopes.Count });
-        parameters.Add(new SqlParameter("@SequenceName", SqlDbType.NVarChar, 776) { Value = _qSequence });
-        parameters.Add(new SqlParameter("@PartitionHash", SqlDbType.Int)
-        {
-            Value = PartitionHashUtility.GetDeterministicHashCode(streamId)
-        });
-        parameters.Add(new SqlParameter("@NewTags", SqlDbType.NVarChar, -1)
-        {
-            Value = JsonSerializer.Serialize(UnionTags(envelopes), _jsonOptions)
-        });
-
-        var command = new SqlCommand(sql.ToString(), connection, transaction);
+        var connection = new SqlConnection(_connectionString);
+        await using var connectionDisposal = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        var command = new SqlCommand(
+            $"""
+            SET NOCOUNT ON;
+            IF NOT EXISTS (SELECT 1 FROM {_qRegistry} WHERE StreamId = @StreamId)
+            BEGIN
+                BEGIN TRY
+                    INSERT INTO {_qRegistry}
+                        (StreamKey, StreamId, TenantId, AggregateType, AggregateId, CurrentVersion, LastSequencePosition,
+                         CreatedAt, LastEventAt, EventCount, Tags, Status)
+                    VALUES
+                        (NEXT VALUE FOR {_qStreamKeySequence}, @StreamId, @TenantId, @AggregateType, NULL, -1, 0,
+                         @Now, @Now, 0, N'[]', N'{DcbStreamStatus}');
+                END TRY
+                BEGIN CATCH
+                    IF ERROR_NUMBER() NOT IN (2601, 2627)
+                        THROW;
+                END CATCH
+            END
+            """,
+            connection);
         await using var commandDisposal = command.ConfigureAwait(false);
-        command.Parameters.AddRange(parameters.ToArray());
-        var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        await using var readerDisposal = reader.ConfigureAwait(false);
-        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-            throw new InvalidOperationException("The append batch returned no result.");
-
-        var first = reader.GetInt64(reader.GetOrdinal("FirstPosition"));
-        var increment = reader.GetInt64(reader.GetOrdinal("Increment"));
-        var start = reader.GetInt64(reader.GetOrdinal("StartVersion"));
-        var eventTenant = reader.IsDBNull(reader.GetOrdinal("EventTenant"))
-            ? null
-            : reader.GetString(reader.GetOrdinal("EventTenant"));
-        if (increment < 1)
-            throw new InvalidOperationException("The event sequence increment must be a positive whole number.");
-
-        var positions = new long[envelopes.Count];
-        for (var i = 0; i < positions.Length; i++)
-            positions[i] = first + (i * increment);
-
-        var learned = new List<(string Tag, int Id)>(learnedTags.Count);
-        if (learnedTags.Count > 0)
-        {
-            if (!await reader.NextResultAsync(cancellationToken).ConfigureAwait(false))
-                throw new InvalidOperationException("The append batch did not return tag ids.");
-
-            var index = 0;
-            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-            {
-                if (index >= learnedTags.Count)
-                    break;
-                learned.Add((learnedTags[index].Text, reader.GetInt32(reader.GetOrdinal("TagId"))));
-                index++;
-            }
-
-            if (index != learnedTags.Count)
-                throw new InvalidOperationException("The append batch returned the wrong number of tag ids.");
-        }
-
-        var result = isDcb
-            ? new AppendResult(positions)
-            : new AppendResult(positions, null, start + envelopes.Count - 1);
-        return new AppendBatchOutcome(result, eventTenant, learned);
+        command.Parameters.Add(new SqlParameter("@StreamId", SqlDbType.NVarChar, 255) { Value = streamId });
+        command.Parameters.Add(new SqlParameter("@TenantId", SqlDbType.NVarChar, 100) { Value = (object?)tenantId ?? DBNull.Value });
+        command.Parameters.Add(new SqlParameter("@AggregateType", SqlDbType.NVarChar, 100) { Value = StreamId.DcbType });
+        command.Parameters.Add(new SqlParameter("@Now", SqlDbType.DateTime2) { Value = DateTime.UtcNow });
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        _dcbStreamRows.TryAdd(streamId, 0);
     }
 
     private static void AppendLockStatements(
@@ -334,9 +444,13 @@ public partial class SqlServerEventStore
         List<SqlParameter> parameters,
         IReadOnlyList<AppendEvent> envelopes,
         IReadOnlyList<Guid> eventIds,
-        IReadOnlyList<WrittenTag> writtenTags)
+        IReadOnlyList<WrittenTag> writtenTags,
+        bool isDcb)
     {
         const int eventsPerInsert = 200;
+        // An event in the dynamic consistency boundary stream takes its global position as its version.
+        var versionBase = isDcb ? "@first + " : "@start + ";
+        var versionStep = isDcb ? " * @increment" : string.Empty;
         for (var start = 0; start < envelopes.Count; start += eventsPerInsert)
         {
             var count = Math.Min(eventsPerInsert, envelopes.Count - start);
@@ -356,7 +470,7 @@ public partial class SqlServerEventStore
                 var index = i.ToString(CultureInfo.InvariantCulture);
                 if (n > 0)
                     sql.AppendLine(",");
-                sql.Append("(@StreamKey, @eventTenant, @start + ").Append(index)
+                sql.Append("(@StreamKey, @eventTenant, ").Append(versionBase).Append(index).Append(versionStep)
                     .Append(", @first + ").Append(index).Append(" * @increment, @EvType").Append(index)
                     .Append(", @EvPayload").Append(index)
                     .Append(", @EvSchema").Append(index)

@@ -85,6 +85,24 @@ internal static class EventLogBuffers
         return streamId;
     }
 
+    /// <summary>
+    /// Refuses the reserved dynamic consistency boundary stream for a direct stream read.
+    /// Its events are read with tag and type queries.
+    /// </summary>
+    internal static StreamId RequireReadableStreamId(StreamId streamId)
+    {
+        RequireStreamId(streamId);
+        if (streamId.IsDcb)
+        {
+            throw new ArgumentException(
+                $"Stream '{streamId}' is the dynamic consistency boundary stream and cannot be read directly. " +
+                "Read its events with ReadByQueryAsync and a tag or type query.",
+                nameof(streamId));
+        }
+
+        return streamId;
+    }
+
     internal static Tag RequireTag(Tag tag)
     {
         if (tag.IsDefault)

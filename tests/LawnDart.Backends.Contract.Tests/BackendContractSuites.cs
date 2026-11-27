@@ -71,6 +71,29 @@ public sealed class PostgresDcbContractTests : DcbContractTests
 
 [Collection(InMemoryContractCollection.Name)]
 [Trait("Category", "Contract")]
+public sealed class InMemoryDcbStreamContractTests : DcbStreamContractTests
+{
+    public InMemoryDcbStreamContractTests(InMemoryContractFixture fixture) : base(fixture.Backend) { }
+}
+
+[Collection("SqlServerContract")]
+[Trait("Category", "Integration")]
+[Trait("Category", "Contract")]
+public sealed class SqlServerDcbStreamContractTests : DcbStreamContractTests
+{
+    public SqlServerDcbStreamContractTests(SqlServerContractFixture fixture) : base(fixture.Backend) { }
+}
+
+[Collection("PostgresContract")]
+[Trait("Category", "Integration")]
+[Trait("Category", "Contract")]
+public sealed class PostgresDcbStreamContractTests : DcbStreamContractTests
+{
+    public PostgresDcbStreamContractTests(PostgresContractFixture fixture) : base(fixture.Backend) { }
+}
+
+[Collection(InMemoryContractCollection.Name)]
+[Trait("Category", "Contract")]
 public sealed class InMemoryDcbEntityTagContractTests : DcbEntityTagContractTests
 {
     public InMemoryDcbEntityTagContractTests(InMemoryContractFixture fixture) : base(fixture.Backend) { }

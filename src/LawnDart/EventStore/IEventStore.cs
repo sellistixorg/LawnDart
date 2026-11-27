@@ -17,6 +17,10 @@ public interface IEventStore : IStreamRegistry
     /// <param name="toTimestamp">Optional. Include only events with <see cref="EventMetadata.Timestamp"/> &lt;= this value (inclusive). Null means no temporal limit.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>List of sequenced events in version order.</returns>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="streamId"/> is the dynamic consistency boundary stream (<see cref="StreamId.IsDcb"/>).
+    /// Read those events with <see cref="ReadByQueryAsync"/>.
+    /// </exception>
     Task<IReadOnlyList<SequencedEvent>> ReadStreamAsync(
         StreamId streamId,
         long fromVersion = 0,
@@ -34,6 +38,10 @@ public interface IEventStore : IStreamRegistry
     /// <param name="toTimestamp">Optional. Include only events with <see cref="EventMetadata.Timestamp"/> &lt;= this value (inclusive). Null means no temporal limit.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Async sequence of sequenced events in version order.</returns>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="streamId"/> is the dynamic consistency boundary stream (<see cref="StreamId.IsDcb"/>).
+    /// Read those events with <see cref="ReadByQueryStreamAsync"/>.
+    /// </exception>
     IAsyncEnumerable<SequencedEvent> ReadStreamEnumerableAsync(
         StreamId streamId,
         long fromVersion = 0,
@@ -90,6 +98,11 @@ public interface IEventStore : IStreamRegistry
     /// One call is one atomic write: every event is written, or none is. Tags are taken from
     /// each <see cref="TaggedEvent"/>; there is no tag list for the whole call. For events with no
     /// tags, <see cref="EventStoreAppendExtensions"/> takes plain events.
+    /// <para>
+    /// Appending to the dynamic consistency boundary stream (<see cref="StreamId.Dcb(string?)"/>)
+    /// is a dynamic consistency boundary append with no condition. <paramref name="expectedVersion"/>
+    /// must then be <see langword="null"/>; use an <see cref="AppendCondition"/> for concurrency.
+    /// </para>
     /// </remarks>
     /// <param name="streamId">The stream identifier.</param>
     /// <param name="events">Events to append, each with its own tags.</param>

@@ -17,11 +17,18 @@ namespace LawnDart.EventStore;
 /// </para>
 /// <para>
 /// Rules: type and id are non-empty and have no leading or trailing whitespace; a tenant, when
-/// present, follows the same rule. Tenant and type may not contain colons. In the three-part
-/// form the id is the remainder after the type, so it may contain colons. In the two-part form
-/// the id may not contain a colon (the text would read back as a three-part id), and the id may
-/// not be <c>dcb</c> (that text is the tenant's reserved stream). The canonical text is at most
+/// present, follows the same rule. Tenant and type may not contain colons. Type <c>dcb</c> is
+/// reserved for the dynamic consistency boundary stream. In the three-part form the id is the
+/// remainder after the type, so it may contain colons. In the two-part form the id may not
+/// contain a colon (the text would read back as a three-part id), and the id may not be
+/// <c>dcb</c> (that text is the tenant's reserved stream). The canonical text is at most
 /// <see cref="MaxLength"/> characters. Comparison is ordinal and case sensitive.
+/// </para>
+/// <para>
+/// The dynamic consistency boundary stream holds every event written by a dynamic consistency
+/// boundary append (one stream per tenant). Its events are read with tag and type queries; a direct stream read
+/// of it is refused. Its stream versions only increase; rely on
+/// <see cref="SequencedEvent.SequencePosition"/>, not on the version.
 /// </para>
 /// </remarks>
 [JsonConverter(typeof(StreamIdJsonConverter))]
@@ -69,7 +76,7 @@ public readonly struct StreamId : IEquatable<StreamId>, IComparable<StreamId>
     private int TypeStart => _tenantLength < 0 ? 0 : _tenantLength + 1;
 
     /// <summary>Builds a stream id with no tenant: <c>{type}:{id}</c>.</summary>
-    /// <param name="type">Stream type. No colons, no leading or trailing whitespace.</param>
+    /// <param name="type">Stream type. No colons, no leading or trailing whitespace, not <c>dcb</c>.</param>
     /// <param name="id">Stream id. No colons, no leading or trailing whitespace, not <c>dcb</c>.</param>
     /// <exception cref="ArgumentException">A part breaks the stream id rules.</exception>
     public static StreamId For(string type, string id)
@@ -84,7 +91,7 @@ public readonly struct StreamId : IEquatable<StreamId>, IComparable<StreamId>
 
     /// <summary>Builds a stream id with a tenant: <c>{tenant}:{type}:{id}</c>.</summary>
     /// <param name="tenantId">Tenant. No colons, no leading or trailing whitespace.</param>
-    /// <param name="type">Stream type. No colons, no leading or trailing whitespace.</param>
+    /// <param name="type">Stream type. No colons, no leading or trailing whitespace, not <c>dcb</c>.</param>
     /// <param name="id">Stream id. No leading or trailing whitespace. May contain colons.</param>
     /// <exception cref="ArgumentException">A part breaks the stream id rules.</exception>
     public static StreamId For(string tenantId, string type, string id)
@@ -248,6 +255,9 @@ public readonly struct StreamId : IEquatable<StreamId>, IComparable<StreamId>
 
         if (ValidatePart(type, "Type", allowColon: false) is { } typeError)
             return (Part.Type, typeError);
+
+        if (type.SequenceEqual(DcbType))
+            return (Part.Type, "Type 'dcb' is reserved for the dynamic consistency boundary stream. Use StreamId.Dcb.");
 
         if (!hasTenant && id.Contains(':'))
             return (Part.Id, "Id may not contain a colon in a stream id with no tenant (it would read back as {tenant}:{type}:{id}).");

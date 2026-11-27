@@ -78,6 +78,38 @@ internal static class AppendTenantRules
         }
     }
 
+    /// <summary>
+    /// Checks a stream append that names the dynamic consistency boundary stream
+    /// (<c>dcb</c> or <c>{tenant}:dcb</c>). That append is a dynamic consistency boundary
+    /// append with no condition. Returns the tenant the events are stored under.
+    /// </summary>
+    public static string? ValidateDcbStreamAppend(
+        StreamId streamId,
+        IReadOnlyList<AppendEvent> envelopes,
+        long? expectedVersion,
+        Tenancy tenancy,
+        string? singleTenantId,
+        bool validateNames)
+    {
+        if (expectedVersion.HasValue)
+        {
+            throw new ArgumentException(
+                $"Stream '{streamId}' is the dynamic consistency boundary stream. Its versions only increase and " +
+                "cannot be an expected version. Append with an AppendCondition instead.",
+                nameof(expectedVersion));
+        }
+
+        if (tenancy == Tenancy.Shared && streamId.TenantId is null)
+        {
+            throw new ArgumentException(
+                "In Tenancy.Shared mode, the dynamic consistency boundary stream must name a tenant: StreamId.Dcb(tenantId).",
+                nameof(streamId));
+        }
+
+        ValidateStreamAppend(streamId, envelopes, tenancy, singleTenantId, validateNames);
+        return tenancy == Tenancy.Shared ? streamId.TenantId : singleTenantId;
+    }
+
     public static (string? StorageTenant, string? ConditionTenant) ValidateDcbAppend(
         string? metadataTenantId,
         AppendCondition condition,

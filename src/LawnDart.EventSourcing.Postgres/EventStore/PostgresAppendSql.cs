@@ -10,10 +10,10 @@ internal static class PostgresAppendSql
     internal const string BodyMarkerPrefix = "LawnDart:append_to_stream:";
 
     /// <summary>Marker version written into <c>append_to_stream</c>. A later number is a different body.</summary>
-    internal const int BodyMarkerVersion = 2;
+    internal const int BodyMarkerVersion = 3;
 
     /// <summary>Text written into <c>append_to_stream</c> so a later read can tell this body from an older one.</summary>
-    internal const string BodyMarker = BodyMarkerPrefix + "2";
+    internal const string BodyMarker = BodyMarkerPrefix + "3";
 
     internal static string ExpectedProsrc(PostgresNames names, PostgresEventStoreOptions options)
         => PostgresSchemaProbe.DollarBody(CreateFunction(names, options), "$fn$");
@@ -184,50 +184,55 @@ internal static class PostgresAppendSql
                     END IF;
                 END IF;
 
-                -- Baseline is the caller's expected version, or the version visible
-                -- before this upsert. A second writer that saw the same baseline
-                -- waits on the row, then fails here, before any sequence number is taken.
-                IF p_expected IS NULL THEN
-                    SELECT current_version INTO v_baseline
-                    FROM {names.Streams}
-                    WHERE tenant_id = p_tenant_id AND stream_id = p_stream_id;
-                    IF NOT FOUND THEN
-                        v_baseline := -1;
+                -- A dynamic consistency boundary append writes to the tenant's fixed
+                -- stream and never touches the streams table, so concurrent appends do
+                -- not queue on one row. Each event's version is its global position.
+                IF NOT p_is_dcb THEN
+                    -- Baseline is the caller's expected version, or the version visible
+                    -- before this upsert. A second writer that saw the same baseline
+                    -- waits on the row, then fails here, before any sequence number is taken.
+                    IF p_expected IS NULL THEN
+                        SELECT current_version INTO v_baseline
+                        FROM {names.Streams}
+                        WHERE tenant_id = p_tenant_id AND stream_id = p_stream_id;
+                        IF NOT FOUND THEN
+                            v_baseline := -1;
+                        END IF;
+                    ELSE
+                        v_baseline := p_expected;
                     END IF;
-                ELSE
-                    v_baseline := p_expected;
-                END IF;
 
-                INSERT INTO {names.Streams} AS s (
-                    tenant_id, stream_id, aggregate_type, aggregate_id,
-                    current_version, last_global_position, created_at, last_event_at,
-                    event_count, tags, status)
-                VALUES (
-                    p_tenant_id, p_stream_id, p_aggregate_type, p_aggregate_id,
-                    -1, 0, p_recorded_at, p_recorded_at,
-                    0, ARRAY[]::text[], 'Active')
-                ON CONFLICT (tenant_id, stream_id) DO UPDATE
-                    SET current_version = s.current_version
-                    WHERE s.current_version = v_baseline
-                RETURNING s.current_version, s.event_count
-                INTO v_current, v_count;
+                    INSERT INTO {names.Streams} AS s (
+                        tenant_id, stream_id, aggregate_type, aggregate_id,
+                        current_version, last_global_position, created_at, last_event_at,
+                        event_count, tags, status)
+                    VALUES (
+                        p_tenant_id, p_stream_id, p_aggregate_type, p_aggregate_id,
+                        -1, 0, p_recorded_at, p_recorded_at,
+                        0, ARRAY[]::text[], 'Active')
+                    ON CONFLICT (tenant_id, stream_id) DO UPDATE
+                        SET current_version = s.current_version
+                        WHERE s.current_version = v_baseline
+                    RETURNING s.current_version, s.event_count
+                    INTO v_current, v_count;
 
-                IF NOT FOUND THEN
-                    SELECT current_version INTO v_actual
-                    FROM {names.Streams}
-                    WHERE tenant_id = p_tenant_id AND stream_id = p_stream_id;
                     IF NOT FOUND THEN
-                        v_actual := -1;
+                        SELECT current_version INTO v_actual
+                        FROM {names.Streams}
+                        WHERE tenant_id = p_tenant_id AND stream_id = p_stream_id;
+                        IF NOT FOUND THEN
+                            v_actual := -1;
+                        END IF;
+                        RAISE EXCEPTION 'concurrency'
+                            USING ERRCODE = 'P0001', HINT = 'concurrency',
+                                  DETAIL = v_baseline::text || ':' || v_actual::text;
                     END IF;
-                    RAISE EXCEPTION 'concurrency'
-                        USING ERRCODE = 'P0001', HINT = 'concurrency',
-                              DETAIL = v_baseline::text || ':' || v_actual::text;
-                END IF;
 
-                IF v_count = 0 AND p_expected IS NOT NULL AND p_expected <> -1 THEN
-                    RAISE EXCEPTION 'concurrency'
-                        USING ERRCODE = 'P0001', HINT = 'concurrency',
-                              DETAIL = p_expected::text || ':-1';
+                    IF v_count = 0 AND p_expected IS NOT NULL AND p_expected <> -1 THEN
+                        RAISE EXCEPTION 'concurrency'
+                            USING ERRCODE = 'P0001', HINT = 'concurrency',
+                                  DETAIL = p_expected::text || ':-1';
+                    END IF;
                 END IF;
 
                 v_n := coalesce(array_length(p_event_ids, 1), 0);
@@ -258,7 +263,7 @@ internal static class PostgresAppendSql
                     SELECT
                         p_tenant_id,
                         p_stream_id,
-                        v_start + u.ord - 1,
+                        CASE WHEN p_is_dcb THEN v_positions[u.ord] ELSE v_start + u.ord - 1 END,
                         v_positions[u.ord],
                         u.event_id,
                         u.type_id,
@@ -302,23 +307,25 @@ internal static class PostgresAppendSql
                         END IF;
                 END;
 
-                UPDATE {names.Streams} AS s
-                SET current_version = v_start + v_n - 1,
-                    last_global_position = v_positions[v_n],
-                    last_event_at = p_recorded_at,
-                    event_count = s.event_count + v_n,
-                    tags = (
-                        SELECT CASE WHEN count(*) = 0 THEN NULL ELSE array_agg(DISTINCT t) END
-                        FROM unnest(coalesce(s.tags, ARRAY[]::text[]) || coalesce(p_stream_tags, ARRAY[]::text[])) AS t
-                    )
-                WHERE s.tenant_id = p_tenant_id AND s.stream_id = p_stream_id;
+                IF NOT p_is_dcb THEN
+                    UPDATE {names.Streams} AS s
+                    SET current_version = v_start + v_n - 1,
+                        last_global_position = v_positions[v_n],
+                        last_event_at = p_recorded_at,
+                        event_count = s.event_count + v_n,
+                        tags = (
+                            SELECT CASE WHEN count(*) = 0 THEN NULL ELSE array_agg(DISTINCT t) END
+                            FROM unnest(coalesce(s.tags, ARRAY[]::text[]) || coalesce(p_stream_tags, ARRAY[]::text[])) AS t
+                        )
+                    WHERE s.tenant_id = p_tenant_id AND s.stream_id = p_stream_id;
+                END IF;
 
                 IF p_notify THEN
                     PERFORM pg_notify(p_notify_channel, v_positions[v_n]::text);
                 END IF;
 
                 RETURN QUERY
-                SELECT v_positions[g], (v_start + g - 1)::bigint
+                SELECT v_positions[g], CASE WHEN p_is_dcb THEN v_positions[g] ELSE (v_start + g - 1)::bigint END
                 FROM generate_series(1, v_n) AS g;
             END;
             $fn$;

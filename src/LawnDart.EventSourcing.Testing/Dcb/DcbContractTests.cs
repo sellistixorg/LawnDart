@@ -168,7 +168,7 @@ public abstract class DcbContractTests : ContractSuite
     }
 
     [Fact]
-    public async Task AppendAsync_WithDcbCondition_UsesOpaqueDcbStreamId()
+    public async Task AppendAsync_WithDcbCondition_UsesTenantDcbStream()
     {
         var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var append = await store.AppendAsync(
@@ -177,7 +177,7 @@ public abstract class DcbContractTests : ContractSuite
             metadata: new EventMetadata { TenantId = "tenant-opaque" });
         var read = await store.ReadByQueryAsync(Query.All().ForTenant("tenant-opaque"), fromSequencePosition: append.SequencePositions[0], limit: 1);
         var evt = Assert.Single(read.Events);
-        Assert.StartsWith("tenant-opaque:dcb:", evt.StreamId.ToString());
+        Assert.Equal(StreamId.Dcb("tenant-opaque"), evt.StreamId);
     }
 
     [Fact]
@@ -201,7 +201,7 @@ public abstract class DcbContractTests : ContractSuite
             metadata: new EventMetadata { TenantId = "default" });
         var read = await store.ReadByQueryAsync(Query.All().ForTenant("default"), fromSequencePosition: append.SequencePositions[0], limit: 1);
         var evt = Assert.Single(read.Events);
-        Assert.StartsWith("default:dcb:", evt.StreamId.ToString());
+        Assert.Equal(StreamId.Dcb("default"), evt.StreamId);
     }
 
     [Fact]

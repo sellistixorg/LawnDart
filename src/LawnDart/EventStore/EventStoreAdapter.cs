@@ -70,6 +70,7 @@ public sealed class EventStoreAdapter : IEventStore, IEventStoreSubscriptions
         DateTime? toTimestamp = null,
         CancellationToken cancellationToken = default)
     {
+        EventLogBuffers.RequireReadableStreamId(streamId);
         var frames = await _log.ReadStreamAsync(
             streamId, fromVersion, toVersion, toCommitTimestamp: null, cancellationToken)
             .ConfigureAwait(false);
@@ -84,6 +85,7 @@ public sealed class EventStoreAdapter : IEventStore, IEventStoreSubscriptions
         DateTime? toTimestamp = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        EventLogBuffers.RequireReadableStreamId(streamId);
         await foreach (var frame in _log.ReadStreamEnumerableAsync(
             streamId, fromVersion, toVersion, toCommitTimestamp: null, cancellationToken)
             .ConfigureAwait(false))
