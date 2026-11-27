@@ -75,4 +75,16 @@ internal static partial class PostgresEventStoreLog
         Level = LogLevel.Warning,
         Message = "The Postgres connection was closed before the append was saved. That connection was dropped, and the append will be tried once more.")]
     internal static partial void AppendConnectionClosed(ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 14,
+        Level = LogLevel.Warning,
+        Message = "Creating events position ranges ahead of position {Position} failed. Appends still create the range they need. The next try is in {PauseSeconds} seconds.")]
+    internal static partial void PartitionsAheadFailed(ILogger logger, Exception exception, long position, int pauseSeconds);
+
+    [LoggerMessage(
+        EventId = 15,
+        Level = LogLevel.Debug,
+        Message = "Creating events position ranges ahead of position {Position} made no progress; the position sequence is behind it. The next try is in {PauseSeconds} seconds.")]
+    internal static partial void PartitionsAheadNoProgress(ILogger logger, long position, int pauseSeconds);
 }

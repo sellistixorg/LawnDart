@@ -136,7 +136,7 @@ public sealed class PostgresOutboxInboxTests
             await using var format = new NpgsqlCommand(
                 $"SELECT format FROM {quoted}.schema_info WHERE component = 'events'",
                 connection);
-            Assert.Equal(1, Convert.ToInt32(await format.ExecuteScalarAsync()));
+            Assert.Equal(PostgresEventStore.CurrentSchemaFormat, Convert.ToInt32(await format.ExecuteScalarAsync()));
 
             await using var args = new NpgsqlCommand(
                 """
@@ -155,7 +155,7 @@ public sealed class PostgresOutboxInboxTests
                     counts.Add(reader.GetInt32(0));
             }
 
-            Assert.Equal(new[] { 35 }, counts);
+            Assert.Equal(new[] { 36 }, counts);
 
             await using var options = new NpgsqlCommand(
                 """
@@ -197,7 +197,7 @@ public sealed class PostgresOutboxInboxTests
             SELECT pg_get_functiondef(p.oid)
             FROM pg_proc p
             JOIN pg_namespace n ON n.oid = p.pronamespace
-            WHERE n.nspname = @schema AND p.proname = 'append_to_stream' AND p.pronargs = 35
+            WHERE n.nspname = @schema AND p.proname = 'append_to_stream' AND p.pronargs = 36
             """,
             connection))
         {
@@ -238,7 +238,7 @@ public sealed class PostgresOutboxInboxTests
             await rebuild.ExecuteNonQueryAsync();
         }
 
-        Assert.Equal(new[] { 35 }, await AppendFunctionArgumentCountsAsync(connection, schema));
+        Assert.Equal(new[] { 36 }, await AppendFunctionArgumentCountsAsync(connection, schema));
 
         var streamId = "acme:Order:" + Guid.NewGuid().ToString("N");
         await store.AppendAsync(StreamId.Parse(streamId), [ContractEvent.Tick()]);
@@ -269,7 +269,7 @@ public sealed class PostgresOutboxInboxTests
 
         await using var check = new NpgsqlConnection(_fixture.AdminConnectionString);
         await check.OpenAsync();
-        Assert.Equal(new[] { 35 }, await AppendFunctionArgumentCountsAsync(check, store.SchemaName));
+        Assert.Equal(new[] { 36 }, await AppendFunctionArgumentCountsAsync(check, store.SchemaName));
 
         var streamId = "acme:Order:" + Guid.NewGuid().ToString("N");
         await store.AppendAsync(StreamId.Parse(streamId), [ContractEvent.Tick()]);
@@ -279,7 +279,9 @@ public sealed class PostgresOutboxInboxTests
     [Fact]
     public async Task EventStore_InitializesAfterInboxInTheSameSchema()
     {
-        var schema = "lawndart";
+        // A schema of its own: the shared default schema may already be stamped
+        // with another range size by a store opened outside this backend.
+        var schema = "c" + Guid.NewGuid().ToString("N");
         await _fixture.Backend.OpenInboxAsync(new ContractStoreOptions { SchemaName = schema, Tenancy = Tenancy.Shared });
         var opened = await _fixture.Backend.OpenEventStoreAsync(Publishing(schema));
         var streamId = "acme:Order:" + Guid.NewGuid().ToString("N");

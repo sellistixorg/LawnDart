@@ -10,12 +10,18 @@ Two flags change what an append means.
 |---|---|---|
 | In-memory | Yes. The same event id on a second tenant throws `EventAlreadyAppendedException`. | No. `acme:Order:1` and `acme:order:1` are different streams. |
 | SQL Server | No, while the outbox is off. The same event id on two tenants is two rows. A repeated id in one tenant throws `EventAlreadyAppendedException`. | Yes, on the databases the contract tests use. A default database matches without regard to case. The match follows the database collation. |
-| Postgres | No, while the outbox is off. The same event id on two tenants is two rows. A repeated id in one tenant throws `EventAlreadyAppendedException`. | No. Stream ids use the `C` collation. `acme:Order:1` and `acme:order:1` are different streams. |
+| Postgres | No, while the outbox is off. Event ids are not unique at all: the same event id on two streams is two rows, in one tenant or two. | No. Stream ids use the `C` collation. `acme:Order:1` and `acme:order:1` are different streams. |
 
 With the Postgres outbox on, the outbox row id is the source event id, so
 that id is unique in the schema. The same event id on two tenants then throws
 `EventAlreadyAppendedException`. The SQL Server outbox uses that same row id,
 so the same event id on two tenants throws there too when the outbox is on.
+
+A third flag, `AllowsDuplicateEventIds`, is true for Postgres only. There the
+same event id on two appends is two rows, and the contract tests that expect a
+repeated id to throw take the other branch. On Postgres an unconditional append
+retried after a lost reply can be saved twice. Use an expected version or a
+condition to make retries safe.
 
 Tags match exactly, including case, on every store.
 

@@ -23,7 +23,7 @@ public sealed class PostgresStoreBenchmarks(ITestOutputHelper output)
     private static readonly TimeSpan PartitionWindow = TimeSpan.FromSeconds(2);
 
     [Fact]
-    public async Task Appends_WakeUp_SubscriptionDelay_AndPartitionCounts()
+    public async Task Appends_WakeUp_SubscriptionDelay_AndRangeSizes()
     {
         var postgres = new PostgreSqlBuilder(PostgresTestImage.Version18)
             .WithDatabase("lawndart")
@@ -39,17 +39,17 @@ public sealed class PostgresStoreBenchmarks(ITestOutputHelper output)
         {
             var connectionString = postgres.GetConnectionString();
 
-            await RequireAppendsAsync(connectionString, "append1", partitionCount: 8, notify: true, batchSize: 1, Warmup, Window, "single event, 8 buckets");
-            await RequireAppendsAsync(connectionString, "append10", partitionCount: 8, notify: true, batchSize: 10, Warmup, Window, "10 events, 8 buckets");
+            await RequireAppendsAsync(connectionString, "append1", rangeSize: PostgresEventStoreOptions.DefaultPartitionSize, notify: true, batchSize: 1, Warmup, Window, "single event");
+            await RequireAppendsAsync(connectionString, "append10", rangeSize: PostgresEventStoreOptions.DefaultPartitionSize, notify: true, batchSize: 10, Warmup, Window, "10 events");
 
-            await RequireAppendsAsync(connectionString, "notifyon", partitionCount: 8, notify: true, batchSize: 1, Warmup, Window, "wake-up on");
-            await RequireAppendsAsync(connectionString, "notifyoff", partitionCount: 8, notify: false, batchSize: 1, Warmup, Window, "wake-up off");
+            await RequireAppendsAsync(connectionString, "notifyon", rangeSize: PostgresEventStoreOptions.DefaultPartitionSize, notify: true, batchSize: 1, Warmup, Window, "wake-up on");
+            await RequireAppendsAsync(connectionString, "notifyoff", rangeSize: PostgresEventStoreOptions.DefaultPartitionSize, notify: false, batchSize: 1, Warmup, Window, "wake-up off");
 
             await RequireSubscriptionDelayAsync(connectionString);
 
-            await RequirePartitionCountAsync(connectionString, "part1", 1);
-            await RequirePartitionCountAsync(connectionString, "part8", 8);
-            await RequirePartitionCountAsync(connectionString, "part64", 64);
+            await RequireRangeSizeAsync(connectionString, "range10k", 10_000);
+            await RequireRangeSizeAsync(connectionString, "range100m", PostgresEventStoreOptions.DefaultPartitionSize);
+            await RequireRangeSizeAsync(connectionString, "rangeoff", null);
         }
         finally
         {
@@ -57,25 +57,25 @@ public sealed class PostgresStoreBenchmarks(ITestOutputHelper output)
         }
     }
 
-    private async Task RequirePartitionCountAsync(string connectionString, string schema, int partitionCount)
+    private async Task RequireRangeSizeAsync(string connectionString, string schema, long? rangeSize)
     {
-        var store = await OpenAsync(connectionString, schema, partitionCount, notify: true);
-        var buckets = await CountHashBucketsAsync(connectionString, schema);
-        Assert.Equal(partitionCount, buckets);
-        await RequireAppendsOnStoreAsync(store, batchSize: 1, PartitionWarmup, PartitionWindow, $"{partitionCount} buckets");
+        var store = await OpenAsync(connectionString, schema, rangeSize, notify: true);
+        var ranges = await CountRangesAsync(connectionString, schema);
+        Assert.Equal(rangeSize is null ? 0 : 3, ranges);
+        await RequireAppendsOnStoreAsync(store, batchSize: 1, PartitionWarmup, PartitionWindow, rangeSize is null ? "ranges off" : $"ranges of {rangeSize}");
     }
 
     private async Task RequireAppendsAsync(
         string connectionString,
         string schema,
-        int partitionCount,
+        long? rangeSize,
         bool notify,
         int batchSize,
         TimeSpan warmup,
         TimeSpan window,
         string label)
     {
-        var store = await OpenAsync(connectionString, schema, partitionCount, notify);
+        var store = await OpenAsync(connectionString, schema, rangeSize, notify);
         await RequireAppendsOnStoreAsync(store, batchSize, warmup, window, label);
     }
 
@@ -111,7 +111,7 @@ public sealed class PostgresStoreBenchmarks(ITestOutputHelper output)
 
     private async Task RequireSubscriptionDelayAsync(string connectionString)
     {
-        var store = await OpenAsync(connectionString, "subdelay", partitionCount: 8, notify: true);
+        var store = await OpenAsync(connectionString, "subdelay", rangeSize: PostgresEventStoreOptions.DefaultPartitionSize, notify: true);
         var payload = "{}"u8.ToArray();
         await using var handle = ((IEventLogSubscriptions)store).Subscribe("bench-sub", fromSequence: 1);
 
@@ -139,7 +139,7 @@ public sealed class PostgresStoreBenchmarks(ITestOutputHelper output)
     private static async Task<PostgresEventStore> OpenAsync(
         string connectionString,
         string schema,
-        int partitionCount,
+        long? rangeSize,
         bool notify)
     {
         var store = new PostgresEventStore(connectionString, options: new PostgresEventStoreOptions
@@ -148,7 +148,8 @@ public sealed class PostgresStoreBenchmarks(ITestOutputHelper output)
             SchemaName = schema,
             ContextName = schema,
             Tenancy = Tenancy.Single,
-            PartitionCount = partitionCount,
+            PositionPartitioning = rangeSize is not null,
+            PartitionSize = rangeSize ?? PostgresEventStoreOptions.DefaultPartitionSize,
             NotifyOnAppend = notify,
             BackupPollInterval = TimeSpan.FromSeconds(30)
         });
@@ -156,7 +157,7 @@ public sealed class PostgresStoreBenchmarks(ITestOutputHelper output)
         return store;
     }
 
-    private static async Task<int> CountHashBucketsAsync(string connectionString, string schema)
+    private static async Task<int> CountRangesAsync(string connectionString, string schema)
     {
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
@@ -166,7 +167,7 @@ public sealed class PostgresStoreBenchmarks(ITestOutputHelper output)
             FROM pg_catalog.pg_inherits AS i
             JOIN pg_catalog.pg_class AS parent ON parent.oid = i.inhparent
             JOIN pg_catalog.pg_namespace AS ns ON ns.oid = parent.relnamespace
-            WHERE ns.nspname = @schema AND parent.relname = 'events_shared'
+            WHERE ns.nspname = @schema AND parent.relname = 'events'
             """,
             connection);
         command.Parameters.AddWithValue("schema", schema);

@@ -207,7 +207,8 @@ public sealed class PostgresAppendClosureTests
     [Theory]
     [InlineData(PostgresClosureProxy.Mode.BeforeAppendReachesServer)]
     [InlineData(PostgresClosureProxy.Mode.AfterCommit)]
-    public async Task ForeignEventId_Closure_DoesNotReturnTheOtherStream(PostgresClosureProxy.Mode mode)
+    [InlineData(PostgresClosureProxy.Mode.DropReply)]
+    public async Task ForeignEventId_Closure_SavesOnce_AndDoesNotReturnTheOtherStream(PostgresClosureProxy.Mode mode)
     {
         await using var harness = await StartProxiedPostgresAsync(mode);
         var opened = await OpenStoreAsync(harness.ProxyConnectionString, logger: null);
@@ -215,38 +216,23 @@ public sealed class PostgresAppendClosureTests
         var envelope = Envelope(id);
         var held = "Order:" + Guid.NewGuid().ToString("N");
         var other = "Order:" + Guid.NewGuid().ToString("N");
-        await opened.Store.AppendAsync(StreamId.Parse(held), [envelope]);
+        var first = await opened.Store.AppendAsync(StreamId.Parse(held), [envelope]);
         harness.Proxy.Arm();
 
-        var ex = await Assert.ThrowsAsync<EventAlreadyAppendedException>(() => opened.Store.AppendAsync(StreamId.Parse(other), [envelope]));
-        Assert.Equal(id, ex.EventId);
+        // Event ids are not unique on Postgres, so the same id on another stream is a new event.
+        var second = await opened.Store.AppendAsync(StreamId.Parse(other), [envelope]);
+        Assert.True(second.SequencePositions[0] > first.SequencePositions[0]);
+        Assert.Equal(1, second.LastStreamVersion);
         Assert.Equal(1, await CountRowsAsync(harness.DirectConnectionString, opened.SchemaName, held));
-        Assert.Equal(0, await CountRowsAsync(harness.DirectConnectionString, opened.SchemaName, other));
-    }
-
-    [Fact]
-    public async Task ForeignEventId_DroppedReply_DoesNotReturnTheOtherStream()
-    {
-        await using var harness = await StartProxiedPostgresAsync(PostgresClosureProxy.Mode.DropReply);
-        var opened = await OpenStoreAsync(harness.ProxyConnectionString, logger: null);
-        var id = Guid.NewGuid();
-        var envelope = Envelope(id);
-        var held = "Order:" + Guid.NewGuid().ToString("N");
-        var other = "Order:" + Guid.NewGuid().ToString("N");
-        await opened.Store.AppendAsync(StreamId.Parse(held), [envelope]);
-        harness.Proxy.Arm();
-
-        var ex = await Assert.ThrowsAsync<EventAlreadyAppendedException>(() => opened.Store.AppendAsync(StreamId.Parse(other), [envelope]));
-        Assert.Equal(id, ex.EventId);
-        Assert.Equal(1, await CountRowsAsync(harness.DirectConnectionString, opened.SchemaName, held));
-        Assert.Equal(0, await CountRowsAsync(harness.DirectConnectionString, opened.SchemaName, other));
+        Assert.Equal(1, await CountRowsAsync(harness.DirectConnectionString, opened.SchemaName, other));
+        Assert.Equal(2, await CountEventIdAsync(harness.DirectConnectionString, opened.SchemaName, id));
     }
 
     [Theory]
     [InlineData(PostgresClosureProxy.Mode.BeforeAppendReachesServer)]
     [InlineData(PostgresClosureProxy.Mode.AfterCommit)]
     [InlineData(PostgresClosureProxy.Mode.DropReply)]
-    public async Task ForeignIdPlusNewId_DoesNotSaveTheBatch(PostgresClosureProxy.Mode mode)
+    public async Task ForeignIdPlusNewId_SavesTheBatchOnce(PostgresClosureProxy.Mode mode)
     {
         await using var harness = await StartProxiedPostgresAsync(mode);
         var opened = await OpenStoreAsync(harness.ProxyConnectionString, logger: null);
@@ -257,12 +243,12 @@ public sealed class PostgresAppendClosureTests
         await opened.Store.AppendAsync(StreamId.Parse(held), [Envelope(heldId)]);
         harness.Proxy.Arm();
 
-        var ex = await Assert.ThrowsAsync<EventAlreadyAppendedException>(() =>
-            opened.Store.AppendAsync(StreamId.Parse(other), [Envelope(heldId), Envelope(freshId)]));
-        Assert.Equal(heldId, ex.EventId);
+        var saved = await opened.Store.AppendAsync(StreamId.Parse(other), [Envelope(heldId), Envelope(freshId)]);
+        Assert.Equal(2, saved.SequencePositions.Count);
+        Assert.Equal(2, saved.LastStreamVersion);
         Assert.Equal(1, await CountRowsAsync(harness.DirectConnectionString, opened.SchemaName, held));
-        Assert.Equal(0, await CountRowsAsync(harness.DirectConnectionString, opened.SchemaName, other));
-        Assert.Equal(0, await CountEventIdAsync(harness.DirectConnectionString, opened.SchemaName, freshId));
+        Assert.Equal(2, await CountRowsAsync(harness.DirectConnectionString, opened.SchemaName, other));
+        Assert.Equal(1, await CountEventIdAsync(harness.DirectConnectionString, opened.SchemaName, freshId));
     }
 
     private static async Task<int> CountEventIdAsync(string connectionString, string schema, Guid eventId)

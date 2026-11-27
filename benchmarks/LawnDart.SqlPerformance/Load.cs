@@ -38,10 +38,22 @@ internal static class StoreFactory
         EnableOutbox = false,
         EnableStreamRegistry = true,
         NotifyOnAppend = true,
-        Partitioning = true,
-        PartitionCount = 8,
+        PartitionSize = PgPartitionSize(),
         ReadHorizonGracePeriod = TimeSpan.FromMinutes(5)
     };
+
+    /// <summary>
+    /// Events range size for Postgres runs. <c>LAWNDART_SQLPERF_PG_PARTITION_SIZE</c> sets a smaller size
+    /// so reads cross ranges; the default is the store default.
+    /// </summary>
+    public static long PgPartitionSize()
+        => long.TryParse(
+            Environment.GetEnvironmentVariable("LAWNDART_SQLPERF_PG_PARTITION_SIZE"),
+            NumberStyles.Integer,
+            CultureInfo.InvariantCulture,
+            out var size) && size > 0
+            ? size
+            : PostgresEventStoreOptions.DefaultPartitionSize;
 
     public static async Task<SqlServerEventStore> OpenSqlAsync(string connectionString, CancellationToken cancellationToken)
     {
@@ -70,10 +82,13 @@ internal static class Loader
 
     private static async Task LoadPostgresAsync(EngineEndpoint endpoint, DatasetPlan plan, CancellationToken cancellationToken)
     {
-        await StoreFactory.OpenPgAsync(endpoint.DatabaseConnectionString, cancellationToken).ConfigureAwait(false);
+        var created = await StoreFactory.OpenPgAsync(endpoint.DatabaseConnectionString, cancellationToken).ConfigureAwait(false);
         await using var connection = new NpgsqlConnection(endpoint.DatabaseConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await ExecAsync(connection, "SET synchronous_commit TO off", cancellationToken).ConfigureAwait(false);
+        // Position ranges must exist before rows are copied in.
+        await ExecAsync(connection, "SELECT setval('lawndart.event_position', " + plan.Size.ToString(CultureInfo.InvariantCulture) + ", true)", cancellationToken).ConfigureAwait(false);
+        await created.EnsurePartitionsAsync(cancellationToken).ConfigureAwait(false);
         var types = await InsertPgTypesAsync(connection, cancellationToken).ConfigureAwait(false);
         await ExecAsync(connection, "ALTER TABLE lawndart.streams DISABLE TRIGGER USER", cancellationToken).ConfigureAwait(false);
         var generator = new EventGenerator(plan);
@@ -86,7 +101,6 @@ internal static class Loader
                 Console.WriteLine("postgres loaded " + loaded.ToString(CultureInfo.InvariantCulture) + " of " + plan.Size.ToString(CultureInfo.InvariantCulture));
         }
         await ExecAsync(connection, "ALTER TABLE lawndart.streams ENABLE TRIGGER USER", cancellationToken).ConfigureAwait(false);
-        await ExecAsync(connection, "SELECT setval('lawndart.event_position', " + plan.Size.ToString(CultureInfo.InvariantCulture) + ", true)", cancellationToken).ConfigureAwait(false);
         await ExecAsync(connection, """
             ANALYZE lawndart.events;
             ANALYZE lawndart.event_tags;
@@ -184,7 +198,7 @@ internal static class Loader
 
         if (tagged.Count > 0)
         {
-            await CopyTextAsync(connection, "COPY lawndart.event_tags (tag, global_position, tenant_id) FROM STDIN", tagged, static (row, _, line) =>
+            await CopyTextAsync(connection, "COPY lawndart.event_tags (tag, global_position, tenant_id, event_type_id) FROM STDIN", tagged, static (row, types, line) =>
             {
                 for (var i = 0; i < row.Tags.Length; i++)
                 {
@@ -192,7 +206,8 @@ internal static class Loader
                         line.Append('\n');
                     line.Append(TextEscape.Copy(row.Tags[i])).Append('\t');
                     line.Append(row.Position.ToString(CultureInfo.InvariantCulture)).Append('\t');
-                    line.Append(TextEscape.Copy(row.Tenant));
+                    line.Append(TextEscape.Copy(row.Tenant)).Append('\t');
+                    line.Append(types[row.EventType].ToString(CultureInfo.InvariantCulture));
                 }
             }, types, cancellationToken).ConfigureAwait(false);
         }

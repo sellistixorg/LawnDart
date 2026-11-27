@@ -10,10 +10,10 @@ internal static class PostgresAppendSql
     internal const string BodyMarkerPrefix = "LawnDart:append_to_stream:";
 
     /// <summary>Marker version written into <c>append_to_stream</c>. A later number is a different body.</summary>
-    internal const int BodyMarkerVersion = 3;
+    internal const int BodyMarkerVersion = 4;
 
     /// <summary>Text written into <c>append_to_stream</c> so a later read can tell this body from an older one.</summary>
-    internal const string BodyMarker = BodyMarkerPrefix + "3";
+    internal const string BodyMarker = BodyMarkerPrefix + "4";
 
     internal static string ExpectedProsrc(PostgresNames names, PostgresEventStoreOptions options)
         => PostgresSchemaProbe.DollarBody(CreateFunction(names, options), "$fn$");
@@ -57,7 +57,8 @@ internal static class PostgresAppendSql
                 p_tag_items int[],
                 p_tag_values_cond text[],
                 p_items_with_types int[],
-                p_items_with_tags int[]
+                p_items_with_tags int[],
+                p_partition_limit bigint
             ) RETURNS TABLE (global_position bigint, version bigint)
             LANGUAGE plpgsql
             SET search_path = pg_catalog
@@ -70,9 +71,9 @@ internal static class PostgresAppendSql
                 v_n int;
                 v_positions bigint[];
                 v_i int;
-                v_constraint text;
-                v_detail text;
                 v_baseline bigint;
+                v_types int[];
+                v_tags text[];
             BEGIN
                 -- {BodyMarker}
                 -- Assign a transaction id before any position is taken.
@@ -102,85 +103,84 @@ internal static class PostgresAppendSql
 
                 -- The condition runs in its own statement, so it sees every
                 -- writer that committed before these locks were acquired.
+                -- A tag item starts from the tag index and reads the event name
+                -- stored beside each tag, so it never scans events. A name-only
+                -- item uses the name and position index. Positions start at 1,
+                -- so a missing After is the same as After 0.
                 IF p_check_condition THEN
                     IF p_condition_all THEN
                         IF p_condition_tenant IS NOT NULL THEN
                             IF EXISTS (
                                 SELECT 1 FROM {names.Events} e
                                 WHERE e.tenant_id = p_condition_tenant
-                                  AND (p_condition_after IS NULL OR e.global_position > p_condition_after)
+                                  AND e.global_position > coalesce(p_condition_after, 0)
                             ) THEN
                                 RAISE EXCEPTION 'condition' USING ERRCODE = 'P0001', HINT = 'concurrency', DETAIL = coalesce(p_condition_after::text, '');
                             END IF;
                         ELSE
                             IF EXISTS (
                                 SELECT 1 FROM {names.Events} e
-                                WHERE p_condition_after IS NULL OR e.global_position > p_condition_after
+                                WHERE e.global_position > coalesce(p_condition_after, 0)
                             ) THEN
                                 RAISE EXCEPTION 'condition' USING ERRCODE = 'P0001', HINT = 'concurrency', DETAIL = coalesce(p_condition_after::text, '');
                             END IF;
                         END IF;
                     ELSIF coalesce(p_item_count, 0) > 0 THEN
-                        IF p_condition_tenant IS NOT NULL THEN
-                            FOR v_i IN 1 .. p_item_count LOOP
+                        FOR v_i IN 1 .. p_item_count LOOP
+                            IF v_i = ANY(coalesce(p_items_with_types, ARRAY[]::int[])) THEN
+                                v_types := ARRAY(
+                                    SELECT t.id FROM unnest(p_type_items, p_type_ids_cond) AS t(item, id) WHERE t.item = v_i);
+                            ELSE
+                                v_types := NULL;
+                            END IF;
+
+                            IF v_i = ANY(coalesce(p_items_with_tags, ARRAY[]::int[])) THEN
+                                v_tags := ARRAY(
+                                    SELECT tg.tag FROM unnest(p_tag_items, p_tag_values_cond) WITH ORDINALITY AS tg(item, tag, n)
+                                    WHERE tg.item = v_i ORDER BY tg.n);
+                                IF EXISTS (
+                                    SELECT 1 FROM {names.Tags} t0
+                                    WHERE t0.tag = v_tags[1]
+                                      AND t0.global_position > coalesce(p_condition_after, 0)
+                                      AND (p_condition_tenant IS NULL OR t0.tenant_id = p_condition_tenant)
+                                      AND (v_types IS NULL OR t0.event_type_id = ANY(v_types))
+                                      AND NOT EXISTS (
+                                          SELECT 1
+                                          FROM unnest(v_tags[2:]) AS tg(tag)
+                                          WHERE NOT EXISTS (
+                                              SELECT 1 FROM {names.Tags} et
+                                              WHERE et.tag = tg.tag
+                                                AND et.global_position = t0.global_position
+                                                AND et.tenant_id = t0.tenant_id))
+                                ) THEN
+                                    RAISE EXCEPTION 'condition' USING ERRCODE = 'P0001', HINT = 'concurrency', DETAIL = coalesce(p_condition_after::text, '');
+                                END IF;
+                            ELSIF v_types IS NOT NULL THEN
+                                IF EXISTS (
+                                    SELECT 1 FROM {names.Events} e
+                                    WHERE e.event_type_id = ANY(v_types)
+                                      AND e.global_position > coalesce(p_condition_after, 0)
+                                      AND (p_condition_tenant IS NULL OR e.tenant_id = p_condition_tenant)
+                                ) THEN
+                                    RAISE EXCEPTION 'condition' USING ERRCODE = 'P0001', HINT = 'concurrency', DETAIL = coalesce(p_condition_after::text, '');
+                                END IF;
+                            ELSIF p_condition_tenant IS NOT NULL THEN
                                 IF EXISTS (
                                     SELECT 1 FROM {names.Events} e
                                     WHERE e.tenant_id = p_condition_tenant
-                                      AND (p_condition_after IS NULL OR e.global_position > p_condition_after)
-                                      AND (
-                                          NOT (v_i = ANY(coalesce(p_items_with_types, ARRAY[]::int[])))
-                                          OR e.event_type_id IN (
-                                              SELECT t.id FROM unnest(p_type_items, p_type_ids_cond) AS t(item, id) WHERE t.item = v_i
-                                          )
-                                      )
-                                      AND (
-                                          NOT (v_i = ANY(coalesce(p_items_with_tags, ARRAY[]::int[])))
-                                          OR NOT EXISTS (
-                                              SELECT 1
-                                              FROM unnest(p_tag_items, p_tag_values_cond) AS tg(item, tag)
-                                              WHERE tg.item = v_i
-                                                AND NOT EXISTS (
-                                                    SELECT 1 FROM {names.Tags} et
-                                                    WHERE et.global_position = e.global_position
-                                                      AND et.tenant_id = p_condition_tenant
-                                                      AND et.tag = tg.tag
-                                                )
-                                          )
-                                      )
+                                      AND e.global_position > coalesce(p_condition_after, 0)
                                 ) THEN
                                     RAISE EXCEPTION 'condition' USING ERRCODE = 'P0001', HINT = 'concurrency', DETAIL = coalesce(p_condition_after::text, '');
                                 END IF;
-                            END LOOP;
-                        ELSE
-                            FOR v_i IN 1 .. p_item_count LOOP
+                            ELSE
                                 IF EXISTS (
                                     SELECT 1 FROM {names.Events} e
-                                    WHERE (p_condition_after IS NULL OR e.global_position > p_condition_after)
-                                      AND (
-                                          NOT (v_i = ANY(coalesce(p_items_with_types, ARRAY[]::int[])))
-                                          OR e.event_type_id IN (
-                                              SELECT t.id FROM unnest(p_type_items, p_type_ids_cond) AS t(item, id) WHERE t.item = v_i
-                                          )
-                                      )
-                                      AND (
-                                          NOT (v_i = ANY(coalesce(p_items_with_tags, ARRAY[]::int[])))
-                                          OR NOT EXISTS (
-                                              SELECT 1
-                                              FROM unnest(p_tag_items, p_tag_values_cond) AS tg(item, tag)
-                                              WHERE tg.item = v_i
-                                                AND NOT EXISTS (
-                                                    SELECT 1 FROM {names.Tags} et
-                                                    WHERE et.global_position = e.global_position
-                                                      AND et.tenant_id = e.tenant_id
-                                                      AND et.tag = tg.tag
-                                                )
-                                          )
-                                      )
+                                    WHERE e.global_position > coalesce(p_condition_after, 0)
                                 ) THEN
                                     RAISE EXCEPTION 'condition' USING ERRCODE = 'P0001', HINT = 'concurrency', DETAIL = coalesce(p_condition_after::text, '');
                                 END IF;
-                            END LOOP;
-                        END IF;
+                            END IF;
+                        END LOOP;
                     END IF;
                 END IF;
 
@@ -255,57 +255,51 @@ internal static class PostgresAppendSql
                     v_positions := v_positions || nextval('{names.Sequence}'::regclass);
                 END LOOP;
 
-                BEGIN
-                    INSERT INTO {names.Events} (
-                        tenant_id, stream_id, version, global_position, event_id,
-                        event_type_id, schema_version, codec_id, data, bdata, metadata,
-                        tags, partition_hash, recorded_at)
-                    SELECT
-                        p_tenant_id,
-                        p_stream_id,
-                        CASE WHEN p_is_dcb THEN v_positions[u.ord] ELSE v_start + u.ord - 1 END,
-                        v_positions[u.ord],
-                        u.event_id,
-                        u.type_id,
-                        u.schema_version,
-                        u.codec_id,
-                        u.data,
-                        u.bdata,
-                        u.metadata,
-                        (
-                            SELECT CASE WHEN count(*) = 0 THEN NULL ELSE array_agg(tv.tag) END
-                            FROM unnest(p_tag_ords, p_tag_values) AS tv(ord, tag)
-                            WHERE tv.ord = u.ord
-                        ),
-                        p_partition_hash,
-                        p_recorded_at
-                    FROM unnest(
-                        p_event_ids, p_type_ids, p_schema_versions, p_codec_ids, p_data, p_bdata, p_metadata
-                    ) WITH ORDINALITY AS u(event_id, type_id, schema_version, codec_id, data, bdata, metadata, ord);
+                -- Every position needs a range table. The store passes the first
+                -- position it has not seen a range for. Past it, this append makes
+                -- sure its ranges exist before it writes. That is rare: the store
+                -- creates ranges ahead of time outside appends.
+                IF p_partition_limit IS NOT NULL AND v_positions[v_n] >= p_partition_limit THEN
+                    PERFORM {names.EnsurePartitions}(v_positions[v_n], 0);
+                END IF;
 
-                    INSERT INTO {names.Tags} (tag, global_position, tenant_id)
-                    SELECT tv.tag, v_positions[tv.ord], p_tenant_id
+                -- No event id is unique, so these inserts cannot fail on a key.
+                -- The streams row above is the version check for a stream.
+                INSERT INTO {names.Events} (
+                    global_position, version, recorded_at, event_type_id, schema_version,
+                    partition_hash, codec_id, event_id, tenant_id, stream_id,
+                    data, bdata, metadata, tags)
+                SELECT
+                    v_positions[u.ord],
+                    CASE WHEN p_is_dcb THEN v_positions[u.ord] ELSE v_start + u.ord - 1 END,
+                    p_recorded_at,
+                    u.type_id,
+                    u.schema_version,
+                    p_partition_hash,
+                    u.codec_id,
+                    u.event_id,
+                    p_tenant_id,
+                    p_stream_id,
+                    u.data,
+                    u.bdata,
+                    u.metadata,
+                    (
+                        SELECT CASE WHEN count(*) = 0 THEN NULL ELSE array_agg(tv.tag) END
+                        FROM unnest(p_tag_ords, p_tag_values) AS tv(ord, tag)
+                        WHERE tv.ord = u.ord
+                    )
+                FROM unnest(
+                    p_event_ids, p_type_ids, p_schema_versions, p_codec_ids, p_data, p_bdata, p_metadata
+                ) WITH ORDINALITY AS u(event_id, type_id, schema_version, codec_id, data, bdata, metadata, ord);
+
+                -- An append without tags skips the tag insert, so it does not set up
+                -- an insert into the range tables for no rows.
+                IF coalesce(array_length(p_tag_values, 1), 0) > 0 THEN
+                    INSERT INTO {names.Tags} (global_position, event_type_id, tag, tenant_id)
+                    SELECT v_positions[tv.ord], p_type_ids[tv.ord], tv.tag, p_tenant_id
                     FROM unnest(p_tag_ords, p_tag_values) AS tv(ord, tag)
                     WHERE tv.tag IS NOT NULL AND length(tv.tag) > 0;
-                EXCEPTION
-                    WHEN unique_violation THEN
-                        GET STACKED DIAGNOSTICS v_constraint = CONSTRAINT_NAME;
-                        IF v_constraint LIKE '%event_id%' OR v_constraint ILIKE '%event_id%' THEN
-                            SELECT event_id::text INTO v_detail
-                            FROM {names.Events}
-                            WHERE tenant_id = p_tenant_id AND event_id = ANY(p_event_ids)
-                            LIMIT 1;
-                            RAISE EXCEPTION 'event already appended'
-                                USING ERRCODE = 'P0001', HINT = 'event_already_appended', DETAIL = coalesce(v_detail, '');
-                        ELSE
-                            SELECT current_version INTO v_actual
-                            FROM {names.Streams}
-                            WHERE tenant_id = p_tenant_id AND stream_id = p_stream_id;
-                            RAISE EXCEPTION 'concurrency'
-                                USING ERRCODE = 'P0001', HINT = 'concurrency',
-                                      DETAIL = (v_start - 1)::text || ':' || coalesce(v_actual, v_start)::text;
-                        END IF;
-                END;
+                END IF;
 
                 IF NOT p_is_dcb THEN
                     UPDATE {names.Streams} AS s

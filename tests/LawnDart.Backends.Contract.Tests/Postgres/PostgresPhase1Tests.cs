@@ -20,32 +20,35 @@ public sealed class PostgresPhase1Tests
     public PostgresPhase1Tests(PostgresContractFixture fixture) => _fixture = fixture;
 
     [Fact]
-    public async Task Schema_HasHashBuckets_AndUniqueIndexesIncludeTenant()
+    public async Task Schema_HasPositionRanges_AndOnlyPositionIsUnique()
     {
         var opened = await OpenAsync();
         await opened.Store.AppendAsync(Stream("acme"), [ContractEvent.Tick()]);
         await using var connection = await ConnectAsync();
         var tables = await NamesAsync(connection, opened.SchemaName, "events%");
-        Assert.Contains("events_shared", tables);
-        for (var i = 0; i < 8; i++)
-            Assert.Contains("events_shared_h" + i, tables);
+        Assert.Contains("events_p0", tables);
+        Assert.Contains("events_p1", tables);
+        Assert.Contains("events_p2", tables);
+        Assert.DoesNotContain("events_shared", tables);
 
         await using var indexes = new NpgsqlCommand(
             """
-            SELECT pg_get_indexdef(i.indexrelid)
+            SELECT pg_get_indexdef(i.indexrelid), i.indisunique
             FROM pg_index i
             JOIN pg_class c ON c.oid = i.indrelid
             JOIN pg_namespace n ON n.oid = c.relnamespace
-            WHERE n.nspname = @schema AND c.relname = 'events' AND i.indisunique
+            WHERE n.nspname = @schema AND c.relname IN ('events', 'event_tags')
             """,
             connection);
         indexes.Parameters.AddWithValue("schema", opened.SchemaName);
         await using var reader = await indexes.ExecuteReaderAsync();
-        var defs = new List<string>();
+        var defs = new List<(string Def, bool Unique)>();
         while (await reader.ReadAsync())
-            defs.Add(reader.GetString(0));
+            defs.Add((reader.GetString(0), reader.GetBoolean(1)));
         Assert.NotEmpty(defs);
-        Assert.All(defs, def => Assert.Contains("tenant_id", def, StringComparison.Ordinal));
+        // Event ids are not unique and have no index of their own.
+        Assert.All(defs, def => Assert.DoesNotContain("event_id", def.Def, StringComparison.Ordinal));
+        Assert.All(defs.Where(def => def.Unique), def => Assert.Contains("global_position", def.Def, StringComparison.Ordinal));
     }
 
     [Fact]
@@ -70,7 +73,7 @@ public sealed class PostgresPhase1Tests
     }
 
     [Fact]
-    public async Task PartitionCount_Change_IsRefused()
+    public async Task PartitionSize_Change_IsRefused()
     {
         var opened = await OpenAsync();
         var again = new PostgresEventStore(
@@ -79,10 +82,24 @@ public sealed class PostgresPhase1Tests
             {
                 ConnectionString = _fixture.ConnectionString,
                 SchemaName = opened.SchemaName,
-                PartitionCount = 4
+                PartitionSize = PostgresContractBackend.TestPartitionSize + 1,
+                AllowTinyPartitionsForTests = true
             });
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => again.InitializeSchemaAsync());
-        Assert.Contains("hash buckets", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("position ranges", ex.Message, StringComparison.Ordinal);
+
+        var off = new PostgresEventStore(
+            _fixture.ConnectionString,
+            options: new PostgresEventStoreOptions
+            {
+                ConnectionString = _fixture.ConnectionString,
+                SchemaName = opened.SchemaName,
+                PartitionSize = PostgresContractBackend.TestPartitionSize,
+                AllowTinyPartitionsForTests = true,
+                PositionPartitioning = false
+            });
+        ex = await Assert.ThrowsAsync<InvalidOperationException>(() => off.InitializeSchemaAsync());
+        Assert.Contains("position ranges", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -145,7 +162,7 @@ public sealed class PostgresPhase1Tests
     }
 
     [Fact]
-    public async Task StreamRead_PlanTouchesOneHashBucket_AndGlobalReadIsOrdered()
+    public async Task StreamRead_UsesAnIndexInEveryRange_AndGlobalReadIsOrdered()
     {
         var opened = await OpenAsync(Tenancy.Shared);
         var streams = new[]
@@ -158,6 +175,8 @@ public sealed class PostgresPhase1Tests
             await opened.Store.AppendAsync(StreamId.Parse(stream), [ContractEvent.Tick()]);
 
         await using var connection = await ConnectAsync();
+        await using (var off = new NpgsqlCommand("SET enable_seqscan = off", connection))
+            await off.ExecuteNonQueryAsync();
         var explain = $"""
             EXPLAIN (FORMAT TEXT)
             SELECT version FROM {Quote(opened.SchemaName)}.events
@@ -172,14 +191,8 @@ public sealed class PostgresPhase1Tests
                 plan.AppendLine(reader.GetString(0));
         }
 
-        var hits = 0;
-        for (var i = 0; i < 8; i++)
-        {
-            if (plan.ToString().Contains("events_shared_h" + i, StringComparison.Ordinal))
-                hits++;
-        }
-
-        Assert.Equal(1, hits);
+        Assert.DoesNotContain("Seq Scan", plan.ToString(), StringComparison.Ordinal);
+        Assert.Contains("Index", plan.ToString(), StringComparison.Ordinal);
 
         var read = await opened.Log.ReadByQueryAsync(Query.ForAllTenants());
         var positions = read.Events.Select(e => e.SequencePosition).ToList();

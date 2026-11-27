@@ -181,7 +181,10 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
     public ISubscriptionHandle Subscribe(string subscriberId, long fromSequence, EventSubscriptionFilter? filter = null, CancellationToken cancellationToken = default)
         => _adapter.Subscribe(subscriberId, fromSequence, filter, cancellationToken);
 
-    /// <summary>Creates the schema when it is missing. A second call with the same bucket count succeeds.</summary>
+    /// <summary>
+    /// Creates the schema when it is missing. A second call with the same position range setting succeeds.
+    /// With position ranges on, it also creates the range that holds the newest position and two empty ranges above it.
+    /// </summary>
     /// <remarks>
     /// Run this from a deploy job, a migration step, or an admin tool, once per deploy.
     /// Normal app startup should not call it. An older copy that restarts and runs it
@@ -217,13 +220,13 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
             {
                 throw new IncompatibleEventStoreSchemaException(_names.Schema, stamp.Format, CurrentSchemaFormat);
             }
-            else if (stamp.PartitionCount != _options.PartitionCount || stamp.Partitioning != _options.Partitioning)
+            else if (stamp.Partitioning != _options.UsesPositionPartitions
+                || (stamp.Partitioning && stamp.PartitionSize != _options.PartitionSize))
             {
                 throw new InvalidOperationException(
-                    $"This schema was created with {stamp.PartitionCount} hash buckets " +
-                    $"and partitioning {(stamp.Partitioning ? "on" : "off")}. " +
-                    $"PartitionCount is {_options.PartitionCount} and partitioning is {(_options.Partitioning ? "on" : "off")}. " +
-                    "Drop and recreate the schema to change the bucket layout.");
+                    $"This schema was created with position ranges {(stamp.Partitioning ? "on, " + RangeSizeText(stamp.PartitionSize) : "off")}. " +
+                    $"This store has position ranges {(_options.UsesPositionPartitions ? "on, " + RangeSizeText(_options.PartitionSize) : "off")}. " +
+                    "Set PositionPartitioning and PartitionSize to the stamped values, or recreate the schema.");
             }
         }
         else if (eventsExist)
@@ -250,6 +253,7 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         await FillStreamTagsIfNeededAsync(connection, cancellationToken).ConfigureAwait(false);
         await ReloadEventTypeCacheAsync(cancellationToken).ConfigureAwait(false);
+        await EnsureRangesAsync(_migration, position: null, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -336,12 +340,14 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
             streamId, envelopes, _options.Tenancy, _options.SingleTenantId, _options.ValidateNames);
         var eventIds = EventIdResolver.ResolveBatch(envelopes.Select(e => e.Metadata).ToList());
         var eventTypes = envelopes.Select(static envelope => envelope.EventType).ToArray();
+        var stamp = NewAppendStamp();
         return await AppendWithRetry(
-            ct => AppendCoreAsync(streamId.ToString(), envelopes, eventIds, expectedVersion, condition: null, conditionTenant: null, isDcb: false, ct),
+            ct => AppendCoreAsync(streamId.ToString(), envelopes, eventIds, expectedVersion, condition: null, conditionTenant: null, isDcb: false, stamp, ct),
             streamId.ToString(),
             eventIds,
             eventTypes,
             isDcb: false,
+            stamp,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -378,12 +384,14 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
         EnsureStreamLength(streamId, "streamId");
         var eventIds = EventIdResolver.ResolveBatch(envelopes.Select(e => e.Metadata).ToList());
         var eventTypes = envelopes.Select(static envelope => envelope.EventType).ToArray();
+        var stamp = NewAppendStamp();
         return await AppendWithRetry(
-            ct => AppendCoreAsync(streamId, envelopes, eventIds, expectedVersion: null, condition, conditionTenant, isDcb: true, ct),
+            ct => AppendCoreAsync(streamId, envelopes, eventIds, expectedVersion: null, condition, conditionTenant, isDcb: true, stamp, ct),
             streamId,
             eventIds,
             eventTypes,
             isDcb: true,
+            stamp,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -402,7 +410,7 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
         await using var connectionDisposal = connection.ConfigureAwait(false);
         var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         await using var transactionDisposal = transaction.ConfigureAwait(false);
-        await ExecuteAppendAsync(connection, transaction, streamId, events, ids, null, null, null, false, cancellationToken).ConfigureAwait(false);
+        await ExecuteAppendAsync(connection, transaction, streamId, events, ids, null, null, null, false, NewAppendStamp(), cancellationToken).ConfigureAwait(false);
         await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -414,6 +422,7 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
         AppendCondition? condition,
         string? conditionTenant,
         bool isDcb,
+        AppendStamp stamp,
         CancellationToken cancellationToken)
     {
         var eventTypes = envelopes.Select(static envelope => envelope.EventType).ToArray();
@@ -430,12 +439,12 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
             try
             {
                 written = await ExecuteAppendAsync(
-                    connection, transaction: null, streamId, envelopes, eventIds, expectedVersion, condition, conditionTenant, isDcb, cancellationToken)
+                    connection, transaction: null, streamId, envelopes, eventIds, expectedVersion, condition, conditionTenant, isDcb, stamp, cancellationToken)
                     .ConfigureAwait(false);
             }
             catch (AppendStatementSentException ex)
             {
-                return await RecoverSentAppendAsync(streamId, eventIds, eventTypes, isDcb, ex, cancellationToken).ConfigureAwait(false);
+                return await RecoverSentAppendAsync(streamId, eventIds, eventTypes, isDcb, stamp, ex, cancellationToken).ConfigureAwait(false);
             }
 
             var committed = new AppendResult(written.Positions, null, isDcb ? -1 : written.LastVersion);
@@ -463,13 +472,13 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
             try
             {
                 writtenRows = await ExecuteAppendAsync(
-                    connection, transaction, streamId, envelopes, eventIds, expectedVersion, condition, conditionTenant, isDcb, cancellationToken)
+                    connection, transaction, streamId, envelopes, eventIds, expectedVersion, condition, conditionTenant, isDcb, stamp, cancellationToken)
                     .ConfigureAwait(false);
             }
             catch (AppendStatementSentException ex)
             {
                 await RollbackQuietlyAsync(transaction, CancellationToken.None).ConfigureAwait(false);
-                return await RecoverSentAppendAsync(streamId, eventIds, eventTypes, isDcb, ex, cancellationToken).ConfigureAwait(false);
+                return await RecoverSentAppendAsync(streamId, eventIds, eventTypes, isDcb, stamp, ex, cancellationToken).ConfigureAwait(false);
             }
             catch
             {
@@ -485,7 +494,7 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
                 }
                 catch (OperationCanceledException ex)
                 {
-                    return await FinishSentAppendAsync(transaction, streamId, eventIds, eventTypes, isDcb, ex).ConfigureAwait(false);
+                    return await FinishSentAppendAsync(transaction, streamId, eventIds, eventTypes, isDcb, stamp, ex).ConfigureAwait(false);
                 }
                 catch (Exception ex) when (PostgresConnectionClosure.HasRetryableClosureSqlState(ex)
                     || PostgresConnectionClosure.HasTransportBreak(ex)
@@ -507,9 +516,9 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
                 // Commit was attempted. Never retry, including when the connection is already closed.
                 if (ex is OperationCanceledException or NpgsqlException
                     || PostgresConnectionClosure.IsClosedConnection(ex, connection))
-                    return await FinishSentAppendAsync(transaction, streamId, eventIds, eventTypes, isDcb, ex).ConfigureAwait(false);
+                    return await FinishSentAppendAsync(transaction, streamId, eventIds, eventTypes, isDcb, stamp, ex).ConfigureAwait(false);
 
-                var read = await ReadBackOrUnknownAsync(streamId, eventIds, eventTypes, cancellationToken).ConfigureAwait(false);
+                var read = await ReadBackOrUnknownAsync(streamId, eventIds, eventTypes, stamp, cancellationToken).ConfigureAwait(false);
                 if (read.Kind == AppendReadKind.None)
                 {
                     await RollbackQuietlyAsync(transaction, cancellationToken).ConfigureAwait(false);
@@ -530,11 +539,12 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
         IReadOnlyList<Guid> eventIds,
         IReadOnlyList<string> eventTypes,
         bool isDcb,
+        AppendStamp stamp,
         AppendStatementSentException exception,
         CancellationToken cancellationToken)
     {
         var read = await ReadBackOrUnknownAsync(
-            streamId, eventIds, eventTypes, ReadBackToken(cancellationToken)).ConfigureAwait(false);
+            streamId, eventIds, eventTypes, stamp, ReadBackToken(cancellationToken)).ConfigureAwait(false);
         return ResolveReadBack(read, isDcb, exception.InnerException ?? exception, missingIsUnknown: true);
     }
 
@@ -544,9 +554,10 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
         IReadOnlyList<Guid> eventIds,
         IReadOnlyList<string> eventTypes,
         bool isDcb,
+        AppendStamp stamp,
         Exception exception)
     {
-        var read = await ReadBackOrUnknownAsync(streamId, eventIds, eventTypes, CancellationToken.None).ConfigureAwait(false);
+        var read = await ReadBackOrUnknownAsync(streamId, eventIds, eventTypes, stamp, CancellationToken.None).ConfigureAwait(false);
         if (read.Kind == AppendReadKind.None)
         {
             await RollbackQuietlyAsync(transaction, CancellationToken.None).ConfigureAwait(false);
@@ -593,11 +604,12 @@ public sealed partial class PostgresEventStore : IEventStore, IEventStoreSubscri
         string streamId,
         IReadOnlyList<Guid> eventIds,
         IReadOnlyList<string> eventTypes,
+        AppendStamp stamp,
         CancellationToken cancellationToken)
     {
         try
         {
-            return await ReadCommittedAppendAsync(streamId, eventIds, eventTypes, cancellationToken).ConfigureAwait(false);
+            return await ReadCommittedAppendAsync(streamId, eventIds, eventTypes, stamp, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not AppendOutcomeUnknownException)
         {

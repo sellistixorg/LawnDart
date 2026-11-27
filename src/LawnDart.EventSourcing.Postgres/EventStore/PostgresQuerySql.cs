@@ -6,8 +6,9 @@ using NpgsqlTypes;
 namespace LawnDart.EventSourcing.Postgres.EventStore;
 
 /// <summary>
-/// Builds a read over events and event_tags. Tag items seek the tag index.
-/// Type items use the cached event-name ids. The tags array on the event row is not filtered.
+/// Builds a read over events and event_tags. Tag items seek the tag index and filter the
+/// event name stored on each tag row. Type items use the cached event-name ids and the
+/// name and position index. The tags array on the event row is not filtered.
 /// </summary>
 internal static class PostgresQuerySql
 {
@@ -176,10 +177,18 @@ internal static class PostgresQuerySql
             }
 
             AppendSeq(builder, "t0.global_position", from, to);
-            if (typeIds is not null || item.PartitionFilter is not null || timestamp.HasValue)
+            if (typeIds is { Length: > 0 })
             {
-                builder.Append(" AND EXISTS (SELECT 1 FROM ").Append(names.Events).Append(" e WHERE e.global_position = t0.global_position AND e.tenant_id = t0.tenant_id");
-                AppendTypePartitionTime(builder, typeIds, item, index, timestamp, parameters);
+                // The tag row carries the event name, so a tag and name read stays in the tag index.
+                var name = "types_" + index;
+                parameters.Add(new NpgsqlParameter(name, NpgsqlDbType.Array | NpgsqlDbType.Integer) { Value = typeIds });
+                builder.Append(" AND t0.event_type_id = ANY(@").Append(name).Append(')');
+            }
+
+            if (item.PartitionFilter is not null || timestamp.HasValue)
+            {
+                builder.Append(" AND EXISTS (SELECT 1 FROM ").Append(names.Events).Append(" e WHERE e.global_position = t0.global_position");
+                AppendTypePartitionTime(builder, typeIds: null, item, index, timestamp, parameters);
                 builder.Append(')');
             }
         }

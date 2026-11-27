@@ -31,8 +31,9 @@ aliases.
 Call `InitializeSchemaAsync` on `PostgresEventStore` before the first append.
 Run that call from a deploy or admin step. Normal app startup does not run
 it. The call creates the schema if it is missing. A second call with the same
-bucket count succeeds. A different bucket count is rejected. Drop and
-recreate the schema to change it. An unknown format number in `schema_info`
+position range settings succeeds. A call with ranges turned the other way or
+a different `PartitionSize` is rejected. Drop and recreate the schema to
+change it. The call also creates the next two empty position ranges. An unknown format number in `schema_info`
 is rejected the same way. The same call records each event name from the
 context catalog in `event_types`. A name that is already there is left as
 it is. Two calls at the same time still leave one row per name.
@@ -62,12 +63,20 @@ Tables live in `SchemaName`. `UsePostgres` sets that to `lawndart` for the
 `default` context and to the context name for every other context. The
 callback can change it. The name `public` is rejected.
 
-Events, streams, and tags are partitioned two ways. The top level is a list
-on `tenant_id` with one default partition. That partition is hashed into
-`PartitionCount` buckets. The default is 8. The allowed range is 1 to 64,
-chosen when the schema is created. The tenant key and the bucket layout are
-in [Postgres partitions and tenants](../POSTGRES_PARTITIONS.md). Event ids
-are unique per tenant, and stream ids match exactly, including case. See
+`events` and `event_tags` are split into ranges of global position, one table
+per range. `PartitionSize` sets the range size; the default is 100,000,000
+positions, and it must be from 10,000 to 10^15. `PositionPartitioning` turns
+ranges on or off; when it is null, ranges are on. `Tenancy.Isolated` is refused
+at startup in this release. Both are chosen when the schema is created. The
+store adds new ranges ahead of the newest position by itself, as long as the app
+login has the grants in [Postgres partitions and tenants](../POSTGRES_PARTITIONS.md#grants-for-the-app-role).
+`EnsurePartitionsAsync` does the same on demand. A stream read looks in every
+range, so many small ranges cost more per read. The tenant key and the range
+layout are in [Postgres partitions and tenants](../POSTGRES_PARTITIONS.md).
+These ranges are only a storage layout. They are not the projection work split
+by partition hash (`PartitionFilter`, `QueryItem.ForPartition`,
+`ConsistentHashPartitioningService`).
+Event ids are not unique, and stream ids match exactly, including case. See
 [Backend differences](../BACKEND_DIFFERENCES.md).
 
 A stream id with three or more colon-separated parts stores the first part
@@ -95,20 +104,22 @@ case. Stream lists and stream counts include rows whose status is `Active`.
 
 The aggregate type index is `(aggregate_type, stream_id)`. Stream tags for
 the page live in `stream_tags` (`tenant_id`, `tag`, `stream_id`). The
-primary key is those three columns, and the table uses the same tenant hash
-buckets as `streams`. A tag page reads `stream_tags` from the last stream id,
+primary key is those three columns. A tag page reads `stream_tags` from the last stream id,
 then loads that stream row. A trigger on `streams` updates `stream_tags`
 when a row is inserted, when its tags change, and when the row is deleted.
 Replacing the append function does not remove the trigger, so a save from an
 older build still updates the tag rows. `InitializeSchemaAsync` creates the
 table when it is missing. It copies existing tags in batches after the schema
 lock is released, and records that copy so a later start does not copy them
-again. The format stamp stays at 1.
+again.
 
-Event ids are unique per tenant. The same event id on two tenants is two
-rows. A repeated event id in one tenant throws `EventAlreadyAppendedException`.
-With the outbox on, the same event id on two tenants also throws that
-exception. See [Outbox](#outbox).
+Event ids are not unique. The same event id on two streams is two rows. The
+expected version on a stream append and the condition on a dynamic consistency
+boundary append are what stop a repeat. An unconditional append retried after
+a lost reply can be saved twice. Use an expected version or a condition to make
+retries safe. See [Postgres partitions and tenants](../POSTGRES_PARTITIONS.md#event-ids-and-retried-appends).
+With the outbox on, a published event id is unique in the schema, and a repeat
+throws `EventAlreadyAppendedException`. See [Outbox](#outbox).
 
 One sequence, `event_position`, numbers every event in the schema. A losing
 version check does not take a number.
@@ -255,9 +266,9 @@ rolled-back append leaves no outbox row. The row id is the source event id.
 The payload is the integration event. Metadata is the reduced notice, stored
 as jsonb. See [Outbox pattern](../OUTBOX_PATTERN.md).
 
-With the outbox on, that source event id is unique in the whole schema. The
-same event id on two tenants throws `EventAlreadyAppendedException`. With the
-outbox off, event ids are unique per tenant.
+With the outbox on, that source event id is unique in the whole schema. A
+repeat of a published event id, on any stream or tenant, throws
+`EventAlreadyAppendedException`. With the outbox off, event ids are not unique.
 
 `GetUnprocessedAsync` claims rows in position order. It sets `claimed_until`
 to the current time plus `OutboxClaimLease` (default 30 seconds) and skips a

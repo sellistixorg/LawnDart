@@ -24,7 +24,7 @@ public sealed class PostgresSchemaCheckTests(PostgresSchemaCheckFixture fixture)
     {
         var bundle = await fixture.CreateAsync("chk_match");
 
-        AssertMatch(await bundle.Store.VerifySchemaAsync(), "1");
+        AssertMatch(await bundle.Store.VerifySchemaAsync(), "7");
         AssertMatch(await bundle.Outbox.VerifySchemaAsync(), "2");
         AssertMatch(await bundle.Snapshots.VerifySchemaAsync(), null);
         AssertMatch(await bundle.Views.VerifySchemaAsync(), null);
@@ -49,8 +49,8 @@ public sealed class PostgresSchemaCheckTests(PostgresSchemaCheckFixture fixture)
         var result = await bundle.Store.VerifySchemaAsync();
 
         Assert.False(result.Matches);
-        Assert.Equal("1", result.ExpectedFormat);
-        Assert.Equal("1", result.FoundFormat);
+        Assert.Equal("7", result.ExpectedFormat);
+        Assert.Equal("7", result.FoundFormat);
         Assert.Contains("stream_tags", result.Missing);
         Assert.Throws<SchemaMismatchException>(result.ThrowIfMismatch);
     }
@@ -69,7 +69,7 @@ public sealed class PostgresSchemaCheckTests(PostgresSchemaCheckFixture fixture)
         var inbox = await bundle.Inbox.VerifySchemaAsync();
 
         Assert.False(events.Matches);
-        Assert.Equal("1", events.ExpectedFormat);
+        Assert.Equal("7", events.ExpectedFormat);
         Assert.Equal("0", events.FoundFormat);
         Assert.False(outbox.Matches);
         Assert.Equal("0", outbox.FoundFormat);
@@ -106,7 +106,7 @@ public sealed class PostgresSchemaCheckTests(PostgresSchemaCheckFixture fixture)
         var projections = await bundle.Projections.VerifySchemaAsync();
 
         Assert.False(events.Matches);
-        Assert.Equal("1", events.FoundFormat);
+        Assert.Equal("7", events.FoundFormat);
         Assert.Contains("append_to_stream body", events.Missing);
         Assert.False(projections.Matches);
         Assert.Contains("save_projection_flush body", projections.Missing);
@@ -116,7 +116,7 @@ public sealed class PostgresSchemaCheckTests(PostgresSchemaCheckFixture fixture)
     public async Task VerifySchemaAsync_MismatchesOnANewerMarkerVersion()
     {
         var bundle = await fixture.CreateAsync("chk_ver");
-        await ReplaceBodyAsync(bundle.Schema, "append_to_stream", "LawnDart:append_to_stream:3", "LawnDart:append_to_stream:4");
+        await ReplaceBodyAsync(bundle.Schema, "append_to_stream", "LawnDart:append_to_stream:4", "LawnDart:append_to_stream:5");
         await ReplaceBodyAsync(bundle.Schema, "save_projection_flush", "LawnDart:save_projection_flush:1", "LawnDart:save_projection_flush:2");
 
         var version2Events = await bundle.Store.VerifySchemaAsync();
@@ -126,7 +126,7 @@ public sealed class PostgresSchemaCheckTests(PostgresSchemaCheckFixture fixture)
         Assert.False(version2Flush.Matches);
         Assert.Contains("save_projection_flush body", version2Flush.Missing);
 
-        await ReplaceBodyAsync(bundle.Schema, "append_to_stream", "LawnDart:append_to_stream:4", "LawnDart:append_to_stream:10");
+        await ReplaceBodyAsync(bundle.Schema, "append_to_stream", "LawnDart:append_to_stream:5", "LawnDart:append_to_stream:50");
         await ReplaceBodyAsync(bundle.Schema, "save_projection_flush", "LawnDart:save_projection_flush:2", "LawnDart:save_projection_flush:10");
 
         var version10Events = await bundle.Store.VerifySchemaAsync();
@@ -173,20 +173,25 @@ public sealed class PostgresSchemaCheckTests(PostgresSchemaCheckFixture fixture)
     }
 
     [Fact]
-    public async Task VerifySchemaAsync_MismatchesWhenAPartitionOrUniqueKeyIsMissing()
+    public async Task VerifySchemaAsync_MismatchesWhenARangeIndexOrTheRangeFunctionIsMissing()
     {
-        var partition = await fixture.CreateAsync("chk_part");
-        await fixture.ExecuteAsync($"""DROP TABLE {LawnDart.EventSourcing.Postgres.PgIdentifier.Qualify(partition.Schema, "events_shared_h0")}""");
-        var droppedPartition = await partition.Store.VerifySchemaAsync();
-        Assert.False(droppedPartition.Matches);
-        Assert.Contains("events_shared_h0", droppedPartition.Missing);
+        var range = await fixture.CreateAsync("chk_part");
+        await fixture.ExecuteAsync($"""DROP TABLE {LawnDart.EventSourcing.Postgres.PgIdentifier.Qualify(range.Schema, "events_p0")}""");
+        var droppedRange = await range.Store.VerifySchemaAsync();
+        Assert.False(droppedRange.Matches);
+        Assert.Contains("events_p0", droppedRange.Missing);
 
-        var key = await fixture.CreateAsync("chk_key");
-        var events = LawnDart.EventSourcing.Postgres.PgIdentifier.Qualify(key.Schema, "events");
-        await fixture.ExecuteAsync($"""ALTER TABLE {events} DROP CONSTRAINT events_event_id_tenant_id_key""");
-        var droppedKey = await key.Store.VerifySchemaAsync();
-        Assert.False(droppedKey.Matches);
-        Assert.Contains("events_event_id_tenant_id_key", droppedKey.Missing);
+        var index = await fixture.CreateAsync("chk_key");
+        await fixture.ExecuteAsync($"""DROP INDEX {LawnDart.EventSourcing.Postgres.PgIdentifier.Qualify(index.Schema, "ix_events_stream")}""");
+        var droppedIndex = await index.Store.VerifySchemaAsync();
+        Assert.False(droppedIndex.Matches);
+        Assert.Contains("ix_events_stream", droppedIndex.Missing);
+
+        var function = await fixture.CreateAsync("chk_ens");
+        await ReplaceBodyAsync(function.Schema, "ensure_event_partitions", "LawnDart:ensure_event_partitions:1", "LawnDart:ensure_event_partitions:2");
+        var changed = await function.Store.VerifySchemaAsync();
+        Assert.False(changed.Matches);
+        Assert.Contains(changed.Missing, m => m.StartsWith("ensure_event_partitions", StringComparison.Ordinal));
     }
 
     private Task ReplaceBodyAsync(string schema, string function, string from, string to)
@@ -230,7 +235,7 @@ public sealed class PostgresSchemaCheckTests(PostgresSchemaCheckFixture fixture)
         var read = fixture.Open(reader, bundle.Schema);
         var before = await fixture.CatalogAsync(bundle.Schema);
 
-        AssertMatch(await read.Store.VerifySchemaAsync(), "1");
+        AssertMatch(await read.Store.VerifySchemaAsync(), "7");
         AssertMatch(await read.Outbox.VerifySchemaAsync(), "2");
         AssertMatch(await read.Snapshots.VerifySchemaAsync(), null);
         AssertMatch(await read.Views.VerifySchemaAsync(), null);
@@ -398,7 +403,7 @@ public sealed class PostgresSchemaCheckFixture : IAsyncLifetime
         var info = LawnDart.EventSourcing.Postgres.PgIdentifier.Qualify(schema, "schema_info");
         await using (var command = new NpgsqlCommand($"""
             SELECT component || ' ' || format::text || ' ' || partition_count::text
-                || ' ' || partitioning::text || ' ' || updated_at::text
+                || ' ' || partitioning::text || ' ' || coalesce(partition_size::text, '-') || ' ' || updated_at::text
             FROM {info}
             ORDER BY component
             """, connection))

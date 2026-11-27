@@ -235,17 +235,29 @@ public abstract class EventLogContractTests : ContractSuite
     }
 
     [Fact]
-    public async Task Append_SameEventId_FailsAsAlreadyWritten()
+    public async Task Append_SameEventId_FollowsTheBackend()
     {
         var log = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Log;
         var eventId = Guid.NewGuid();
         var metadata = Encoding.UTF8.GetBytes($$"""{"EventId":"{{eventId}}"}""");
         var first = Unique("event-id");
+        var second = Unique("event-id-replay");
         await log.AppendAsync(StreamId.Parse(first), [new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("{}"), metadata)]);
 
-        var ex = await Assert.ThrowsAsync<EventAlreadyAppendedException>(() =>
-            log.AppendAsync(StreamId.Parse(Unique("event-id-replay")), [new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("{}"), metadata)]));
-        Assert.Equal(eventId, ex.EventId);
+        if (!Cap.AllowsDuplicateEventIds)
+        {
+            var ex = await Assert.ThrowsAsync<EventAlreadyAppendedException>(() =>
+                log.AppendAsync(StreamId.Parse(second), [new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("{}"), metadata)]));
+            Assert.Equal(eventId, ex.EventId);
+            Assert.Empty(await log.ReadStreamAsync(StreamId.Parse(second)));
+        }
+        else
+        {
+            // Event ids are not unique. The stream version check and the append
+            // condition guard retries, not the event id.
+            await log.AppendAsync(StreamId.Parse(second), [new AppendEvent(OutsideEventName, Encoding.UTF8.GetBytes("{}"), metadata)]);
+            Assert.Single(await log.ReadStreamAsync(StreamId.Parse(second)));
+        }
 
         var stored = await log.ReadStreamAsync(StreamId.Parse(first));
         Assert.Single(stored);

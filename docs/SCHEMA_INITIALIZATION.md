@@ -70,7 +70,7 @@ Package: `LawnDart.EventSourcing.Postgres`.
 
 | Call | What it writes |
 |---|---|
-| `PostgresEventStore.InitializeSchemaAsync` | Schema, events, streams, tags, `append_to_stream`, snapshot tables, and the outbox table |
+| `PostgresEventStore.InitializeSchemaAsync` | Schema, events, streams, tags, the first position ranges and two empty ones ahead, `append_to_stream`, `ensure_event_partitions`, snapshot tables, and the outbox table |
 | `PostgresOutboxWriter.InitializeSchemaAsync` | Outbox table |
 | `PostgresSnapshotStore.InitializeSchemaAsync` | `event_snapshots` and `dcb_snapshots` |
 
@@ -182,8 +182,9 @@ triggers this version writes. It does not create, replace, or alter them.
 Call it when the process starts. `ThrowIfMismatch` throws
 `SchemaMismatchException` when the result does not match.
 
-Postgres setup writes the marker `LawnDart:append_to_stream:1` into
-`append_to_stream`, and `LawnDart:save_projection_flush:1` into
+Postgres setup writes a marker such as `LawnDart:append_to_stream:4` into
+`append_to_stream`, `LawnDart:ensure_event_partitions:1` into
+`ensure_event_partitions`, and `LawnDart:save_projection_flush:1` into
 `save_projection_flush`. The check compares the whole function body with the
 body this version writes, and it reads the marker version as an exact number.
 Version 1 does not match version 2 or version 10. A body that keeps the marker
@@ -198,7 +199,7 @@ database. `IOutboxWriter` includes the same method.
 
 | Call | What it reads |
 |---|---|
-| `PostgresEventStore.VerifySchemaAsync`, `VerifyPostgresEventStoreAsync` | Events stamp, tables, hash partitions, unique keys, `ix_streams_stream_id`, the position sequence, `append_to_stream`, `sync_stream_tags`, and `streams_sync_tags` |
+| `PostgresEventStore.VerifySchemaAsync`, `VerifyPostgresEventStoreAsync` | Events stamp and position range settings, tables, the range that holds the newest position and that it is attached, keys and indexes, `ix_streams_stream_id`, the position sequence, `append_to_stream`, `ensure_event_partitions`, `sync_stream_tags`, and `streams_sync_tags` |
 | `PostgresOutboxWriter.VerifySchemaAsync` | Outbox stamp, the outbox table, and `ix_outbox_pending` |
 | `PostgresSnapshotStore.VerifySchemaAsync` | `event_snapshots` and `dcb_snapshots` |
 | `PostgresViewStore.VerifySchemaAsync`, `PostgresCheckpointStore.VerifySchemaAsync`, `PostgresProjectionStore.VerifySchemaAsync`, `VerifyPostgresProjectionStoresAsync` | Projection tables and `save_projection_flush` |
@@ -207,6 +208,15 @@ database. `IOutboxWriter` includes the same method.
 The event store, the outbox writer, the snapshot store, the projection stores,
 and the inbox use `ConnectionString`. They do not use
 `MigrationConnectionString`.
+
+The app login that appends needs `USAGE` on the schema, `SELECT`, `INSERT`,
+`UPDATE` and `DELETE` on its tables, `USAGE` and `SELECT` on its sequences,
+and `EXECUTE` on `append_to_stream`. Setup grants `EXECUTE` on
+`ensure_event_partitions` to `PUBLIC`, so the app login needs no grant of its
+own for it; schema `USAGE` still decides who can reach it. The function runs as
+the setup owner, so the app login never needs to create tables. A login set up
+by hand that lacks these grants can fail an append that needs a new position
+range. See [Postgres partitions and tenants](POSTGRES_PARTITIONS.md#grants-for-the-app-role).
 
 A login that only reads needs `CONNECT` on the database, `USAGE` on the
 schema, and `SELECT` on `schema_info`. The check also reads `pg_catalog`
