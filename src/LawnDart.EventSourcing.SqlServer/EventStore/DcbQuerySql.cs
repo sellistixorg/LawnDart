@@ -1,3 +1,4 @@
+using System.Data;
 using System.Text;
 using Microsoft.Data.SqlClient;
 using LawnDart.EventStore;
@@ -66,18 +67,21 @@ internal static class DcbQuerySql
         DateTime? toTimestamp,
         int? limit,
         Mode mode,
-        bool applyStableHorizon = true)
+        bool applyStableHorizon = true,
+        string? tenantId = null)
     {
         ArgumentNullException.ThrowIfNull(resolveTypeId);
         ArgumentNullException.ThrowIfNull(resolveTagId);
 
         var parameters = new List<SqlParameter>();
+        if (tenantId is not null)
+            parameters.Add(new SqlParameter("@TenantId", SqlDbType.NVarChar, 100) { Value = tenantId });
         AddWindowParameters(parameters, fromSequencePosition, toSequencePosition, toTimestamp);
 
         var items = query.Items;
         if (items.Count == 0)
         {
-            var allSql = BuildEventsScan(qTable, qRegistry, fromSequencePosition, toSequencePosition, toTimestamp, limit, mode, parameters, applyStableHorizon);
+            var allSql = BuildEventsScan(qTable, qRegistry, tenantId is not null, fromSequencePosition, toSequencePosition, toTimestamp, limit, mode, parameters, applyStableHorizon);
             return new Result(allSql, parameters);
         }
 
@@ -86,7 +90,7 @@ internal static class DcbQuerySql
         {
             var source = BuildItemSource(
                 qTable, qTags, items[i], i, resolveTypeId, resolveTagId,
-                fromSequencePosition, toSequencePosition, toTimestamp, parameters, applyStableHorizon);
+                tenantId is not null, fromSequencePosition, toSequencePosition, toTimestamp, parameters, applyStableHorizon);
             if (source is { } built)
                 sources.Add(built);
         }
@@ -124,6 +128,7 @@ internal static class DcbQuerySql
     private static string BuildEventsScan(
         string qTable,
         string qRegistry,
+        bool filterTenant,
         long? fromSequencePosition,
         long? toSequencePosition,
         DateTime? toTimestamp,
@@ -132,7 +137,7 @@ internal static class DcbQuerySql
         List<SqlParameter> parameters,
         bool applyStableHorizon)
     {
-        var where = BuildEventsWindowWhere("e", fromSequencePosition, toSequencePosition, toTimestamp, applyStableHorizon);
+        var where = BuildEventsWindowWhere("e", filterTenant, fromSequencePosition, toSequencePosition, toTimestamp, applyStableHorizon);
         var readPast = applyStableHorizon ? "" : " WITH (READPAST)";
         if (mode == Mode.MaxSequence)
         {
@@ -166,6 +171,7 @@ internal static class DcbQuerySql
         int itemIndex,
         Func<string, int?> resolveTypeId,
         Func<string, int?> resolveTagId,
+        bool filterTenant,
         long? fromSequencePosition,
         long? toSequencePosition,
         DateTime? toTimestamp,
@@ -210,7 +216,8 @@ internal static class DcbQuerySql
         // timestamp, a partition filter, or an item that has no tags.
         var needsEvents = item.PartitionFilter != null
             || toTimestamp.HasValue
-            || !hasTags;
+            || !hasTags
+            || filterTenant;
 
         var from = new StringBuilder();
         var where = new StringBuilder("WHERE 1=1");
@@ -246,6 +253,8 @@ internal static class DcbQuerySql
                 from.Append(" INNER LOOP JOIN ").Append(qTable).Append(" e").Append(EventsLookupHint(applyStableHorizon))
                     .Append(" ON e.SequencePosition = et")
                     .Append(itemIndex).Append("_0.GlobalSequencePosition");
+                if (filterTenant)
+                    where.Append(" AND e.TenantId = @TenantId");
                 if (toTimestamp.HasValue)
                     where.Append(" AND e.Timestamp <= @ToTimestamp");
                 AppendPartition(where, item, itemIndex, parameters);
@@ -255,6 +264,8 @@ internal static class DcbQuerySql
         else
         {
             from.Append(qTable).Append(" e").Append(readPast);
+            if (filterTenant)
+                where.Append(" AND e.TenantId = @TenantId");
             AppendSequenceWindow(where, "e.SequencePosition", fromSequencePosition, toSequencePosition);
             if (toTimestamp.HasValue)
                 where.Append(" AND e.Timestamp <= @ToTimestamp");
@@ -395,12 +406,15 @@ internal static class DcbQuerySql
 
     private static string BuildEventsWindowWhere(
         string alias,
+        bool filterTenant,
         long? fromSequencePosition,
         long? toSequencePosition,
         DateTime? toTimestamp,
         bool applyStableHorizon)
     {
         var where = new StringBuilder("WHERE 1=1");
+        if (filterTenant)
+            where.Append(" AND ").Append(alias).Append(".TenantId = @TenantId");
         AppendSequenceWindow(where, $"{alias}.SequencePosition", fromSequencePosition, toSequencePosition);
         if (toTimestamp.HasValue)
             where.Append(" AND ").Append(alias).Append(".Timestamp <= @ToTimestamp");

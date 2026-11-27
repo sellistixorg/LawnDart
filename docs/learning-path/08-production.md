@@ -32,7 +32,7 @@ normal case. There is no publish-everything option. See
 [Outbox](../OUTBOX_PATTERN.md).
 
 ```csharp
-services.AddLawnDart(o => o.RequireTenantId = false);
+services.AddLawnDart(o => o.Tenancy = Tenancy.Single);
 services.AddSqlProjectionStores("default", cs);
 services.AddBoundedContext("default")
     .WithCommandHandlers<RegisterStudentCommandHandler>()
@@ -41,7 +41,7 @@ services.AddBoundedContext("default")
     .UseSqlServer(o =>
     {
         o.ConnectionString = cs;
-        o.RequireTenantId = false;
+        o.Tenancy = Tenancy.Single;
         o.EnableOutbox = true;
     })
     .WithProjections([typeof(StudentSummaryProjection).Assembly]);

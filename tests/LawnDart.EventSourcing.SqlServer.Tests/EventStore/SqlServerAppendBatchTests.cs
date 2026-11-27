@@ -241,7 +241,7 @@ public sealed class SqlServerAppendBatchTests : IAsyncLifetime
             options: new SqlServerEventStoreOptions
             {
                 SchemaName = schema,
-                RequireTenantId = false,
+                Tenancy = Tenancy.Single,
                 EnableOutbox = enableOutbox
             });
         await store.InitializeSchemaAsync();

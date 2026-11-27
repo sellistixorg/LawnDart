@@ -92,3 +92,65 @@ public class QueryTests
 }
 
 
+
+public class QueryTenancyTests
+{
+    [Fact]
+    public void ForTenant_SetsTenantId_WithoutMutatingOriginal()
+    {
+        var original = Query.FromItems(QueryItem.ByType("OrderPlaced"));
+        var scoped = original.ForTenant("acme");
+
+        Assert.Null(original.TenantId);
+        Assert.False(original.AllTenants);
+        Assert.Equal("acme", scoped.TenantId);
+        Assert.False(scoped.AllTenants);
+        Assert.Equal(original.Items, scoped.Items);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(" acme")]
+    [InlineData("acme ")]
+    [InlineData("acme:sub")]
+    public void ForTenant_RejectsInvalidTenantIds(string tenantId)
+    {
+        var query = Query.All();
+        Assert.Throws<ArgumentException>(() => query.ForTenant(tenantId));
+    }
+
+    [Fact]
+    public void ForTenant_ThrowsOnAllTenantsQuery()
+    {
+        var query = Query.ForAllTenants();
+        Assert.Throws<InvalidOperationException>(() => query.ForTenant("acme"));
+    }
+
+    [Fact]
+    public void ForAllTenants_SetsAllTenantsTrueAndLeavesTenantIdNull()
+    {
+        var q1 = Query.ForAllTenants();
+        Assert.True(q1.AllTenants);
+        Assert.Null(q1.TenantId);
+        Assert.Empty(q1.Items);
+
+        var item = QueryItem.ByType("OrderPlaced");
+        var q2 = Query.ForAllTenants(item);
+        Assert.True(q2.AllTenants);
+        Assert.Null(q2.TenantId);
+        Assert.Single(q2.Items);
+
+        var q3 = Query.ForAllTenants(new[] { item }.AsEnumerable());
+        Assert.True(q3.AllTenants);
+        Assert.Null(q3.TenantId);
+        Assert.Single(q3.Items);
+    }
+
+    [Fact]
+    public void ForAllTenants_WithEmptyItems_ThrowsArgumentException()
+    {
+        Assert.Throws<ArgumentException>(() => Query.ForAllTenants(Array.Empty<QueryItem>()));
+        Assert.Throws<ArgumentException>(() => Query.ForAllTenants(Enumerable.Empty<QueryItem>()));
+    }
+}

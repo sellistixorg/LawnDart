@@ -219,7 +219,7 @@ public abstract class PerEventTagContractTests : ContractSuite
     [Fact]
     public async Task DcbRepository_AppendWithContext_EachEventKeepsOnlyItsOwnTags()
     {
-        var handle = await OpenAsync();
+        var handle = await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared));
         var repository = new DcbRepository(
             handle.Store,
             new ContractMetadataProvider(),
@@ -235,13 +235,13 @@ public abstract class PerEventTagContractTests : ContractSuite
             new TaggedEvent(new ContractDcbEvent(Guid.NewGuid(), DateTime.UtcNow, 2), b, shared),
         ]);
 
-        var read = (await handle.Store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(shared)))).Events;
+        var read = (await handle.Store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(shared)).ForTenant("test-tenant"))).Events;
         Assert.Equal(2, read.Count);
         Assert.Contains(a, read[0].Tags);
         Assert.DoesNotContain(b, read[0].Tags);
         Assert.Contains(b, read[1].Tags);
         Assert.DoesNotContain(a, read[1].Tags);
-        Assert.Empty((await handle.Store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(a, b)))).Events);
+        Assert.Empty((await handle.Store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(a, b)).ForTenant("test-tenant"))).Events);
     }
 
     private static async Task AssertOwnTagsAsync(ContractEventStore handle, StreamId? stream, LawnDart.EventStore.Tag a, LawnDart.EventStore.Tag b, LawnDart.EventStore.Tag shared)

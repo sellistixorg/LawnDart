@@ -36,7 +36,7 @@ internal static class Program
 
         var services = builder.Services;
 
-        services.AddLawnDart(o => o.RequireTenantId = false);
+        services.AddLawnDart(o => o.Tenancy = Tenancy.Single);
 
         // Both contexts live in this assembly. Pass each context's own types.
         // An assembly scan would register every handler and event on every context.

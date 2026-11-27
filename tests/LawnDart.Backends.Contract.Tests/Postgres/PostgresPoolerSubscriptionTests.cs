@@ -61,7 +61,7 @@ public sealed class PostgresPoolerSubscriptionTests
             {
                 ConnectionString = connectionString,
                 SchemaName = "pooled",
-                RequireTenantId = false,
+                Tenancy = Tenancy.Single,
                 PollOnlyInterval = TimeSpan.FromMilliseconds(50),
                 BackupPollInterval = TimeSpan.FromSeconds(30)
             },

@@ -11,7 +11,7 @@ public class InMemoryEventStoreTests
     public async Task ReadStreamAsync_EmptyStream_ReturnsEmpty()
     {
         // Arrange
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var streamId = "test:test-stream";
 
         // Act
@@ -25,7 +25,7 @@ public class InMemoryEventStoreTests
     public async Task AppendAsync_ThenReadStream_ReturnsEvents()
     {
         // Arrange
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var streamId = "test:test-stream";
         var events = new[]
         {
@@ -47,7 +47,7 @@ public class InMemoryEventStoreTests
     public async Task AppendAsync_WithCorrectExpectedVersion_Succeeds()
     {
         // Arrange
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var streamId = "test:test-stream";
         var events1 = new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) };
         var events2 = new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) };
@@ -67,7 +67,7 @@ public class InMemoryEventStoreTests
     public async Task AppendAsync_WithWrongExpectedVersion_ThrowsConcurrencyException()
     {
         // Arrange
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var streamId = "test:test-stream";
         var events1 = new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) };
         var events2 = new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) };
@@ -83,7 +83,7 @@ public class InMemoryEventStoreTests
     public async Task ReadByQueryAsync_WithTypeFilter_ReturnsMatchingEvents()
     {
         // Arrange
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var streamId = "test:test-stream";
         IEvent[] events = new IEvent[]
         {
@@ -106,7 +106,7 @@ public class InMemoryEventStoreTests
     public async Task ReadByQueryAsync_WithTagFilter_ReturnsMatchingEvents()
     {
         // Arrange
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var streamId = "test:test-stream";
         var events = new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) };
         var tags = new[] { "tag:tag1", "tag:tag2" };
@@ -126,7 +126,7 @@ public class InMemoryEventStoreTests
     public async Task AppendAsync_WithDCBCondition_ValidatesCondition()
     {
         // Arrange
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var events = new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) };
         var query = Query.FromItems(QueryItem.ByType("SomeOtherEvent"));
         var condition = AppendCondition.FailIfMatches(query);
@@ -142,7 +142,7 @@ public class InMemoryEventStoreTests
     public async Task AppendAsync_WithDCBCondition_FailsWhenConditionMatches()
     {
         // Arrange
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var streamId = "test:test-stream";
         var events1 = new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) };
         var events2 = new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) };
@@ -162,7 +162,7 @@ public class InMemoryEventStoreTests
         // Arrange: Test that the "After" parameter allows ignoring events before a sequence position
         // This is useful for optimistic concurrency where you want to check for conflicts
         // only after a certain point in the event stream
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var events1 = new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) };
         var events2 = new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) };
         var events3 = new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) };
@@ -188,7 +188,7 @@ public class InMemoryEventStoreTests
     public async Task AppendAsync_WithDCBCondition_WithAfterSequencePosition_FailsWhenMatchAfterPosition()
     {
         // Arrange: Test that events after the specified position cause the condition to fail
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var events1 = new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) };
         var events2 = new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) };
         var events3 = new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) };
@@ -213,7 +213,7 @@ public class InMemoryEventStoreTests
     public async Task AppendAsync_WithDCBCondition_WithTagQuery_ValidatesTagBasedCondition()
     {
         // Arrange: Test DCB condition with tag-based query
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var events1 = new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) };
         var events2 = new[] { new AnotherEvent(Guid.NewGuid(), DateTime.UtcNow) };
 
@@ -235,7 +235,7 @@ public class InMemoryEventStoreTests
     public async Task AppendAsync_WithDCBCondition_WithTagQuery_FailsWhenTagMatches()
     {
         // Arrange: Test that DCB condition fails when tag matches existing event
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var events1 = new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) };
         var events2 = new[] { new AnotherEvent(Guid.NewGuid(), DateTime.UtcNow) };
 
@@ -255,7 +255,7 @@ public class InMemoryEventStoreTests
     public async Task AppendAsync_WithDCBCondition_WithMultiTagQuery_RequiresAllTags()
     {
         // Arrange: Test that multi-tag query requires ALL tags to be present
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var events1 = new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) };
         var events2 = new[] { new AnotherEvent(Guid.NewGuid(), DateTime.UtcNow) };
 
@@ -277,7 +277,7 @@ public class InMemoryEventStoreTests
     public async Task AppendAsync_WithDCBCondition_WithMultiTagQuery_FailsWhenAllTagsMatch()
     {
         // Arrange: Test that condition fails when all required tags match
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var events1 = new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) };
         var events2 = new[] { new AnotherEvent(Guid.NewGuid(), DateTime.UtcNow) };
 
@@ -297,7 +297,7 @@ public class InMemoryEventStoreTests
     public async Task AppendAsync_WithDCBCondition_WithMultiQueryItem_UsesOrLogic()
     {
         // Arrange: Test that multiple query items use OR logic (matches if ANY item matches)
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var events1 = new[] { new TestEvent(Guid.NewGuid(), DateTime.UtcNow) };
         var events2 = new[] { new AnotherEvent(Guid.NewGuid(), DateTime.UtcNow) };
 
@@ -320,7 +320,7 @@ public class InMemoryEventStoreTests
     public async Task ReadByQueryAsync_WithDCBTags_ReturnsCrossEntityEvents()
     {
         // Arrange: Test cross-entity querying using tags (DCB pattern)
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         
         // Append events for different entities but same order (cross-entity scenario)
         await store.AppendAsync(StreamId.Parse("test:order-stream"),
@@ -348,7 +348,7 @@ public class InMemoryEventStoreTests
     {
         // Arrange: Test multi-entity consistency enforcement using DCB
         // This simulates an order fulfillment workflow spanning Order, Payment, and Inventory
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var orderId = "order:12345";
         var paymentId = "payment:abc";
         var productId = "product:xyz";
@@ -387,13 +387,13 @@ public class InMemoryEventStoreTests
     [Fact]
     public async Task AppendAsync_WithDCBCondition_UsesOpaqueDcbStreamId()
     {
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Shared });
         var append = await store.AppendAsync(
             [new TaggedEvent(new TestEvent(Guid.NewGuid(), DateTime.UtcNow), new[] { Tag.Parse("order:9001") })],
             AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(Tag.Parse("order:9001")))),
             metadata: new EventMetadata { TenantId = "tenant-x" });
 
-        var query = await store.ReadByQueryAsync(Query.All(), fromSequencePosition: append.SequencePositions[0], limit: 1);
+        var query = await store.ReadByQueryAsync(Query.All().ForTenant("tenant-x"), fromSequencePosition: append.SequencePositions[0], limit: 1);
         var evt = Assert.Single(query.Events);
 
         Assert.StartsWith("tenant-x:dcb:", evt.StreamId.ToString());
@@ -402,7 +402,7 @@ public class InMemoryEventStoreTests
     [Fact]
     public async Task ReadStreamAsync_WithToVersion_LimitsResults()
     {
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var streamId = "test:test-stream";
         var events = new[]
         {
@@ -423,7 +423,7 @@ public class InMemoryEventStoreTests
     [Fact]
     public async Task ReadStreamAsync_WithToTimestamp_LimitsResults()
     {
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var streamId = "test:test-stream";
         var t1 = new DateTime(2025, 1, 1, 10, 0, 0, DateTimeKind.Utc);
         var t2 = new DateTime(2025, 1, 1, 11, 0, 0, DateTimeKind.Utc);
@@ -443,7 +443,7 @@ public class InMemoryEventStoreTests
     [Fact]
     public async Task AppendAsync_SetsCommitTimestamp_WithoutChangingBusinessTime()
     {
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var business = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         await store.AppendAsync(
             StreamId.Parse("test:clock-stream"),
@@ -462,7 +462,7 @@ public class InMemoryEventStoreTests
     [Fact]
     public async Task ReadStreamEnumerableAsync_YieldsEventsInOrder()
     {
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var streamId = "test:test-stream";
         var events = new[]
         {
@@ -487,7 +487,7 @@ public class InMemoryEventStoreTests
     [Fact]
     public async Task ReadStreamEnumerableAsync_WithToVersion_RespectsLimit()
     {
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var streamId = "test:test-stream";
         await store.AppendAsync(StreamId.Parse(streamId), new[]
         {
@@ -508,7 +508,7 @@ public class InMemoryEventStoreTests
     [Fact]
     public async Task ReadStreamAsync_WithToVersionAndToTimestamp_AppliesBothFilters()
     {
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var streamId = "test:test-stream";
         var t1 = new DateTime(2025, 1, 2, 10, 0, 0, DateTimeKind.Utc);
         var t2 = new DateTime(2025, 1, 2, 11, 0, 0, DateTimeKind.Utc);
@@ -528,7 +528,7 @@ public class InMemoryEventStoreTests
     [Fact]
     public async Task ReadByQueryAsync_WithToSequencePosition_LimitsResults()
     {
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var streamId = "test:test-stream";
         await store.AppendAsync(StreamId.Parse(streamId), [new TaggedEvent(new TestEvent(Guid.NewGuid(), DateTime.UtcNow), new[] { Tag.Parse("order:1") })]);
         var append2 = await store.AppendAsync(StreamId.Parse(streamId), [new TaggedEvent(new TestEvent(Guid.NewGuid(), DateTime.UtcNow), new[] { Tag.Parse("order:1") })]);
@@ -543,7 +543,7 @@ public class InMemoryEventStoreTests
     [Fact]
     public async Task ReadByQueryAsync_WithToTimestamp_LimitsResults()
     {
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var t1 = new DateTime(2025, 4, 1, 10, 0, 0, DateTimeKind.Utc);
         var t2 = new DateTime(2025, 4, 1, 11, 0, 0, DateTimeKind.Utc);
         var t3 = new DateTime(2025, 4, 1, 12, 0, 0, DateTimeKind.Utc);
@@ -560,7 +560,7 @@ public class InMemoryEventStoreTests
     [Fact]
     public async Task Read_after_append_is_not_the_same_instance()
     {
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var evt = new TestEvent(Guid.NewGuid(), DateTime.UtcNow);
 
         await store.AppendAsync(StreamId.Parse("test:identity-stream"), [evt]);
@@ -573,7 +573,7 @@ public class InMemoryEventStoreTests
     [Fact]
     public async Task Mutating_caller_payload_array_after_log_append_does_not_change_store()
     {
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var payload = new byte[] { 1, 2, 3 };
         var metadata = new byte[] { 9, 8, 7 };
         var envelope = new AppendEvent("tests.inmemory.test-event", payload, metadata);
@@ -590,7 +590,7 @@ public class InMemoryEventStoreTests
     [Fact]
     public async Task Mutating_caller_metadata_after_append_is_not_observable()
     {
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var metadata = new EventMetadata { UserId = "u-1", Timestamp = DateTime.UtcNow };
 
         await store.AppendAsync(StreamId.Parse("test:meta-stream"), [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)], metadata: metadata);
@@ -605,7 +605,7 @@ public class InMemoryEventStoreTests
     [Fact]
     public async Task ReadByQueryAsync_WithAliasedTypeFilter_UsesEventTypeAlias()
     {
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Shared });
         await store.AppendAsync(StreamId.Parse("tenant:Order:1"), new IEvent[]
         {
             new AliasedEvent(Guid.NewGuid(), DateTime.UtcNow),
@@ -613,13 +613,13 @@ public class InMemoryEventStoreTests
         });
 
         var result = await store.ReadByQueryAsync(
-            Query.FromItems(QueryItem.ByType(EventTypeCatalog.TryGetDeclaredName(typeof(AliasedEvent))!)));
+            Query.FromItems(QueryItem.ByType(EventTypeCatalog.TryGetDeclaredName(typeof(AliasedEvent))!)).ForTenant("tenant"));
 
         var evt = Assert.Single(result.Events);
         Assert.IsType<AliasedEvent>(evt.Event);
 
         var byFullName = await store.ReadByQueryAsync(
-            Query.FromItems(QueryItem.ByType(typeof(AliasedEvent).FullName!)));
+            Query.FromItems(QueryItem.ByType(typeof(AliasedEvent).FullName!)).ForTenant("tenant"));
         Assert.Empty(byFullName.Events);
     }
 
@@ -629,7 +629,7 @@ public class InMemoryEventStoreTests
         var catalog = EventTypeCatalog.Materialize(
             [typeof(TestEvent), typeof(SchemaV1), typeof(SchemaCurrent)]);
         var store = new InMemoryEventStore(
-            options: new InMemoryEventStoreOptions { RequireTenantId = false },
+            options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single },
             session: new EventSession(new LawnDart.EventSourcing.Serialization.JsonEventSerializer(), catalog));
 
         await store.AppendAsync(StreamId.Parse("test:stream-v1"), [new TestEvent(Guid.NewGuid(), DateTime.UtcNow)]);
@@ -653,7 +653,7 @@ public class InMemoryEventStoreTests
         var pipeline = EventUpcastPipeline.Materialize(catalog, [typeof(SchemaV1ToCurrent)]);
         var serializer = new LawnDart.EventSourcing.Serialization.JsonEventSerializer();
         var store = new InMemoryEventStore(
-            options: new InMemoryEventStoreOptions { RequireTenantId = false },
+            options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single },
             session: new EventSession(serializer, catalog, pipeline));
         var v1 = new SchemaV1(Guid.NewGuid(), DateTime.UtcNow, "Ada");
         var payload = serializer.Serialize(v1, v1.GetType());
@@ -677,7 +677,7 @@ public class InMemoryEventStoreTests
     {
         var catalog = EventTypeCatalog.Materialize([typeof(TestEvent)]);
         var store = new InMemoryEventStore(
-            options: new InMemoryEventStoreOptions { RequireTenantId = false },
+            options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single },
             session: new EventSession(new LawnDart.EventSourcing.Serialization.JsonEventSerializer(), catalog));
         var payload = """{"kind":"opaque"}"""u8.ToArray();
         var metadata = """{"UserId":"log"}"""u8.ToArray();
@@ -700,7 +700,7 @@ public class InMemoryEventStoreTests
     {
         var catalog = EventTypeCatalog.Materialize([typeof(TestEvent)]);
         var store = new InMemoryEventStore(
-            options: new InMemoryEventStoreOptions { RequireTenantId = false },
+            options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single },
             session: new EventSession(new LawnDart.EventSourcing.Serialization.JsonEventSerializer(), catalog));
         var payload = """{"Id":"00000000-0000-0000-0000-000000000000"}"""u8.ToArray();
         var metadata = """{"UserId":"log"}"""u8.ToArray();
@@ -722,7 +722,7 @@ public class InMemoryEventStoreTests
     [Fact]
     public async Task Log_persists_codec_id_without_a_mime_literal()
     {
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         await ((IEventLog)store).AppendAsync(
             StreamId.Parse("test:codec-r2"),
             [new AppendEvent("family", new byte[] { 1 }, codecId: EventCodec.MemoryPack)]);

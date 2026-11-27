@@ -136,7 +136,7 @@ public static class LawnDartNames
     /// Reads <see cref="LawnDartOptions.ValidateNames"/> from options already configured
     /// on <paramref name="services"/>. Returns <see langword="true"/> when no options are configured.
     /// </summary>
-    internal static bool IsFormatCheckEnabled(IServiceCollection services)
+    internal static LawnDartOptions ReadOptions(IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
         var options = new LawnDartOptions();
@@ -158,8 +158,11 @@ public static class LawnDartNames
             }
         }
 
-        return options.ValidateNames;
+        return options;
     }
+
+    internal static bool IsFormatCheckEnabled(IServiceCollection services)
+        => ReadOptions(services).ValidateNames;
 
     /// <summary>
     /// Applies <see cref="ValidateContextName"/> using <see cref="LawnDartOptions.ValidateNames"/>

@@ -21,7 +21,7 @@ internal static class StoreFactory
         ConnectionString = connectionString,
         SchemaName = EngineNames.SqlSchema,
         ContextName = "sqlperf",
-        RequireTenantId = true,
+        Tenancy = Tenancy.Shared,
         ValidateNames = true,
         EnableOutbox = false,
         EnableStreamRegistry = true,
@@ -33,7 +33,7 @@ internal static class StoreFactory
         ConnectionString = connectionString,
         SchemaName = EngineNames.PgSchema,
         ContextName = "sqlperf",
-        RequireTenantId = true,
+        Tenancy = Tenancy.Shared,
         ValidateNames = true,
         EnableOutbox = false,
         EnableStreamRegistry = true,
@@ -660,7 +660,7 @@ internal static class ShapeProof
             throw new InvalidOperationException("The stream tail does not match the snapshot.");
 
         var query = await log.ReadByQueryAsync(
-            Query.FromItems(QueryItem.ByTypeAndTags([EventGenerator.QueryType], [Tag.Parse(EventGenerator.QueryTag)])),
+            Query.ForAllTenants(QueryItem.ByTypeAndTags([EventGenerator.QueryType], [Tag.Parse(EventGenerator.QueryTag)])),
             limit: 1,
             cancellationToken: cancellationToken).ConfigureAwait(false);
         if (query.Events.Count < 1)
@@ -669,14 +669,14 @@ internal static class ShapeProof
         if (catalog.Size >= 2_500)
         {
             var rare = await log.ReadByQueryAsync(
-                Query.FromItems(QueryItem.ByTypeAndTags([catalog.RareType], [Tag.Parse(catalog.QueryTag)])),
+                Query.ForAllTenants(QueryItem.ByTypeAndTags([catalog.RareType], [Tag.Parse(catalog.QueryTag)])),
                 limit: 1,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
             if (rare.Events.Count < 1)
                 throw new InvalidOperationException("A rare type and tag query returned no event.");
 
             var many = await log.ReadByQueryAsync(
-                Query.FromItems(QueryItem.ByTags(catalog.ManyTags.Select(Tag.Parse).ToArray())),
+                Query.ForAllTenants(QueryItem.ByTags(catalog.ManyTags.Select(Tag.Parse).ToArray())),
                 limit: 1,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
             if (many.Events.Count < 1)

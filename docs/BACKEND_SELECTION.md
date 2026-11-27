@@ -82,7 +82,7 @@ public Core member without editing that file fails the build.
 ## InMemory
 
 ```csharp
-services.AddLawnDart(o => o.RequireTenantId = false);
+services.AddLawnDart(o => o.Tenancy = Tenancy.Single);
 services.AddBoundedContext("default").UseInMemory();
 ```
 
@@ -98,12 +98,12 @@ SQL Server, so treat routing as backend-specific.
 ## SQL Server
 
 ```csharp
-services.AddLawnDart(o => o.RequireTenantId = false);
+services.AddLawnDart(o => o.Tenancy = Tenancy.Single);
 services.AddBoundedContext("default")
     .UseSqlServer(o =>
     {
         o.ConnectionString = connectionString;
-        o.RequireTenantId = false;
+        o.Tenancy = Tenancy.Single;
     });
 ```
 
@@ -158,12 +158,12 @@ projectors, so that profile does not register Lightweight projection stores.
 ## Postgres
 
 ```csharp
-services.AddLawnDart(o => o.RequireTenantId = false);
+services.AddLawnDart(o => o.Tenancy = Tenancy.Single);
 services.AddBoundedContext("default")
     .UsePostgres(o =>
     {
         o.ConnectionString = connectionString;
-        o.RequireTenantId = false;
+        o.Tenancy = Tenancy.Single;
     });
 ```
 

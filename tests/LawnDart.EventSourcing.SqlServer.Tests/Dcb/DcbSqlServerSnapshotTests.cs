@@ -40,7 +40,7 @@ public sealed class DcbSqlServerSnapshotTests : IAsyncLifetime
         _options = new SqlServerEventStoreOptions
         {
             ConnectionString = _connectionString,
-            RequireTenantId = false,
+            Tenancy = Tenancy.Single,
             SchemaName = "dcb_snap"
         };
 
@@ -98,7 +98,7 @@ public sealed class DcbSqlServerSnapshotTests : IAsyncLifetime
             {
                 opt.ConnectionString = _connectionString;
                 opt.SchemaName = "ordering_di";
-                opt.RequireTenantId = false;
+                opt.Tenancy = Tenancy.Single;
             })
             .WithEventTypes(typeof(CatalogPlaceholderEvent))
             .WithSnapshots(cfg => cfg.RegisterForDcb<InventoryEntity>(new EventCountSnapshotStrategy(100)));

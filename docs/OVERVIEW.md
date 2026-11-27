@@ -15,7 +15,7 @@ code. See [Why LawnDart](WHY.md).
 ## Host grammar
 
 ```csharp
-services.AddLawnDart(o => o.RequireTenantId = false);
+services.AddLawnDart(o => o.Tenancy = Tenancy.Single);
 var ctx = services.AddBoundedContext("default");
 ctx.UseInMemory(); // or UseSqlServer(...)
 ctx.WithCommandHandlers<SomeHandler>();

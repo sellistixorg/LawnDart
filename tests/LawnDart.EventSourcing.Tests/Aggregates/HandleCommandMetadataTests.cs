@@ -14,12 +14,12 @@ public class HandleCommandMetadataTests
 {
     private static AggregateRepository CreateRepository(InMemoryEventStore store) =>
         new(store, new DefaultMetadataProvider(), new TestTenantContextProvider(),
-            Options.Create(new LawnDartOptions { RequireTenantId = false }));
+            Options.Create(new LawnDartOptions { Tenancy = Tenancy.Single }));
 
     [Fact]
     public async Task HandleCommandAsync_SetsCausationIdToCommandId_WhenUnset()
     {
-        var store = new InMemoryEventStore();
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var repository = CreateRepository(store);
         var aggregate = await repository.GetOrCreateAsync<TwoTickAggregate>(Guid.NewGuid());
         var command = new TwoTickCommand(Guid.NewGuid());
@@ -34,7 +34,7 @@ public class HandleCommandMetadataTests
     [Fact]
     public async Task HandleCommandAsync_KeepsCallerCausationId()
     {
-        var store = new InMemoryEventStore();
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var repository = CreateRepository(store);
         var aggregate = await repository.GetOrCreateAsync<TwoTickAggregate>(Guid.NewGuid());
         var command = new TwoTickCommand(Guid.NewGuid());
@@ -53,7 +53,7 @@ public class HandleCommandMetadataTests
     [Fact]
     public async Task HandleCommandAsync_CorrelationId_IsStableAcrossEvents()
     {
-        var store = new InMemoryEventStore();
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var repository = CreateRepository(store);
         var aggregate = await repository.GetOrCreateAsync<TwoTickAggregate>(Guid.NewGuid());
 
@@ -69,7 +69,7 @@ public class HandleCommandMetadataTests
     [Fact]
     public async Task HandleCommandAsync_StoresCatalogToken_NotFullName()
     {
-        var store = new InMemoryEventStore();
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var repository = CreateRepository(store);
         var aggregate = await repository.GetOrCreateAsync<TwoTickAggregate>(Guid.NewGuid());
         var business = new DateTime(2018, 4, 1, 8, 0, 0, DateTimeKind.Utc);

@@ -18,7 +18,7 @@ public sealed class AtomicFlushRoutingTests
     public async Task SameObject_UsesTheSingleFlush()
     {
         var store = new MemoryProjectionStore();
-        var events = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var events = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Shared });
         await events.AppendAsync(
             StreamId.Parse("tenant1:Counter:same"),
             [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)],
@@ -43,7 +43,7 @@ public sealed class AtomicFlushRoutingTests
         var store = new MemoryProjectionStore();
         const string streamId = "tenant1:Counter:cold";
         await store.SaveViewAsync("CounterSummary:v1", streamId, """{"count":40}""", 9);
-        var events = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var events = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Shared });
         await events.AppendAsync(
             StreamId.Parse(streamId),
             [
@@ -70,7 +70,7 @@ public sealed class AtomicFlushRoutingTests
     {
         var store = new MemoryProjectionStore();
         const string streamId = "tenant1:Counter:warm";
-        var events = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var events = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Shared });
         await events.AppendAsync(
             StreamId.Parse(streamId),
             [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)],
@@ -108,7 +108,7 @@ public sealed class AtomicFlushRoutingTests
     {
         var views = new MemoryProjectionStore();
         var checkpoints = new MemoryProjectionStore();
-        var events = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var events = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Shared });
         await events.AppendAsync(
             StreamId.Parse("tenant1:Counter:split"),
             [new CounterIncremented(Guid.NewGuid(), DateTime.UtcNow, 1)],

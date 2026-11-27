@@ -840,7 +840,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
     private async Task<ReadWindow> ReadWindowAsync(long fromPosition, long toPosition, CancellationToken ct)
     {
         var result = await _eventStore.ReadByQueryAsync(
-            GetLiveQuery() ?? Query.All(),
+            GetLiveQuery() ?? Query.ForAllTenants(),
             fromSequencePosition: fromPosition,
             toSequencePosition: toPosition,
             cancellationToken: ct).ConfigureAwait(false);
@@ -858,7 +858,7 @@ public sealed class LightweightProjectionRunnerService : BackgroundService
 
         var typeNames = ResolveLiveEventTypeNames();
         _liveQuery = typeNames.Count > 0
-            ? Query.FromItems(QueryItem.ByType(typeNames.ToArray()))
+            ? Query.ForAllTenants(QueryItem.ByType(typeNames.ToArray()))
             : null;
         _liveQueryResolved = true;
         return _liveQuery;

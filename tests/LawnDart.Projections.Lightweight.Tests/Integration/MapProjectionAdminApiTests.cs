@@ -322,7 +322,7 @@ public sealed class MapProjectionAdminApiTests : IAsyncLifetime
 
         builder.Services.AddLawnDart(o =>
         {
-            o.RequireTenantId = false;
+            o.Tenancy = Tenancy.Single;
             o.EnableAuthorization = false;
         });
         builder.Services.AddHttpContextAccessor();

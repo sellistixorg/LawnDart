@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Data.SqlClient;
+using LawnDart.EventSourcing.EventStore;
 using LawnDart.EventStore;
 using LawnDart.Sql;
 
@@ -42,6 +43,7 @@ public partial class SqlServerEventStore
         IReadOnlyList<Guid> eventIds,
         long? expectedVersion,
         AppendCondition? condition,
+        string? conditionTenant,
         bool isDcb,
         CancellationToken cancellationToken)
     {
@@ -52,7 +54,7 @@ public partial class SqlServerEventStore
         sql.AppendLine("EXEC sp_set_session_context @key = N'LawnDart.SkipStreamTags', @value = 1;");
         AppendLockStatements(sql, parameters, AppendLockPlan(envelopes, condition));
         if (condition is not null)
-            AppendConditionCheck(sql, parameters, condition);
+            AppendConditionCheck(sql, parameters, condition, conditionTenant);
 
         var writtenTags = AppendWrittenTagRegistration(sql, parameters, envelopes);
 
@@ -235,7 +237,7 @@ public partial class SqlServerEventStore
             sql.AppendLine(") AS v(Ord, TagId) ORDER BY Ord;");
         }
 
-        var tenantId = ExtractTenantId(streamId);
+        var tenantId = AppendTenantRules.ResolveStreamStorageTenant(streamId, _options.Tenancy, _options.SingleTenantId);
         parameters.Add(new SqlParameter("@StreamId", SqlDbType.NVarChar, 255) { Value = streamId });
         parameters.Add(new SqlParameter("@TenantId", SqlDbType.NVarChar, 100) { Value = (object?)tenantId ?? DBNull.Value });
         parameters.Add(new SqlParameter("@AggregateType", SqlDbType.NVarChar, 100) { Value = ExtractAggregateType(streamId) });
@@ -485,11 +487,11 @@ public partial class SqlServerEventStore
     /// <summary>
     /// The condition statement for tests. It is the same text the append batch sends.
     /// </summary>
-    internal (string Sql, List<SqlParameter> Parameters) PreviewAppendCondition(AppendCondition condition)
+    internal (string Sql, List<SqlParameter> Parameters) PreviewAppendCondition(AppendCondition condition, string? conditionTenant = null)
     {
         var sql = new StringBuilder();
         var parameters = new List<SqlParameter>();
-        AppendConditionCheck(sql, parameters, condition);
+        AppendConditionCheck(sql, parameters, condition, conditionTenant);
         return (sql.ToString(), parameters);
     }
 
@@ -570,8 +572,10 @@ public partial class SqlServerEventStore
         return sql.ToString();
     }
 
-    private void AppendConditionCheck(StringBuilder sql, List<SqlParameter> parameters, AppendCondition condition)
+    private void AppendConditionCheck(StringBuilder sql, List<SqlParameter> parameters, AppendCondition condition, string? conditionTenant)
     {
+        if (conditionTenant is not null)
+            parameters.Add(new SqlParameter("@CondTenant", SqlDbType.NVarChar, 100) { Value = conditionTenant });
         var items = condition.FailIfEventsMatch.Items;
         var tagVars = new Dictionary<string, string>(StringComparer.Ordinal);
         var nextTag = 0;
@@ -607,7 +611,7 @@ public partial class SqlServerEventStore
         var branches = new List<string>();
         for (var i = 0; i < items.Count; i++)
         {
-            var branch = BuildConditionBranch(items[i], i, tagVars, parameters, condition.After.HasValue);
+            var branch = BuildConditionBranch(items[i], i, tagVars, parameters, condition.After.HasValue, conditionTenant is not null);
             if (branch is not null)
                 branches.Add(branch);
         }
@@ -615,6 +619,8 @@ public partial class SqlServerEventStore
         if (branches.Count == 0)
         {
             sql.Append("IF EXISTS (SELECT TOP 1 1 FROM ").Append(_qTable).Append(" AS e WHERE 1 = 1");
+            if (conditionTenant is not null)
+                sql.Append(" AND e.TenantId = @CondTenant");
             if (condition.After.HasValue)
                 sql.Append(" AND e.SequencePosition > @After");
             sql.AppendLine(")");
@@ -635,7 +641,8 @@ public partial class SqlServerEventStore
         int itemIndex,
         Dictionary<string, string> tagVars,
         List<SqlParameter> parameters,
-        bool hasAfter)
+        bool hasAfter,
+        bool filterTenant)
     {
         var hasTags = item.Tags is { Count: > 0 };
         var hasTypes = item.Types is { Count: > 0 };
@@ -658,7 +665,15 @@ public partial class SqlServerEventStore
                     .Append(" AND ").Append(alias).Append(".GlobalSequencePosition = et0.GlobalSequencePosition");
             }
 
+            if (filterTenant)
+            {
+                sql.Append(" INNER LOOP JOIN ").Append(_qTable).Append(" AS e WITH (FORCESEEK)")
+                    .Append(" ON e.SequencePosition = et0.GlobalSequencePosition");
+            }
+
             sql.Append(" WHERE et0.TagId = ").Append(tagVars[item.Tags[0].ToString()]);
+            if (filterTenant)
+                sql.Append(" AND e.TenantId = @CondTenant");
             if (hasAfter)
                 sql.Append(" AND et0.GlobalSequencePosition > @After");
             if (hasTypes)
@@ -669,6 +684,8 @@ public partial class SqlServerEventStore
 
         var events = new StringBuilder();
         events.Append("(EXISTS (SELECT 1 FROM ").Append(_qTable).Append(" AS e WHERE 1 = 1");
+        if (filterTenant)
+            events.Append(" AND e.TenantId = @CondTenant");
         if (hasAfter)
             events.Append(" AND e.SequencePosition > @After");
         AppendConditionTypeIn(events, "e.EventTypeId", item, itemIndex, parameters);

@@ -131,7 +131,7 @@ public sealed class SqlServerEventStoreCorrectnessTests : IAsyncLifetime
     {
         var options = new SqlServerEventStoreOptions
         {
-            RequireTenantId = false,
+            Tenancy = Tenancy.Single,
             SchemaName = schema,
             ContextName = schema,
             SqlSubscriptionPollInterval = TimeSpan.FromMilliseconds(50)

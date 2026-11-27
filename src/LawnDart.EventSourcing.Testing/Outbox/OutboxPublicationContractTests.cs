@@ -62,7 +62,8 @@ public abstract class OutboxPublicationContractTests : ContractSuite
                 new TaggedEvent(Internal("dcb-hidden"), [tag]),
                 new TaggedEvent(Skipped(), [tag])
             ],
-            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(tag))));
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(tag))),
+            metadata: new EventMetadata { TenantId = "test-tenant" });
 
         var rows = await Rows(opened);
         Assert.Equal(2, rows.Count);
@@ -192,7 +193,7 @@ public abstract class OutboxPublicationContractTests : ContractSuite
     public async Task OutboxOn_WithNothingDeclared_FailsWhenTheStoreOpens()
     {
         SkipUnless(Cap.AppendWritesOutboxRows, "This backend does not write outbox rows when an event is appended.");
-        var options = ContractStores.Isolated(enableOutbox: true, eventTypes: ContractPublication.SourceTypes);
+        var options = ContractStores.Isolated(tenancy: Tenancy.Shared, enableOutbox: true, eventTypes: ContractPublication.SourceTypes);
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => Backend.OpenEventStoreAsync(options));
         Assert.Contains(options.SchemaName, ex.Message, StringComparison.Ordinal);
         Assert.Contains("backend-contract.outbox-event", ex.Message, StringComparison.Ordinal);
@@ -234,7 +235,8 @@ public abstract class OutboxPublicationContractTests : ContractSuite
                 new TaggedEvent(dcbMiddle, [tag]),
                 new TaggedEvent(Internal("dcb-after"), [tag])
             ],
-            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(tag))));
+            AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(tag))),
+            metadata: new EventMetadata { TenantId = "test-tenant" });
         var rows = await Rows(opened);
         var dcbRow = Assert.Single(rows, candidate => candidate.Id == dcbMiddle.Id);
         Assert.Equal(dcb.SequencePositions[1], dcbRow.SequencePosition);
@@ -288,6 +290,7 @@ public abstract class OutboxPublicationContractTests : ContractSuite
 
     private Task<ContractEventStore> OpenDeclaredAsync(bool enableOutbox = true)
         => Backend.OpenEventStoreAsync(ContractStores.Isolated(
+            tenancy: Tenancy.Shared,
             enableOutbox: enableOutbox,
             includeOutboxReader: true,
             eventTypes: ContractPublication.SourceTypes,

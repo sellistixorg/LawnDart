@@ -22,7 +22,7 @@ public abstract class RepositoryTenantContractTests : ContractSuite
     [Fact]
     public async Task SaveAsync_ReservedTenantDefault_Throws()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(requireTenantId: true))).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var repository = AggregateRepo(store, "default", validateNames: true);
         var aggregate = await PendingAsync(repository, "default");
 
@@ -34,7 +34,7 @@ public abstract class RepositoryTenantContractTests : ContractSuite
     [Fact]
     public async Task SaveAsync_ValidateNamesFalse_KeepsTenantDefault()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(requireTenantId: true, validateNames: false))).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared, validateNames: false))).Store;
         var repository = AggregateRepo(store, "default", validateNames: false);
         var aggregate = await PendingAsync(repository, "default");
 
@@ -46,7 +46,7 @@ public abstract class RepositoryTenantContractTests : ContractSuite
     [Fact]
     public async Task AppendWithContextAsync_ReservedTenantDefault_Throws()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(requireTenantId: true))).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var repository = DcbRepo(store, "default", validateNames: true);
 
         var ex = await Assert.ThrowsAsync<ArgumentException>(() => repository.AppendWithContextAsync(
@@ -59,7 +59,7 @@ public abstract class RepositoryTenantContractTests : ContractSuite
     [Fact]
     public async Task AppendWithContextAsync_ValidateNamesFalse_KeepsTenantDefault()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(requireTenantId: true, validateNames: false))).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared, validateNames: false))).Store;
         var repository = DcbRepo(store, "default", validateNames: false);
 
         var positions = await repository.AppendWithContextAsync(
@@ -67,7 +67,7 @@ public abstract class RepositoryTenantContractTests : ContractSuite
             AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(Tag.Parse("order:kept")))),
             new CommandMetadata { TenantId = "default" });
 
-        var read = await store.ReadByQueryAsync(Query.All(), fromSequencePosition: positions[0], limit: 1);
+        var read = await store.ReadByQueryAsync(Query.All().ForTenant("default"), fromSequencePosition: positions[0], limit: 1);
         var evt = Assert.Single(read.Events);
         Assert.StartsWith("default:dcb:", evt.StreamId.ToString());
     }
@@ -75,7 +75,7 @@ public abstract class RepositoryTenantContractTests : ContractSuite
     [Fact]
     public async Task AppendWithContextAsync_MissingTenant_WhenRequired_Throws()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(requireTenantId: true))).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var repository = DcbRepo(store, tenantId: null, validateNames: true);
 
         var ex = await Assert.ThrowsAsync<ArgumentException>(() => repository.AppendWithContextAsync(
@@ -91,7 +91,7 @@ public abstract class RepositoryTenantContractTests : ContractSuite
             new ContractTenantContextProvider(tenantId),
             Options.Create(new LawnDartOptions
             {
-                RequireTenantId = true,
+                Tenancy = Tenancy.Shared,
                 ValidateNames = validateNames
             }));
 
@@ -102,7 +102,7 @@ public abstract class RepositoryTenantContractTests : ContractSuite
             new ContractTenantContextProvider(tenantId),
             Options.Create(new LawnDartOptions
             {
-                RequireTenantId = true,
+                Tenancy = Tenancy.Shared,
                 ValidateNames = validateNames
             }));
 

@@ -132,7 +132,7 @@ public abstract class ProjectionHostContractTests : BackendContractSuite
     }
 
     private static InMemoryEventStore NewEventStore()
-        => new(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        => new(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Shared });
 
     private static LightweightProjectionRunnerService NewRunner(
         ProjectionRegistration registration,

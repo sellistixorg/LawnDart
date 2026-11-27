@@ -79,7 +79,8 @@ public sealed class PostgresContractBackend : IFullContractBackend
             MigrationConnectionString = _migrationConnectionString,
             SchemaName = options.SchemaName,
             ContextName = options.SchemaName,
-            RequireTenantId = options.RequireTenantId,
+            Tenancy = options.Tenancy,
+            SingleTenantId = options.SingleTenantId,
             ValidateNames = options.ValidateNames,
             EnableOutbox = options.EnableOutbox,
             EnableStreamRegistry = options.EnableRegistry,
@@ -181,7 +182,8 @@ public sealed class PostgresContractBackend : IFullContractBackend
             ConnectionString = _connectionString,
             MigrationConnectionString = _migrationConnectionString ?? _connectionString,
             SchemaName = options.SchemaName,
-            RequireTenantId = options.RequireTenantId,
+            Tenancy = options.Tenancy,
+            SingleTenantId = options.SingleTenantId,
             ValidateNames = options.ValidateNames
         };
         var snapshots = new PostgresSnapshotStore(snapshotOptions);

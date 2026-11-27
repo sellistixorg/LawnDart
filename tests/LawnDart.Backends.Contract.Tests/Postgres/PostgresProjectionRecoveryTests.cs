@@ -264,7 +264,7 @@ public sealed class PostgresProjectionRecoveryTests
     }
 
     private static InMemoryEventStore NewEvents()
-        => new(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        => new(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Shared });
 
     private static ProjectionRegistration Registration()
         => new(
@@ -415,7 +415,7 @@ public sealed class PostgresProjectionRunnerRestartTests
         var checkpoints = new PostgresCheckpointStore(options, views);
         var store = new PostgresProjectionStore(views, checkpoints);
         await store.InitializeSchemaAsync();
-        var events = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var events = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Shared });
         var reg = new ProjectionRegistration(
             typeof(ContractCounterProjection),
             typeof(ContractCounterView),

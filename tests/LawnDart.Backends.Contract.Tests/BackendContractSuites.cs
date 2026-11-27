@@ -545,3 +545,26 @@ public sealed class PostgresStreamTagTableContractTests : StreamTagTableContract
 {
     public PostgresStreamTagTableContractTests(PostgresContractFixture fixture) : base(fixture.Backend) { }
 }
+
+[Collection(InMemoryContractCollection.Name)]
+[Trait("Category", "Contract")]
+public sealed class InMemoryTenancyContractTests : TenancyContractTests
+{
+    public InMemoryTenancyContractTests(InMemoryContractFixture fixture) : base(fixture.Backend) { }
+}
+
+[Collection("SqlServerContract")]
+[Trait("Category", "Integration")]
+[Trait("Category", "Contract")]
+public sealed class SqlServerTenancyContractTests : TenancyContractTests
+{
+    public SqlServerTenancyContractTests(SqlServerContractFixture fixture) : base(fixture.Backend) { }
+}
+
+[Collection("PostgresContract")]
+[Trait("Category", "Integration")]
+[Trait("Category", "Contract")]
+public sealed class PostgresTenancyContractTests : TenancyContractTests
+{
+    public PostgresTenancyContractTests(PostgresContractFixture fixture) : base(fixture.Backend) { }
+}

@@ -250,7 +250,7 @@ internal sealed class LightweightProjectionSharedPipe : IAsyncDisposable
             .ToArray();
         var filter = typeNames.Length == 0
             ? EventSubscriptionFilter.All()
-            : EventSubscriptionFilter.ForQuery(Query.FromItems(QueryItem.ByType(typeNames)));
+            : EventSubscriptionFilter.ForQuery(Query.ForAllTenants(QueryItem.ByType(typeNames)));
 
         try
         {
@@ -419,8 +419,8 @@ internal sealed class LightweightProjectionSharedPipe : IAsyncDisposable
             .Distinct(StringComparer.Ordinal)
             .ToArray();
         return typeNames.Length == 0
-            ? Query.All()
-            : Query.FromItems(QueryItem.ByType(typeNames));
+            ? Query.ForAllTenants()
+            : Query.ForAllTenants(QueryItem.ByType(typeNames));
     }
 
     private async Task FanoutAsync(SequencedEvent se, CancellationToken ct)

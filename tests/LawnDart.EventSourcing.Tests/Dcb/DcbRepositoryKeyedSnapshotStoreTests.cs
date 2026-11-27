@@ -48,7 +48,7 @@ public class DcbRepositoryKeyedSnapshotStoreTests
         await pump.StopAsync(CancellationToken.None);
         Assert.Equal(1, recording.SaveCount);
         Assert.Equal(
-            DcbSnapshotId.FromQuery(Query.FromItems(QueryItem.ByTags(Tag.Parse("product:sku-keyed")))),
+            DcbSnapshotId.FromQuery(Query.FromItems(QueryItem.ByTags(Tag.Parse("product:sku-keyed"))).ForTenant("test-tenant")),
             recording.LastDcbId);
     }
 

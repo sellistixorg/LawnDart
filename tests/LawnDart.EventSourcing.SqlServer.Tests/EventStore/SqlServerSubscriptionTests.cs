@@ -62,7 +62,7 @@ public class SqlServerSubscriptionTests : IAsyncLifetime
             .UseSqlServer(o =>
             {
                 o.ConnectionString = _connectionString;
-                o.RequireTenantId = false;
+                o.Tenancy = Tenancy.Single;
                 o.SchemaName = "di_default";
                 o.SqlSubscriptionPollInterval = TimeSpan.FromMilliseconds(50);
             })
@@ -90,7 +90,7 @@ public class SqlServerSubscriptionTests : IAsyncLifetime
             true,
             new SqlServerEventStoreOptions
             {
-                RequireTenantId = false,
+                Tenancy = Tenancy.Single,
                 SchemaName = schema,
                 ContextName = schema,
                 SqlSubscriptionPollInterval = TimeSpan.FromSeconds(30),
@@ -165,7 +165,7 @@ public class SqlServerSubscriptionTests : IAsyncLifetime
             true,
             new SqlServerEventStoreOptions
             {
-                RequireTenantId = false,
+                Tenancy = Tenancy.Single,
                 SchemaName = schema,
                 ContextName = contextName,
                 SqlSubscriptionPollInterval = TimeSpan.FromMilliseconds(pollMs),

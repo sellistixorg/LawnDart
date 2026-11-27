@@ -200,7 +200,7 @@ public class CommandEndpointIntegrationTests : IDisposable
                         services.AddSingleton<IAuthorizationContextProvider, StubAuthorizationContextProvider>();
                         services.AddLawnDart(o =>
                         {
-                            o.RequireTenantId = false;
+                            o.Tenancy = Tenancy.Single;
                             o.EnableAuthorization = false;
                         });
                         services.AddBoundedContext("default")

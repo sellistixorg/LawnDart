@@ -42,14 +42,14 @@ One connection string is enough. Leave `ListenConnectionString` unset.
 The same host accepts `LISTEN`.
 
 ```csharp
-services.AddLawnDart(o => o.RequireTenantId = false);
+services.AddLawnDart(o => o.Tenancy = Tenancy.Single);
 services.AddPostgresProjectionStores("default", connectionString);
 services.AddPostgresInboxStore(connectionString);
 services.AddBoundedContext("default")
     .UsePostgres(o =>
     {
         o.ConnectionString = connectionString;
-        o.RequireTenantId = false;
+        o.Tenancy = Tenancy.Single;
     });
 ```
 
@@ -100,7 +100,7 @@ services.AddBoundedContext("default")
         o.ConnectionString = pooledConnectionString;
         o.ListenConnectionString = directConnectionString;
         o.MigrationConnectionString = adminConnectionString;
-        o.RequireTenantId = false;
+        o.Tenancy = Tenancy.Single;
     });
 
 services.AddPostgresProjectionStores("default", pooledConnectionString, configure: o =>

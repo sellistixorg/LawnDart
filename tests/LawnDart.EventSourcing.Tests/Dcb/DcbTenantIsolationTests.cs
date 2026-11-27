@@ -108,7 +108,7 @@ public class DcbTenantIsolationTests
     public async Task DcbOperations_WithEnforcementDisabled_AllowsAnyTags()
     {
         // Arrange
-        var eventStore = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var eventStore = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         var metadataProvider = new TestMetadataProvider();
         var tenantProvider = new TestTenantContextProvider(null); // No tenant
 

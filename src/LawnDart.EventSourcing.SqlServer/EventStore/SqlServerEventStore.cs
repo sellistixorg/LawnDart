@@ -147,13 +147,7 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
             serializer ?? new JsonEventSerializer(),
             new WriteThroughEventTypeCatalog());
         _options = options ?? new SqlServerEventStoreOptions();
-        if (_options.AppendLockTagThreshold < 1)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(options),
-                _options.AppendLockTagThreshold,
-                "AppendLockTagThreshold must be at least 1.");
-        }
+        _options.EnsureValid();
         _adapter = new EventStoreAdapter(this, _session, this, _options.SubscriptionChannelCapacity, publishedEvents);
         _tableName = tableName ?? throw new ArgumentNullException(nameof(tableName));
         _registryTableName = registryTableName ?? throw new ArgumentNullException(nameof(registryTableName));
@@ -1403,24 +1397,8 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
             Status = Enum.Parse<StreamStatus>(reader.GetString("Status"))
         };
         
-        // TenantId column may not exist in older schemas, handle gracefully
-        try
-        {
-            if (!reader.IsDBNull("TenantId"))
-            {
-                streamMetadata.TenantId = reader.GetString("TenantId");
-            }
-            else
-            {
-                // Extract from stream ID if column is null
-                streamMetadata.TenantId = ExtractTenantId(streamMetadata.StreamId.ToString());
-            }
-        }
-        catch
-        {
-            // Column doesn't exist, extract from stream ID
-            streamMetadata.TenantId = ExtractTenantId(streamMetadata.StreamId.ToString());
-        }
+        // Public metadata derives tenant from the stream id, matching Postgres and in-memory.
+        streamMetadata.TenantId = ExtractTenantId(streamMetadata.StreamId.ToString());
         
         return streamMetadata;
     }
@@ -1438,7 +1416,8 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         => AppendTenantRules.ValidateStreamAppend(
             StreamId.Parse(streamId),
             envelopes,
-            _options.RequireTenantId,
+            _options.Tenancy,
+            _options.SingleTenantId,
             _options.ValidateNames);
 
     private void LogConnectionOnce()
@@ -1494,6 +1473,8 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
             throw new InvalidOperationException("SqlSubscriptionPollInterval cannot be negative.");
 
         filter ??= EventSubscriptionFilter.All();
+        if (filter.Kind == EventSubscriptionScope.Query)
+            AppendTenantRules.ValidateQuery(filter.Query!, _options.Tenancy, _options.SingleTenantId, _options.ValidateNames);
 
         var handle = new SqlServerSubscriptionHandle(
             subscriberId,
@@ -1516,6 +1497,11 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         long lastDelivered = handle.FromSequence - 1;
         var batchSize = _options.SqlSubscriptionBatchSize;
         var readQuery = ResolveSubscriptionQuery(handle.Filter);
+        var matchFilter = _options.Tenancy == Tenancy.Single
+            && handle.Filter.Kind == EventSubscriptionScope.Query
+            && handle.Filter.Query?.TenantId is not null
+            ? EventSubscriptionFilter.ForQuery(StripTenantForSingle(handle.Filter.Query))
+            : handle.Filter;
 
         try
         {
@@ -1542,7 +1528,7 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
                     if (frame.SequencePosition <= lastDelivered)
                         continue;
 
-                    if (handle.Filter.Matches(frame))
+                    if (matchFilter.Matches(frame))
                     {
                         await handle.WriteAsync(frame, ct).ConfigureAwait(false);
                         delivered++;
@@ -1610,12 +1596,15 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         }
     }
 
+    private static Query StripTenantForSingle(Query query)
+        => query.Items.Count == 0 ? Query.All() : Query.FromItems(query.Items);
+
     private static Query ResolveSubscriptionQuery(EventSubscriptionFilter filter) =>
         filter.Kind switch
         {
-            EventSubscriptionScope.Query => filter.Query ?? Query.All(),
+            EventSubscriptionScope.Query => filter.Query ?? Query.ForAllTenants(),
             // Stream / All: scan by global sequence; Stream filter applied via Filter.Matches.
-            _ => Query.All()
+            _ => Query.ForAllTenants()
         };
 
     async Task<IReadOnlyList<RecordedEvent>> IEventLog.ReadStreamAsync(
@@ -1679,7 +1668,7 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         DateTime? toCommitTimestamp,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(query);
+        AppendTenantRules.ValidateQuery(query, _options.Tenancy, _options.SingleTenantId, _options.ValidateNames);
         return ReadRecordedQueryStreamAsync(
             query, fromSequencePosition, toSequencePosition, toCommitTimestamp, cancellationToken);
     }
@@ -1718,7 +1707,7 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         {
             await EnsureEventTypeIdsAsync(envelopes, ct).ConfigureAwait(false);
             return await AppendInTransactionAsync(
-                streamId.ToString(), envelopes, eventIds, expectedVersion, condition: null, isDcb: false, ct)
+                streamId.ToString(), envelopes, eventIds, expectedVersion, condition: null, conditionTenant: null, isDcb: false, ct)
                 .ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
     }
@@ -1738,11 +1727,12 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
 
         return await AppendWithRetryAsync(async ct =>
         {
-            var tenantId = AppendTenantRules.TryReadTenantId(envelopes);
-            AppendTenantRules.ValidateDcbAppend(tenantId, _options.RequireTenantId, _options.ValidateNames);
+            var metadataTenantId = AppendTenantRules.TryReadTenantId(envelopes);
+            var (storageTenant, conditionTenant) = AppendTenantRules.ValidateDcbAppend(
+                metadataTenantId, condition, _options.Tenancy, _options.SingleTenantId, _options.ValidateNames);
 
-            var streamId = (!string.IsNullOrWhiteSpace(tenantId)
-                ? StreamId.For(tenantId, StreamId.DcbType, Guid.NewGuid().ToString())
+            var streamId = (!string.IsNullOrWhiteSpace(storageTenant)
+                ? StreamId.For(storageTenant, StreamId.DcbType, Guid.NewGuid().ToString())
                 : StreamId.For(StreamId.DcbType, Guid.NewGuid().ToString())).ToString();
             SqlServerColumnLimits.EnsureStreamId(streamId, "streamId");
 
@@ -1752,7 +1742,7 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
                 await beforeLocks(ct).ConfigureAwait(false);
 
             return await AppendInTransactionAsync(
-                streamId, envelopes, eventIds, expectedVersion: null, condition, isDcb: true, ct)
+                streamId, envelopes, eventIds, expectedVersion: null, condition, conditionTenant, isDcb: true, ct)
                 .ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
     }
@@ -1763,6 +1753,7 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         IReadOnlyList<Guid> eventIds,
         long? expectedVersion,
         AppendCondition? condition,
+        string? conditionTenant,
         bool isDcb,
         CancellationToken cancellationToken)
     {
@@ -1782,6 +1773,7 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
                 eventIds,
                 expectedVersion,
                 condition,
+                conditionTenant,
                 isDcb,
                 cancellationToken).ConfigureAwait(false);
 
@@ -1824,7 +1816,8 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         {
             await RollbackQuietlyAsync(transaction, cancellationToken).ConfigureAwait(false);
             await ClearStreamTagSkipAsync(connection, cancellationToken).ConfigureAwait(false);
-            var duplicate = await FindExistingEventIdAsync(ExtractTenantId(streamId), eventIds, cancellationToken)
+            var storageTenant = AppendTenantRules.ResolveStreamStorageTenant(streamId, _options.Tenancy, _options.SingleTenantId);
+            var duplicate = await FindExistingEventIdAsync(storageTenant, eventIds, cancellationToken)
                 .ConfigureAwait(false);
             if (duplicate is { } eventId)
                 throw new EventAlreadyAppendedException(eventId);
@@ -1927,6 +1920,7 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         DateTime? toCommitTimestamp,
         CancellationToken cancellationToken)
     {
+        var tenantId = AppendTenantRules.ValidateQuery(query, _options.Tenancy, _options.SingleTenantId, _options.ValidateNames);
         var resolution = await EnsureQueryTypesResolvedAsync(query, cancellationToken).ConfigureAwait(false);
         await EnsureTagIdsAsync(query, cancellationToken).ConfigureAwait(false);
         var to = CapUnresolvedRead(toSequencePosition, resolution);
@@ -1950,7 +1944,8 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
             toCommitTimestamp,
             limit,
             DcbQuerySql.Mode.Events,
-            window.ApplyStableHorizon);
+            window.ApplyStableHorizon,
+            tenantId);
 
         if (built.ShortCircuited)
             return new QueryRead([], resolution.Resolved);
@@ -2136,6 +2131,7 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
         DateTime? toCommitTimestamp,
         CancellationToken cancellationToken)
     {
+        var tenantId = AppendTenantRules.ValidateQuery(query, _options.Tenancy, _options.SingleTenantId, _options.ValidateNames);
         var resolution = await EnsureQueryTypesResolvedAsync(query, cancellationToken).ConfigureAwait(false);
         await EnsureTagIdsAsync(query, cancellationToken).ConfigureAwait(false);
         var to = CapUnresolvedRead(toSequencePosition, resolution);
@@ -2159,7 +2155,8 @@ public partial class SqlServerEventStore : IEventStore, IEventStoreSubscriptions
             toCommitTimestamp,
             limit: null,
             DcbQuerySql.Mode.MaxSequence,
-            window.ApplyStableHorizon);
+            window.ApplyStableHorizon,
+            tenantId);
 
         if (built.ShortCircuited)
             return 0L;

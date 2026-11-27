@@ -22,7 +22,7 @@ public abstract class AggregateEventTagContractTests : ContractSuite
     [Fact]
     public async Task SaveAsync_WritesEachEventWithItsOwnTags()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var repository = new AggregateRepository(
             store,
             new ContractMetadataProvider(),
@@ -51,7 +51,7 @@ public abstract class AggregateEventTagContractTests : ContractSuite
         Assert.StartsWith("CourseAggregate:", aggregateTag.ToString(), StringComparison.Ordinal);
         Assert.Contains(aggregateTag, subscribed.Tags);
 
-        var forStudent = (await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(student))))).Events;
+        var forStudent = (await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(student))).ForTenant("test-tenant"))).Events;
         Assert.IsType<ContractStudentSubscribed>(Assert.Single(forStudent).Event);
     }
 

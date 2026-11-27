@@ -42,7 +42,7 @@ public class MapProjectionDebugApiTests : IAsyncLifetime
         builder.WebHost.UseTestServer();
         builder.Logging.ClearProviders();
 
-        builder.Services.AddLawnDart(o => { o.RequireTenantId = false; o.EnableAuthorization = false; });
+        builder.Services.AddLawnDart(o => { o.Tenancy = Tenancy.Shared; o.EnableAuthorization = false; });
         builder.Services.AddBoundedContext("default").UseInMemory().WithEventTypes<CounterIncremented>();
         // Bridge for GetRequiredService<IEventStore> in timeline/state/step tests + debug DI.
         builder.Services.AddSingleton<IEventStore>(sp =>
@@ -328,8 +328,8 @@ public class MapProjectionDebugApiTests : IAsyncLifetime
     {
         var eventStore = Server.Services.GetRequiredService<LawnDart.EventStore.IEventStore>();
         var meta = new LawnDart.Metadata.EventMetadata { UserId = "test" };
-        await eventStore.AppendAsync(StreamId.Parse("test:tag-source-1"), [new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, "alpha")], metadata: meta);
-        await eventStore.AppendAsync(StreamId.Parse("test:tag-source-2"), [new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, "beta")], metadata: meta);
+        await eventStore.AppendAsync(StreamId.Parse("tenant1:test:tag-source-1"), [new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, "alpha")], metadata: meta);
+        await eventStore.AppendAsync(StreamId.Parse("tenant1:test:tag-source-2"), [new GlobalTagged(Guid.NewGuid(), DateTime.UtcNow, "beta")], metadata: meta);
 
         var request = AuthRequest(
             HttpMethod.Post,

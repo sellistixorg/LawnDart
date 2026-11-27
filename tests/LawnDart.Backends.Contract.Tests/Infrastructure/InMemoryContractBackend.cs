@@ -52,7 +52,8 @@ public sealed class InMemoryContractBackend : IFullContractBackend
         {
             SubscriptionPollInterval = options.SubscriptionPollInterval ?? TimeSpan.FromMilliseconds(50),
             SubscriptionChannelCapacity = options.SubscriptionChannelCapacity ?? 10_000,
-            RequireTenantId = options.RequireTenantId,
+            Tenancy = options.Tenancy,
+            SingleTenantId = options.SingleTenantId,
             ValidateNames = options.ValidateNames
         };
         var store = new InMemoryEventStore(
@@ -116,7 +117,8 @@ public sealed class InMemoryContractBackend : IFullContractBackend
         var store = new InMemoryEventStore(contextName: options.SchemaName, options: new InMemoryEventStoreOptions
         {
             SubscriptionPollInterval = TimeSpan.FromMilliseconds(50),
-            RequireTenantId = options.RequireTenantId,
+            Tenancy = options.Tenancy,
+            SingleTenantId = options.SingleTenantId,
             ValidateNames = options.ValidateNames
         });
         var snapshots = new InMemorySnapshotStore();

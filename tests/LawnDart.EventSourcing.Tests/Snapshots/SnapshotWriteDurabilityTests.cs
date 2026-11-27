@@ -20,7 +20,7 @@ namespace LawnDart.EventSourcing.Tests.Snapshots;
 public class SnapshotWriteDurabilityTests
 {
     private static IOptions<LawnDartOptions> CreateOptions() =>
-        Microsoft.Extensions.Options.Options.Create(new LawnDartOptions { RequireTenantId = false });
+        Microsoft.Extensions.Options.Options.Create(new LawnDartOptions { Tenancy = Tenancy.Single });
 
     private static AggregateRepository CreateRepository(
         ISnapshotStore store,
@@ -28,7 +28,7 @@ public class SnapshotWriteDurabilityTests
         ISnapshotWriteQueue queue,
         IEventStore? eventStore = null)
         => new(
-            eventStore ?? new InMemoryEventStore(),
+            eventStore ?? new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single }),
             new DefaultMetadataProvider(),
             new TestTenantContextProvider(),
             CreateOptions(),

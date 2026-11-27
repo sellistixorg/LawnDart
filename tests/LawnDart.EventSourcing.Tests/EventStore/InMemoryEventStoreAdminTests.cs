@@ -13,14 +13,14 @@ public class InMemoryEventStoreAdminTests
     [Fact]
     public async Task GetCurrentSequenceAsync_EmptyStore_ReturnsZero()
     {
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         Assert.Equal(0L, await store.GetCurrentSequenceAsync());
     }
 
     [Fact]
     public async Task GetCurrentSequenceAsync_AfterSingleAppend_ReturnsOne()
     {
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         await store.AppendAsync(StreamId.Parse("Order:1"), OneEvent());
         Assert.Equal(1L, await store.GetCurrentSequenceAsync());
     }
@@ -28,7 +28,7 @@ public class InMemoryEventStoreAdminTests
     [Fact]
     public async Task GetCurrentSequenceAsync_AfterMultipleAppends_ReturnsLastSequence()
     {
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         await store.AppendAsync(StreamId.Parse("Order:1"), OneEvent());
         await store.AppendAsync(StreamId.Parse("Order:2"), OneEvent());
         await store.AppendAsync(StreamId.Parse("Order:3"), OneEvent());
@@ -38,7 +38,7 @@ public class InMemoryEventStoreAdminTests
     [Fact]
     public async Task GetMaxSequencePositionAsync_EmptyStore_ReturnsZero()
     {
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         Assert.Equal(0L, await store.GetMaxSequencePositionAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse("order:1")))));
         Assert.Equal(0L, await store.GetMaxSequencePositionAsync(Query.All()));
     }
@@ -46,7 +46,7 @@ public class InMemoryEventStoreAdminTests
     [Fact]
     public async Task GetMaxSequencePositionAsync_WithTag_ReturnsMaxMatchingSequence()
     {
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         await store.AppendAsync(StreamId.Parse("Order:other"), OneEvent().Select(e => new TaggedEvent(e, [Tag.Parse("tag:other")])).ToList());
         var first = await store.AppendAsync(StreamId.Parse("Order:1"), OneEvent().Select(e => new TaggedEvent(e, [Tag.Parse("order:1")])).ToList());
         var last = await store.AppendAsync(StreamId.Parse("Order:2"), OneEvent().Select(e => new TaggedEvent(e, [Tag.Parse("order:1")])).ToList());
@@ -63,7 +63,7 @@ public class InMemoryEventStoreAdminTests
     [Fact]
     public async Task GetMaxSequencePositionAsync_AndTags_ReturnsIntersectionMax()
     {
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         await store.AppendAsync(StreamId.Parse("Order:1"), OneEvent().Select(e => new TaggedEvent(e, [Tag.Parse("tag:a"), Tag.Parse("tag:only-a")])).ToList());
         var both = await store.AppendAsync(StreamId.Parse("Order:2"), OneEvent().Select(e => new TaggedEvent(e, [Tag.Parse("tag:a"), Tag.Parse("tag:b")])).ToList());
         await store.AppendAsync(StreamId.Parse("Order:3"), OneEvent().Select(e => new TaggedEvent(e, [Tag.Parse("tag:b")])).ToList());
@@ -77,14 +77,14 @@ public class InMemoryEventStoreAdminTests
     [Fact]
     public async Task GetStreamCountAsync_EmptyStore_ReturnsZero()
     {
-        var store = new InMemoryEventStore(enableRegistry: true, options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(enableRegistry: true, options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         Assert.Equal(0L, await store.GetStreamCountAsync());
     }
 
     [Fact]
     public async Task GetStreamCountAsync_AfterMultipleStreams_ReturnsCorrectCount()
     {
-        var store = new InMemoryEventStore(enableRegistry: true, options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(enableRegistry: true, options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         await store.AppendAsync(StreamId.Parse("Order:1"), OneEvent());
         await store.AppendAsync(StreamId.Parse("Order:2"), OneEvent());
         await store.AppendAsync(StreamId.Parse("Customer:1"), OneEvent());
@@ -94,7 +94,7 @@ public class InMemoryEventStoreAdminTests
     [Fact]
     public async Task GetStreamCountAsync_AppendingToSameStream_CountsOnce()
     {
-        var store = new InMemoryEventStore(enableRegistry: true, options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(enableRegistry: true, options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         await store.AppendAsync(StreamId.Parse("Order:1"), OneEvent());
         await store.AppendAsync(StreamId.Parse("Order:1"), OneEvent());
         Assert.Equal(1L, await store.GetStreamCountAsync());
@@ -103,7 +103,7 @@ public class InMemoryEventStoreAdminTests
     [Fact]
     public async Task GetStreamCountAsync_WithPrefix_ReturnsFilteredCount()
     {
-        var store = new InMemoryEventStore(enableRegistry: true, options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(enableRegistry: true, options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         await store.AppendAsync(StreamId.Parse("Order:1"), OneEvent());
         await store.AppendAsync(StreamId.Parse("Order:2"), OneEvent());
         await store.AppendAsync(StreamId.Parse("Customer:1"), OneEvent());
@@ -116,7 +116,7 @@ public class InMemoryEventStoreAdminTests
     [Fact]
     public async Task GetStreamCountAsync_NullPrefix_ReturnsAllStreams()
     {
-        var store = new InMemoryEventStore(enableRegistry: true, options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(enableRegistry: true, options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         await store.AppendAsync(StreamId.Parse("Order:1"), OneEvent());
         await store.AppendAsync(StreamId.Parse("Customer:1"), OneEvent());
 
@@ -126,7 +126,7 @@ public class InMemoryEventStoreAdminTests
     [Fact]
     public async Task PrefixMatch_IsCaseInsensitive_AndTreatsLikeMetacharactersAsLiteral()
     {
-        var store = new InMemoryEventStore(enableRegistry: true, options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(enableRegistry: true, options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Shared, ValidateNames = false });
         await store.AppendAsync(StreamId.Parse("acme_west:Order:1"), OneEvent());
         await store.AppendAsync(StreamId.Parse("acmeXwest:Order:1"), OneEvent());
         await store.AppendAsync(StreamId.Parse("acme%west:Order:1"), OneEvent());

@@ -10,7 +10,7 @@ public static class LibraryDcbHost
 {
     public static IServiceCollection AddDcbLibrary(IServiceCollection services)
     {
-        services.AddLawnDart(o => o.RequireTenantId = false);
+        services.AddLawnDart(o => o.Tenancy = Tenancy.Single);
         var ctx = services.AddBoundedContext("default");
         ctx.UseInMemory();
         ctx.WithCommandHandlers<BorrowBookHandler>();

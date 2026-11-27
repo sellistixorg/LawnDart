@@ -44,7 +44,7 @@ Optionally configure options and provide a tenant context:
 ```csharp
 services.AddLawnDart(options =>
 {
-    options.RequireTenantId = false;
+    options.Tenancy = Tenancy.Single;
 });
 
 services.AddTenantContextProvider<MyTenantContextProvider>();

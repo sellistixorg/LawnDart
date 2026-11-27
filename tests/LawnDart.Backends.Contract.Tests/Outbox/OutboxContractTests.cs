@@ -602,7 +602,7 @@ public abstract class OutboxContractTests : BackendContractSuite
         var reader = await Backend.OpenOutboxAsync(new ContractStoreOptions
         {
             SchemaName = opened.SchemaName,
-            RequireTenantId = false,
+            Tenancy = Tenancy.Shared,
             OutboxClaimLease = TimeSpan.Zero
         });
         var outbox = Assert.Single(await reader.GetUnprocessedAsync(10));
@@ -649,6 +649,7 @@ public abstract class OutboxContractTests : BackendContractSuite
 
     private Task<ContractEventStore> OpenPublishingAsync(bool enableOutbox = true, TimeSpan? lease = null)
         => Backend.OpenEventStoreAsync(ContractStores.Isolated(
+            tenancy: Tenancy.Shared,
             enableOutbox: enableOutbox,
             includeOutboxReader: true,
             outboxClaimLease: lease,

@@ -12,7 +12,7 @@ public class InMemorySubscriptionTests
     [Fact]
     public async Task Global_CatchUp_Then_Live_Is_Continuous()
     {
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         await store.AppendAsync(StreamId.Parse("test:s1"), [Evt()]);
         await store.AppendAsync(StreamId.Parse("test:s1"), [Evt()]);
 
@@ -39,7 +39,7 @@ public class InMemorySubscriptionTests
     [Fact]
     public async Task Stream_Scope_Isolates_Other_Streams()
     {
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         await store.AppendAsync(StreamId.Parse("test:a"), [Evt()]);
         await store.AppendAsync(StreamId.Parse("test:b"), [Evt()]);
         await store.AppendAsync(StreamId.Parse("test:a"), [Evt()]);
@@ -57,7 +57,7 @@ public class InMemorySubscriptionTests
     [Fact]
     public async Task Query_Scope_Matches_ReadByQuery()
     {
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         await store.AppendAsync(StreamId.Parse("test:s1"), [new TaggedEvent(Evt(), [Tag.Parse("order:1")])]);
         await store.AppendAsync(StreamId.Parse("test:s1"), [new TaggedEvent(Evt(), [Tag.Parse("tag:other")])]);
         await store.AppendAsync(StreamId.Parse("test:s1"), [new TaggedEvent(Evt(), [Tag.Parse("order:1")])]);
@@ -79,7 +79,7 @@ public class InMemorySubscriptionTests
     [Fact]
     public async Task FromSequence_Is_Inclusive()
     {
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         await store.AppendAsync(StreamId.Parse("test:s1"), [Evt(), Evt(), Evt()]);
 
         await using var handle = store.Subscribe("sub-inclusive", fromSequence: 2);
@@ -91,7 +91,7 @@ public class InMemorySubscriptionTests
     public async Task Dispose_Stops_Delivery_And_Unregisters()
     {
         var store = new InMemoryEventStore(
-            options: new InMemoryEventStoreOptions { SubscriptionChannelCapacity = 8, RequireTenantId = false });
+            options: new InMemoryEventStoreOptions { SubscriptionChannelCapacity = 8, Tenancy = Tenancy.Single });
         await store.AppendAsync(StreamId.Parse("test:s1"), [Evt()]);
 
         var handle = store.Subscribe("sub-dispose", fromSequence: 1);
@@ -109,7 +109,7 @@ public class InMemorySubscriptionTests
     public async Task Slow_Consumer_Blocks_Without_Silent_Loss()
     {
         var store = new InMemoryEventStore(
-            options: new InMemoryEventStoreOptions { SubscriptionChannelCapacity = 1, RequireTenantId = false });
+            options: new InMemoryEventStoreOptions { SubscriptionChannelCapacity = 1, Tenancy = Tenancy.Single });
 
         await using var handle = store.Subscribe("sub-slow", fromSequence: 1);
 
@@ -127,7 +127,7 @@ public class InMemorySubscriptionTests
     [Fact]
     public async Task Multiple_Independent_Subscribers()
     {
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         await store.AppendAsync(StreamId.Parse("test:s1"), [Evt()]);
 
         await using var a = store.Subscribe("a", fromSequence: 1);
@@ -144,7 +144,7 @@ public class InMemorySubscriptionTests
     [Fact]
     public async Task Concurrent_Append_During_CatchUp_Is_Gap_Free()
     {
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         for (var i = 0; i < 50; i++)
             await store.AppendAsync(StreamId.Parse("test:s1"), [Evt()]);
 

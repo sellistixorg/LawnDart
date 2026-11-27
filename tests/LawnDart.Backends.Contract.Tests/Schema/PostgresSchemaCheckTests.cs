@@ -116,7 +116,7 @@ public sealed class PostgresSchemaCheckTests(PostgresSchemaCheckFixture fixture)
     public async Task VerifySchemaAsync_MismatchesOnANewerMarkerVersion()
     {
         var bundle = await fixture.CreateAsync("chk_ver");
-        await ReplaceBodyAsync(bundle.Schema, "append_to_stream", "LawnDart:append_to_stream:1", "LawnDart:append_to_stream:2");
+        await ReplaceBodyAsync(bundle.Schema, "append_to_stream", "LawnDart:append_to_stream:2", "LawnDart:append_to_stream:3");
         await ReplaceBodyAsync(bundle.Schema, "save_projection_flush", "LawnDart:save_projection_flush:1", "LawnDart:save_projection_flush:2");
 
         var version2Events = await bundle.Store.VerifySchemaAsync();
@@ -126,7 +126,7 @@ public sealed class PostgresSchemaCheckTests(PostgresSchemaCheckFixture fixture)
         Assert.False(version2Flush.Matches);
         Assert.Contains("save_projection_flush body", version2Flush.Missing);
 
-        await ReplaceBodyAsync(bundle.Schema, "append_to_stream", "LawnDart:append_to_stream:2", "LawnDart:append_to_stream:10");
+        await ReplaceBodyAsync(bundle.Schema, "append_to_stream", "LawnDart:append_to_stream:3", "LawnDart:append_to_stream:10");
         await ReplaceBodyAsync(bundle.Schema, "save_projection_flush", "LawnDart:save_projection_flush:2", "LawnDart:save_projection_flush:10");
 
         var version10Events = await bundle.Store.VerifySchemaAsync();
@@ -301,7 +301,7 @@ public sealed class PostgresSchemaCheckFixture : IAsyncLifetime
         {
             ConnectionString = connectionString,
             SchemaName = schema,
-            RequireTenantId = false
+            Tenancy = Tenancy.Single
         };
         var projectionOptions = new PostgresProjectionStoreOptions
         {

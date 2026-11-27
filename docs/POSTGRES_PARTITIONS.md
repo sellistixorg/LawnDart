@@ -21,11 +21,12 @@ One rule on every write and every read:
 - `default` in any casing is a reserved tenant id when `ValidateNames` is
   true (the default). Set `ValidateNames` to false to keep an existing
   tenant id of `default`.
-- `RequireTenantId` true (the default) rejects a missing tenant before the
+- `Tenancy.Shared` (the default) rejects a missing tenant before the
   key is chosen.
-- With `RequireTenantId` false and no tenant prefix, the row stores
-  `default`. Stream metadata still reads the tenant from the stream id, so
-  that stream does not report `default`.
+- With `Tenancy.Single` and `SingleTenantId` null, a stream without a tenant
+  prefix stores `default`. Stream metadata still reads the tenant from the
+  stream id, so that stream does not report `default`. With `SingleTenantId`
+  set, streams use `{SingleTenantId}:{type}:{id}` and store that tenant id.
 
 `acme:Order:1` stores tenant `acme`. `Order:1` stores tenant `default`.
 `:order:1` has an empty first part, so it stores `default` rather than an

@@ -28,7 +28,7 @@ public class InMemoryReadByQueryStreamTests
         await store.AppendAsync(StreamId.Parse("stream:alpha:2"), [new TaggedEvent((IEvent)new TestStreamEvent("C"), Tag.Parse("tag:alpha"))]);
 
         var events = await DrainAsync(store.ReadByQueryStreamAsync(
-            Query.FromItems(QueryItem.ByTags(Tag.Parse("tag:alpha")))));
+            Query.FromItems(QueryItem.ByTags(Tag.Parse("tag:alpha"))).ForTenant("stream")));
 
         Assert.Equal(2, events.Count);
         Assert.All(events, e => Assert.Contains("tag:alpha", e.Tags.Select(static t => t.ToString()).ToArray()));
@@ -41,7 +41,7 @@ public class InMemoryReadByQueryStreamTests
         var store = new InMemoryEventStore();
 
         var events = await DrainAsync(store.ReadByQueryStreamAsync(
-            Query.FromItems(QueryItem.ByTags(Tag.Parse("tag:missing")))));
+            Query.FromItems(QueryItem.ByTags(Tag.Parse("tag:missing"))).ForTenant("stream")));
 
         Assert.Empty(events);
     }
@@ -57,7 +57,7 @@ public class InMemoryReadByQueryStreamTests
 
         SequencedEvent? first = null;
         await foreach (var evt in store.ReadByQueryStreamAsync(
-            Query.FromItems(QueryItem.ByTags(Tag.Parse("tag:early")))))
+            Query.FromItems(QueryItem.ByTags(Tag.Parse("tag:early"))).ForTenant("stream")))
         {
             first = evt;
             break;
@@ -76,10 +76,10 @@ public class InMemoryReadByQueryStreamTests
                 [new TaggedEvent((IEvent)new TestStreamEvent($"parity-{i}"), Tag.Parse("tag:parity"))]);
 
         var buffered = (await store.ReadByQueryAsync(
-            Query.FromItems(QueryItem.ByTags(Tag.Parse("tag:parity"))))).Events;
+            Query.FromItems(QueryItem.ByTags(Tag.Parse("tag:parity"))).ForTenant("stream"))).Events;
 
         var streamed = await DrainAsync(store.ReadByQueryStreamAsync(
-            Query.FromItems(QueryItem.ByTags(Tag.Parse("tag:parity")))));
+            Query.FromItems(QueryItem.ByTags(Tag.Parse("tag:parity"))).ForTenant("stream")));
 
         Assert.Equal(buffered.Count, streamed.Count);
         for (var i = 0; i < buffered.Count; i++)

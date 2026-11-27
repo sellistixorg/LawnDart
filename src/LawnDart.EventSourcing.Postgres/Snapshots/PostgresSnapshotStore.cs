@@ -43,6 +43,7 @@ public sealed class PostgresSnapshotStore : ISnapshotStore, IDcbSnapshotStore, I
     public PostgresSnapshotStore(PostgresEventStoreOptions options, ILogger<PostgresSnapshotStore>? logger = null)
     {
         ArgumentNullException.ThrowIfNull(options);
+        TenancyValidation.EnsureValid(options.Tenancy, options.SingleTenantId, options.ValidateNames);
         if (string.IsNullOrWhiteSpace(options.ConnectionString))
             throw new ArgumentException("ConnectionString must be set.", nameof(options));
         PgIdentifier.RequireSchema(options.SchemaName);
@@ -230,7 +231,7 @@ public sealed class PostgresSnapshotStore : ISnapshotStore, IDcbSnapshotStore, I
     {
         try
         {
-            var tenant = TenantKey.ForStream(streamId);
+            var tenant = TenantKey.ForStream(streamId, _options.Tenancy, _options.SingleTenantId);
             var connection = await OpenAsync(ct).ConfigureAwait(false);
             await using var connectionDisposal = connection.ConfigureAwait(false);
             var command = new NpgsqlCommand(
@@ -293,7 +294,7 @@ public sealed class PostgresSnapshotStore : ISnapshotStore, IDcbSnapshotStore, I
                 nameof(streamId));
         }
 
-        var tenant = TenantKey.ForStream(streamId);
+        var tenant = TenantKey.ForStream(streamId, _options.Tenancy, _options.SingleTenantId);
         var data = JsonSerializer.SerializeToUtf8Bytes(state, JsonOptions);
         var checksum = ComputeChecksum(data);
         var stateType = typeof(TState).FullName ?? typeof(TState).Name;
@@ -329,7 +330,7 @@ public sealed class PostgresSnapshotStore : ISnapshotStore, IDcbSnapshotStore, I
     /// <inheritdoc/>
     public async Task DeleteSnapshotAsync(string streamId, CancellationToken ct = default)
     {
-        var tenant = TenantKey.ForStream(streamId);
+        var tenant = TenantKey.ForStream(streamId, _options.Tenancy, _options.SingleTenantId);
         var connection = await OpenAsync(ct).ConfigureAwait(false);
         await using var connectionDisposal = connection.ConfigureAwait(false);
         var command = new NpgsqlCommand(
@@ -357,7 +358,7 @@ public sealed class PostgresSnapshotStore : ISnapshotStore, IDcbSnapshotStore, I
     /// <inheritdoc/>
     public async Task<SnapshotInfo?> GetSnapshotInfoAsync(string streamId, CancellationToken ct = default)
     {
-        var tenant = TenantKey.ForStream(streamId);
+        var tenant = TenantKey.ForStream(streamId, _options.Tenancy, _options.SingleTenantId);
         var connection = await OpenAsync(ct).ConfigureAwait(false);
         await using var connectionDisposal = connection.ConfigureAwait(false);
         var command = new NpgsqlCommand(

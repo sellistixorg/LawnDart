@@ -30,7 +30,7 @@ The shapes an event model compiles into are on the
 ## Registration
 
 ```csharp
-services.AddLawnDart(o => o.RequireTenantId = false);
+services.AddLawnDart(o => o.Tenancy = Tenancy.Single);
 services.AddBoundedContext("default")
     .WithEventTypes(typeof(SomeEvent).Assembly);
 ```

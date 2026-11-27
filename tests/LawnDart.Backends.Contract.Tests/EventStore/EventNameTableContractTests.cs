@@ -26,14 +26,14 @@ public abstract class EventNameTableContractTests : BackendContractSuite
 
         var storedName = EventTypeCatalog.TryGetDeclaredName(typeof(ContractTestEvent))!;
         var otherName = EventTypeCatalog.TryGetDeclaredName(typeof(ContractAnotherEvent))!;
-        var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(
+        var opened = await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared,
             eventTypes: [typeof(ContractTestEvent), typeof(ContractAnotherEvent)]));
 
         Assert.Equal(1, await CountEventNamesAsync(opened, storedName));
         Assert.Equal(1, await CountEventNamesAsync(opened, otherName));
 
         await opened.Store.AppendAsync(Stream(), [ContractEvent.Tick()]);
-        var query = Query.FromItems(QueryItem.ByType(storedName, otherName));
+        var query = Query.FromItems(QueryItem.ByType(storedName, otherName)).ForTenant("test-tenant");
         var read = await opened.Store.ReadByQueryAsync(query);
         var sequenced = Assert.Single(read.Events);
         Assert.IsType<ContractTestEvent>(sequenced.Event);
@@ -57,7 +57,7 @@ public abstract class EventNameTableContractTests : BackendContractSuite
             "This store has no event-name table.");
 
         var schema = "c" + Guid.NewGuid().ToString("N");
-        var options = new ContractStoreOptions { SchemaName = schema, RequireTenantId = false };
+        var options = new ContractStoreOptions { SchemaName = schema, Tenancy = Tenancy.Shared };
         var writer = await Backend.OpenEventStoreAsync(options);
         var reader = await Backend.OpenEventStoreAsync(options);
         var reloadGate = new ReloadGate();
@@ -71,7 +71,7 @@ public abstract class EventNameTableContractTests : BackendContractSuite
 
         const string known = "race.known";
         await writer.Log.AppendAsync(Stream(), [new AppendEvent(known, "{}"u8.ToArray())]);
-        var primed = await reader.Log.ReadByQueryAsync(Query.FromItems(QueryItem.ByType(known)));
+        var primed = await reader.Log.ReadByQueryAsync(Query.FromItems(QueryItem.ByType(known)).ForTenant("test-tenant"));
         var cursor = Assert.Single(primed.Events).SequencePosition;
 
         // A few hundred rounds is enough to catch a read that returns the later
@@ -80,7 +80,7 @@ public abstract class EventNameTableContractTests : BackendContractSuite
         for (var round = 0; round < rounds; round++)
         {
             var fresh = "race.new." + round.ToString("D4") + "." + Guid.NewGuid().ToString("N");
-            var query = Query.FromItems(QueryItem.ByType(known, fresh));
+            var query = Query.FromItems(QueryItem.ByType(known, fresh)).ForTenant("test-tenant");
             var readsStarted = 0;
             var writesFinished = 0;
             long freshPosition = 0;

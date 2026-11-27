@@ -12,7 +12,7 @@ public class NewEventsSignalSubscriptionTests
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions
         {
             SubscriptionPollInterval = TimeSpan.FromSeconds(30),
-            RequireTenantId = false
+            Tenancy = Tenancy.Single
         });
 
         await using var handle = store.Subscribe("sub-wake", fromSequence: 1);
@@ -32,7 +32,7 @@ public class NewEventsSignalSubscriptionTests
     [Fact]
     public async Task FailedAppend_DoesNotSignal()
     {
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         await store.AppendAsync(StreamId.Parse("test:s1"), [Evt()]);
         Assert.Equal(1, store.NewEvents.Generation);
         Assert.Equal(1, store.NewEvents.Position);
@@ -48,7 +48,7 @@ public class NewEventsSignalSubscriptionTests
     [Fact]
     public async Task CommittedSave_SignalsOnce_WithTheNewestPosition()
     {
-        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { RequireTenantId = false });
+        var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions { Tenancy = Tenancy.Single });
         await store.AppendAsync(StreamId.Parse("test:s1"), [Evt(), Evt(), Evt()]);
 
         Assert.Equal(1, store.NewEvents.Generation);
@@ -65,7 +65,7 @@ public class NewEventsSignalSubscriptionTests
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions
         {
             SubscriptionPollInterval = TimeSpan.FromSeconds(30),
-            RequireTenantId = false
+            Tenancy = Tenancy.Single
         });
         store.BeforeIdleWait = () =>
         {
@@ -88,7 +88,7 @@ public class NewEventsSignalSubscriptionTests
         var store = new InMemoryEventStore(options: new InMemoryEventStoreOptions
         {
             SubscriptionPollInterval = TimeSpan.FromMilliseconds(50),
-            RequireTenantId = false
+            Tenancy = Tenancy.Single
         });
         store.PublishNewEventsSignal = false;
 

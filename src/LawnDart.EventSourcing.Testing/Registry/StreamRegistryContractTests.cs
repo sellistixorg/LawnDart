@@ -13,7 +13,7 @@ public abstract class StreamRegistryContractTests : ContractSuite
     [Fact]
     public async Task GetStreamAsync_AfterAppend_ReturnsMetadata()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var streamId = "test-tenant:Order:" + Guid.NewGuid().ToString("N");
         await store.AppendAsync(StreamId.Parse(streamId), [ContractEvent.Tick()], metadata: new EventMetadata { TenantId = "test-tenant" });
         var metadata = await store.GetStreamAsync(StreamId.Parse(streamId));
@@ -28,7 +28,7 @@ public abstract class StreamRegistryContractTests : ContractSuite
     [Fact]
     public async Task GetStreamsByAggregateTypeAsync_ReturnsMatchingStreams()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var metadata = new EventMetadata { TenantId = "test-tenant" };
         var first = "test-tenant:Order:" + Guid.NewGuid().ToString("N");
         var second = "test-tenant:Order:" + Guid.NewGuid().ToString("N");
@@ -45,7 +45,7 @@ public abstract class StreamRegistryContractTests : ContractSuite
     [Fact]
     public async Task GetStreamsByTagAsync_ReturnsMatchingStreams()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var metadata = new EventMetadata { TenantId = "test-tenant" };
         var high = LawnDart.EventStore.Tag.Parse("high:" + Guid.NewGuid().ToString("N"));
         var low = LawnDart.EventStore.Tag.Parse("low:" + Guid.NewGuid().ToString("N"));
@@ -61,7 +61,7 @@ public abstract class StreamRegistryContractTests : ContractSuite
     [Fact]
     public async Task EnumerateStreamIdsAsync_ReturnsAllStreamIds()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var metadata = new EventMetadata { TenantId = "test-tenant" };
         var first = "test-tenant:Order:" + Guid.NewGuid().ToString("N");
         var second = "test-tenant:Order:" + Guid.NewGuid().ToString("N");
@@ -76,7 +76,7 @@ public abstract class StreamRegistryContractTests : ContractSuite
     [Fact]
     public async Task PrefixQueries_TreatLikeMetacharactersAsLiteral()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared, validateNames: false))).Store;
         var suffix = Guid.NewGuid().ToString("N");
         await store.AppendAsync(StreamId.Parse($"acme_west{suffix}:Order:1"), [ContractEvent.Tick()]);
         await store.AppendAsync(StreamId.Parse($"acmeXwest{suffix}:Order:1"), [ContractEvent.Tick()]);

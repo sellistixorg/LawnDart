@@ -54,7 +54,7 @@ internal class Program
 
         services.AddLawnDart(options =>
         {
-            options.RequireTenantId = false;
+            options.Tenancy = Tenancy.Single;
             options.EnableAuthorization = false;
         });
 
@@ -84,7 +84,7 @@ internal class Program
             academyCtx.UseSqlServer(opts =>
             {
                 opts.ConnectionString = connectionString;
-                opts.RequireTenantId = false;
+                opts.Tenancy = Tenancy.Single;
                 opts.EnableOutbox = true;
             });
             services.AddInMemoryMessaging();

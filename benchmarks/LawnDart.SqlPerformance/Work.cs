@@ -138,11 +138,11 @@ internal static class Workloads
         results.Add(await HotStreamAsync(log, catalog, samples, cancellationToken).ConfigureAwait(false));
         results.Add(await DcbAppendsAsync(log, catalog, samples, recentAfter: true, "dcb append recent after", cancellationToken).ConfigureAwait(false));
         results.Add(await DcbHeavyAsync(log, catalog, samples, cancellationToken).ConfigureAwait(false));
-        results.Add(await QueryAsync(log, Query.FromItems(QueryItem.ByTags(Tag.Parse(catalog.QueryTag))), samples, "queries", "tag", cancellationToken).ConfigureAwait(false));
-        results.Add(await QueryAsync(log, Query.FromItems(QueryItem.ByTypeAndTags([catalog.QueryType], [Tag.Parse(catalog.QueryTag)])), samples, "queries", "tag and type", cancellationToken).ConfigureAwait(false));
-        results.Add(await QueryAsync(log, Query.FromItems(QueryItem.ByTypeAndTags([catalog.RareType], [Tag.Parse(catalog.QueryTag)])), samples, "queries", "rare type and tag", cancellationToken).ConfigureAwait(false));
-        results.Add(await QueryAsync(log, Query.FromItems(QueryItem.ByTags(Tag.Parse(catalog.MultiTagA), Tag.Parse(catalog.MultiTagB))), samples, "queries", "two tags", cancellationToken).ConfigureAwait(false));
-        results.Add(await QueryAsync(log, Query.FromItems(QueryItem.ByTags(catalog.ManyTags.Select(Tag.Parse).ToArray())), samples, "queries", "many tags", cancellationToken).ConfigureAwait(false));
+        results.Add(await QueryAsync(log, Query.ForAllTenants(QueryItem.ByTags(Tag.Parse(catalog.QueryTag))), samples, "queries", "tag", cancellationToken).ConfigureAwait(false));
+        results.Add(await QueryAsync(log, Query.ForAllTenants(QueryItem.ByTypeAndTags([catalog.QueryType], [Tag.Parse(catalog.QueryTag)])), samples, "queries", "tag and type", cancellationToken).ConfigureAwait(false));
+        results.Add(await QueryAsync(log, Query.ForAllTenants(QueryItem.ByTypeAndTags([catalog.RareType], [Tag.Parse(catalog.QueryTag)])), samples, "queries", "rare type and tag", cancellationToken).ConfigureAwait(false));
+        results.Add(await QueryAsync(log, Query.ForAllTenants(QueryItem.ByTags(Tag.Parse(catalog.MultiTagA), Tag.Parse(catalog.MultiTagB))), samples, "queries", "two tags", cancellationToken).ConfigureAwait(false));
+        results.Add(await QueryAsync(log, Query.ForAllTenants(QueryItem.ByTags(catalog.ManyTags.Select(Tag.Parse).ToArray())), samples, "queries", "many tags", cancellationToken).ConfigureAwait(false));
         results.Add(await ConditionReadAsync(log, catalog, samples, recentAfter: true, "condition recent after", cancellationToken).ConfigureAwait(false));
         results.Add(await ConditionReadAsync(log, catalog, samples, recentAfter: false, "condition empty after", cancellationToken).ConfigureAwait(false));
         results.Add(await CatchUpAsync(log, 1000, fullCatchUp ? int.MaxValue : 2, cancellationToken).ConfigureAwait(false));
@@ -288,7 +288,7 @@ internal static class Workloads
             var tenant = "t" + (round % Math.Max(1, catalog.Tenants)).ToString(System.Globalization.CultureInfo.InvariantCulture);
             var metadata = Encoding.UTF8.GetBytes("{\"TenantId\":\"" + tenant + "\"}");
             var condition = AppendCondition.FailIfMatches(
-                Query.FromItems(QueryItem.ByTags(Tag.Parse("bench:absent"))),
+                Query.FromItems(QueryItem.ByTags(Tag.Parse("bench:absent"))).ForTenant(tenant),
                 recentAfter ? catalog.MaxPosition : null);
             var began = Stopwatch.GetTimestamp();
             var result = await log.AppendAsync(
@@ -312,7 +312,7 @@ internal static class Workloads
         var operations = new OperationLog();
         operations.Start();
         var rounds = Math.Min(Math.Max(1, samples), 5);
-        var query = Query.FromItems(QueryItem.ByTags(Tag.Parse(catalog.QueryTag)));
+        var query = Query.ForAllTenants(QueryItem.ByTags(Tag.Parse(catalog.QueryTag)));
         for (var round = 0; round < rounds; round++)
         {
             IEventLog freshLog = endpoint.Kind == DatabaseKind.Postgres
@@ -374,10 +374,10 @@ internal static class Workloads
     {
         var tenantCount = Math.Max(1, catalog.Tenants);
         var conditionQuery = Query.FromItems(QueryItem.ByTags(Tag.Create("dcb-absent", writer.ToString(System.Globalization.CultureInfo.InvariantCulture))));
-        var condition = AppendCondition.FailIfMatches(conditionQuery, catalog.MaxPosition);
         for (var round = 0; round < rounds; round++)
         {
             var tenant = "t" + ((writer + round) % tenantCount).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var condition = AppendCondition.FailIfMatches(conditionQuery.ForTenant(tenant), catalog.MaxPosition);
             var metadata = Encoding.UTF8.GetBytes("{\"TenantId\":\"" + tenant + "\"}");
             var skuTag = TagPicker.Rank((writer * 7 + round) % TagPicker.Vocabulary);
             var writerTag = "dcb-writer:" + writer.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -402,7 +402,7 @@ internal static class Workloads
     {
         var operations = new OperationLog();
         operations.Start();
-        var query = Query.FromItems(QueryItem.ByTags(Tag.Parse("bench:absent")));
+        var query = Query.ForAllTenants(QueryItem.ByTags(Tag.Parse("bench:absent")));
         // The append condition ignores positions at or before After. This read is inclusive, so start one past the loaded head.
         long? from = recentAfter ? catalog.MaxPosition + 1 : null;
         var rounds = Math.Max(1, samples);
@@ -519,7 +519,7 @@ internal static class Workloads
         while (batches < maxBatches)
         {
             var began = Stopwatch.GetTimestamp();
-            var page = await log.ReadByQueryAsync(Query.All(), from, batchSize, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var page = await log.ReadByQueryAsync(Query.ForAllTenants(), from, batchSize, cancellationToken: cancellationToken).ConfigureAwait(false);
             operations.Add(began, Stopwatch.GetTimestamp(), page.Events.Count);
             batches++;
             if (page.Events.Count == 0)
@@ -550,7 +550,7 @@ internal static class Workloads
             var metadata = Encoding.UTF8.GetBytes("{\"TenantId\":\"t0\"}");
             var appended = await log.AppendAsync(
                 [new AppendEvent("note-added", Payload, metadata, tags: [Tag.Parse("tenant:t0")])],
-                AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(Tag.Parse("bench:absent"))), head),
+                AppendCondition.FailIfMatches(Query.FromItems(QueryItem.ByTags(Tag.Parse("bench:absent"))).ForTenant("t0"), head),
                 cancellationToken).ConfigureAwait(false);
             if (appended.SequencePositions.Count < 1)
                 throw new InvalidOperationException("The polling append returned no position.");

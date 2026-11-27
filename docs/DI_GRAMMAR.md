@@ -3,7 +3,7 @@
 Register event stores and Lightweight projections through a **named bounded context**.
 
 ```csharp
-services.AddLawnDart(o => { o.RequireTenantId = false; });
+services.AddLawnDart(o => { o.Tenancy = Tenancy.Single; });
 services.AddInMemoryProjectionStores("default"); // before WithProjections (dev/test)
 
 var ctx = services.AddBoundedContext("default")

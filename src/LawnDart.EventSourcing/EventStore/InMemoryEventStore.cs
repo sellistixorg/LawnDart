@@ -31,7 +31,8 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
     private long _nextSequencePosition = 1;
     private readonly object _lock = new();
     private readonly bool _enableRegistry;
-    private readonly bool _requireTenantId;
+    private readonly Tenancy _tenancy;
+    private readonly string? _singleTenantId;
     private readonly bool _validateNames;
     private readonly IOutboxWriter? _outbox;
 
@@ -65,10 +66,10 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
     /// </param>
     /// <param name="logger">Optional logger.</param>
     /// <param name="options">
-    /// Optional store options: subscription capacity, <see cref="InMemoryEventStoreOptions.RequireTenantId"/>,
-    /// and <see cref="InMemoryEventStoreOptions.ValidateNames"/>.
-    /// When omitted, <see cref="InMemoryEventStoreOptions.RequireTenantId"/> is true.
-    /// A stream id must include a tenant prefix. Set that option to false to append without one.
+    /// Optional store options: subscription capacity, <see cref="InMemoryEventStoreOptions.Tenancy"/>,
+    /// <see cref="InMemoryEventStoreOptions.SingleTenantId"/>, and <see cref="InMemoryEventStoreOptions.ValidateNames"/>.
+    /// When omitted, <see cref="InMemoryEventStoreOptions.Tenancy"/> defaults to <see cref="LawnDart.Tenancy.Shared"/>
+    /// and stream ids must include a tenant prefix. Set it to <see cref="LawnDart.Tenancy.Single"/> to append without one.
     /// </param>
     /// <param name="session">
     /// Typed session used to serialize on append and read records back into objects.
@@ -101,16 +102,12 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
             new JsonEventSerializer(),
             new WriteThroughEventTypeCatalog());
         options ??= new InMemoryEventStoreOptions();
-        _requireTenantId = options.RequireTenantId;
+        options.EnsureValid();
+        _tenancy = options.Tenancy;
+        _singleTenantId = options.SingleTenantId;
         _validateNames = options.ValidateNames;
-        var capacity = options.SubscriptionChannelCapacity;
-        if (capacity < 1)
-            throw new ArgumentOutOfRangeException(nameof(options), "SubscriptionChannelCapacity must be at least 1.");
-        _subscriptionChannelCapacity = capacity;
-        var poll = options.SubscriptionPollInterval;
-        if (poll < TimeSpan.Zero)
-            throw new ArgumentOutOfRangeException(nameof(options), "SubscriptionPollInterval cannot be negative.");
-        _subscriptionPollInterval = poll;
+        _subscriptionChannelCapacity = options.SubscriptionChannelCapacity;
+        _subscriptionPollInterval = options.SubscriptionPollInterval;
         _adapter = new EventStoreAdapter(this, _session, this, _subscriptionChannelCapacity, publishedEvents);
         _outbox = outbox;
     }
@@ -175,7 +172,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         if (envelopes.Count == 0)
             throw new ArgumentException("At least one event is required", nameof(events));
 
-        AppendTenantRules.ValidateStreamAppend(streamId, envelopes, _requireTenantId, _validateNames);
+        AppendTenantRules.ValidateStreamAppend(streamId, envelopes, _tenancy, _singleTenantId, _validateNames);
 
         lock (_lock)
         {
@@ -196,12 +193,13 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
 
         ArgumentNullException.ThrowIfNull(condition);
 
-        var tenantId = AppendTenantRules.TryReadTenantId(envelopes);
-        AppendTenantRules.ValidateDcbAppend(tenantId, _requireTenantId, _validateNames);
+        var metadataTenantId = AppendTenantRules.TryReadTenantId(envelopes);
+        var (storageTenant, conditionTenant) = AppendTenantRules.ValidateDcbAppend(
+            metadataTenantId, condition, _tenancy, _singleTenantId, _validateNames);
 
         lock (_lock)
         {
-            var result = AppendFramesDcb(envelopes, condition, tenantId);
+            var result = AppendFramesDcb(envelopes, condition, storageTenant, conditionTenant);
             SignalCommitted(result);
             return Task.FromResult(result);
         }
@@ -246,20 +244,30 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         DateTime? toCommitTimestamp,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(query);
-        var frames = SnapshotQuery(query, fromSequencePosition, toSequencePosition, toCommitTimestamp, limit);
+        var effectiveQuery = ValidateAndPrepareQuery(query);
+        var frames = SnapshotQuery(effectiveQuery, fromSequencePosition, toSequencePosition, toCommitTimestamp, limit);
         return Task.FromResult(new EventLogQueryResult(frames));
     }
 
-    async IAsyncEnumerable<RecordedEvent> IEventLog.ReadByQueryStreamAsync(
+    IAsyncEnumerable<RecordedEvent> IEventLog.ReadByQueryStreamAsync(
         Query query,
+        long? fromSequencePosition,
+        long? toSequencePosition,
+        DateTime? toCommitTimestamp,
+        CancellationToken cancellationToken)
+    {
+        var effectiveQuery = ValidateAndPrepareQuery(query);
+        return StreamQueryFramesAsync(effectiveQuery, fromSequencePosition, toSequencePosition, toCommitTimestamp, cancellationToken);
+    }
+
+    private async IAsyncEnumerable<RecordedEvent> StreamQueryFramesAsync(
+        Query effectiveQuery,
         long? fromSequencePosition,
         long? toSequencePosition,
         DateTime? toCommitTimestamp,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(query);
-        foreach (var frame in SnapshotQuery(query, fromSequencePosition, toSequencePosition, toCommitTimestamp, limit: null))
+        foreach (var frame in SnapshotQuery(effectiveQuery, fromSequencePosition, toSequencePosition, toCommitTimestamp, limit: null))
         {
             cancellationToken.ThrowIfCancellationRequested();
             yield return frame;
@@ -275,8 +283,8 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         DateTime? toCommitTimestamp,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(query);
-        var frames = SnapshotQuery(query, fromSequencePosition, toSequencePosition, toCommitTimestamp, limit: null);
+        var effectiveQuery = ValidateAndPrepareQuery(query);
+        var frames = SnapshotQuery(effectiveQuery, fromSequencePosition, toSequencePosition, toCommitTimestamp, limit: null);
         return Task.FromResult(MaxSequence(frames));
     }
 
@@ -301,6 +309,8 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
             throw new ArgumentOutOfRangeException(nameof(fromSequence), "fromSequence cannot be negative.");
 
         filter ??= EventSubscriptionFilter.All();
+        if (filter.Kind == EventSubscriptionScope.Query)
+            AppendTenantRules.ValidateQuery(filter.Query!, _tenancy, _singleTenantId, _validateNames);
 
         var handle = new InMemorySubscriptionHandle(
             subscriberId,
@@ -324,6 +334,9 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
     {
         var ct = handle.CancellationToken;
         long lastDelivered = handle.FromSequence - 1;
+        var matchFilter = handle.Filter.Kind == EventSubscriptionScope.Query && _tenancy == Tenancy.Single && handle.Filter.Query!.TenantId is not null
+            ? EventSubscriptionFilter.ForQuery(PrepareMatchQuery(handle.Filter.Query!, resolvedTenant: null))
+            : handle.Filter;
 
         try
         {
@@ -336,7 +349,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
                     batch = _allEvents
                         .Where(e => e.SequencePosition > lastDelivered
                             && e.SequencePosition >= handle.FromSequence
-                            && handle.Filter.Matches(e))
+                            && matchFilter.Matches(e))
                         .OrderBy(e => e.SequencePosition)
                         .ToList();
                 }
@@ -639,7 +652,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
             if (toSequencePosition.HasValue)
                 events = events.Where(e => e.SequencePosition <= toSequencePosition.Value);
             events = events.Where(e => MatchesCommitTime(e, toCommitTimestamp));
-            if (query.Items.Count > 0)
+            if (query.Items.Count > 0 || (!query.AllTenants && query.TenantId is not null))
                 events = events.Where(e => EventQueryMatcher.Matches(e, query));
 
             events = events.OrderBy(e => e.SequencePosition);
@@ -705,17 +718,40 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
         return new AppendResult(sequencePositions.AsReadOnly(), null, streamVersion);
     }
 
+    private Query ValidateAndPrepareQuery(Query query)
+    {
+        var resolvedTenant = AppendTenantRules.ValidateQuery(query, _tenancy, _singleTenantId, _validateNames);
+        return PrepareMatchQuery(query, resolvedTenant);
+    }
+
+    private Query PrepareMatchQuery(Query query, string? resolvedTenant)
+    {
+        if (_tenancy == Tenancy.Single)
+        {
+            if (query.TenantId is not null)
+                return query.Items.Count == 0 ? Query.All() : Query.FromItems(query.Items);
+            return query;
+        }
+
+        if (resolvedTenant is not null && query.TenantId is null && !query.AllTenants)
+            return query.ForTenant(resolvedTenant);
+
+        return query;
+    }
+
     private AppendResult AppendFramesDcb(
         IReadOnlyList<AppendEvent> envelopes,
         AppendCondition condition,
-        string? tenantId)
+        string? storageTenant,
+        string? conditionTenant)
     {
         var matchingEvents = _allEvents.AsEnumerable();
 
         if (condition.After.HasValue)
             matchingEvents = matchingEvents.Where(e => e.SequencePosition > condition.After.Value);
 
-        matchingEvents = matchingEvents.Where(e => EventQueryMatcher.Matches(e, condition.FailIfEventsMatch));
+        var effectiveConditionQuery = PrepareMatchQuery(condition.FailIfEventsMatch, conditionTenant);
+        matchingEvents = matchingEvents.Where(e => EventQueryMatcher.Matches(e, effectiveConditionQuery));
 
         if (matchingEvents.Any())
         {
@@ -724,7 +760,7 @@ public class InMemoryEventStore : IEventStore, IEventStoreSubscriptions, IEventL
                 condition.After);
         }
 
-        var streamId = BuildDcbStreamId(tenantId);
+        var streamId = BuildDcbStreamId(storageTenant);
         var sequencePositions = new List<long>();
 
         var eventIds = ReserveEventIds(envelopes);

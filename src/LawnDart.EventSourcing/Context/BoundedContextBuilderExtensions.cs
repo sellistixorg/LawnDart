@@ -55,9 +55,9 @@ public static class BoundedContextBuilderExtensions
     /// <c>"default"</c> context also gets unkeyed aliases (same instances, <c>TryAdd</c>)
     /// so single-context HTTP handlers can inject <see cref="IEventStore"/> without a
     /// hand-written bridge. Named contexts stay keyed-only.
-    /// The store copies <see cref="LawnDartOptions.RequireTenantId"/> and
-    /// <see cref="LawnDartOptions.ValidateNames"/> when it is created.
-    /// A direct append then uses the same tenant id check as a SQL Server append.
+    /// The store copies <see cref="LawnDartOptions.Tenancy"/>,
+    /// <see cref="LawnDartOptions.SingleTenantId"/>, and <see cref="LawnDartOptions.ValidateNames"/>
+    /// when it is created. A direct append then uses the same tenant id check as a SQL Server append.
     /// </remarks>
     /// <returns>The builder for further chaining.</returns>
     public static BoundedContextBuilder UseInMemory(
@@ -71,6 +71,8 @@ public static class BoundedContextBuilderExtensions
 
         var services     = builder.Services;
         var contextName  = builder.ContextName;
+        var registeredOptions = LawnDartNames.ReadOptions(services);
+        registeredOptions.EnsureValid();
 
         // The outbox writer reads the local object. Repositories read
         // IOptions<EventSourcingOptions>, so the same callback is registered there.
@@ -98,7 +100,8 @@ public static class BoundedContextBuilderExtensions
             var hostOptions = sp.GetService<IOptions<LawnDartOptions>>()?.Value;
             var storeOptions = new InMemoryEventStoreOptions
             {
-                RequireTenantId = hostOptions?.RequireTenantId ?? true,
+                Tenancy = hostOptions?.Tenancy ?? Tenancy.Shared,
+                SingleTenantId = hostOptions?.SingleTenantId,
                 ValidateNames = hostOptions?.ValidateNames ?? true
             };
             var outbox = options.EnableOutbox

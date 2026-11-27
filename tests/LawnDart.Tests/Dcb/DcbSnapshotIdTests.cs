@@ -103,6 +103,21 @@ public class DcbSnapshotIdTests
         => Assert.Throws<ArgumentException>(() =>
             Query.FromItems(new QueryItem { Tags = new Tag[] { Tag.Parse("ok:1"), default } }));
 
+
+    [Fact]
+    public void FromQuery_TenantScopeChangesTheHash()
+    {
+        var item = QueryItem.ByTypeAndTags(["book-borrowed"], [Tag.Parse("member:1")]);
+        var unscoped = DcbSnapshotId.FromQuery(Query.FromItems(item));
+        var tenantA = DcbSnapshotId.FromQuery(Query.FromItems(item).ForTenant("acme"));
+        var tenantB = DcbSnapshotId.FromQuery(Query.FromItems(item).ForTenant("globex"));
+        var allTenants = DcbSnapshotId.FromQuery(Query.ForAllTenants(item));
+
+        Assert.Equal(4, new[] { unscoped, tenantA, tenantB, allTenants }.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(DcbSnapshotId.HexLength, tenantA.Length);
+        Assert.Equal(DcbSnapshotId.HexLength, allTenants.Length);
+    }
+
     /// <summary>
     /// The previous identity hashed a sorted tag list with no version byte and no items.
     /// A one-item tag query must not land on that digest.

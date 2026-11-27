@@ -117,7 +117,7 @@ public abstract class DcbDecisionQueryContractTests : ContractSuite
             entity,
             new EmitProbe(new ContractDecisionNoted(Guid.NewGuid()), [writtenTag.ToString()]));
 
-        var written = Assert.Single((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(writtenTag)))).Events);
+        var written = Assert.Single((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(writtenTag)).ForTenant("test-tenant"))).Events);
         Assert.Equal([writtenTag], written.Tags.Order().ToArray());
         Assert.DoesNotContain(book, written.Tags);
         Assert.DoesNotContain(member, written.Tags);
@@ -138,7 +138,7 @@ public abstract class DcbDecisionQueryContractTests : ContractSuite
 
         var again = await repository.GetOrCreateEntityAsync<DecisionProbe>(query);
         Assert.Equal(["added"], again.State.Kinds);
-        Assert.Empty((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(member)))).Events);
+        Assert.Empty((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(member)).ForTenant("test-tenant"))).Events);
     }
 
     [Fact]
@@ -191,14 +191,14 @@ public abstract class DcbDecisionQueryContractTests : ContractSuite
             entity,
             new EmitProbe(new ContractDecisionNoted(Guid.NewGuid()), [book.ToString()]));
 
-        Assert.Equal(2, (await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(book)))).Events.Count);
+        Assert.Equal(2, (await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(book)).ForTenant("test-tenant"))).Events.Count);
     }
 
     [Fact]
     public async Task CreateEntityAsync_SetsDecisionQuery_EmitAndReplayLeaveIt()
     {
         var (_, repository) = await OpenAsync();
-        var query = LoanQuery(Tag("book").ToString(), Tag("member").ToString());
+        var query = LoanQuery(Tag("book").ToString(), Tag("member").ToString()).ForTenant("test-tenant");
         var entity = await repository.CreateEntityAsync<DecisionProbe>(query);
         Assert.Same(query, entity.DecisionQuery);
 
@@ -249,7 +249,7 @@ public abstract class DcbDecisionQueryContractTests : ContractSuite
             seen,
             new EmitProbe(new ContractDecisionNoted(Guid.NewGuid()), [book.ToString()]));
         var written = Assert.Single(
-            (await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByType("backend-contract.decision-noted")))).Events);
+            (await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByType("backend-contract.decision-noted")).ForTenant(tenant))).Events);
         Assert.Contains($"tenant:{tenant}", written.Tags.Select(static t => t.ToString()).ToArray());
         Assert.Contains(book, written.Tags);
     }
@@ -298,7 +298,7 @@ public abstract class DcbDecisionQueryContractTests : ContractSuite
                 repository,
                 LoanQuery(book.ToString(), member.ToString()),
                 new EmitProbe(new ContractDecisionBorrowed(Guid.NewGuid()), [book.ToString(), member.ToString()]),
-                Query.FromItems(QueryItem.ByTags(book)),
+                Query.FromItems(QueryItem.ByTags(book)).ForTenant("test-tenant"),
                 new EmitProbe(new ContractDecisionAdded(Guid.NewGuid()), [book.ToString()]));
 
             AssertOneWinner(results);
@@ -334,7 +334,7 @@ public abstract class DcbDecisionQueryContractTests : ContractSuite
         bool isolate = false,
         string? tenant = "test-tenant")
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(eventTypes: ProbeTypes))).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared, eventTypes: ProbeTypes))).Store;
         return (store, Repo(store, isolate, tenant));
     }
 

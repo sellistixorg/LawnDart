@@ -22,7 +22,7 @@ public abstract class TagContractTests : ContractSuite
     [Fact]
     public async Task FallbackFlag_Off_StoresClrTypeName()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var id = Guid.NewGuid();
         await SaveAsync(store, id, formatFallback: false);
         var tags = (await store.ReadStreamAsync(Stream(id)))[0].Tags;
@@ -30,14 +30,14 @@ public abstract class TagContractTests : ContractSuite
         var formatted = LowercaseTagFormat.Instance.Tag("ProbeAggregate", id);
         Assert.Contains(clr, tags.Select(static t => t.ToString()).ToArray());
         Assert.DoesNotContain(formatted, tags.Select(static t => t.ToString()).ToArray());
-        Assert.Single((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(clr))))).Events);
-        Assert.Empty((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(formatted))))).Events);
+        Assert.Single((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(clr))).ForTenant("acct"))).Events);
+        Assert.Empty((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(formatted))).ForTenant("acct"))).Events);
     }
 
     [Fact]
     public async Task FallbackFlag_On_StoresFormattedTag_AndLeavesOldRowsUnderTheClrTag()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var oldId = Guid.NewGuid();
         var newId = Guid.NewGuid();
         await SaveAsync(store, oldId, formatFallback: false);
@@ -47,10 +47,10 @@ public abstract class TagContractTests : ContractSuite
         var newTags = (await store.ReadStreamAsync(Stream(newId)))[0].Tags;
         Assert.Contains(formatted, newTags.Select(static t => t.ToString()).ToArray());
         Assert.DoesNotContain($"ProbeAggregate:{newId:D}", newTags.Select(static t => t.ToString()).ToArray());
-        Assert.Single((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(oldClr))))).Events);
+        Assert.Single((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(oldClr))).ForTenant("acct"))).Events);
         Assert.Empty((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(
-            Tag.Parse(LowercaseTagFormat.Instance.Tag("ProbeAggregate", oldId)))))).Events);
-        Assert.Single((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(formatted))))).Events);
+            Tag.Parse(LowercaseTagFormat.Instance.Tag("ProbeAggregate", oldId)))).ForTenant("acct"))).Events);
+        Assert.Single((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(Tag.Parse(formatted))).ForTenant("acct"))).Events);
     }
 
     [Fact]
@@ -100,28 +100,28 @@ public abstract class TagContractTests : ContractSuite
     // EventSourcingRepositories is the public way to build a repository with a tag format.
     private static IDcbRepository Dcb(IEventStore store, TagListLogger logger, bool warn)
         => EventSourcingRepositories.CreateDcbRepository(
-            Services(store, new EventSourcingOptions { WarnOnUnknownTag = warn }, logger),
+            Services(store, new EventSourcingOptions { WarnOnUnknownTag = warn }, logger, Tenancy.Single),
             ContextKey);
 
     private static async Task SaveAsync(IEventStore store, Guid id, bool formatFallback)
     {
         var repository = EventSourcingRepositories.CreateAggregateRepository(
-            Services(store, new EventSourcingOptions { FormatAggregateFallbackTag = formatFallback }, logger: null),
+            Services(store, new EventSourcingOptions { FormatAggregateFallbackTag = formatFallback }, logger: null, Tenancy.Shared),
             ContextKey);
         var aggregate = await repository.CreateAsync<ProbeAggregate>(Stream(id));
         aggregate.Raise(new ProbeEvent(Guid.NewGuid(), DateTime.UtcNow));
-        await repository.SaveAsync(aggregate, new CommandMetadata());
+        await repository.SaveAsync(aggregate, new CommandMetadata { TenantId = "acct" });
     }
 
     private static StreamId Stream(Guid id) => StreamId.For("acct", "ProbeAggregate", id.ToString("D"));
 
-    private static IServiceProvider Services(IEventStore store, EventSourcingOptions eventSourcingOptions, TagListLogger? logger)
+    private static IServiceProvider Services(IEventStore store, EventSourcingOptions eventSourcingOptions, TagListLogger? logger, Tenancy tenancy)
     {
         var services = new ServiceCollection();
         services.AddKeyedSingleton(ContextKey, store);
         services.AddSingleton<IMetadataProvider>(new DefaultMetadataProvider());
         services.AddSingleton<ITenantContextProvider>(new NullTenant());
-        services.AddSingleton(Options.Create(new LawnDartOptions { RequireTenantId = false }));
+        services.AddSingleton(Options.Create(new LawnDartOptions { Tenancy = tenancy }));
         services.AddSingleton(Options.Create(eventSourcingOptions));
         services.AddKeyedSingleton<ITagFormat>(ContextKey, LowercaseTagFormat.Instance);
         if (logger is not null)

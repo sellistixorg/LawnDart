@@ -23,7 +23,7 @@ public abstract class DcbEntityTagContractTests : ContractSuite
     [Fact]
     public async Task HandleCommandAsync_WritesEachEventWithItsOwnTags()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var repository = Repo(store);
         var course = Tag("course");
         var student = Tag("student");
@@ -31,7 +31,7 @@ public abstract class DcbEntityTagContractTests : ContractSuite
         var entity = await repository.GetOrCreateEntityAsync<CourseDecision>(Query.FromItems(QueryItem.ByTags([LawnDart.EventStore.Tag.Parse(course)])));
         await repository.HandleCommandAsync(entity, new OpenCourseAndSubscribe(course, student));
 
-        var events = (await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(LawnDart.EventStore.Tag.Parse(course))))).Events;
+        var events = (await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(LawnDart.EventStore.Tag.Parse(course))).ForTenant("test-tenant"))).Events;
         Assert.Equal(2, events.Count);
 
         var created = Assert.Single(events, e => e.Event is ContractCourseCreated);
@@ -43,7 +43,7 @@ public abstract class DcbEntityTagContractTests : ContractSuite
     [Fact]
     public async Task QueryForStudent_DoesNotReturnCourseCreated()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var repository = Repo(store);
         var course = Tag("course");
         var student = Tag("student");
@@ -51,7 +51,7 @@ public abstract class DcbEntityTagContractTests : ContractSuite
         var entity = await repository.GetOrCreateEntityAsync<CourseDecision>(Query.FromItems(QueryItem.ByTags([LawnDart.EventStore.Tag.Parse(course)])));
         await repository.HandleCommandAsync(entity, new OpenCourseAndSubscribe(course, student));
 
-        var forStudent = (await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(LawnDart.EventStore.Tag.Parse(student))))).Events;
+        var forStudent = (await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(LawnDart.EventStore.Tag.Parse(student))).ForTenant("test-tenant"))).Events;
         var only = Assert.Single(forStudent);
         Assert.IsType<ContractStudentSubscribed>(only.Event);
     }
@@ -59,7 +59,7 @@ public abstract class DcbEntityTagContractTests : ContractSuite
     [Fact]
     public async Task HandleCommandAsync_DoesNotWriteTagsReadDuringReplay()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var repository = Repo(store);
         var course = Tag("course");
         var earlierA = Tag("student");
@@ -76,7 +76,7 @@ public abstract class DcbEntityTagContractTests : ContractSuite
 
         await repository.HandleCommandAsync(entity, new ChangeCapacityAndSubscribe(course, 30, student));
 
-        var written = (await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(LawnDart.EventStore.Tag.Parse(course))), fromSequencePosition: before + 1)).Events;
+        var written = (await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(LawnDart.EventStore.Tag.Parse(course))).ForTenant("test-tenant"), fromSequencePosition: before + 1)).Events;
         Assert.Equal(2, written.Count);
         Assert.All(written, e =>
         {
@@ -93,7 +93,7 @@ public abstract class DcbEntityTagContractTests : ContractSuite
     [Fact]
     public async Task UnrelatedDecisionAboutEarlierStudent_DoesNotGetFalseConflict()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var repository = Repo(store);
         var course = Tag("course");
         var earlier = Tag("student");
@@ -112,7 +112,7 @@ public abstract class DcbEntityTagContractTests : ContractSuite
         // The student decision did not read anything the course decision wrote.
         await repository.HandleCommandAsync(studentDecision, new NoteStudent(earlier, "moved"));
 
-        var forStudent = (await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(LawnDart.EventStore.Tag.Parse(earlier))))).Events;
+        var forStudent = (await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(LawnDart.EventStore.Tag.Parse(earlier))).ForTenant("test-tenant"))).Events;
         Assert.Equal(2, forStudent.Count);
         Assert.DoesNotContain(forStudent, e => e.Event is ContractCourseCapacityChanged);
     }
@@ -120,7 +120,7 @@ public abstract class DcbEntityTagContractTests : ContractSuite
     [Fact]
     public async Task HandleCommandAsync_DoesNotWriteLoadTags()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var repository = Repo(store);
         var course = Tag("course");
         var student = Tag("student");
@@ -129,15 +129,15 @@ public abstract class DcbEntityTagContractTests : ContractSuite
         var entity = await repository.GetOrCreateEntityAsync<StudentDecision>(Query.FromItems(QueryItem.ByTags([LawnDart.EventStore.Tag.Parse(student), LawnDart.EventStore.Tag.Parse(course)])));
         await repository.HandleCommandAsync(entity, new NoteStudent(student, "hello"));
 
-        var written = Assert.Single((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(LawnDart.EventStore.Tag.Parse(student))))).Events);
+        var written = Assert.Single((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(LawnDart.EventStore.Tag.Parse(student))).ForTenant("test-tenant"))).Events);
         Assert.Equal(new[] { student }, written.Tags.Select(static t => t.ToString()).ToArray());
-        Assert.Empty((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(LawnDart.EventStore.Tag.Parse(course))))).Events);
+        Assert.Empty((await store.ReadByQueryAsync(Query.FromItems(QueryItem.ByTags(LawnDart.EventStore.Tag.Parse(course))).ForTenant("test-tenant"))).Events);
     }
 
     [Fact]
     public async Task RelatedDecision_StillConflicts()
     {
-        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated())).Store;
+        var store = (await Backend.OpenEventStoreAsync(ContractStores.Isolated(tenancy: Tenancy.Shared))).Store;
         var repository = Repo(store);
         var course = Tag("course");
 

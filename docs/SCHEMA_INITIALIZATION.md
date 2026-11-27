@@ -243,7 +243,7 @@ using LawnDart.EventStore;
 using LawnDart.Messaging.Postgres;
 using LawnDart.Projections.Lightweight.Postgres;
 
-services.AddLawnDart(o => o.RequireTenantId = false);
+services.AddLawnDart(o => o.Tenancy = Tenancy.Single);
 services.AddPostgresProjectionStores("default", appConnectionString);
 services.AddPostgresInboxStore(appConnectionString);
 services.AddBoundedContext("default")
@@ -252,7 +252,7 @@ services.AddBoundedContext("default")
     .UsePostgres(o =>
     {
         o.ConnectionString = appConnectionString;
-        o.RequireTenantId = false;
+        o.Tenancy = Tenancy.Single;
         o.EnableOutbox = true;
     });
 

@@ -534,7 +534,7 @@ public class HybridPatternDemo
         Console.WriteLine("   -> Use: IDcbRepository + DcbEntity<TState> or AppendWithContextAsync\n");
 
         Console.WriteLine("3   SERVICE REGISTRATION (both together):");
-        Console.WriteLine("   services.AddLawnDart(o => o.RequireTenantId = false);");
+        Console.WriteLine("   services.AddLawnDart(o => o.Tenancy = Tenancy.Single);");
         Console.WriteLine("   services.AddBoundedContext(\"default\")");
         Console.WriteLine("       .UseInMemory()");
         Console.WriteLine("       .WithEventTypes<ProductCreated>();");

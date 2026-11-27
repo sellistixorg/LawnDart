@@ -72,16 +72,35 @@ public class SqlServerEventStoreOptions : EventSourcingOptions
     public bool AutoMaintainRegistry { get; set; } = true;
 
     /// <summary>
-    /// Require tenant ID in all operations.
-    /// When true, TenantId must be present in CommandMetadata and stream IDs must include tenant prefix.
-    /// When false, tenant is optional and stream IDs can be in any format.
-    /// Default: true
+    /// Controls how tenants share the store. Defaults to <see cref="LawnDart.Tenancy.Shared"/>.
     /// </summary>
-    public bool RequireTenantId { get; set; } = true;
+    /// <remarks>
+    /// <c>UseSqlServer</c> copies <see cref="LawnDart.LawnDartOptions.Tenancy"/> onto this property
+    /// before the configure callback runs. The callback can change it.
+    /// <see cref="LawnDart.Tenancy.Isolated"/> is not supported in this release and is refused at startup.
+    /// </remarks>
+    public Tenancy Tenancy { get; set; } = Tenancy.Shared;
 
     /// <summary>
-    /// Check tenant ids on append against <see cref="LawnDartNames.Pattern"/> when
-    /// <see cref="RequireTenantId"/> is true.
+    /// Optional fixed tenant id when <see cref="Tenancy"/> is <see cref="LawnDart.Tenancy.Single"/>.
+    /// Leave null for no tenant. Must be null when <see cref="Tenancy"/> is <see cref="LawnDart.Tenancy.Shared"/>.
+    /// </summary>
+    public string? SingleTenantId { get; set; }
+
+    /// <summary>
+    /// Obsolete alias for <see cref="Tenancy"/>.
+    /// <c>true</c> maps to <see cref="LawnDart.Tenancy.Shared"/>; <c>false</c> maps to <see cref="LawnDart.Tenancy.Single"/>.
+    /// </summary>
+    [Obsolete("Use Tenancy instead. RequireTenantId = true maps to Tenancy.Shared; false maps to Tenancy.Single.")]
+    public bool RequireTenantId
+    {
+        get => Tenancy != Tenancy.Single;
+        set => Tenancy = value ? Tenancy.Shared : Tenancy.Single;
+    }
+
+    /// <summary>
+    /// Check tenant ids on append and query against <see cref="LawnDartNames.Pattern"/> when
+    /// <see cref="Tenancy"/> is <see cref="LawnDart.Tenancy.Shared"/> or <see cref="SingleTenantId"/> is set.
     /// </summary>
     /// <remarks>
     /// Default: true. <c>UseSqlServer</c> copies <see cref="LawnDartOptions.ValidateNames"/>
@@ -167,4 +186,18 @@ public class SqlServerEventStoreOptions : EventSourcingOptions
     /// is in memory: a restart, or a process that exits before the commit, stays quiet.
     /// </remarks>
     public TimeSpan ReadHorizonGracePeriod { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>Checks tenancy, tenant name, and lock threshold before the store is used.</summary>
+    public void EnsureValid()
+    {
+        TenancyValidation.EnsureValid(Tenancy, SingleTenantId, ValidateNames);
+
+        if (AppendLockTagThreshold < 1)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(AppendLockTagThreshold),
+                AppendLockTagThreshold,
+                "AppendLockTagThreshold must be at least 1.");
+        }
+    }
 }

@@ -148,7 +148,7 @@ internal static class ProjectionEventFilter
 
             default: // Global, untyped MultiStream
                 return eventStore.ReadByQueryStreamAsync(
-                    Query.All(),
+                    Query.ForAllTenants(),
                     fromSequencePosition: 0,
                     toSequencePosition: cutoff?.Kind == CutoffKind.Sequence ? cutoff.SequencePosition : null,
                     toTimestamp: cutoff?.Kind == CutoffKind.Timestamp ? cutoff.Timestamp : null,
@@ -173,7 +173,7 @@ internal static class ProjectionEventFilter
 
     /// <summary>Builds a type-filtered DCB/MultiStream query from the registration's event type list.</summary>
     internal static Query BuildFilteredQuery(ProjectionRegistration registration) =>
-        Query.FromItems(registration.DcbQueryTypes.Select(t => QueryItem.ByType(t)));
+        Query.ForAllTenants(registration.DcbQueryTypes.Select(t => QueryItem.ByType(t)).ToArray());
 
     /// <summary>
     /// Extracts the entity ID portion of a MultiStream view instance key.

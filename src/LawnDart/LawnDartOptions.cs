@@ -3,22 +3,38 @@ namespace LawnDart;
 /// <summary>
 /// Cross-cutting configuration options for LawnDart.
 /// Store-specific options live in their respective packages:
-/// <c>SqlServerEventStoreOptions</c> (LawnDart.EventSourcing.SqlServer) for SQL Server event store,
+/// <c>PostgresEventStoreOptions</c> (LawnDart.EventSourcing.Postgres) and
+/// <c>SqlServerEventStoreOptions</c> (LawnDart.EventSourcing.SqlServer) for SQL stores,
 /// <c>EventSourcingOptions</c> (LawnDart.EventSourcing) for in-process event sourcing.
 /// </summary>
 public class LawnDartOptions
 {
     /// <summary>
-    /// Require tenant ID in all framework operations.
-    /// When true, TenantId must be present in CommandMetadata, and an in-memory append checks the tenant id.
-    /// When false, tenant is optional.
-    /// Default: true. <c>InMemoryEventStoreOptions.RequireTenantId</c> and <c>SqlServerEventStoreOptions.RequireTenantId</c> default to true as well.
+    /// Controls how tenants share a bounded context's event store.
+    /// Defaults to <see cref="LawnDart.Tenancy.Shared"/>.
     /// </summary>
     /// <remarks>
-    /// <c>UseInMemory</c> copies this value onto the in-memory store when it creates the store.
-    /// Set it to false to append without a tenant id.
+    /// <c>UseInMemory</c>, <c>UsePostgres</c>, and <c>UseSqlServer</c> copy this value onto the store options
+    /// before store configuration runs.
     /// </remarks>
-    public bool RequireTenantId { get; set; } = true;
+    public Tenancy Tenancy { get; set; } = Tenancy.Shared;
+
+    /// <summary>
+    /// Optional fixed tenant id when <see cref="Tenancy"/> is <see cref="LawnDart.Tenancy.Single"/>.
+    /// Leave null when the store holds no tenant id. Must be null when <see cref="Tenancy"/> is <see cref="LawnDart.Tenancy.Shared"/>.
+    /// </summary>
+    public string? SingleTenantId { get; set; }
+
+    /// <summary>
+    /// Obsolete alias for <see cref="Tenancy"/>.
+    /// <c>true</c> maps to <see cref="LawnDart.Tenancy.Shared"/>; <c>false</c> maps to <see cref="LawnDart.Tenancy.Single"/>.
+    /// </summary>
+    [Obsolete("Use Tenancy instead. RequireTenantId = true maps to Tenancy.Shared; false maps to Tenancy.Single.")]
+    public bool RequireTenantId
+    {
+        get => Tenancy != Tenancy.Single;
+        set => Tenancy = value ? Tenancy.Shared : Tenancy.Single;
+    }
 
     /// <summary>
     /// Check bounded context names and tenant ids against <see cref="LawnDartNames.Pattern"/>.
@@ -29,9 +45,7 @@ public class LawnDartOptions
     /// Call <c>AddLawnDart</c> first so registration sees the flag.
     /// An empty tenant id is still rejected. A colon in a tenant id is still rejected,
     /// because a stream id is split on every colon.
-    /// <c>UseSqlServer</c> copies this value onto <c>SqlServerEventStoreOptions.ValidateNames</c>
-    /// before the SQL callback runs.
-    /// <c>UseInMemory</c> copies this value onto the in-memory store when it creates the store.
+    /// <c>UseSqlServer</c>, <c>UsePostgres</c>, and <c>UseInMemory</c> copy this value onto the store options.
     /// </remarks>
     public bool ValidateNames { get; set; } = true;
 
@@ -42,4 +56,10 @@ public class LawnDartOptions
     /// Default: false
     /// </summary>
     public bool EnableAuthorization { get; set; } = false;
+
+    /// <summary>
+    /// Validates tenancy and name settings.
+    /// </summary>
+    public void EnsureValid()
+        => TenancyValidation.EnsureValid(Tenancy, SingleTenantId, ValidateNames);
 }

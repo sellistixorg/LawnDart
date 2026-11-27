@@ -9,6 +9,7 @@ using System.Text.Json.Serialization;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 using LawnDart.Dcb;
+using LawnDart.EventSourcing.EventStore;
 using LawnDart.Snapshots;
 using LawnDart.Sql;
 
@@ -42,6 +43,8 @@ public sealed class SqlServerSnapshotStore : ISnapshotStore, IDcbSnapshotStore, 
     private readonly string _qEvent;
     private readonly string _qRegistry;
     private readonly string _qStreamKeySequence;
+    private readonly Tenancy _tenancy;
+    private readonly string? _singleTenantId;
     private readonly ILogger<SqlServerSnapshotStore>? _logger;
 
     /// <summary>
@@ -54,6 +57,7 @@ public sealed class SqlServerSnapshotStore : ISnapshotStore, IDcbSnapshotStore, 
         ILogger<SqlServerSnapshotStore>? logger = null)
     {
         ArgumentNullException.ThrowIfNull(options);
+        options.EnsureValid();
         if (string.IsNullOrWhiteSpace(options.ConnectionString))
             throw new ArgumentException("ConnectionString must be set.", nameof(options));
 
@@ -72,6 +76,8 @@ public sealed class SqlServerSnapshotStore : ISnapshotStore, IDcbSnapshotStore, 
             : options.StreamRegistryTableName;
         _qRegistry = SqlServerSnapshotSchema.Qualify(_schemaName, registry);
         _qStreamKeySequence = SqlIdentifier.Qualify(_schemaName, "StreamKeySequence");
+        _tenancy = options.Tenancy;
+        _singleTenantId = options.SingleTenantId;
         _logger = logger;
     }
 
@@ -464,7 +470,7 @@ public sealed class SqlServerSnapshotStore : ISnapshotStore, IDcbSnapshotStore, 
         var key = await ReadStreamKeyAsync(connection, transaction, streamId, lockRow: true, cancellationToken).ConfigureAwait(false);
         if (key is null)
         {
-            var tenantId = StreamIdText.TenantId(streamId);
+            var tenantId = AppendTenantRules.ResolveStreamStorageTenant(streamId, _tenancy, _singleTenantId);
             var aggregateType = StreamIdText.AggregateType(streamId);
             var aggregateId = StreamIdText.AggregateId(streamId);
             var now = DateTime.UtcNow;

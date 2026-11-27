@@ -16,7 +16,7 @@ changing domain types.
 ## Registration
 
 ```csharp
-services.AddLawnDart(o => o.RequireTenantId = false);
+services.AddLawnDart(o => o.Tenancy = Tenancy.Single);
 services.AddBoundedContext("default")
     .UseInMemory()
     .WithEventTypes(typeof(SomeEvent).Assembly);
@@ -27,7 +27,7 @@ Registers keyed `IEventStore`, `IAggregateRepository`, `IDcbRepository`,
 name. The `"default"` context also gets unkeyed aliases, so
 `GetRequiredService<IAggregateRepository>()` works without a key.
 
-`InMemoryEventStoreOptions.RequireTenantId` defaults to true. `UseInMemory` copies `RequireTenantId` and `ValidateNames` onto the store. An append rejects a missing tenant id, an empty tenant id, and `default`. Set `RequireTenantId` to false to append without a tenant id.
+`InMemoryEventStoreOptions.Tenancy` defaults to `Tenancy.Shared`. `UseInMemory` copies `Tenancy`, `SingleTenantId`, and `ValidateNames` onto the store. In `Shared` mode, appends reject a missing tenant id, an empty tenant id, and `default`, and queries require `Query.ForTenant(...)` or `Query.ForAllTenants(...)`. Set `Tenancy = Tenancy.Single` (with optional `SingleTenantId`) to run a single-tenant store. `Tenancy.Isolated` is refused at startup. The obsolete `RequireTenantId` property remains as an alias (`true` maps to `Shared`, `false` to `Single`).
 
 Append stores the `[EventTypeName]` event name. The .NET type's `FullName`
 is not stored. InMemory serializes on append and returns a new instance on

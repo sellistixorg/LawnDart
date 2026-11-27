@@ -128,7 +128,16 @@ public sealed class ContractStoreOptions
 {
     public string SchemaName { get; init; } = "dbo";
 
-    public bool RequireTenantId { get; init; }
+    public Tenancy Tenancy { get; init; } = Tenancy.Single;
+
+    public string? SingleTenantId { get; init; }
+
+    [Obsolete("Use Tenancy instead. RequireTenantId = true maps to Tenancy.Shared; false maps to Tenancy.Single.")]
+    public bool RequireTenantId
+    {
+        get => Tenancy != Tenancy.Single;
+        init => Tenancy = value ? Tenancy.Shared : Tenancy.Single;
+    }
 
     public bool ValidateNames { get; init; } = true;
 
@@ -307,6 +316,8 @@ public static class ContractStores
 {
     public static ContractStoreOptions Isolated(
         bool requireTenantId = false,
+        Tenancy? tenancy = null,
+        string? singleTenantId = null,
         bool enableOutbox = false,
         bool includeOutboxReader = false,
         TimeSpan? readHorizonGracePeriod = null,
@@ -324,7 +335,8 @@ public static class ContractStores
         => new()
         {
             SchemaName = "c" + Guid.NewGuid().ToString("N"),
-            RequireTenantId = requireTenantId,
+            Tenancy = tenancy ?? (requireTenantId ? Tenancy.Shared : Tenancy.Single),
+            SingleTenantId = singleTenantId,
             ValidateNames = validateNames,
             EnableOutbox = enableOutbox,
             IncludeOutboxReader = includeOutboxReader || enableOutbox,

@@ -26,7 +26,7 @@ public static class LibraryHost
 {
     public static IServiceCollection AddInMemoryLibrary(IServiceCollection services)
     {
-        services.AddLawnDart(o => o.RequireTenantId = false);
+        services.AddLawnDart(o => o.Tenancy = Tenancy.Single);
         services.AddInMemoryMessaging();
         services.AddReactor<LoanNoticeReactor, BookBorrowed>();
         services.AddInMemoryProjectionStores("default");
@@ -53,7 +53,7 @@ public static class LibraryHost
     /// <returns>The same service collection.</returns>
     public static IServiceCollection AddSqlLibrary(IServiceCollection services, string connectionString)
     {
-        services.AddLawnDart(o => o.RequireTenantId = false);
+        services.AddLawnDart(o => o.Tenancy = Tenancy.Single);
         services.AddInMemoryMessaging();
         services.AddSqlInboxStore(connectionString);
         services.AddMessageTransportOutboxPublisher();
@@ -63,7 +63,7 @@ public static class LibraryHost
         ctx.UseSqlServer(o =>
         {
             o.ConnectionString = connectionString;
-            o.RequireTenantId = false;
+            o.Tenancy = Tenancy.Single;
             o.EnableOutbox = true;
         });
         ctx.WithCommandHandlers<BorrowBookHandler>();
@@ -115,7 +115,7 @@ public static class LibraryHost
     /// <returns>The same service collection.</returns>
     public static IServiceCollection AddPostgresLibrary(IServiceCollection services, string connectionString)
     {
-        services.AddLawnDart(o => o.RequireTenantId = false);
+        services.AddLawnDart(o => o.Tenancy = Tenancy.Single);
         services.AddInMemoryMessaging();
         services.AddPostgresInboxStore(connectionString);
         services.AddMessageTransportOutboxPublisher();
@@ -125,7 +125,7 @@ public static class LibraryHost
         ctx.UsePostgres(o =>
         {
             o.ConnectionString = connectionString;
-            o.RequireTenantId = false;
+            o.Tenancy = Tenancy.Single;
             o.EnableOutbox = true;
         });
         ctx.WithCommandHandlers<BorrowBookHandler>();

@@ -136,10 +136,11 @@ public sealed partial class PostgresEventStore
         IReadOnlyList<Guid> eventIds,
         long? expectedVersion,
         AppendCondition? condition,
+        string? conditionTenant,
         bool isDcb,
         CancellationToken cancellationToken)
     {
-        var tenant = TenantKey.ForStream(streamId);
+        var tenant = TenantKey.ForStream(streamId, _options.Tenancy, _options.SingleTenantId);
         var payloads = new string?[envelopes.Count];
         var binaries = new byte[]?[envelopes.Count];
         var metadata = new string?[envelopes.Count];
@@ -229,7 +230,7 @@ public sealed partial class PostgresEventStore
                 @event_ids, @type_ids, @schema_versions, @codec_ids, @data, @bdata, @metadata,
                 @tag_ords, @tag_values, @stream_tags, @partition_hash, @recorded_at, @notify, @notify_channel,
                 @lock_tags, @lock_modes, @lock_store, @store_lock_key,
-                @check_condition, @condition_all, @condition_after, @item_count,
+                @check_condition, @condition_all, @condition_tenant, @condition_after, @item_count,
                 @type_items, @type_ids_cond, @tag_items, @tag_values_cond, @items_with_types, @items_with_tags)
             """;
         // One statement. MATERIALIZED runs the original function once. The outbox
@@ -302,6 +303,7 @@ public sealed partial class PostgresEventStore
         command.Parameters.Add(new NpgsqlParameter("store_lock_key", _names.Schema + ":store"));
         command.Parameters.Add(new NpgsqlParameter("check_condition", check));
         command.Parameters.Add(new NpgsqlParameter("condition_all", all));
+        command.Parameters.Add(new NpgsqlParameter("condition_tenant", NpgsqlDbType.Text) { Value = (object?)conditionTenant ?? DBNull.Value });
         command.Parameters.Add(new NpgsqlParameter("condition_after", NpgsqlDbType.Bigint) { Value = (object?)after ?? DBNull.Value });
         command.Parameters.Add(new NpgsqlParameter("item_count", itemCount));
         command.Parameters.Add(new NpgsqlParameter("type_items", NpgsqlDbType.Array | NpgsqlDbType.Integer) { Value = typeItems });
@@ -770,7 +772,7 @@ public sealed partial class PostgresEventStore
         // another stream is a different append. JSON is stored as jsonb, so the
         // stored text can differ from the bytes that were sent. A hash of those
         // bytes would not match the stored value.
-        var tenant = TenantKey.ForStream(streamId);
+        var tenant = TenantKey.ForStream(streamId, _options.Tenancy, _options.SingleTenantId);
         var sql = $"""
             SELECT e.event_id, e.stream_id, e.global_position, e.version, t.token
             FROM {_names.Events} e

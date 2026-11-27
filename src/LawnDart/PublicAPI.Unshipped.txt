@@ -314,3 +314,20 @@ static LawnDart.EventStore.Tag.operator <=(LawnDart.EventStore.Tag left, LawnDar
 static LawnDart.EventStore.Tag.operator ==(LawnDart.EventStore.Tag left, LawnDart.EventStore.Tag right) -> bool
 static LawnDart.EventStore.Tag.operator >(LawnDart.EventStore.Tag left, LawnDart.EventStore.Tag right) -> bool
 static LawnDart.EventStore.Tag.operator >=(LawnDart.EventStore.Tag left, LawnDart.EventStore.Tag right) -> bool
+LawnDart.Tenancy
+LawnDart.Tenancy.Isolated = 2 -> LawnDart.Tenancy
+LawnDart.Tenancy.Shared = 1 -> LawnDart.Tenancy
+LawnDart.Tenancy.Single = 0 -> LawnDart.Tenancy
+LawnDart.LawnDartOptions.EnsureValid() -> void
+LawnDart.LawnDartOptions.SingleTenantId.get -> string?
+LawnDart.LawnDartOptions.SingleTenantId.set -> void
+LawnDart.LawnDartOptions.Tenancy.get -> LawnDart.Tenancy
+LawnDart.LawnDartOptions.Tenancy.set -> void
+LawnDart.EventStore.Query.AllTenants.get -> bool
+LawnDart.EventStore.Query.AllTenants.init -> void
+LawnDart.EventStore.Query.ForTenant(string! tenantId) -> LawnDart.EventStore.Query!
+LawnDart.EventStore.Query.TenantId.get -> string?
+LawnDart.EventStore.Query.TenantId.init -> void
+static LawnDart.EventStore.Query.ForAllTenants() -> LawnDart.EventStore.Query!
+static LawnDart.EventStore.Query.ForAllTenants(params LawnDart.EventStore.QueryItem![]! items) -> LawnDart.EventStore.Query!
+static LawnDart.EventStore.Query.ForAllTenants(System.Collections.Generic.IEnumerable<LawnDart.EventStore.QueryItem!>! items) -> LawnDart.EventStore.Query!

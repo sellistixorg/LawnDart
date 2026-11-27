@@ -66,7 +66,7 @@ A tenant id starts with a letter or digit. Then letters, digits, `.`, `_`, or `-
 
 `FixedTenantContextProvider` checks the id in the constructor. Pass `validateNames: false` when `LawnDartOptions.ValidateNames` is false. `AmbientTenantContextProvider` reads that option when dependency injection constructs it, and `SetTenant` checks the id. An `X-Tenant-Id` header that fails the check returns 400. A missing header is left unset.
 
-`HandleCommandAsync`, a SQL Server append, and an in-memory append check the tenant id when `RequireTenantId` is true. That option defaults to true on `LawnDartOptions`, `SqlServerEventStoreOptions`, and `InMemoryEventStoreOptions`, including a store constructed with `new InMemoryEventStore()`. A missing tenant id throws. `UseInMemory` copies `RequireTenantId` and `ValidateNames` onto the store when it creates the store. Set `RequireTenantId` to false to append without a tenant id. An append whose stream id and event metadata name two different tenant ids throws. That check also runs when `RequireTenantId` is false.
+`HandleCommandAsync` and every store (`InMemoryEventStore`, `SqlServerEventStore`, `PostgresEventStore`) enforce `Tenancy` (`Shared` by default on `LawnDartOptions` and all three store options). In `Tenancy.Shared` mode, a missing tenant id throws, and queries require `Query.ForTenant(...)` or `Query.ForAllTenants(...)`. Set `Tenancy = Tenancy.Single` (with optional `SingleTenantId`) to run a single-tenant store. `Tenancy.Isolated` is refused at startup. `UseInMemory`, `UsePostgres`, and `UseSqlServer` copy `Tenancy`, `SingleTenantId`, and `ValidateNames` onto the store options. An append whose stream id and event metadata name two different tenant ids throws in every mode. The obsolete `RequireTenantId` property remains as an alias (`true` maps to `Shared`, `false` to `Single`).
 
 ## Extra fields
 
@@ -115,7 +115,7 @@ See [Event schema versioning](EVENT_SCHEMA_VERSIONING.md).
 `GetRequiredService`, which is the last registration.
 
 ```csharp
-services.AddLawnDart(o => o.RequireTenantId = false);
+services.AddLawnDart(o => o.Tenancy = Tenancy.Single);
 services.AddMetadataProvider<HostMetadataProvider>();
 ```
 

@@ -7,12 +7,12 @@ Postgres 15 or newer. The `default` context uses schema `lawndart`. Any
 other context uses its own name. The `public` schema is rejected.
 
 ```csharp
-services.AddLawnDart(o => o.RequireTenantId = false);
+services.AddLawnDart(o => o.Tenancy = Tenancy.Single);
 services.AddBoundedContext("default")
     .UsePostgres(o =>
     {
         o.ConnectionString = connectionString;
-        o.RequireTenantId = false;
+        o.Tenancy = Tenancy.Single;
     });
 ```
 

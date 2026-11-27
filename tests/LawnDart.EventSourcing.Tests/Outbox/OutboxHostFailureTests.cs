@@ -75,7 +75,7 @@ public class OutboxHostFailureTests
         var builder = Host.CreateApplicationBuilder();
         builder.Logging.ClearProviders();
         builder.Logging.AddProvider(log);
-        builder.Services.Configure<LawnDart.LawnDartOptions>(options => options.RequireTenantId = false);
+        builder.Services.Configure<LawnDart.LawnDartOptions>(options => options.Tenancy = Tenancy.Single);
         builder.Services.AddSingleton<IOutboxPublisher, NoOpPublisher>();
         builder.Services.AddBoundedContext("default")
             .WithEventTypes(typeof(FailurePing))
